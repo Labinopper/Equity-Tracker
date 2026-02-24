@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="page-title"><h1>Settings</h1></div>
-<p class="muted" style="margin-bottom:1.5rem;">
+<p class="muted page-intro-lg">
   Income and tax year defaults used by disposal simulation and reporting.
 </p>
 
@@ -63,8 +63,8 @@
         <span class="form-hint">Pre-selected year on CGT and Economic Gain reports.</span>
       </div>
 
-      <div class="form-field" style="justify-content:flex-end; padding-bottom:0.5rem;">
-        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+      <div class="form-field form-field-end">
+        <label class="checkbox-inline">
           <input type="checkbox" name="show_exhausted_lots" value="on"
                  {{ 'checked' if settings and settings.show_exhausted_lots }}>
           Show exhausted lots in portfolio
@@ -88,8 +88,8 @@
   </form>
 </div>
 
-<div class="card" style="margin-top: 1rem;">
-  <h2 style="margin-top:0;">Danger Zone</h2>
+<div class="card card-top">
+  <h2 class="danger-zone-title">Danger Zone</h2>
   <p class="muted">
     This permanently deletes all portfolio data in the current database and recreates
     empty tables from the current schema.

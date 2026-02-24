@@ -6,9 +6,8 @@
 **Constraint:** No changes to existing core functions unless absolutely essential.
 
 **Execution status snapshot (2026-02-24):**
-- Completed and release-synced: CF-01 (v1.10.0), CF-02 (v1.10.1), ET20-EPIC-03 (v2.0.0), CF-04 (v2.0.1), CF-05 (v2.0.2), ET20-EPIC-08 Phase 1 (v2.0.3).
-- Implemented in working tree, pending release-note/version sync: ET20-EPIC-04 calendar (v2.1.0 target), ET20-EPIC-06 Phase A broker currency (v2.1.1 target).
-- Next delivery stage after sync: CF-06 UI debt cleanup (v2.1.2).
+- Completed and release-synced: CF-01 (v1.10.0), CF-02 (v1.10.1), ET20-EPIC-03 (v2.0.0), CF-04 (v2.0.1), CF-05 (v2.0.2), ET20-EPIC-08 Phase 1 (v2.0.3), ET20-EPIC-04 (v2.1.0), ET20-EPIC-06 Phase A (v2.1.1).
+- Current next delivery stage: CF-06 UI debt cleanup (v2.1.2).
 
 ---
 

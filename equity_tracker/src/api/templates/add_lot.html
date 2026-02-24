@@ -12,7 +12,7 @@
   <form id="add-lot-form" method="post" action="/portfolio/add-lot">
     <div class="form-grid">
 
-      <!-- â”€â”€ Base fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- -- Base fields ----------------------------------- -->
 
       <div class="form-field">
         <label for="security_id">Security *</label>
@@ -92,9 +92,9 @@
         </span>
       </div>
 
-      <!-- â”€â”€ Scheme Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- -- Scheme Details -------------------------------- -->
 
-      <div class="scheme-section-head" style="grid-column:1/-1;">Scheme Details</div>
+      <div class="scheme-section-head row-full">Scheme Details</div>
 
       <!--
         All scheme-specific rows start with the HTML `hidden` attribute.
@@ -163,9 +163,9 @@
       >
         <!--
           Label text is set by JS on scheme change:
-          â€¢ ESPP      -> "Purchase Price (what you paid, {CCY} per share) *"
-          â€¢ ESPP_PLUS -> "Gross Purchase Price (salary funded, {CCY} per share) *"
-          â€¢ BROKERAGE -> "Acquisition Price ({CCY} per share) *"
+          - ESPP      -> "Purchase Price (what you paid, {CCY} per share) *"
+          - ESPP_PLUS -> "Gross Purchase Price (salary funded, {CCY} per share) *"
+          - BROKERAGE -> "Acquisition Price ({CCY} per share) *"
         -->
         <label id="label-purchase-price" for="purchase_price_per_share_gbp">
           Purchase Price (what you paid, GBP per share) *
@@ -254,23 +254,23 @@
         </span>
       </div>
 
-      <!-- â”€â”€ Derived Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- -- Derived Summary ------------------------------- -->
       <!--
         Hidden until: qty > 0 AND all required scheme fields filled.
         Content and label change per scheme. No placeholder dash shown
-        when data is incomplete â€” the section simply stays hidden.
+        when data is incomplete - the section simply stays hidden.
       -->
-      <div id="derived-summary-wrapper" style="grid-column:1/-1;" hidden>
+      <div id="derived-summary-wrapper" class="row-full" hidden>
         <div class="derived-summary">
           <span id="derived-summary-label" class="derived-summary__label">Estimated cost</span>
-          <span id="derived-summary-amount" class="derived-summary__amount">â€”</span>
+          <span id="derived-summary-amount" class="derived-summary__amount">-</span>
           <p id="derived-summary-caveat" class="derived-summary__caveat form-hint"></p>
         </div>
       </div>
 
     </div>
 
-    <!-- â”€â”€ Additional Details (Notes) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- -- Additional Details (Notes) ----------------------- -->
     <div class="details-accordion">
       <button
         id="details-toggle"
@@ -280,11 +280,11 @@
         aria-controls="details-body"
       >
         <span>Additional Details</span>
-        <span id="details-chevron">â–¸</span>
+        <span id="details-chevron">&#9656;</span>
       </button>
       <div id="details-body" class="details-accordion__body">
-        <div class="form-grid" style="padding:0.8rem 0 0.2rem;">
-          <div class="form-field" style="grid-column:1 / -1;">
+        <div class="form-grid form-grid-compact-top">
+          <div class="form-field row-full">
             <label for="notes">Notes</label>
             <textarea id="notes" name="notes" placeholder="Optional notes">{{ prev.notes if prev else '' }}</textarea>
           </div>
@@ -303,7 +303,7 @@
 /* Prevent .form-field { display: flex } from overriding the hidden attribute */
 [hidden] { display: none !important; }
 
-/* â”€â”€ Scheme Details section divider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Scheme Details section divider ----------------------- */
 .scheme-section-head {
   font-size: 0.72rem;
   font-weight: 600;
@@ -314,7 +314,7 @@
   padding-top: 0.35rem;
 }
 
-/* â”€â”€ "Locked 6 months" badge on Matched Shares label â”€â”€â”€â”€â”€â”€ */
+/* -- "Locked 6 months" badge on Matched Shares label ------ */
 .badge-locked {
   display: inline-block;
   background: rgba(240, 160, 48, 0.12);
@@ -329,7 +329,7 @@
   margin-left: 0.4rem;
 }
 
-/* â”€â”€ Derived Summary card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Derived Summary card ---------------------------------- */
 .derived-summary {
   display: flex;
   flex-direction: column;
@@ -357,7 +357,7 @@
   margin-top: 0.1rem;
 }
 
-/* â”€â”€ Additional Details collapsible â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Additional Details collapsible ----------------------- */
 .details-accordion {
   border: 1px solid var(--border, #2a3350);
   border-radius: 8px;
@@ -426,7 +426,7 @@
   var rsuTaxRate        = Number("{{ rsu_tax_rate }}");
   var rsuLivePrices     = {{ rsu_live_prices | tojson if rsu_live_prices else '{}' }};
 
-  /* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* -- Helpers -------------------------------------------- */
 
   function asNum(v) {
     var n = Number(v);
@@ -538,7 +538,7 @@
     }
   }
 
-  /* â”€â”€ Additional Details collapsible â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* -- Additional Details collapsible --------------------- */
 
   function openDetails(open) {
     detailsBody.classList.toggle('open', open);
@@ -550,7 +550,7 @@
     openDetails(!detailsBody.classList.contains('open'));
   });
 
-  /* â”€â”€ Scheme field visibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* -- Scheme field visibility ---------------------------- */
 
   function applySchemeVisibility() {
     var scheme = schemeSel.value;
@@ -581,9 +581,9 @@
 
     /*
       Purchase price label differs by scheme:
-      â€¢ BROKERAGE/ISA -> "Acquisition Price (GBP per share) *"
-      â€¢ ESPP      -> "Purchase Price (what you paid, GBP per share) *"
-      â€¢ ESPP_PLUS -> "Gross Purchase Price (salary funded, GBP per share) *"
+      - BROKERAGE/ISA -> "Acquisition Price (GBP per share) *"
+      - ESPP      -> "Purchase Price (what you paid, GBP per share) *"
+      - ESPP_PLUS -> "Gross Purchase Price (salary funded, GBP per share) *"
     */
     if (labelPurchase) {
       if (scheme === 'BROKERAGE' || scheme === 'ISA') {
@@ -605,7 +605,7 @@
     updateDerivedSummary();
   }
 
-  /* â”€â”€ Derived Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* -- Derived Summary ------------------------------------ */
 
   function updateDerivedSummary() {
     var scheme   = schemeSel.value;
@@ -616,7 +616,7 @@
 
     /*
       Show the card only once the minimum required inputs are present.
-      If incomplete, hide entirely â€” no placeholder dash or prompt text.
+      If incomplete, hide entirely - no placeholder dash or prompt text.
     */
     var ready = false;
     if (scheme === 'RSU')                            ready = (qty > 0);
@@ -688,7 +688,7 @@
     }
   }
 
-  /* â”€â”€ Event wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* -- Event wiring --------------------------------------- */
 
   schemeSel.addEventListener('change', applySchemeFields);
   if (securitySel) {
@@ -754,7 +754,7 @@
     });
   }
 
-  /* â”€â”€ Initialise â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* -- Initialise ----------------------------------------- */
 
   /* Auto-expand Additional Details if Notes already has content (e.g. after a validation error) */
   if (notesArea && notesArea.value.trim()) {
@@ -766,4 +766,5 @@
 })();
 </script>
 {% endblock %}
+
 

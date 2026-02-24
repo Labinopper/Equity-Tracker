@@ -1,9 +1,9 @@
-{% extends "base.html" %}
-{% block title %}Economic Gain — Equity Tracker{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}Economic Gain - Equity Tracker{% endblock %}
 
 {% block content %}
 <div class="page-title"><h1>Economic Gain Report</h1></div>
-<p class="muted" style="margin-bottom:1.25rem;">
+<p class="muted page-intro">
   Uses <em>true cost per share</em> instead of CGT cost basis.
   Most relevant for SIP Partnership shares purchased from gross salary.
 </p>
@@ -24,28 +24,28 @@
   </div>
   <div class="stat">
     <div class="stat__label">Taxable Proceeds</div>
-    <div class="stat__value">£{{ report.total_proceeds_gbp | money }}</div>
+    <div class="stat__value">&pound;{{ report.total_proceeds_gbp | money }}</div>
   </div>
   <div class="stat">
     <div class="stat__label">Economic Gains</div>
-    <div class="stat__value gain">£{{ report.total_economic_gains_gbp | money }}</div>
+    <div class="stat__value gain">&pound;{{ report.total_economic_gains_gbp | money }}</div>
   </div>
   <div class="stat">
     <div class="stat__label">Economic Losses</div>
-    <div class="stat__value loss">£{{ report.total_economic_losses_gbp | money }}</div>
+    <div class="stat__value loss">&pound;{{ report.total_economic_losses_gbp | money }}</div>
   </div>
   <div class="stat">
     <div class="stat__label">Net Economic Gain</div>
     <div class="stat__value {{ 'gain' if report.net_economic_gain_gbp >= 0 else 'loss' }}">
-      £{{ report.net_economic_gain_gbp | money }}
+      &pound;{{ report.net_economic_gain_gbp | money }}
     </div>
   </div>
 </div>
 {% if report.isa_exempt_proceeds_gbp > 0 %}
 <div class="alert alert-info">
   ISA disposals are tax-sheltered and excluded from this report total.
-  Exempt proceeds: Â£{{ report.isa_exempt_proceeds_gbp | money }}.
-  Exempt economic gain/loss: Â£{{ report.isa_exempt_economic_gain_gbp | money }}.
+  Exempt proceeds: &pound;{{ report.isa_exempt_proceeds_gbp | money }}.
+  Exempt economic gain/loss: &pound;{{ report.isa_exempt_economic_gain_gbp | money }}.
 </div>
 {% endif %}
 
@@ -77,13 +77,13 @@
           <td>{{ line.transaction.transaction_date }}</td>
           <td>{{ line.security.ticker }}</td>
           <td class="num">{{ line.total_quantity }}</td>
-          <td class="num">£{{ line.total_proceeds_gbp | money }}</td>
+          <td class="num">&pound;{{ line.total_proceeds_gbp | money }}</td>
           <td class="num">
             {% set true_cost = line.total_proceeds_gbp - line.total_economic_gain_gbp %}
-            £{{ true_cost | money }}
+            &pound;{{ true_cost | money }}
           </td>
           <td class="num {{ 'gain' if line.total_economic_gain_gbp >= 0 else 'loss' }}">
-            £{{ line.total_economic_gain_gbp | money }}
+            &pound;{{ line.total_economic_gain_gbp | money }}
           </td>
         </tr>
         {% endfor %}
@@ -94,3 +94,4 @@
 {% endif %}
 
 {% endblock %}
+

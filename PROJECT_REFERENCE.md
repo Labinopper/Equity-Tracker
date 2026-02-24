@@ -3,6 +3,7 @@
 Last updated: 2026-02-24
 
 This is the technical companion to `PROJECT_STATUS.md`.
+Current released version: `v2.1.1`.
 
 ## 1) File Role
 - Keep technical contracts, behavior rules, and architecture here.
@@ -65,6 +66,10 @@ Decision cells render either numeric values or explicit reason text. Silent blan
 ### Refresh/freshness context
 Portfolio routes include refresh diagnostics and daily-change freshness context derived from stored ticker snapshots.
 
+### Currency visibility contract
+- Broker holding currency (`USD`/`GBP`) is tracked for applicable holdings through add/edit/transfer flows.
+- Portfolio and net-value surfaces expose native-currency and GBP-converted value context with explicit FX basis metadata.
+
 ## 6) Tax and Reporting Semantics
 - ISA is treated as tax-sheltered in portfolio/reporting surfaces.
 - Taxable report totals exclude ISA activity; ISA-exempt metadata is exposed alongside totals.
@@ -78,12 +83,10 @@ Portfolio routes include refresh diagnostics and daily-change freshness context 
 5. Analytics Group B/C/D dependencies pending later EPIC stages.
 
 ## 8) Test Baseline Snapshot
-- Latest release-synced full regression (`v2.0.3`): `python -m pytest -q` -> `471 passed, 3 skipped`.
+- Latest release-synced full regression (`v2.1.1`): `python -m pytest -q` -> `487 passed, 3 skipped`.
 - Latest working-tree evidence for subsequent stages is tracked in `todo.md` and `CODEX_PROGRESS.md`.
 
-## 9) Technical Roadmap Dependencies
-1. ET20-EPIC-04 (`v2.1.0` target): calendar events/timeline service and routes.
-2. ET20-EPIC-06 Phase A (`v2.1.1` target): broker currency lifecycle + native/GBP value context.
-3. CF-06 (`v2.1.2`): inline style and encoding debt cleanup.
-4. ET20-EPIC-08 expansion (`v2.2.0` onward): tax/risk/timeline chart groups.
-5. ET20-EPIC-01 and ET20-EPIC-02 feed later planning/analytics/scenario work.
+## 9) Technical Roadmap Dependencies (Next)
+1. CF-06 (`v2.1.2`): inline style and encoding debt cleanup.
+2. ET20-EPIC-08 expansion (`v2.2.0` onward): tax/risk/timeline chart groups.
+3. ET20-EPIC-01 and ET20-EPIC-02 feed later planning/analytics/scenario work.

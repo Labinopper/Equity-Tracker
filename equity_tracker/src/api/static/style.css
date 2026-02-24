@@ -1,5 +1,5 @@
 ﻿/* =========================================================
-   Equity Tracker â€” IB-inspired dark design system
+   Equity Tracker - IB-inspired dark design system
    Deep navy palette, Inter + JetBrains Mono, teal/red P&L.
    ========================================================= */
 
@@ -85,7 +85,7 @@
   --shadow-sm:  0 2px 6px rgba(0,0,0,0.35);
 }
 
-/* â”€â”€ Reset & base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Reset & base --------------------------------------- */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -118,7 +118,7 @@ code, pre {
   border-radius: var(--radius);
 }
 
-/* â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Layout --------------------------------------------- */
 
 .layout {
   display: flex;
@@ -213,7 +213,7 @@ code, pre {
   margin: 0 auto;
 }
 
-/* â”€â”€ Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Cards ---------------------------------------------- */
 
 .card {
   background: var(--bg-card);
@@ -240,7 +240,7 @@ code, pre {
   color: var(--text-heading);
 }
 
-/* â”€â”€ Security cards (portfolio) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Security cards (portfolio) ------------------------- */
 
 .security-header {
   display: flex;
@@ -432,7 +432,7 @@ code, pre {
   border-top: 1px solid var(--border);
 }
 
-/* â”€â”€ Tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Tables --------------------------------------------- */
 
 .table-wrap { overflow-x: auto; }
 
@@ -685,7 +685,7 @@ tr:hover td.loss {
 .loss { color: var(--loss); }
 .muted { color: var(--text-muted); font-size: 0.85em; }
 
-/* â”€â”€ Summary stat tiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Summary stat tiles --------------------------------- */
 
 .stats {
   display: flex;
@@ -733,7 +733,7 @@ tr:hover td.loss {
 .stat__value.gain { color: var(--gain); }
 .stat__value.loss { color: var(--loss); }
 
-/* â”€â”€ Forms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Forms ---------------------------------------------- */
 
 .form-grid {
   display: grid;
@@ -796,7 +796,7 @@ tr:hover td.loss {
   padding-top: 0.5rem;
 }
 
-/* â”€â”€ Buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Buttons -------------------------------------------- */
 
 .btn {
   display: inline-flex;
@@ -844,7 +844,7 @@ tr:hover td.loss {
 }
 .btn-danger:hover { background: var(--loss-bg); }
 
-/* â”€â”€ Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Alerts --------------------------------------------- */
 
 .alert {
   padding: 0.75rem 1rem;
@@ -878,7 +878,7 @@ tr:hover td.loss {
   color: #f0c070;
 }
 
-/* â”€â”€ Badges â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Badges --------------------------------------------- */
 
 .badge {
   display: inline-block;
@@ -919,7 +919,7 @@ tr:hover td.loss {
   font-size: 0.72rem; font-family: var(--font-mono); white-space: pre-wrap;
   word-break: break-all; max-height: 160px; overflow-y: auto; }
 
-/* â”€â”€ Tax / CGT result panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Tax / CGT result panel ----------------------------- */
 
 .cgt-panel {
   background: var(--bg-card);
@@ -971,7 +971,7 @@ tr:hover td.loss {
 }
 .cgt-notes ul { list-style: disc; padding-left: 1.25rem; }
 
-/* â”€â”€ Section headings with actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Section headings with actions --------------------- */
 
 .section-header {
   display: flex;
@@ -982,7 +982,7 @@ tr:hover td.loss {
 
 .section-header h2 { margin: 0; }
 
-/* â”€â”€ Locked page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Locked page ---------------------------------------- */
 
 .locked-page {
   display: flex;
@@ -1003,7 +1003,7 @@ tr:hover td.loss {
   margin-bottom: 0.5rem;
 }
 
-/* â”€â”€ Page title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Page title ----------------------------------------- */
 
 .page-title {
   margin-bottom: 1.5rem;
@@ -1385,7 +1385,7 @@ tr:hover td.loss {
 
 .transfer-warning { margin-bottom: 1rem; }
 
-/* â”€â”€ Empty state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Empty state ---------------------------------------- */
 
 .empty-state {
   text-align: center;
@@ -1394,7 +1394,7 @@ tr:hover td.loss {
   font-size: 0.9rem;
 }
 
-/* â”€â”€ Tax year tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Tax year tabs -------------------------------------- */
 
 .tax-year-tabs {
   display: flex;
@@ -1425,7 +1425,7 @@ tr:hover td.loss {
   color: #fff;
 }
 
-/* â”€â”€ Filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Filter bar ----------------------------------------- */
 
 .filter-bar {
   display: flex;
@@ -1452,7 +1452,294 @@ tr:hover td.loss {
   border-color: var(--accent);
 }
 
-/* â”€â”€ Net value expandable panels (<details>) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* CF-06 template cleanup helpers */
+.page-intro {
+  margin-bottom: 1.25rem;
+}
+
+.page-intro-lg {
+  margin-bottom: 1.5rem;
+}
+
+.filter-bar-spacious {
+  margin-bottom: 1.25rem;
+}
+
+.filter-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.inline-field-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.input-w-120 {
+  width: 120px;
+}
+
+.alert-top {
+  margin-top: 1rem;
+}
+
+.alert-top-lg {
+  margin-top: 1.5rem;
+}
+
+.cgt-item__value--total {
+  font-size: 1.4rem;
+  color: var(--text-heading);
+}
+
+.audit-record-id {
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.audit-changes-cell {
+  font-size: 0.8rem;
+  max-width: 420px;
+}
+
+.row-full {
+  grid-column: 1 / -1;
+}
+
+.form-grid-compact-top {
+  padding: 0.8rem 0 0.2rem;
+}
+
+.inline-flex-gap-sm {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.section-title-sm {
+  margin-bottom: 0.75rem;
+}
+
+.warning-value {
+  color: var(--warning);
+}
+
+.badge-inline-tight {
+  font-size: 0.72rem;
+  margin-left: 0.3rem;
+}
+
+.table-total-right {
+  text-align: right;
+}
+
+.note-small-top {
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.forfeiture-warning-note {
+  margin: 0.4rem 0 0.75rem;
+}
+
+.forfeiture-wait-note {
+  font-size: 0.85rem;
+}
+
+.badge-success-soft {
+  background: #1e3a1e;
+  color: #6dc98a;
+}
+
+.badge-danger-soft {
+  background: #3a1e1e;
+  color: #f09090;
+}
+
+.card-result {
+  margin-top: 1.5rem;
+}
+
+.card-commit {
+  margin-top: 1rem;
+  border-color: var(--success);
+}
+
+.commit-note {
+  font-size: 0.85rem;
+}
+
+.form-field-end {
+  justify-content: flex-end;
+  padding-bottom: 0.5rem;
+}
+
+.card-top {
+  margin-top: 1rem;
+}
+
+.danger-zone-title {
+  margin-top: 0;
+}
+
+.catalog-search-field {
+  position: relative;
+}
+
+.catalog-search-input {
+  padding-right: 2rem;
+}
+
+.catalog-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  margin-top: 2px;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+
+.catalog-dropdown__empty {
+  padding: 0.6rem 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.catalog-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.catalog-dropdown__item:last-child {
+  border-bottom: none;
+}
+
+.catalog-dropdown__item:hover {
+  background: var(--bg-hover);
+}
+
+.catalog-dropdown__symbol {
+  font-family: var(--font-mono);
+  color: var(--text-heading);
+  font-weight: 600;
+  min-width: 4.5rem;
+}
+
+.catalog-dropdown__name {
+  flex: 1;
+  color: var(--text);
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.catalog-dropdown__meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.selected-instrument {
+  display: none;
+  margin-bottom: 1rem;
+}
+
+.selected-instrument__chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.selected-instrument__symbol {
+  font-family: var(--font-mono);
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.selected-instrument__sep {
+  color: var(--text-muted);
+}
+
+.selected-instrument__name {
+  flex: 1;
+  color: var(--text);
+}
+
+.selected-instrument__meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.icon-btn-muted {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+
+.icon-btn-muted:hover {
+  color: var(--text-heading);
+}
+
+.manual-toggle-wrap {
+  margin-top: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.link-btn--offset-left {
+  padding-left: 0.5rem;
+}
+
+.manual-section {
+  display: none;
+}
+
+.manual-warning {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  color: var(--warning);
+}
+
+/* -- Net value expandable panels (<details>) ----------- */
 
 .net-panel { border-top: 1px solid var(--border); }
 
@@ -1491,7 +1778,7 @@ tr:hover td.loss {
   border-top: 1px solid var(--border);
 }
 
-/* â”€â”€ Net value page grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Net value page grid -------------------------------- */
 
 .net-value-grid {
   display: grid;
@@ -1521,7 +1808,7 @@ tr:hover td.loss {
   margin-top: 0.15rem;
 }
 
-/* â”€â”€ Responsive helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Responsive helpers --------------------------------- */
 
 @media (max-width: 768px) {
   .topbar { gap: 0; padding: 0 1rem; }
@@ -1555,7 +1842,7 @@ tr:hover td.loss {
   .stats .stat { min-width: 100%; }
 }
 
-/* â”€â”€ Print styles (net-value page) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* -- Print styles (net-value page) --------------------- */
 
 @media print {
   .topbar,
@@ -1576,4 +1863,5 @@ tr:hover td.loss {
 
   a[href]::after { content: ''; }
 }
+
 

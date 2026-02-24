@@ -1,15 +1,15 @@
-{% extends "base.html" %}
-{% block title %}Audit Log — Equity Tracker{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}Audit Log - Equity Tracker{% endblock %}
 
 {% block content %}
 <div class="page-title"><h1>Audit Log</h1></div>
-<p class="muted" style="margin-bottom:1.25rem;">
+<p class="muted page-intro">
   Append-only record of all data mutations. Newest entries first.
 </p>
 
 <!-- Filter bar -->
-<form method="get" action="/audit" class="filter-bar" style="margin-bottom:1rem;">
-  <label for="table_name" style="font-size:0.85rem; color:var(--text-muted);">Filter by table:</label>
+<form method="get" action="/audit" class="filter-bar">
+  <label for="table_name" class="filter-label">Filter by table:</label>
   <select id="table_name" name="table_name" onchange="this.form.submit()">
     <option value="">All tables</option>
     {% for t in tables %}
@@ -52,10 +52,10 @@
               {{ e.action }}
             </span>
           </td>
-          <td class="muted" style="font-size:0.8rem; font-family:var(--font-mono);">
-            {{ e.record_id[:8] }}…
+          <td class="muted audit-record-id">
+            {{ e.record_id[:8] }}...
           </td>
-          <td style="font-size:0.8rem; max-width:420px;">
+          <td class="audit-changes-cell">
             {% if e.old_values_json or e.new_values_json %}
             <div class="audit-changes">
               {% if e.old_values_json %}
@@ -74,7 +74,7 @@
             {% elif e.notes %}
             <span class="muted">{{ e.notes }}</span>
             {% else %}
-            <span class="muted">—</span>
+            <span class="muted">&mdash;</span>
             {% endif %}
           </td>
         </tr>
@@ -86,3 +86,4 @@
 {% endif %}
 
 {% endblock %}
+

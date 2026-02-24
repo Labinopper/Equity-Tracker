@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% block title %}Add Security — Equity Tracker{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}Add Security - Equity Tracker{% endblock %}
 
 {% block content %}
 <div class="page-title"><h1>Add Security</h1></div>
@@ -11,7 +11,7 @@
 <div class="card">
   <form method="post" action="/portfolio/add-security" id="add-security-form">
 
-    {# ── Hidden fields populated by catalogue selection or manual form ── #}
+    {# -- Hidden fields populated by catalogue selection or manual form -- #}
     <input type="hidden" name="catalog_id"          id="f-catalog-id"   value="{{ prev.catalog_id if prev else '' }}">
     <input type="hidden" name="is_manual_override"  id="f-manual-flag"  value="{{ 'true' if (prev and prev.is_manual_override) else 'false' }}">
     <input type="hidden" name="ticker"              id="f-ticker"       value="{{ prev.ticker if prev else '' }}">
@@ -20,40 +20,29 @@
     <input type="hidden" name="exchange"            id="f-exchange"     value="{{ prev.exchange if prev else '' }}">
     <input type="hidden" name="isin"                id="f-isin"         value="{{ prev.isin if prev else '' }}">
 
-    {# ── Catalogue search ─────────────────────────────────────────────── #}
+    {# -- Catalogue search ----------------------------------------------- #}
     <div id="catalog-section">
-      <div class="form-field" style="position:relative;">
+      <div class="form-field catalog-search-field">
         <label for="catalog-search">Search Instrument *</label>
         <input id="catalog-search" type="text" autocomplete="off"
-               placeholder="Type ticker or company name…"
+               placeholder="Type ticker or company name..."
                value="{{ prev.ticker if prev and not prev.is_manual_override else '' }}"
-               style="padding-right: 2rem;">
+               class="catalog-search-input">
         <span class="form-hint">Start typing to search LSE, NYSE, and NASDAQ listings.</span>
 
         {# Dropdown results #}
-        <ul id="catalog-dropdown" role="listbox" aria-label="Instrument suggestions"
-            style="display:none; position:absolute; top:100%; left:0; right:0; z-index:200;
-                   background:var(--bg-card); border:1px solid var(--border-strong);
-                   border-radius:var(--radius); margin-top:2px; list-style:none;
-                   max-height:280px; overflow-y:auto; box-shadow:var(--shadow);"></ul>
+        <ul id="catalog-dropdown" role="listbox" aria-label="Instrument suggestions" class="catalog-dropdown"></ul>
       </div>
 
       {# Selected instrument chip #}
-      <div id="selected-instrument" style="display:none; margin-bottom:1rem;">
-        <div style="display:flex; align-items:center; gap:0.5rem; padding:0.6rem 0.8rem;
-                    background:var(--bg-input); border:1px solid var(--border-strong);
-                    border-radius:var(--radius);">
-          <span style="font-family:var(--font-mono); color:var(--text-heading); font-weight:600;"
-                id="chip-symbol"></span>
-          <span style="color:var(--text-muted);">—</span>
-          <span id="chip-name" style="flex:1; color:var(--text);"></span>
-          <span id="chip-exchange" style="font-size:0.75rem; color:var(--text-muted);
-                padding:0.1rem 0.4rem; border:1px solid var(--border); border-radius:var(--radius);"></span>
-          <span id="chip-currency" style="font-size:0.75rem; color:var(--text-muted);
-                padding:0.1rem 0.4rem; border:1px solid var(--border); border-radius:var(--radius);"></span>
-          <button type="button" id="clear-selection" aria-label="Clear selection"
-                  style="background:none; border:none; cursor:pointer; color:var(--text-muted);
-                         font-size:1.1rem; line-height:1; padding:0 0.2rem;">&times;</button>
+      <div id="selected-instrument" class="selected-instrument">
+        <div class="selected-instrument__chip">
+          <span class="selected-instrument__symbol" id="chip-symbol"></span>
+          <span class="selected-instrument__sep">&mdash;</span>
+          <span id="chip-name" class="selected-instrument__name"></span>
+          <span id="chip-exchange" class="selected-instrument__meta"></span>
+          <span id="chip-currency" class="selected-instrument__meta"></span>
+          <button type="button" id="clear-selection" aria-label="Clear selection" class="icon-btn-muted">&times;</button>
         </div>
       </div>
 
@@ -66,24 +55,18 @@
       </div>
 
       {# Manual override toggle #}
-      <div style="margin-top:0.25rem; margin-bottom:1rem;">
-        <button type="button" id="toggle-manual"
-                style="background:none; border:none; cursor:pointer; color:var(--accent);
-                       font-size:0.85rem; padding:0; text-decoration:underline;">
+      <div class="manual-toggle-wrap">
+        <button type="button" id="toggle-manual" class="link-btn">
           Add unlisted instrument
         </button>
       </div>
     </div>
 
-    {# ── Manual override form ─────────────────────────────────────────── #}
-    <div id="manual-section" style="display:none;">
-      <div style="margin-bottom:1rem; padding:0.6rem 0.9rem;
-                  background:var(--warning-bg); border:1px solid var(--warning);
-                  border-radius:var(--radius); font-size:0.85rem; color:var(--warning);">
-        Manual entry — this instrument will not be validated against the catalogue.
-        <button type="button" id="cancel-manual"
-                style="background:none; border:none; cursor:pointer; color:var(--accent);
-                       font-size:0.85rem; padding:0 0 0 0.5rem; text-decoration:underline;">
+    {# -- Manual override form ------------------------------------------- #}
+    <div id="manual-section" class="manual-section">
+      <div class="manual-warning">
+        Manual entry - this instrument will not be validated against the catalogue.
+        <button type="button" id="cancel-manual" class="link-btn link-btn--offset-left">
           Back to catalogue search
         </button>
       </div>
@@ -148,7 +131,7 @@
 (function () {
   "use strict";
 
-  /* ── DOM refs ───────────────────────────────────────────────────────── */
+  /* -- DOM refs --------------------------------------------------------- */
   const searchInput     = document.getElementById("catalog-search");
   const dropdown        = document.getElementById("catalog-dropdown");
   const selectedChip    = document.getElementById("selected-instrument");
@@ -186,7 +169,7 @@
   let debounceTimer = null;
   let isManualMode  = false;
 
-  /* ── Restore state on error re-render ──────────────────────────────── */
+  /* -- Restore state on error re-render -------------------------------- */
   (function restoreState () {
     const prevManual = fManualFlag.value === "true";
     if (prevManual) {
@@ -196,7 +179,7 @@
     }
   })();
 
-  /* ── Catalogue search ───────────────────────────────────────────────── */
+  /* -- Catalogue search ------------------------------------------------- */
   searchInput.addEventListener("input", function () {
     clearTimeout(debounceTimer);
     const q = searchInput.value.trim();
@@ -229,8 +212,8 @@
     dropdown.innerHTML = "";
     if (!items.length) {
       const li = document.createElement("li");
+      li.className = "catalog-dropdown__empty";
       li.textContent = "No matches found.";
-      li.style.cssText = "padding:0.6rem 0.8rem; color:var(--text-muted); font-size:0.85rem;";
       dropdown.appendChild(li);
       dropdown.style.display = "block";
       return;
@@ -245,27 +228,14 @@
       li.dataset.exchange = item.exchange;
       li.dataset.currency = item.currency;
       li.dataset.isin     = item.isin || "";
-
-      li.style.cssText = [
-        "display:flex; align-items:center; gap:0.6rem;",
-        "padding:0.55rem 0.8rem; cursor:pointer;",
-        "border-bottom:1px solid var(--border);",
-      ].join("");
+      li.className = "catalog-dropdown__item";
 
       li.innerHTML = [
-        '<span style="font-family:var(--font-mono);color:var(--text-heading);',
-        'font-weight:600;min-width:4.5rem;">' + esc(item.symbol) + "</span>",
-        '<span style="flex:1;color:var(--text);font-size:0.9rem;">' + esc(item.name) + "</span>",
-        '<span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">',
+        '<span class="catalog-dropdown__symbol">' + esc(item.symbol) + "</span>",
+        '<span class="catalog-dropdown__name">' + esc(item.name) + "</span>",
+        '<span class="catalog-dropdown__meta">',
         esc(item.exchange) + " &middot; " + esc(item.currency) + "</span>",
       ].join("");
-
-      li.addEventListener("mouseenter", function () {
-        li.style.background = "var(--bg-hover)";
-      });
-      li.addEventListener("mouseleave", function () {
-        li.style.background = "";
-      });
       li.addEventListener("click", function () {
         selectEntry(item);
       });
@@ -281,7 +251,7 @@
     dropdown.innerHTML = "";
   }
 
-  /* ── Selection ──────────────────────────────────────────────────────── */
+  /* -- Selection -------------------------------------------------------- */
   function selectEntry(item) {
     fCatalogId.value  = item.id;
     fManualFlag.value = "false";
@@ -319,7 +289,7 @@
     submitBtn.disabled = true;
   });
 
-  /* ── Manual override ────────────────────────────────────────────────── */
+  /* -- Manual override -------------------------------------------------- */
   toggleManualBtn.addEventListener("click", function () {
     activateManualMode(true);
   });
@@ -382,7 +352,7 @@
     checkReady();
   }
 
-  /* ── HTML escape ────────────────────────────────────────────────────── */
+  /* -- HTML escape ------------------------------------------------------ */
   function esc(str) {
     return String(str)
       .replace(/&/g, "&amp;")
@@ -391,10 +361,12 @@
       .replace(/"/g, "&quot;");
   }
 
-  /* ── Initial submit button state ────────────────────────────────────── */
+  /* -- Initial submit button state -------------------------------------- */
   if (fCatalogId.value || fManualFlag.value === "true") {
     submitBtn.disabled = false;
   }
 })();
 </script>
 {% endblock %}
+
+

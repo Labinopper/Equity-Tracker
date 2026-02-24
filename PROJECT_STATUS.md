@@ -1,7 +1,7 @@
 # Equity Tracker - Project Status
 
 Last updated: 2026-02-24  
-Current released version: `v2.0.3`
+Current released version: `v2.1.1`
 
 ## Document Ownership (Single Responsibility)
 - `PROJECT_STATUS.md`: high-level source of truth (released version, current state, roadmap order).
@@ -25,17 +25,18 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 ## Release Snapshot (Recent)
 | Version | Date | Summary |
 |---|---|---|
+| `v2.1.1` | 2026-02-24 | ET20-EPIC-06 Phase A broker currency tracking: broker holding currency lifecycle (`USD`/`GBP`) across add/edit/transfer plus native+GBP visibility and explicit FX basis context. |
+| `v2.1.0` | 2026-02-24 | ET20-EPIC-04 calendar timeline delivery (`/calendar`, `/api/calendar/events`) for vest/forfeiture/tax event visibility. |
 | `v2.0.3` | 2026-02-24 | ET20-EPIC-08 Phase 1 analytics foundation (`/analytics`, summary/time-series APIs, chart theme). |
 | `v2.0.2` | 2026-02-24 | CF-05 TemplateResponse request-first migration. |
 | `v2.0.1` | 2026-02-24 | CF-04 global hide-values privacy mode. |
 | `v2.0.0` | 2026-02-24 | ET20-EPIC-03 risk panel (`/risk`, `/api/risk/summary`). |
-| `v1.9.17` | 2026-02-24 | Market-aware ticker freshness with snapshot history and open/closed session messaging. |
 
 ## Current Delivery Status
 - S1-S7 usability baseline is implemented.
-- v2 foundations shipped: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1.
-- Latest released full regression: `471 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
-- Working tree implementation has progressed beyond `v2.0.3` (calendar and broker-currency workstreams), but release/version sync is still pending review.
+- v2 shipped through `v2.1.1`: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1, Calendar timeline, and Broker Currency Phase A.
+- Latest released full regression: `487 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
+- Next planned stage: `v2.1.2` CF-06 UI polish debt cleanup.
 
 ## In-Scope Capability Summary
 - Portfolio, per-lot, and per-scheme decision surfaces in GBP.
@@ -53,17 +54,15 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 4. Analytics Groups B/C/D depend on subsequent EPIC delivery.
 
 ## Roadmap (Ordered)
-1. `v2.1.0` ET20-EPIC-04 Calendar timeline (`/calendar`, `/api/calendar/events`).
-2. `v2.1.1` ET20-EPIC-06 Phase A Broker Currency Tracking (urgent): broker holding currency lifecycle (`USD`/`GBP`), native+GBP visibility, explicit FX basis context.
-3. `v2.1.2` CF-06 UI polish debt reduction (inline style and encoding cleanup).
-4. `v2.2.0` ET20-EPIC-08 Analytics expansion (Groups A+B completion).
-5. `v2.3.0` ET20-EPIC-01 Tax-Year Realization Planner.
-6. `v2.4.0` ET20-EPIC-02 Dividend net-return/tax-drag dashboard.
-7. `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL enhancements.
-8. `v2.6.0` ET20-EPIC-05 Scenario Lab.
-9. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
-10. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
-11. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening.
+1. `v2.1.2` CF-06 UI polish debt reduction (inline style and encoding cleanup).
+2. `v2.2.0` ET20-EPIC-08 Analytics expansion (Groups A+B completion).
+3. `v2.3.0` ET20-EPIC-01 Tax-Year Realization Planner.
+4. `v2.4.0` ET20-EPIC-02 Dividend net-return/tax-drag dashboard.
+5. `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL enhancements.
+6. `v2.6.0` ET20-EPIC-05 Scenario Lab.
+7. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
+8. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
+9. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening.
 
 ## Working Rules
 - Keep this file short and decision-focused.
