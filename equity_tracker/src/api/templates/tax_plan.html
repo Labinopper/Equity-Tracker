@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Tax Plan - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Tax Plan</h1>
+    <p class="muted">Tax-year realization planner with lot-level projections and April rollover comparison.</p>
+  </div>
+</div>
+
+<p class="muted">As of {{ tax_plan.as_of_date }}. Generated {{ tax_plan.generated_at_utc }}.</p>
+
+{% if tax_plan.hide_values %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Planner Hidden</h2>
+  </div>
+  <p class="muted">{{ tax_plan.hidden_reason }}</p>
+</div>
+{% else %}
+{% set realised = tax_plan.summary.realised_to_date %}
+{% set cross_year = tax_plan.summary.cross_year_comparison %}
+<div class="stats">
+  <div class="stat stat--accent">
+    <span class="stat__label">Active Tax Year</span>
+    <span class="stat__value">{{ tax_plan.active_tax_year }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Net Gain to Date</span>
+    <span class="stat__value">&pound;{{ realised.net_gain_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Remaining AEA</span>
+    <span class="stat__value">&pound;{{ realised.remaining_aea_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Incremental CGT Difference If Wait</span>
+    <span class="stat__value">&pound;{{ cross_year.incremental_cgt_difference_if_wait_gbp|money }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Assumptions</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Current Tax Year End</th>
+          <td>{{ tax_plan.assumptions.tax_year_boundary.current_tax_year_end }}</td>
+        </tr>
+        <tr>
+          <th>Next Tax Year Start</th>
+          <td>{{ tax_plan.assumptions.tax_year_boundary.next_tax_year_start }}</td>
+        </tr>
+        <tr>
+          <th>Gross Employment Income</th>
+          <td>&pound;{{ tax_plan.assumptions.income_context.gross_employment_income_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Pension Sacrifice</th>
+          <td>&pound;{{ tax_plan.assumptions.income_context.pension_sacrifice_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Other Income</th>
+          <td>&pound;{{ tax_plan.assumptions.income_context.other_income_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Student Loan Plan</th>
+          <td>{{ tax_plan.assumptions.income_context.student_loan_plan if tax_plan.assumptions.income_context.student_loan_plan is not none else 'None' }}</td>
+        </tr>
+        <tr>
+          <th>Prior-Year Losses Assumed</th>
+          <td>&pound;{{ tax_plan.assumptions.income_context.prior_year_losses_assumed_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Stale Price Inputs</th>
+          <td>{{ tax_plan.assumptions.input_freshness.stale_price_security_count }}</td>
+        </tr>
+        <tr>
+          <th>Stale FX Inputs</th>
+          <td>{{ tax_plan.assumptions.input_freshness.stale_fx_security_count }}</td>
+        </tr>
+        <tr>
+          <th>Unpriced Lots</th>
+          <td>{{ tax_plan.assumptions.input_freshness.unpriced_lot_count }}</td>
+        </tr>
+        <tr>
+          <th>Employment-Tax Events (Current Year)</th>
+          <td>{{ tax_plan.assumptions.employment_tax_events_current_year.count }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Sell Before vs After April</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scenario</th>
+          <th>Tax Year</th>
+          <th>Date Assumed</th>
+          <th class="num">Projected Total CGT</th>
+          <th class="num">Incremental CGT</th>
+          <th class="num">Projected Taxable Gain</th>
+          <th class="num">Projected Remaining AEA</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Sell Before Tax-Year End</td>
+          <td>{{ cross_year.sell_before_tax_year_end.tax_year }}</td>
+          <td>{{ cross_year.sell_before_tax_year_end.assumed_disposal_date }}</td>
+          <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_total_cgt_gbp|money }}</td>
+          <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_incremental_cgt_gbp|money }}</td>
+          <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_taxable_gain_gbp|money }}</td>
+          <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_remaining_aea_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td>Sell After Tax-Year Rollover</td>
+          <td>{{ cross_year.sell_after_tax_year_rollover.tax_year }}</td>
+          <td>{{ cross_year.sell_after_tax_year_rollover.assumed_disposal_date }}</td>
+          <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_total_cgt_gbp|money }}</td>
+          <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_incremental_cgt_gbp|money }}</td>
+          <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_taxable_gain_gbp|money }}</td>
+          <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_remaining_aea_gbp|money }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Per-Lot Projection</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th>Lot ID</th>
+          <th>Scheme</th>
+          <th>Status</th>
+          <th class="num">Qty</th>
+          <th class="num">Market Value</th>
+          <th class="num">Cost Basis</th>
+          <th class="num">Projected Gain</th>
+          <th class="num">Incremental CGT (Current Year)</th>
+          <th class="num">Incremental CGT (Next Year)</th>
+          <th class="num">Difference If Wait</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if tax_plan.lots %}
+          {% for row in tax_plan.lots %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td><code>{{ row.lot_id }}</code></td>
+            <td>{{ row.scheme_label }}</td>
+            <td>
+              {{ row.sellability_status }}
+              {% if row.sellability_unlock_date %}
+              <div class="muted">Unlocks {{ row.sellability_unlock_date }}</div>
+              {% endif %}
+              {% if row.projection_unavailable_reason %}
+              <div class="muted">{{ row.projection_unavailable_reason }}</div>
+              {% endif %}
+            </td>
+            <td class="num">{{ row.quantity_remaining }}</td>
+            <td class="num">
+              {% if row.market_value_gbp is not none %}
+              &pound;{{ row.market_value_gbp|money }}
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td class="num">&pound;{{ row.cost_basis_gbp|money }}</td>
+            <td class="num">
+              {% if row.projected_gain_gbp is not none %}
+              &pound;{{ row.projected_gain_gbp|money }}
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if row.if_sold_current_year_incremental_cgt_gbp is not none %}
+              &pound;{{ row.if_sold_current_year_incremental_cgt_gbp|money }}
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if row.if_sold_next_year_incremental_cgt_gbp is not none %}
+              &pound;{{ row.if_sold_next_year_incremental_cgt_gbp|money }}
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if row.incremental_cgt_difference_wait_gbp is not none %}
+              &pound;{{ row.incremental_cgt_difference_wait_gbp|money }}
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="11" class="muted">No active lots available.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if tax_plan.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in tax_plan.notes %}
+        <tr>
+          <td>{{ note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

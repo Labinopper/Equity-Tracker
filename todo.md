@@ -31,7 +31,8 @@
 - [ ] P1 (`ET20-EPIC-02`): Add Dividend workflow (input form/path to create dividend records), so dividend dashboard work has first-class data entry.
 - [ ] P2 (`ET20-EPIC-06 Phase B`): Add Currency workflow next to Add Lot (mirrors Add Lot UX, tailored to currency balances/holdings).
 - [ ] P3 low priority (reporting QoL, schedule after `ET20-EPIC-01`): Refine CGT view tax-year selection UX.
-
+- [ ] TIdy up graphs - small graphs, several to a row.  Not full screen graphs.
+- [ ] Assess usability of the graphs - Do they align with the stated purpose of this project?
 ---
 
 ## Recent Completed Evidence

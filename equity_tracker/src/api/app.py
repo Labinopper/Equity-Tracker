@@ -64,6 +64,7 @@ from .routers import (
     reports,
     risk,
     settings,
+    tax_plan,
     ui,
 )
 
@@ -239,6 +240,7 @@ app.include_router(prices.router)
 app.include_router(reports.router)
 app.include_router(risk.router)
 app.include_router(settings.router)
+app.include_router(tax_plan.router)
 app.include_router(ui.router)
 
 
