@@ -21,6 +21,7 @@ _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 
 def _locked_response(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
+        request,
         "locked.html",
         {"request": request},
         status_code=503,
@@ -45,6 +46,7 @@ async def risk_page(request: Request) -> HTMLResponse:
     settings = AppSettings.load(db_path) if db_path else None
     summary = RiskService.get_risk_summary(settings=settings)
     return templates.TemplateResponse(
+        request,
         "risk.html",
         {
             "request": request,

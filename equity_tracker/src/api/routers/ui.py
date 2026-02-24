@@ -232,6 +232,7 @@ class SecurityDailyChange:
 
 def _locked_response(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
+        request,
         "locked.html",
         {"request": request},
         status_code=503,
@@ -246,7 +247,11 @@ def _html_template_response(
     status_code: int = 200,
 ) -> HTMLResponse:
     """Render HTML templates with explicit UTF-8 content type."""
+    req = context.get("request")
+    if req is None:
+        raise KeyError("Template context must include 'request'.")
     return templates.TemplateResponse(
+        req,
         name,
         context,
         status_code=status_code,
@@ -1593,6 +1598,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
     )
     portfolio_net_gain_if_sold = _portfolio_net_gain_if_sold(position_rows_by_security)
     return templates.TemplateResponse(
+        request,
         "portfolio.html",
         {
             "request": request,
@@ -1652,6 +1658,7 @@ async def net_value(request: Request) -> HTMLResponse:
         use_live_true_cost=False,
     )
     return templates.TemplateResponse(
+        request,
         "net_value.html",
         {
             "request": request,
@@ -1676,6 +1683,7 @@ async def add_security_form(
     if _is_locked():
         return _locked_response(request)
     return templates.TemplateResponse(
+        request,
         "add_security.html",
         {"request": request, "error": error},
     )
@@ -1716,6 +1724,7 @@ async def add_security_submit(
         )
     except (ValueError, IntegrityError) as exc:
         return templates.TemplateResponse(
+            request,
             "add_security.html",
             {
                 "request": request,
@@ -1787,6 +1796,7 @@ async def add_lot_form(
         if ss.current_price_gbp is not None
     }
     return templates.TemplateResponse(
+        request,
         "add_lot.html",
         {
             "request": request,
@@ -1852,6 +1862,7 @@ async def add_lot_submit(
             else None
         )
         return templates.TemplateResponse(
+            request,
             "add_lot.html",
             {
                 "request": request,
@@ -2797,6 +2808,7 @@ async def cgt_report(
     )
 
     return templates.TemplateResponse(
+        request,
         "cgt_report.html",
         {
             "request": request,
@@ -2833,6 +2845,7 @@ async def economic_gain_report(
     report = ReportService.economic_gain_summary(active_year)
 
     return templates.TemplateResponse(
+        request,
         "economic_gain.html",
         {
             "request": request,
@@ -2856,6 +2869,7 @@ async def audit_log(
     entries = ReportService.audit_log(table_name=table_name or None)
     tables = ["lots", "securities", "transactions", "lot_disposals"]
     return templates.TemplateResponse(
+        request,
         "audit_log.html",
         {
             "request": request,
