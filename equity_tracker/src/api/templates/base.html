@@ -18,6 +18,7 @@
     <nav class="topbar__nav">
       <a href="/"              class="{{ 'active' if request.url.path == '/' }}">Portfolio</a>
       <a href="/per-scheme"    class="{{ 'active' if request.url.path == '/per-scheme' }}">Per Scheme</a>
+      <a href="/analytics"     class="{{ 'active' if request.url.path == '/analytics' }}">Analytics</a>
       <a href="/risk"          class="{{ 'active' if request.url.path == '/risk' }}">Risk</a>
       <a href="/simulate"      class="{{ 'active' if request.url.path == '/simulate' }}">Simulate</a>
       <a href="/cgt"           class="{{ 'active' if request.url.path == '/cgt' }}">CGT</a>
@@ -42,5 +43,6 @@
   </main>
 
 </div>
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,701 @@
+{% extends "base.html" %}
+{% block title %}Analytics - Equity Tracker{% endblock %}
+
+{% block content %}
+{% set widgets = analytics_summary.widgets %}
+<div class="page-title">
+  <div>
+    <h1>Analytics</h1>
+    <p class="muted">Configurable chart widgets for portfolio structure and decision context.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Widget Visibility</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Widget</th>
+          <th>Show</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Portfolio Value Over Time</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="portfolio-value-time" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Value by Scheme</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="scheme-concentration" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Top Holdings</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="security-concentration" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Sellable vs Locked vs At-Risk</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="liquidity-breakdown" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Unrealised P&amp;L by Security</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="unrealised-pnl" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="portfolio-value-time">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.portfolio_value_time.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.portfolio_value_time.subtitle }}</p>
+  {% if widgets.portfolio_value_time.price_as_of %}
+  <p class="muted">Prices as of {{ widgets.portfolio_value_time.price_as_of }}</p>
+  {% endif %}
+  <canvas id="chart-portfolio-value-time" aria-label="Portfolio value over time chart"></canvas>
+  <p class="muted" data-empty-for="portfolio-value-time" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-portfolio-value-time">
+    Show table
+  </button>
+  <div id="table-portfolio-value-time" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="num">Total Value</th>
+          <th class="num">Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.portfolio_value_time.points %}
+          {% for row in widgets.portfolio_value_time.points %}
+          <tr>
+            <td>{{ row.date }}</td>
+            <td class="num">&pound;{{ row.total_value_gbp|money }}</td>
+            <td class="num">{{ row.priced_security_count }}/{{ row.total_security_count }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" class="muted">{{ widgets.portfolio_value_time.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="scheme-concentration">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.scheme_concentration.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.scheme_concentration.subtitle }}</p>
+  <canvas id="chart-scheme-concentration" aria-label="Value by scheme chart"></canvas>
+  <p class="muted" data-empty-for="scheme-concentration" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-scheme-concentration">
+    Show table
+  </button>
+  <div id="table-scheme-concentration" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Scheme</th>
+          <th class="num">Value</th>
+          <th class="num">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.scheme_concentration.rows %}
+          {% for row in widgets.scheme_concentration.rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="num">&pound;{{ row.value_gbp|money }}</td>
+            <td class="num">{{ row.pct_of_total }}%</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" class="muted">{{ widgets.scheme_concentration.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="security-concentration">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.security_concentration.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.security_concentration.subtitle }}</p>
+  <canvas id="chart-security-concentration" aria-label="Top holdings chart"></canvas>
+  <p class="muted" data-empty-for="security-concentration" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-security-concentration">
+    Show table
+  </button>
+  <div id="table-security-concentration" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Value</th>
+          <th class="num">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.security_concentration.rows %}
+          {% for row in widgets.security_concentration.rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="num">&pound;{{ row.value_gbp|money }}</td>
+            <td class="num">{{ row.pct_of_total }}%</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" class="muted">{{ widgets.security_concentration.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="liquidity-breakdown">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.liquidity_breakdown.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.liquidity_breakdown.subtitle }}</p>
+  <canvas id="chart-liquidity-breakdown" aria-label="Liquidity breakdown chart"></canvas>
+  <p class="muted" data-empty-for="liquidity-breakdown" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-liquidity-breakdown">
+    Show table
+  </button>
+  <div id="table-liquidity-breakdown" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th class="num">Value</th>
+          <th class="num">% of Classified</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.liquidity_breakdown.rows %}
+          {% for row in widgets.liquidity_breakdown.rows %}
+          <tr>
+            <td>{{ row.category }}</td>
+            <td class="num">&pound;{{ row.value_gbp|money }}</td>
+            <td class="num">{{ row.pct_of_classified }}%</td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td>Unpriced Lots</td>
+            <td class="num">{{ widgets.liquidity_breakdown.unpriced_lot_count }}</td>
+            <td class="num">-</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="3" class="muted">{{ widgets.liquidity_breakdown.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="unrealised-pnl">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.unrealised_pnl.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.unrealised_pnl.subtitle }}</p>
+  <canvas id="chart-unrealised-pnl" aria-label="Unrealised profit and loss chart"></canvas>
+  <p class="muted" data-empty-for="unrealised-pnl" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-unrealised-pnl">
+    Show table
+  </button>
+  <div id="table-unrealised-pnl" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Cost Basis</th>
+          <th class="num">True Cost</th>
+          <th class="num">Market Value</th>
+          <th class="num">Unrealised (Tax Basis)</th>
+          <th class="num">Unrealised (Economic)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.unrealised_pnl.rows %}
+          {% for row in widgets.unrealised_pnl.rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td class="num">&pound;{{ row.cost_basis_gbp|money }}</td>
+            <td class="num">&pound;{{ row.true_cost_gbp|money }}</td>
+            <td class="num">&pound;{{ row.market_value_gbp|money }}</td>
+            <td class="num">&pound;{{ row.unrealised_gain_tax_basis_gbp|money }}</td>
+            <td class="num">&pound;{{ row.unrealised_gain_economic_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="muted">{{ widgets.unrealised_pnl.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Coming Soon</h2>
+  </div>
+  <p class="muted">Risk stress/forfeiture and calendar timeline charts will activate when their source EPIC data surfaces are available.</p>
+</div>
+
+{% if analytics_summary.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in analytics_summary.notes %}
+        <tr>
+          <td>{{ note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% include "partials/chart_theme.html" %}
+<script>
+(function () {
+  var summary = {{ analytics_summary | tojson }};
+  var widgets = summary.widgets || {};
+  var theme = window.analyticsChartTheme || {
+    accent: "#3d78f0",
+    gain: "#00d18c",
+    loss: "#f0384f",
+    warning: "#f0a030"
+  };
+  var chartInstances = {};
+  var storageKey = "analytics.widget_visibility.v1";
+  var defaultVisibility = {
+    "portfolio-value-time": true,
+    "scheme-concentration": true,
+    "security-concentration": true,
+    "liquidity-breakdown": true,
+    "unrealised-pnl": true
+  };
+
+  var widgetById = {
+    "portfolio-value-time": widgets.portfolio_value_time || {},
+    "scheme-concentration": widgets.scheme_concentration || {},
+    "security-concentration": widgets.security_concentration || {},
+    "liquidity-breakdown": widgets.liquidity_breakdown || {},
+    "unrealised-pnl": widgets.unrealised_pnl || {}
+  };
+
+  function toNumber(value) {
+    var num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function formatMoney(value) {
+    return "£" + Number(value).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function setWidgetMessage(widgetId, message) {
+    var emptyNode = document.querySelector('[data-empty-for="' + widgetId + '"]');
+    var canvas = document.getElementById("chart-" + widgetId);
+    if (canvas) {
+      canvas.hidden = Boolean(message);
+    }
+    if (!emptyNode) {
+      return;
+    }
+    emptyNode.hidden = !message;
+    emptyNode.textContent = message || "";
+  }
+
+  function createChart(widgetId, config) {
+    if (typeof Chart === "undefined") {
+      setWidgetMessage(widgetId, "Chart library failed to load.");
+      return;
+    }
+    var canvas = document.getElementById("chart-" + widgetId);
+    if (!canvas) {
+      return;
+    }
+    var ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    chartInstances[widgetId] = new Chart(ctx, config);
+  }
+
+  function renderPortfolioValueTime() {
+    var widget = widgetById["portfolio-value-time"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("portfolio-value-time", widget.reason || "Insufficient data.");
+      return;
+    }
+    var labels = Array.isArray(widget.labels) ? widget.labels : [];
+    var values = (Array.isArray(widget.values_gbp) ? widget.values_gbp : []).map(toNumber).filter(function (v) { return v !== null; });
+    if (!labels.length || !values.length) {
+      setWidgetMessage("portfolio-value-time", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("portfolio-value-time", "");
+    createChart("portfolio-value-time", {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Portfolio Value (GBP)",
+            data: values,
+            borderColor: theme.accent,
+            backgroundColor: "rgba(61, 120, 240, 0.18)",
+            fill: true,
+            pointRadius: 1.6,
+            pointHoverRadius: 3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderSchemeConcentration() {
+    var widget = widgetById["scheme-concentration"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("scheme-concentration", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var values = [];
+    rows.forEach(function (row) {
+      var n = toNumber(row.value_gbp);
+      if (n === null) {
+        return;
+      }
+      labels.push(row.label);
+      values.push(n);
+    });
+    if (!labels.length) {
+      setWidgetMessage("scheme-concentration", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("scheme-concentration", "");
+    createChart("scheme-concentration", {
+      type: "doughnut",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Value by Scheme",
+            data: values,
+            backgroundColor: [
+              theme.accent,
+              theme.gain,
+              theme.warning,
+              "#4ac9ff",
+              "#a082dc",
+              "#63b3ed"
+            ]
+          }
+        ]
+      },
+      options: {
+        responsive: true
+      }
+    });
+  }
+
+  function renderSecurityConcentration() {
+    var widget = widgetById["security-concentration"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("security-concentration", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var values = [];
+    rows.forEach(function (row) {
+      var n = toNumber(row.value_gbp);
+      if (n === null) {
+        return;
+      }
+      labels.push(row.label);
+      values.push(n);
+    });
+    if (!labels.length) {
+      setWidgetMessage("security-concentration", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("security-concentration", "");
+    createChart("security-concentration", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Market Value",
+            data: values,
+            backgroundColor: theme.accent
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        indexAxis: "y",
+        scales: {
+          x: {
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderLiquidityBreakdown() {
+    var widget = widgetById["liquidity-breakdown"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("liquidity-breakdown", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var values = [];
+    rows.forEach(function (row) {
+      if (row.category === "Total") {
+        return;
+      }
+      var n = toNumber(row.value_gbp);
+      if (n === null) {
+        return;
+      }
+      labels.push(row.category);
+      values.push(n);
+    });
+    if (!labels.length) {
+      setWidgetMessage("liquidity-breakdown", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("liquidity-breakdown", "");
+    createChart("liquidity-breakdown", {
+      type: "doughnut",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Liquidity Mix",
+            data: values,
+            backgroundColor: [theme.gain, theme.warning, theme.loss]
+          }
+        ]
+      },
+      options: {
+        responsive: true
+      }
+    });
+  }
+
+  function renderUnrealisedPnl() {
+    var widget = widgetById["unrealised-pnl"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("unrealised-pnl", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var costBasis = [];
+    var trueCost = [];
+    var marketValue = [];
+
+    rows.forEach(function (row) {
+      var c = toNumber(row.cost_basis_gbp);
+      var t = toNumber(row.true_cost_gbp);
+      var m = toNumber(row.market_value_gbp);
+      if (c === null || t === null || m === null) {
+        return;
+      }
+      labels.push(row.ticker);
+      costBasis.push(c);
+      trueCost.push(t);
+      marketValue.push(m);
+    });
+
+    if (!labels.length) {
+      setWidgetMessage("unrealised-pnl", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("unrealised-pnl", "");
+    createChart("unrealised-pnl", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Cost Basis",
+            data: costBasis,
+            backgroundColor: theme.warning
+          },
+          {
+            label: "True Cost",
+            data: trueCost,
+            backgroundColor: theme.loss
+          },
+          {
+            label: "Market Value",
+            data: marketValue,
+            backgroundColor: theme.gain
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function loadVisibility() {
+    var visibility = Object.assign({}, defaultVisibility);
+    try {
+      var raw = window.localStorage.getItem(storageKey);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          Object.keys(defaultVisibility).forEach(function (widgetId) {
+            if (Object.prototype.hasOwnProperty.call(parsed, widgetId)) {
+              visibility[widgetId] = Boolean(parsed[widgetId]);
+            }
+          });
+        }
+      }
+    } catch (_err) {
+      return visibility;
+    }
+    return visibility;
+  }
+
+  function persistVisibility(visibility) {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(visibility));
+    } catch (_err) {
+      return;
+    }
+  }
+
+  function applyVisibility(visibility) {
+    document.querySelectorAll(".analytics-widget").forEach(function (card) {
+      var widgetId = card.getAttribute("data-widget-id");
+      var isVisible = visibility[widgetId] !== false;
+      card.hidden = !isVisible;
+    });
+    document.querySelectorAll(".analytics-widget-toggle").forEach(function (toggle) {
+      var widgetId = toggle.getAttribute("data-widget-id");
+      toggle.checked = visibility[widgetId] !== false;
+    });
+  }
+
+  function wireWidgetToggles(visibility) {
+    document.querySelectorAll(".analytics-widget-toggle").forEach(function (toggle) {
+      toggle.addEventListener("change", function () {
+        var widgetId = toggle.getAttribute("data-widget-id");
+        visibility[widgetId] = toggle.checked;
+        applyVisibility(visibility);
+        persistVisibility(visibility);
+      });
+    });
+  }
+
+  function wireTableToggles() {
+    document.querySelectorAll(".analytics-table-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var targetId = btn.getAttribute("data-target-id");
+        var target = document.getElementById(targetId);
+        if (!target) {
+          return;
+        }
+        target.hidden = !target.hidden;
+        btn.textContent = target.hidden ? "Show table" : "Hide table";
+      });
+    });
+  }
+
+  renderPortfolioValueTime();
+  renderSchemeConcentration();
+  renderSecurityConcentration();
+  renderLiquidityBreakdown();
+  renderUnrealisedPnl();
+
+  var visibility = loadVisibility();
+  applyVisibility(visibility);
+  wireWidgetToggles(visibility);
+  wireTableToggles();
+})();
+</script>
+{% endblock %}

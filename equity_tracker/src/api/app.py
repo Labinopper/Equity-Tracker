@@ -54,7 +54,17 @@ from ..app_context import AppContext
 from ..db.engine import DatabaseEngine
 from ..db.migration_manager import ensure_migrated
 from . import _state
-from .routers import admin, catalog, portfolio, prices, reports, risk, settings, ui
+from .routers import (
+    admin,
+    analytics,
+    catalog,
+    portfolio,
+    prices,
+    reports,
+    risk,
+    settings,
+    ui,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +230,7 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSO
 # ---------------------------------------------------------------------------
 
 app.include_router(admin.router)
+app.include_router(analytics.router)
 app.include_router(catalog.router)
 app.include_router(portfolio.router)
 app.include_router(prices.router)

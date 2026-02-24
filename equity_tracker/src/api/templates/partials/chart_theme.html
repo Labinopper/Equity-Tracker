@@ -1,0 +1,35 @@
+<script>
+(function () {
+  if (typeof Chart === "undefined") {
+    return;
+  }
+
+  var root = document.documentElement;
+  var styles = window.getComputedStyle(root);
+
+  function cssVar(name, fallback) {
+    var value = (styles.getPropertyValue(name) || "").trim();
+    return value || fallback;
+  }
+
+  var theme = {
+    text: cssVar("--text", "#c8d0e0"),
+    heading: cssVar("--text-heading", "#e8eaf0"),
+    border: cssVar("--border", "#1f2740"),
+    card: cssVar("--bg-card", "#141823"),
+    accent: cssVar("--accent", "#3d78f0"),
+    gain: cssVar("--gain", "#00d18c"),
+    loss: cssVar("--loss", "#f0384f"),
+    warning: cssVar("--warning", "#f0a030")
+  };
+
+  Chart.defaults.color = theme.text;
+  Chart.defaults.borderColor = theme.border;
+  Chart.defaults.plugins.legend.labels.color = theme.text;
+  Chart.defaults.plugins.tooltip.backgroundColor = theme.card;
+  Chart.defaults.plugins.tooltip.titleColor = theme.heading;
+  Chart.defaults.plugins.tooltip.bodyColor = theme.text;
+
+  window.analyticsChartTheme = theme;
+})();
+</script>
