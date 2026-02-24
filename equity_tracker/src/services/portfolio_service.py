@@ -448,7 +448,7 @@ def _build_sip_tax_estimates(
     Returns ([], Decimal("0")) when settings is None (income context unavailable).
 
     Student Loan is calculated on the NIC-liable base (PAYE earnings treatment).
-    If ni_liable_gbp is zero (sip_rules.py 3–5yr limitation), SL is also zero.
+    If ni_liable_gbp is zero for a given lot/event, SL is also zero.
     """
     estimates: list[SIPTaxEstimate] = []
     total_tax = Decimal("0")
@@ -529,7 +529,7 @@ def _build_sip_tax_estimates(
         est_it = (sip_result.income_taxable_gbp * rates.income_tax).quantize(q, ROUND_HALF_UP)
         est_ni = (sip_result.ni_liable_gbp * rates.national_insurance).quantize(q, ROUND_HALF_UP)
         # Student Loan uses the NIC-liable base (PAYE earnings treatment).
-        # If ni_liable_gbp is zero (sip_rules.py 3–5yr limitation), SL is also zero.
+        # If ni_liable_gbp is zero for a given lot/event, SL is also zero.
         est_sl = (sip_result.ni_liable_gbp * rates.student_loan).quantize(q, ROUND_HALF_UP)
         est_total = est_it + est_ni + est_sl
 

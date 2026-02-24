@@ -319,10 +319,7 @@ New/updated ISA-focused tests include:
 5. FX generalization:
 - valuation flow remains primarily USD->GBP-oriented.
 
-6. SIP-like NIC edge:
-- known 3-5 year employment-tax treatment gap remains.
-
-7. ESPP+ transfer tax-event modeling:
+6. ESPP+ transfer tax-event modeling:
 - transfer-time employment tax eligibility is currently recorded in lot notes/audit text only.
 - no structured tax event exists yet for reporting/reconciliation workflows.
 
@@ -333,4 +330,3 @@ New/updated ISA-focused tests include:
 3. `v1.10.1` `TemplateResponse` deprecation migration.
 4. `v1.11.0` ESPP+ dual-lot transactional add method.
 5. `v1.12.0` FX multi-currency generalization.
-6. `v1.12.1` SIP-like NIC 3-5 year correctness fix with dedicated tests.

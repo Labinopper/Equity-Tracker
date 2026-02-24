@@ -155,9 +155,8 @@ Deliver a reliable local decision-support app for equity holdings:
 2. Starlette `TemplateResponse` request-first migration is not completed (deprecation warnings still present).
 3. ESPP+ dual-lot add flow is still non-atomic (two write calls).
 4. FX conversion remains effectively USD->GBP-centric.
-5. SIP-like NIC treatment in specific 3-5 year cases remains a known model limitation.
-6. Global privacy masking (`Hide values`) is not yet implemented.
-7. ESPP+ transfer-time employment tax eligibility is currently notes/audit text only, not a structured tax event usable by reporting.
+5. Global privacy masking (`Hide values`) is not yet implemented.
+6. ESPP+ transfer-time employment tax eligibility is currently notes/audit text only, not a structured tax event usable by reporting.
 
 ## Roadmap (Post S1-S7, Version Targets)
 1. `v1.10.0` Implement global `Hide values` mode (mask monetary values app-wide, preserve percentages).
@@ -168,8 +167,7 @@ Deliver a reliable local decision-support app for equity holdings:
 3. `v1.11.1` Migrate `TemplateResponse` usage to request-first signature.
 4. `v1.12.0` Make ESPP+ employee/matched lot creation atomic in one transactional service path.
 5. `v1.13.0` Generalize FX handling beyond USD->GBP.
-6. `v1.13.1` Fix SIP-like NIC handling gap for 3-5 year scenarios.
-7. `v2.0.0` Implement approved IA/navigation redesign (`Decide`, `Liquidity`, `Schemes`, `Risk`, `Simulate`, `Advanced`) and enforce sellable-only `Est. Net Liquidity` semantics in primary UX surfaces.
+6. `v2.0.0` Implement approved IA/navigation redesign (`Decide`, `Liquidity`, `Schemes`, `Risk`, `Simulate`, `Advanced`) and enforce sellable-only `Est. Net Liquidity` semantics in primary UX surfaces.
 
 ## Portfolio Page Follow-On Opportunities
 1. Add quick row filters (`All`, `Warnings`, `Locked`, `Forfeiture Risk`) to reduce scanning time on large holdings.

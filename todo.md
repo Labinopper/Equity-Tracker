@@ -13,7 +13,6 @@
 - [ ] Migrate Starlette `TemplateResponse` usage to request-first signature.
 - [ ] Make ESPP+ dual-lot creation atomic in one transactional service method.
 - [ ] Generalize FX path beyond USD->GBP.
-- [ ] Fix SIP-like NIC handling gap in known 3-5 year scenarios.
 - [ ] Promote ESPP+ transfer-time employment tax eligibility from notes-only into a structured tax event usable by reporting/reconciliation.
 
 ---

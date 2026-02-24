@@ -101,19 +101,8 @@ Create a new `EmploymentTaxEvent` model (new table, additive) and populate it fr
 
 ---
 
-#### CF-03 — SIP-like NIC Gap for 3–5 Year Scenarios
-**Origin:** v1 roadmap `v1.13.1` / Known Issue #5
-**Type:** Calculation correctness gap
-**Status:** Known model limitation — NIC treatment is incorrect for specific 3-5 year employment-period scenarios.
-
-**Why it must ship first:**
-ET20-EPIC-01 (Tax-Year Planner) and ET20-EPIC-05 (Scenario Lab) both surface NIC estimates. Carrying a known-wrong NIC calculation into v2 decision-support features creates misleading outputs.
-
-**Implementation approach:**
-Fix is isolated to `src/core/tax_engine/national_insurance.py` or `employment_tax_engine.py` — both are self-contained pure-function files. The fix adds the correct 3-5 year NIC branch; no interface or model changes. Add dedicated regression tests.
-
-**Files touched:** `src/core/tax_engine/national_insurance.py` or `employment_tax_engine.py` — targeted function correction only
-**Target:** `v1.11.0` (PATCH)
+#### CF-03 — SIP-like NIC Gap for 3–5 Year Scenarios (Superseded)
+**Status update (2026-02-24):** Superseded by clarified policy: NI is not due after 3 years in the current model. No corrective NIC stage is required.
 
 ---
 
@@ -475,7 +464,6 @@ Widget on/off state is stored in `localStorage` under key `analytics.widget_visi
 |---|---|---|---|
 | `v1.10.0` | CF-01 ESPP+ atomicity | Data integrity fix | Must land before any v2 feature reads ESPP+ data |
 | `v1.10.1` | CF-02 ESPP+ structured tax event | Incomplete feature | Required for ET20-EPIC-01 accuracy |
-| `v1.11.0` | CF-03 SIP NIC 3-5yr fix | Calculation correctness | Must not carry wrong NIC into v2 tax features |
 
 ### v2.x Delivery
 
@@ -545,7 +533,6 @@ src/
 | File | Change | Scope |
 |---|---|---|
 | `src/services/portfolio_service.py` | CF-01: wrap ESPP+ creation in transaction; CF-02: write structured event instead of note | Transaction boundary + destination change only |
-| `src/core/tax_engine/national_insurance.py` | CF-03: add 3-5yr NIC branch | Targeted function correction |
 | `src/db/models.py` | CF-02: additive `EmploymentTaxEvent`; EPIC-02: additive `DividendEntry` | Append-only, no existing class altered |
 | `src/services/price_service.py` | EPIC-06: single call insertion to `fx_service.get_rate()` | One-line wrapper call only |
 | `src/templates/base.html` | EPIC-08: add `{% block extra_scripts %}{% endblock %}` + Chart.js CDN in analytics pages only | Block insertion; no existing template content changed |

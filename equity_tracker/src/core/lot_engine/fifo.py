@@ -117,9 +117,8 @@ class SIPTaxEstimate:
     est_student_loan_gbp            : ni_liable × marginal SL rate (NIC-liable base)
     est_total_employment_tax_gbp    : sum of IT + NI + SL estimates
 
-    Note: sip_rules.py currently returns ni_liable_gbp = Decimal("0") for 3–5yr lots
-    (known limitation — NIC should apply for ESPP/ESPP_PLUS/SIP_PARTNERSHIP/SIP_MATCHING
-    in the 3–5yr window). This will be corrected in a future phase.
+    NI-liable bases are supplied by the underlying scheme tax engines and can
+    be zero for certain holding-period categories by rule.
     """
     lot_id: str
     holding_period_category: str
