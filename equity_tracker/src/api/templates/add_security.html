@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block title %}Add Security — Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Add Security</h1></div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/portfolio/add-security" id="add-security-form">
+
+    {# ── Hidden fields populated by catalogue selection or manual form ── #}
+    <input type="hidden" name="catalog_id"          id="f-catalog-id"   value="{{ prev.catalog_id if prev else '' }}">
+    <input type="hidden" name="is_manual_override"  id="f-manual-flag"  value="{{ 'true' if (prev and prev.is_manual_override) else 'false' }}">
+    <input type="hidden" name="ticker"              id="f-ticker"       value="{{ prev.ticker if prev else '' }}">
+    <input type="hidden" name="name"                id="f-name"         value="{{ prev.name if prev else '' }}">
+    <input type="hidden" name="currency"            id="f-currency"     value="{{ prev.currency if prev else '' }}">
+    <input type="hidden" name="exchange"            id="f-exchange"     value="{{ prev.exchange if prev else '' }}">
+    <input type="hidden" name="isin"                id="f-isin"         value="{{ prev.isin if prev else '' }}">
+
+    {# ── Catalogue search ─────────────────────────────────────────────── #}
+    <div id="catalog-section">
+      <div class="form-field" style="position:relative;">
+        <label for="catalog-search">Search Instrument *</label>
+        <input id="catalog-search" type="text" autocomplete="off"
+               placeholder="Type ticker or company name…"
+               value="{{ prev.ticker if prev and not prev.is_manual_override else '' }}"
+               style="padding-right: 2rem;">
+        <span class="form-hint">Start typing to search LSE, NYSE, and NASDAQ listings.</span>
+
+        {# Dropdown results #}
+        <ul id="catalog-dropdown" role="listbox" aria-label="Instrument suggestions"
+            style="display:none; position:absolute; top:100%; left:0; right:0; z-index:200;
+                   background:var(--bg-card); border:1px solid var(--border-strong);
+                   border-radius:var(--radius); margin-top:2px; list-style:none;
+                   max-height:280px; overflow-y:auto; box-shadow:var(--shadow);"></ul>
+      </div>
+
+      {# Selected instrument chip #}
+      <div id="selected-instrument" style="display:none; margin-bottom:1rem;">
+        <div style="display:flex; align-items:center; gap:0.5rem; padding:0.6rem 0.8rem;
+                    background:var(--bg-input); border:1px solid var(--border-strong);
+                    border-radius:var(--radius);">
+          <span style="font-family:var(--font-mono); color:var(--text-heading); font-weight:600;"
+                id="chip-symbol"></span>
+          <span style="color:var(--text-muted);">—</span>
+          <span id="chip-name" style="flex:1; color:var(--text);"></span>
+          <span id="chip-exchange" style="font-size:0.75rem; color:var(--text-muted);
+                padding:0.1rem 0.4rem; border:1px solid var(--border); border-radius:var(--radius);"></span>
+          <span id="chip-currency" style="font-size:0.75rem; color:var(--text-muted);
+                padding:0.1rem 0.4rem; border:1px solid var(--border); border-radius:var(--radius);"></span>
+          <button type="button" id="clear-selection" aria-label="Clear selection"
+                  style="background:none; border:none; cursor:pointer; color:var(--text-muted);
+                         font-size:1.1rem; line-height:1; padding:0 0.2rem;">&times;</button>
+        </div>
+      </div>
+
+      {# Units precision (always visible) #}
+      <div class="form-field">
+        <label for="units_precision">Units Precision</label>
+        <input id="units_precision" name="units_precision" type="number"
+               min="0" max="10" value="{{ prev.units_precision if prev else 0 }}">
+        <span class="form-hint">Decimal places for share quantities (0 = whole shares).</span>
+      </div>
+
+      {# Manual override toggle #}
+      <div style="margin-top:0.25rem; margin-bottom:1rem;">
+        <button type="button" id="toggle-manual"
+                style="background:none; border:none; cursor:pointer; color:var(--accent);
+                       font-size:0.85rem; padding:0; text-decoration:underline;">
+          Add unlisted instrument
+        </button>
+      </div>
+    </div>
+
+    {# ── Manual override form ─────────────────────────────────────────── #}
+    <div id="manual-section" style="display:none;">
+      <div style="margin-bottom:1rem; padding:0.6rem 0.9rem;
+                  background:var(--warning-bg); border:1px solid var(--warning);
+                  border-radius:var(--radius); font-size:0.85rem; color:var(--warning);">
+        Manual entry — this instrument will not be validated against the catalogue.
+        <button type="button" id="cancel-manual"
+                style="background:none; border:none; cursor:pointer; color:var(--accent);
+                       font-size:0.85rem; padding:0 0 0 0.5rem; text-decoration:underline;">
+          Back to catalogue search
+        </button>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="m-ticker">Ticker *</label>
+          <input id="m-ticker" type="text" maxlength="20"
+                 placeholder="e.g. TSCO"
+                 value="{{ prev.ticker if prev and prev.is_manual_override else '' }}">
+          <span class="form-hint">Will be uppercased automatically.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="m-name">Name *</label>
+          <input id="m-name" type="text" maxlength="200"
+                 placeholder="e.g. Tesco PLC"
+                 value="{{ prev.name if prev and prev.is_manual_override else '' }}">
+        </div>
+
+        <div class="form-field">
+          <label for="m-currency">Currency *</label>
+          <input id="m-currency" type="text" maxlength="3"
+                 placeholder="GBP"
+                 value="{{ prev.currency if prev and prev.is_manual_override else 'GBP' }}">
+          <span class="form-hint">3-character ISO 4217 code.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="m-isin">ISIN</label>
+          <input id="m-isin" type="text" maxlength="12"
+                 placeholder="GB0008847096 (optional)"
+                 value="{{ prev.isin if prev and prev.is_manual_override else '' }}">
+        </div>
+
+        <div class="form-field">
+          <label for="m-exchange">Exchange</label>
+          <input id="m-exchange" type="text" maxlength="20"
+                 placeholder="LSE (optional)"
+                 value="{{ prev.exchange if prev and prev.is_manual_override else '' }}">
+        </div>
+
+        <div class="form-field">
+          <label for="m-units-precision">Units Precision</label>
+          <input id="m-units-precision" name="units_precision" type="number"
+                 min="0" max="10"
+                 value="{{ prev.units_precision if prev and prev.is_manual_override else 0 }}">
+          <span class="form-hint">Decimal places for share quantities (0 = whole shares).</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="submit-btn" disabled>Add Security</button>
+      <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+
+  </form>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── DOM refs ───────────────────────────────────────────────────────── */
+  const searchInput     = document.getElementById("catalog-search");
+  const dropdown        = document.getElementById("catalog-dropdown");
+  const selectedChip    = document.getElementById("selected-instrument");
+  const chipSymbol      = document.getElementById("chip-symbol");
+  const chipName        = document.getElementById("chip-name");
+  const chipExchange    = document.getElementById("chip-exchange");
+  const chipCurrency    = document.getElementById("chip-currency");
+  const clearBtn        = document.getElementById("clear-selection");
+  const toggleManualBtn = document.getElementById("toggle-manual");
+  const cancelManualBtn = document.getElementById("cancel-manual");
+  const catalogSection  = document.getElementById("catalog-section");
+  const manualSection   = document.getElementById("manual-section");
+  const submitBtn       = document.getElementById("submit-btn");
+
+  /* Hidden form fields */
+  const fCatalogId   = document.getElementById("f-catalog-id");
+  const fManualFlag  = document.getElementById("f-manual-flag");
+  const fTicker      = document.getElementById("f-ticker");
+  const fName        = document.getElementById("f-name");
+  const fCurrency    = document.getElementById("f-currency");
+  const fExchange    = document.getElementById("f-exchange");
+  const fIsin        = document.getElementById("f-isin");
+
+  /* Manual form inputs */
+  const mTicker      = document.getElementById("m-ticker");
+  const mName        = document.getElementById("m-name");
+  const mCurrency    = document.getElementById("m-currency");
+  const mIsin        = document.getElementById("m-isin");
+  const mExchange    = document.getElementById("m-exchange");
+  const mUnitsPrecision = document.getElementById("m-units-precision");
+
+  /* Catalogue units precision input */
+  const catUnitsPrecision = document.getElementById("units_precision");
+
+  let debounceTimer = null;
+  let isManualMode  = false;
+
+  /* ── Restore state on error re-render ──────────────────────────────── */
+  (function restoreState () {
+    const prevManual = fManualFlag.value === "true";
+    if (prevManual) {
+      activateManualMode(false);
+    } else if (fCatalogId.value) {
+      showChip(fTicker.value, fName.value, fExchange.value, fCurrency.value);
+    }
+  })();
+
+  /* ── Catalogue search ───────────────────────────────────────────────── */
+  searchInput.addEventListener("input", function () {
+    clearTimeout(debounceTimer);
+    const q = searchInput.value.trim();
+    if (!q) { hideDropdown(); return; }
+    debounceTimer = setTimeout(function () { fetchResults(q); }, 300);
+  });
+
+  searchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { hideDropdown(); }
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!dropdown.contains(e.target) && e.target !== searchInput) {
+      hideDropdown();
+    }
+  });
+
+  async function fetchResults(q) {
+    try {
+      const resp = await fetch("/api/catalog/search?q=" + encodeURIComponent(q));
+      if (!resp.ok) { hideDropdown(); return; }
+      const items = await resp.json();
+      renderDropdown(items);
+    } catch (err) {
+      hideDropdown();
+    }
+  }
+
+  function renderDropdown(items) {
+    dropdown.innerHTML = "";
+    if (!items.length) {
+      const li = document.createElement("li");
+      li.textContent = "No matches found.";
+      li.style.cssText = "padding:0.6rem 0.8rem; color:var(--text-muted); font-size:0.85rem;";
+      dropdown.appendChild(li);
+      dropdown.style.display = "block";
+      return;
+    }
+
+    items.forEach(function (item) {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.dataset.id       = item.id;
+      li.dataset.symbol   = item.symbol;
+      li.dataset.name     = item.name;
+      li.dataset.exchange = item.exchange;
+      li.dataset.currency = item.currency;
+      li.dataset.isin     = item.isin || "";
+
+      li.style.cssText = [
+        "display:flex; align-items:center; gap:0.6rem;",
+        "padding:0.55rem 0.8rem; cursor:pointer;",
+        "border-bottom:1px solid var(--border);",
+      ].join("");
+
+      li.innerHTML = [
+        '<span style="font-family:var(--font-mono);color:var(--text-heading);',
+        'font-weight:600;min-width:4.5rem;">' + esc(item.symbol) + "</span>",
+        '<span style="flex:1;color:var(--text);font-size:0.9rem;">' + esc(item.name) + "</span>",
+        '<span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">',
+        esc(item.exchange) + " &middot; " + esc(item.currency) + "</span>",
+      ].join("");
+
+      li.addEventListener("mouseenter", function () {
+        li.style.background = "var(--bg-hover)";
+      });
+      li.addEventListener("mouseleave", function () {
+        li.style.background = "";
+      });
+      li.addEventListener("click", function () {
+        selectEntry(item);
+      });
+
+      dropdown.appendChild(li);
+    });
+
+    dropdown.style.display = "block";
+  }
+
+  function hideDropdown() {
+    dropdown.style.display = "none";
+    dropdown.innerHTML = "";
+  }
+
+  /* ── Selection ──────────────────────────────────────────────────────── */
+  function selectEntry(item) {
+    fCatalogId.value  = item.id;
+    fManualFlag.value = "false";
+    fTicker.value     = item.symbol;
+    fName.value       = item.name;
+    fCurrency.value   = item.currency;
+    fExchange.value   = item.exchange;
+    fIsin.value       = item.isin || "";
+
+    searchInput.value = "";
+    hideDropdown();
+    showChip(item.symbol, item.name, item.exchange, item.currency);
+  }
+
+  function showChip(symbol, name, exchange, currency) {
+    chipSymbol.textContent   = symbol;
+    chipName.textContent     = name;
+    chipExchange.textContent = exchange;
+    chipCurrency.textContent = currency;
+
+    selectedChip.style.display = "block";
+    searchInput.style.display  = "none";
+    submitBtn.disabled = false;
+  }
+
+  clearBtn.addEventListener("click", function () {
+    fCatalogId.value  = "";
+    fManualFlag.value = "false";
+    fTicker.value = fName.value = fCurrency.value = fExchange.value = fIsin.value = "";
+
+    selectedChip.style.display = "none";
+    searchInput.style.display  = "";
+    searchInput.value = "";
+    searchInput.focus();
+    submitBtn.disabled = true;
+  });
+
+  /* ── Manual override ────────────────────────────────────────────────── */
+  toggleManualBtn.addEventListener("click", function () {
+    activateManualMode(true);
+  });
+
+  cancelManualBtn.addEventListener("click", function () {
+    deactivateManualMode();
+  });
+
+  function activateManualMode(focusTicker) {
+    isManualMode = true;
+    fManualFlag.value = "true";
+    fCatalogId.value  = "";
+
+    manualSection.style.display  = "block";
+    catalogSection.querySelector(".form-field").style.display = "none";
+    selectedChip.style.display = "none";
+    submitBtn.disabled = false;
+
+    if (focusTicker) { mTicker.focus(); }
+
+    /* Wire manual inputs to push values into hidden fields */
+    wireManualInputs();
+  }
+
+  function deactivateManualMode() {
+    isManualMode = false;
+    fManualFlag.value = "false";
+    fCatalogId.value  = "";
+    fTicker.value = fName.value = fCurrency.value = fExchange.value = fIsin.value = "";
+
+    manualSection.style.display = "none";
+    catalogSection.querySelector(".form-field").style.display = "";
+    searchInput.style.display   = "";
+
+    submitBtn.disabled = !fCatalogId.value;
+  }
+
+  function wireManualInputs() {
+    function sync() {
+      fTicker.value   = mTicker.value.trim().toUpperCase();
+      fName.value     = mName.value.trim();
+      fCurrency.value = mCurrency.value.trim().toUpperCase();
+      fExchange.value = mExchange.value.trim().toUpperCase();
+      fIsin.value     = mIsin.value.trim();
+      /* units_precision is in the manual form and shares the name attribute */
+    }
+    [mTicker, mName, mCurrency, mIsin, mExchange].forEach(function (el) {
+      el.removeEventListener("input", sync);
+      el.addEventListener("input", sync);
+    });
+
+    /* Validate submit readiness */
+    function checkReady() {
+      submitBtn.disabled = !(mTicker.value.trim() && mName.value.trim() && mCurrency.value.trim());
+    }
+    [mTicker, mName, mCurrency].forEach(function (el) {
+      el.removeEventListener("input", checkReady);
+      el.addEventListener("input", checkReady);
+    });
+    checkReady();
+  }
+
+  /* ── HTML escape ────────────────────────────────────────────────────── */
+  function esc(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  /* ── Initial submit button state ────────────────────────────────────── */
+  if (fCatalogId.value || fManualFlag.value === "true") {
+    submitBtn.disabled = false;
+  }
+})();
+</script>
+{% endblock %}

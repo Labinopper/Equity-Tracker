@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Economic Gain — Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Economic Gain Report</h1></div>
+<p class="muted" style="margin-bottom:1.25rem;">
+  Uses <em>true cost per share</em> instead of CGT cost basis.
+  Most relevant for SIP Partnership shares purchased from gross salary.
+</p>
+
+<!-- Tax year tabs -->
+<div class="tax-year-tabs">
+  {% for y in tax_years %}
+  <a href="/economic-gain?tax_year={{ y }}"
+     class="{{ 'active' if y == active_year }}">{{ y }}</a>
+  {% endfor %}
+</div>
+
+<!-- Summary stats -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat__label">Taxable Disposals</div>
+    <div class="stat__value">{{ report.disposal_lines | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Taxable Proceeds</div>
+    <div class="stat__value">£{{ report.total_proceeds_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Economic Gains</div>
+    <div class="stat__value gain">£{{ report.total_economic_gains_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Economic Losses</div>
+    <div class="stat__value loss">£{{ report.total_economic_losses_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Net Economic Gain</div>
+    <div class="stat__value {{ 'gain' if report.net_economic_gain_gbp >= 0 else 'loss' }}">
+      £{{ report.net_economic_gain_gbp | money }}
+    </div>
+  </div>
+</div>
+{% if report.isa_exempt_proceeds_gbp > 0 %}
+<div class="alert alert-info">
+  ISA disposals are tax-sheltered and excluded from this report total.
+  Exempt proceeds: Â£{{ report.isa_exempt_proceeds_gbp | money }}.
+  Exempt economic gain/loss: Â£{{ report.isa_exempt_economic_gain_gbp | money }}.
+</div>
+{% endif %}
+
+{% if not report.disposal_lines %}
+<div class="empty-state">
+  {% if report.isa_exempt_proceeds_gbp > 0 %}
+  No taxable disposals in {{ active_year }}.
+  {% else %}
+  No disposals in {{ active_year }}.
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Security</th>
+          <th class="num">Qty</th>
+          <th class="num">Proceeds</th>
+          <th class="num">True Cost</th>
+          <th class="num">Economic Gain / Loss</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in report.disposal_lines %}
+        <tr>
+          <td>{{ line.transaction.transaction_date }}</td>
+          <td>{{ line.security.ticker }}</td>
+          <td class="num">{{ line.total_quantity }}</td>
+          <td class="num">£{{ line.total_proceeds_gbp | money }}</td>
+          <td class="num">
+            {% set true_cost = line.total_proceeds_gbp - line.total_economic_gain_gbp %}
+            £{{ true_cost | money }}
+          </td>
+          <td class="num {{ 'gain' if line.total_economic_gain_gbp >= 0 else 'loss' }}">
+            £{{ line.total_economic_gain_gbp | money }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

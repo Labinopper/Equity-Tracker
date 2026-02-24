@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Audit Log</h1></div>
+<p class="muted" style="margin-bottom:1.25rem;">
+  Append-only record of all data mutations. Newest entries first.
+</p>
+
+<!-- Filter bar -->
+<form method="get" action="/audit" class="filter-bar" style="margin-bottom:1rem;">
+  <label for="table_name" style="font-size:0.85rem; color:var(--text-muted);">Filter by table:</label>
+  <select id="table_name" name="table_name" onchange="this.form.submit()">
+    <option value="">All tables</option>
+    {% for t in tables %}
+    <option value="{{ t }}" {{ 'selected' if active_table == t }}>{{ t }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+  {% if active_table %}
+  <a href="/audit" class="btn btn-secondary btn-sm">Clear filter</a>
+  {% endif %}
+</form>
+
+{% if not entries %}
+<div class="empty-state">No audit entries{{ ' for ' + active_table if active_table else '' }}.</div>
+{% else %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>When (UTC)</th>
+          <th>Table</th>
+          <th>Action</th>
+          <th>Record ID</th>
+          <th>Changes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td><span class="muted">{{ e.changed_at }}</span></td>
+          <td>{{ e.table_name }}</td>
+          <td>
+            <span class="badge
+              {% if e.action == 'INSERT' %}badge-insert
+              {% elif e.action == 'UPDATE' %}badge-update
+              {% elif e.action == 'CORRECTION' %}badge-correction
+              {% elif e.action == 'REVERSAL' %}badge-reversal
+              {% else %}badge-delete{% endif %}">
+              {{ e.action }}
+            </span>
+          </td>
+          <td class="muted" style="font-size:0.8rem; font-family:var(--font-mono);">
+            {{ e.record_id[:8] }}…
+          </td>
+          <td style="font-size:0.8rem; max-width:420px;">
+            {% if e.old_values_json or e.new_values_json %}
+            <div class="audit-changes">
+              {% if e.old_values_json %}
+              <details>
+                <summary class="audit-changes__label audit-changes__label--old">Before</summary>
+                <pre class="audit-changes__json">{{ e.old_values_json }}</pre>
+              </details>
+              {% endif %}
+              {% if e.new_values_json %}
+              <details>
+                <summary class="audit-changes__label audit-changes__label--new">After</summary>
+                <pre class="audit-changes__json">{{ e.new_values_json }}</pre>
+              </details>
+              {% endif %}
+            </div>
+            {% elif e.notes %}
+            <span class="muted">{{ e.notes }}</span>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

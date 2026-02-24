@@ -1,0 +1,16 @@
+# Normalize line endings for cross-platform collaboration
+* text=auto
+
+# Keep Windows shell scripts with CRLF for local execution
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Source/docs default to LF
+*.py text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

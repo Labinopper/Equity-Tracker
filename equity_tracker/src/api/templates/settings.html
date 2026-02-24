@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Settings - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Settings</h1></div>
+<p class="muted" style="margin-bottom:1.5rem;">
+  Income and tax year defaults used by disposal simulation and reporting.
+</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/settings">
+
+    <div class="form-grid">
+
+      <div class="form-field">
+        <label for="default_gross_income">Default Gross Income (&pound;)</label>
+        <input id="default_gross_income" name="default_gross_income" type="text"
+               placeholder="0.00"
+               value="{{ settings.default_gross_income if settings else '0' }}">
+        <span class="form-hint">Gross employment income used for employment-tax estimates.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="default_pension_sacrifice">Pension Sacrifice (&pound;)</label>
+        <input id="default_pension_sacrifice" name="default_pension_sacrifice" type="text"
+               placeholder="0.00"
+               value="{{ settings.default_pension_sacrifice if settings else '0' }}">
+        <span class="form-hint">Reduces adjusted net income.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="default_other_income">Other Income (&pound;)</label>
+        <input id="default_other_income" name="default_other_income" type="text"
+               placeholder="0.00"
+               value="{{ settings.default_other_income if settings else '0' }}">
+        <span class="form-hint">Rental, dividends, etc. - adds to adjusted net income.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="default_student_loan_plan">Student Loan Plan</label>
+        <select id="default_student_loan_plan" name="default_student_loan_plan">
+          <option value="">None</option>
+          <option value="1" {{ 'selected' if settings and settings.default_student_loan_plan == 1 }}>Plan 1</option>
+          <option value="2" {{ 'selected' if settings and settings.default_student_loan_plan == 2 }}>Plan 2</option>
+          <option value="4" {{ 'selected' if settings and settings.default_student_loan_plan == 4 }}>Plan 4 (Scottish)</option>
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label for="default_tax_year">Default Tax Year</label>
+        <select id="default_tax_year" name="default_tax_year">
+          {% for y in tax_years %}
+          <option value="{{ y }}"
+            {{ 'selected' if settings and settings.default_tax_year == y }}>
+            {{ y }}
+          </option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">Pre-selected year on CGT and Economic Gain reports.</span>
+      </div>
+
+      <div class="form-field" style="justify-content:flex-end; padding-bottom:0.5rem;">
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" name="show_exhausted_lots" value="on"
+                 {{ 'checked' if settings and settings.show_exhausted_lots }}>
+          Show exhausted lots in portfolio
+        </label>
+        <span class="form-hint">When checked, lots with zero remaining quantity are shown.</span>
+      </div>
+
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+      <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+
+  </form>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2 style="margin-top:0;">Danger Zone</h2>
+  <p class="muted">
+    This permanently deletes all portfolio data in the current database and recreates
+    empty tables from the current schema.
+  </p>
+  <form method="post" action="/settings/nuke-db">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="confirm_text">Type <code>NUKE</code> to confirm</label>
+        <input id="confirm_text" name="confirm_text" type="text" placeholder="NUKE" autocomplete="off">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-danger">Nuke Database</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

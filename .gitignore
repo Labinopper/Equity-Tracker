@@ -1,0 +1,50 @@
+# --- Python / venv ---
+.venv/
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/
+
+# --- Local databases / sensitive data ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- App settings / local state ---
+*.settings.json
+*.log
+CODEX_PROGRESS.md
+CODEX_QUESTIONS.md
+
+# --- Secrets ---
+secrets/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Archives / exports ---
+*.zip
+*.tar
+*.gz
+*.7z

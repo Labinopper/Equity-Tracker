@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Transfer Lot - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <h1>Transfer Lot</h1>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="card__header">
+    <span class="card__title">Transfer to Brokerage</span>
+  </div>
+
+  <form id="transfer-lot-form" method="post" action="/portfolio/transfer-lot" class="edit-lot-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="lot_id">Source (scheme/FIFO pool) *</label>
+        <select id="lot_id" name="lot_id" required>
+          <option value="">- select eligible lot -</option>
+          {% for c in candidates %}
+          <option
+            value="{{ c.lot_id }}"
+            data-scheme="{{ c.scheme_type }}"
+            data-qty="{{ c.quantity_remaining }}"
+            data-default-qty="{{ c.default_transfer_quantity }}"
+            data-whole-qty="{{ c.whole_quantity_available }}"
+            data-acq="{{ c.acquisition_date }}"
+            {% if preselect_lot_id == c.lot_id %}selected{% endif %}
+          >
+            {{ c.label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label>Destination</label>
+        <input type="text" value="BROKERAGE" readonly>
+        <span class="form-hint">Destination is fixed for this workflow.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="quantity">Quantity to Transfer</label>
+        <input
+          id="quantity"
+          name="quantity"
+          type="text"
+          value="{{ quantity }}"
+          placeholder="Defaults to max transferable quantity"
+        >
+        <span id="transfer-qty-hint" class="form-hint">
+          ESPP allows partial FIFO transfer using whole shares only. RSU/ESPP+ require full lot transfer.
+        </span>
+      </div>
+
+      <div class="form-field edit-lot-notes">
+        <label for="notes">Transfer Notes</label>
+        <textarea id="notes" name="notes">{{ notes }}</textarea>
+      </div>
+    </div>
+
+    <div class="alert alert-warning transfer-warning">
+      <strong>Transfer rules:</strong>
+      <br>ESPP transfers keep original lot pricing, must use whole shares, and follow FIFO from the oldest active ESPP lot.
+      <br>ESPP partial transfer splits custody (ESPP remainder + BROKERAGE lot). Final remainder transfer merges into the same source-linked broker lot.
+      <br>ESPP+ transfers can forfeit still-locked matched shares and make employment tax eligible at transfer time.
+      <br>RSU transfers are allowed only after vest.
+      <br>Transfers into ISA are not supported. Use dispose then Add Lot in ISA.
+    </div>
+
+    <div class="edit-summary">
+      <div class="edit-summary__title">Transfer Summary</div>
+      <div class="edit-summary__row">Source Scheme: <strong id="summary-source-scheme">-</strong></div>
+      <div class="edit-summary__row">Quantity Remaining: <strong id="summary-source-qty">-</strong></div>
+      <div class="edit-summary__row">Whole Shares Available (FIFO): <strong id="summary-whole-qty">-</strong></div>
+      <div class="edit-summary__row">Requested Transfer Quantity: <strong id="summary-transfer-qty">-</strong></div>
+      <div class="edit-summary__row">Acquisition Date: <strong id="summary-source-acq">-</strong></div>
+      <div class="edit-summary__row">Destination Scheme: <strong>BROKERAGE</strong></div>
+      <div class="edit-summary__row">Audit Trail: <strong>Recorded in lots audit log</strong></div>
+    </div>
+
+    <div class="form-field form-field-inline">
+      <label class="checkbox-inline">
+        <input id="confirm_transfer" name="confirm_transfer" type="checkbox" value="yes" required>
+        I confirm this custody transfer to BROKERAGE and understand scheme-specific transfer effects.
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Transfer Lot</button>
+      <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  var lotSelect = document.getElementById("lot_id");
+  var qtyInput = document.getElementById("quantity");
+  var qtyHint = document.getElementById("transfer-qty-hint");
+  var schemeEl = document.getElementById("summary-source-scheme");
+  var qtyEl = document.getElementById("summary-source-qty");
+  var wholeQtyEl = document.getElementById("summary-whole-qty");
+  var transferQtyEl = document.getElementById("summary-transfer-qty");
+  var acqEl = document.getElementById("summary-source-acq");
+
+  function updateSummary() {
+    var option = lotSelect.options[lotSelect.selectedIndex];
+    if (!option || !option.value) {
+      schemeEl.textContent = "-";
+      qtyEl.textContent = "-";
+      if (wholeQtyEl) wholeQtyEl.textContent = "-";
+      transferQtyEl.textContent = "-";
+      acqEl.textContent = "-";
+      return;
+    }
+    var scheme = option.getAttribute("data-scheme") || "-";
+    var qty = option.getAttribute("data-qty") || "-";
+    var defaultQty = option.getAttribute("data-default-qty") || qty;
+    var wholeQty = option.getAttribute("data-whole-qty") || defaultQty;
+    schemeEl.textContent = scheme;
+    qtyEl.textContent = qty;
+    if (wholeQtyEl) {
+      wholeQtyEl.textContent = wholeQty;
+    }
+    if (qtyInput && !qtyInput.value.trim()) {
+      qtyInput.value = defaultQty;
+    }
+    if (transferQtyEl) {
+      transferQtyEl.textContent = (qtyInput && qtyInput.value.trim()) ? qtyInput.value.trim() : defaultQty;
+    }
+    if (qtyInput) {
+      if (scheme === "ESPP") {
+        qtyInput.readOnly = false;
+      } else {
+        qtyInput.readOnly = true;
+        qtyInput.value = defaultQty;
+      }
+    }
+    if (qtyHint) {
+      qtyHint.textContent = scheme === "ESPP"
+        ? "ESPP allows partial FIFO transfer using whole shares only (defaults to max whole-share FIFO quantity)."
+        : "RSU/ESPP+ transfer requires full remaining lot quantity.";
+    }
+    acqEl.textContent = option.getAttribute("data-acq") || "-";
+  }
+
+  if (lotSelect) {
+    lotSelect.addEventListener("change", updateSummary);
+  }
+  if (qtyInput) {
+    qtyInput.addEventListener("input", function () {
+      if (!transferQtyEl) return;
+      transferQtyEl.textContent = qtyInput.value.trim() || "-";
+    });
+  }
+  updateSummary();
+})();
+</script>
+{% endblock %}

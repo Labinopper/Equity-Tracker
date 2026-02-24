@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Per Scheme - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <h1>Per Scheme</h1>
+</div>
+
+<p class="muted net-intro">
+  Current rows use the same "if sold now" logic as Portfolio, including ESPP+ forfeiture effects.
+  Historic rows are based on committed disposal records.
+</p>
+
+{% if not scheme_reports %}
+<div class="empty-state">
+  <p>No scheme activity yet.</p>
+</div>
+{% else %}
+{% for sr in scheme_reports %}
+<div class="card card-spaced">
+  <div class="card__header">
+    <div class="card__title">{{ sr.display_name }}</div>
+    <div class="security-header__actions">
+      {% if sr.scheme_type == 'RSU' %}
+      <span class="badge badge-rsu">RSU</span>
+      {% elif sr.scheme_type == 'ESPP' or sr.scheme_type == 'ESPP_PLUS' %}
+      <span class="badge badge-espp">{{ sr.display_name }}</span>
+      {% elif 'SIP' in sr.scheme_type %}
+      <span class="badge badge-sip">{{ sr.display_name }}</span>
+      {% elif sr.scheme_type == 'ISA' %}
+      <span class="badge badge-isa">ISA</span>
+      {% else %}
+      <span class="badge badge-broker">{{ sr.display_name }}</span>
+      {% endif %}
+      {% if sr.current.potential_forfeiture_value_gbp > 0 %}
+      <span class="badge badge-warning">
+        Potential Match Forfeiture if Sold Now: &pound;{{ sr.current.potential_forfeiture_value_gbp | money }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat stat--accent">
+      <div class="stat__label">Current Lots</div>
+      <div class="stat__value">{{ sr.current.lot_count }}</div>
+      <div class="stat-caption">Open lots in this scheme</div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Current Quantity</div>
+      <div class="stat__value">{{ "%.2f"|format(sr.current.quantity) }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Current Market Value</div>
+      {% if sr.current.market_value_gbp is not none %}
+      <div class="stat__value">&pound;{{ sr.current.market_value_gbp | money }}</div>
+      {% else %}
+      <div class="stat__value muted">Unavailable</div>
+      {% endif %}
+    </div>
+    <div class="stat {% if sr.current.post_tax_economic_pnl_gbp is not none and sr.current.post_tax_economic_pnl_gbp > 0 %}stat--gain{% elif sr.current.post_tax_economic_pnl_gbp is not none and sr.current.post_tax_economic_pnl_gbp < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+      <div class="stat__label">Unrealised P&amp;L If Sold Now (Post-Tax)</div>
+      {% if sr.current.post_tax_economic_pnl_gbp is not none %}
+      <div class="stat__value {% if sr.current.post_tax_economic_pnl_gbp > 0 %}gain{% elif sr.current.post_tax_economic_pnl_gbp < 0 %}loss{% endif %}">
+        {% if sr.current.post_tax_economic_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.current.post_tax_economic_pnl_gbp | money }}
+      </div>
+      {% else %}
+      <div class="stat__value muted">Unavailable</div>
+      {% endif %}
+    </div>
+    <div class="stat {% if sr.historic.realised_economic_pnl_gbp > 0 %}stat--gain{% elif sr.historic.realised_economic_pnl_gbp < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+      <div class="stat__label">Realised P&amp;L (Economic)</div>
+      <div class="stat__value {% if sr.historic.realised_economic_pnl_gbp > 0 %}gain{% elif sr.historic.realised_economic_pnl_gbp < 0 %}loss{% endif %}">
+        {% if sr.historic.realised_economic_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.historic.realised_economic_pnl_gbp | money }}
+      </div>
+      <div class="stat-caption">{{ sr.historic.disposal_count }} disposal event(s)</div>
+    </div>
+    <div class="stat {% if sr.lifetime_economic_pnl_gbp is not none and sr.lifetime_economic_pnl_gbp > 0 %}stat--gain{% elif sr.lifetime_economic_pnl_gbp is not none and sr.lifetime_economic_pnl_gbp < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+      <div class="stat__label">Lifetime Economic P&amp;L</div>
+      {% if sr.lifetime_economic_pnl_gbp is not none %}
+      <div class="stat__value {% if sr.lifetime_economic_pnl_gbp > 0 %}gain{% elif sr.lifetime_economic_pnl_gbp < 0 %}loss{% endif %}">
+        {% if sr.lifetime_economic_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.lifetime_economic_pnl_gbp | money }}
+      </div>
+      {% else %}
+      <div class="stat__value muted">Unavailable</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scope</th>
+          <th class="num">Lots</th>
+          <th class="num">Qty</th>
+          <th class="num">Gross Value / Proceeds</th>
+          <th class="num">Cost Basis</th>
+          <th class="num">True Cost</th>
+          <th class="num">P&amp;L (Tax Basis)</th>
+          <th class="num">P&amp;L (Economic / Post-Tax)</th>
+          <th class="num">Employment Tax (Est)</th>
+          <th class="num">Net If Sold (Est)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current Lots</td>
+          <td class="num">{{ sr.current.lot_count }}</td>
+          <td class="num">{{ "%.2f"|format(sr.current.quantity) }}</td>
+          <td class="num">{% if sr.current.market_value_gbp is not none %}&pound;{{ sr.current.market_value_gbp | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+          <td class="num">&pound;{{ sr.current.cost_basis_gbp | money }}</td>
+          <td class="num">&pound;{{ sr.current.true_cost_gbp | money }}</td>
+          <td class="num {% if sr.current.unrealised_tax_pnl_gbp is not none and sr.current.unrealised_tax_pnl_gbp > 0 %}gain{% elif sr.current.unrealised_tax_pnl_gbp is not none and sr.current.unrealised_tax_pnl_gbp < 0 %}loss{% endif %}">
+            {% if sr.current.unrealised_tax_pnl_gbp is not none %}
+            {% if sr.current.unrealised_tax_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.current.unrealised_tax_pnl_gbp | money }}
+            {% else %}
+            <span class="muted">Unavailable</span>
+            {% endif %}
+          </td>
+          <td class="num {% if sr.current.post_tax_economic_pnl_gbp is not none and sr.current.post_tax_economic_pnl_gbp > 0 %}gain{% elif sr.current.post_tax_economic_pnl_gbp is not none and sr.current.post_tax_economic_pnl_gbp < 0 %}loss{% endif %}">
+            {% if sr.current.post_tax_economic_pnl_gbp is not none %}
+            {% if sr.current.post_tax_economic_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.current.post_tax_economic_pnl_gbp | money }}
+            {% else %}
+            <span class="muted">Unavailable</span>
+            {% endif %}
+          </td>
+          <td class="num">{% if sr.current.est_employment_tax_gbp is not none %}&pound;{{ sr.current.est_employment_tax_gbp | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+          <td class="num">{% if sr.current.est_net_liquidation_gbp is not none %}&pound;{{ sr.current.est_net_liquidation_gbp | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+        </tr>
+        <tr>
+          <td>Total Prev Lots</td>
+          <td class="num">{{ sr.historic.disposed_lot_count }}</td>
+          <td class="num">{{ "%.2f"|format(sr.historic.quantity_disposed) }}</td>
+          <td class="num">&pound;{{ sr.historic.proceeds_gbp | money }}</td>
+          <td class="num">&pound;{{ sr.historic.cost_basis_gbp | money }}</td>
+          <td class="num">&pound;{{ sr.historic.true_cost_gbp | money }}</td>
+          <td class="num {% if sr.historic.realised_tax_pnl_gbp > 0 %}gain{% elif sr.historic.realised_tax_pnl_gbp < 0 %}loss{% endif %}">
+            {% if sr.historic.realised_tax_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.historic.realised_tax_pnl_gbp | money }}
+          </td>
+          <td class="num {% if sr.historic.realised_economic_pnl_gbp > 0 %}gain{% elif sr.historic.realised_economic_pnl_gbp < 0 %}loss{% endif %}">
+            {% if sr.historic.realised_economic_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.historic.realised_economic_pnl_gbp | money }}
+          </td>
+          <td class="num muted">-</td>
+          <td class="num muted">-</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

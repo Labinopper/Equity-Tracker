@@ -1,0 +1,485 @@
+﻿{% extends "base.html" %}
+{% block title %}Simulate Disposal &mdash; Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Simulate Disposal</h1></div>
+<p class="muted" style="margin-bottom:1.5rem;">
+  Preview FIFO allocation and realised gains. Commit only when the result is fully allocated.
+</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/simulate">
+    <div class="form-grid">
+
+      <div class="form-field">
+        <label for="security_id">Security *</label>
+        <select id="security_id" name="security_id" required>
+          <option value="">&mdash; select &mdash;</option>
+          {% for sec in securities %}
+          <option value="{{ sec.id }}"
+            data-max-qty="{{ sec.available_quantity }}"
+            data-price="{{ sec.latest_price_gbp }}"
+            {% if prev and prev.security_id == sec.id %}selected{% endif %}>
+            {{ sec.ticker }} &mdash; {{ sec.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label for="quantity">Quantity *</label>
+        <div style="display:flex; gap:0.4rem;">
+        <input id="quantity" name="quantity" type="text" required
+               placeholder="e.g. 50" value="{{ prev.quantity if prev else '' }}">
+          <button type="button" id="btn-max" class="btn btn-secondary btn-sm">MAX</button>
+        </div>
+        <span id="qty-available" class="form-hint"></span>
+      </div>
+
+      <div class="form-field">
+        <label for="price_per_share_gbp">Disposal Price (GBP) *</label>
+        <input id="price_per_share_gbp" name="price_per_share_gbp" type="text" required
+               placeholder="e.g. 200.00" value="{{ prev.price_per_share_gbp if prev else '' }}">
+        <span class="form-hint">Defaults to latest market price when available. You can overwrite it.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="broker_fees_gbp">Broker Fees (GBP)</label>
+        <input id="broker_fees_gbp" name="broker_fees_gbp" type="text"
+               placeholder="0.00" value="{{ prev.broker_fees_gbp if prev else '' }}">
+        <span class="form-hint">Optional. Realised gains are reduced by this amount.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="scheme_type">Filter Scheme Type</label>
+        <select id="scheme_type" name="scheme_type">
+          <option value="">All schemes</option>
+          {% for st in scheme_types %}
+          {% if st %}
+          <option value="{{ st }}"
+            {{ 'selected' if prev and prev.scheme_type == st }}>
+            {{ st }}
+          </option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <span class="form-hint">Restrict FIFO to a single scheme type (optional).</span>
+      </div>
+
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Simulate</button>
+      <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<!-- Result -->
+{% if result %}
+<div class="card" style="margin-top:1.5rem;">
+  <div class="card__header">
+    <span class="card__title">Simulation Result</span>
+    {% if result.is_fully_allocated %}
+    <span class="badge" style="background:#1e3a1e; color:#6dc98a;">Fully Allocated</span>
+    {% else %}
+    <span class="badge" style="background:#3a1e1e; color:#f09090;">
+      Partial &mdash; shortfall {{ "%.4f" % result.shortfall }}
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="stats" style="margin-bottom:1.25rem;">
+    <div class="stat">
+      <div class="stat__label">Qty Sold</div>
+      <div class="stat__value">{{ result.quantity_sold }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Total Proceeds</div>
+      <div class="stat__value">&pound;{{ "%.2f" % result.total_proceeds_gbp }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Cost Basis</div>
+      <div class="stat__value">&pound;{{ "%.2f" % result.total_cost_basis_gbp }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Realised Gain (Cost Basis)</div>
+      <div class="stat__value {{ 'gain' if result.total_realised_gain_gbp >= 0 else 'loss' }}">
+        &pound;{{ "%.2f" % result.total_realised_gain_gbp }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Economic Gain</div>
+      <div class="stat__value {{ 'gain' if result.total_realised_gain_economic_gbp >= 0 else 'loss' }}">
+        &pound;{{ "%.2f" % result.total_realised_gain_economic_gbp }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat__label">Employment Tax (IT + NIC + SL)</div>
+      {% if result.sip_tax_estimates %}
+      <div class="stat__value" style="color:var(--warning);">&pound;{{ "%.2f" % result.total_sip_employment_tax_gbp }}</div>
+      {% else %}
+      <div class="stat__value muted">&mdash;</div>
+      {% endif %}
+    </div>
+    <div class="stat">
+      <div class="stat__label">Net Proceeds After Employment Tax</div>
+      {% if result.sip_tax_estimates %}
+      <div class="stat__value gain">
+        &pound;{{ "%.2f" % (result.total_proceeds_gbp - result.total_sip_employment_tax_gbp) }}
+      </div>
+      {% else %}
+      <div class="stat__value muted">&mdash;</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <h3 style="margin-bottom:0.75rem;">FIFO Allocations</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Lot Acquired</th>
+          <th class="num">Qty Allocated</th>
+          <th class="num">Cost Basis</th>
+          <th class="num">True Cost</th>
+          <th class="num">Proceeds</th>
+          <th class="num">Realised Gain (Cost Basis)</th>
+          <th class="num">Economic Gain</th>
+          <th class="num">Employment Tax</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in result.allocations %}
+        {% set ns = namespace(tax_est=none) %}
+        {% for est in result.sip_tax_estimates %}
+          {% if est.lot_id == a.lot_id %}{% set ns.tax_est = est %}{% endif %}
+        {% endfor %}
+        <tr>
+          <td>{{ a.acquisition_date }}</td>
+          <td class="num">{{ a.quantity_allocated }}</td>
+          <td class="num">&pound;{{ "%.2f" % a.cost_basis_gbp }}</td>
+          <td class="num">&pound;{{ "%.2f" % a.true_cost_gbp }}</td>
+          <td class="num">&pound;{{ "%.2f" % a.proceeds_gbp }}</td>
+          <td class="num {{ 'gain' if a.realised_gain_gbp >= 0 else 'loss' }}">
+            &pound;{{ "%.2f" % a.realised_gain_gbp }}
+          </td>
+          <td class="num {{ 'gain' if a.realised_gain_economic_gbp >= 0 else 'loss' }}">
+            &pound;{{ "%.2f" % a.realised_gain_economic_gbp }}
+          </td>
+          <td class="num">
+            {% if ns.tax_est and ns.tax_est.est_total_employment_tax_gbp > 0 %}
+            <span style="color:var(--warning);">&pound;{{ "%.2f" % ns.tax_est.est_total_employment_tax_gbp }}</span>
+            <span class="badge badge-warning" style="font-size:0.72rem; margin-left:0.3rem;" title="{{ ns.tax_est.holding_period_category }}">{{ ns.tax_est.holding_period_category | replace('_', ' ') | title }}</span>
+            {% else %}
+            <span class="muted">&mdash;</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if result.total_sip_employment_tax_gbp > 0 %}
+      <tfoot>
+        <tr>
+          <td colspan="7" style="text-align:right;"><strong>Total Employment Tax</strong></td>
+          <td class="num" style="color:var(--warning);"><strong>&pound;{{ "%.2f" % result.total_sip_employment_tax_gbp }}</strong></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+  {% if not result.sip_tax_estimates %}
+  <p class="muted" style="font-size:0.8rem; margin-top:0.5rem;">
+    Note: Employment tax estimates (IT + NIC + Student Loan) require income settings &mdash; configure in <a href="/settings">Settings</a>.
+  </p>
+  {% endif %}
+
+  {# Forfeiture warning banner -- only for ESPP disposals within 6-month window #}
+  {% if result.forfeiture_warnings %}
+  <div class="alert alert-warning" style="margin-top:1.5rem;">
+    <strong>Warning: Forfeiture Warning &mdash; Matching Shares at Risk</strong>
+    <p style="margin:0.4rem 0 0.75rem;">Selling these ESPP partnership shares within the 6-month window will forfeit
+      {{ result.forfeiture_warnings | length }} matching lot(s).</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Matching Lot Acquired</th>
+            <th class="num">Qty Forfeited</th>
+            <th class="num">Value Lost</th>
+            <th>Forfeiture Ends</th>
+            <th class="num">Days Remaining</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in result.forfeiture_warnings %}
+          <tr>
+            <td>{{ w.acquisition_date }}</td>
+            <td class="num">{{ w.quantity_at_risk }}</td>
+            <td class="num loss">&pound;{{ "%.2f" % w.value_at_risk_gbp }}</td>
+            <td>{{ w.forfeiture_end_date }}</td>
+            <td class="num"><span class="badge badge-warning">{{ w.days_remaining }}d</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2"><strong>Total forfeiture cost</strong></td>
+            <td class="num loss"><strong>&pound;{{ "%.2f" % result.total_forfeiture_value_gbp }}</strong></td>
+            <td colspan="2" style="font-size:0.85rem;">
+              Wait until <strong>{{ result.forfeiture_warnings | map(attribute='forfeiture_end_date') | max }}</strong> to avoid forfeiture.
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Exit summary panel: cash flow, paid-share performance, and scheme impact #}
+  {% if exit_summary and (result.forfeiture_warnings or exit_summary.employment_tax_due_gbp > 0 or exit_summary.broker_fees_gbp > 0) %}
+  <div class="card exit-summary-card">
+    <div class="card__header">
+      <span class="card__title">Exit Summary</span>
+    </div>
+
+    <div class="exit-summary">
+      <section class="exit-summary__section">
+        <h4 class="exit-summary__heading">1) Cash Flow</h4>
+        <table class="exit-summary__table">
+          <tbody>
+            <tr>
+              <td>Proceeds (cash from sold shares)</td>
+              <td class="num">&pound;{{ "%.2f" % exit_summary.proceeds_cash_gbp }}</td>
+            </tr>
+            <tr>
+              <td>Employment tax due (IT + NIC + SL)</td>
+              <td class="num loss">-&pound;{{ "%.2f" % exit_summary.employment_tax_due_gbp }}</td>
+            </tr>
+            <tr>
+              <td>Broker fees</td>
+              <td class="num loss">-&pound;{{ "%.2f" % exit_summary.broker_fees_gbp }}</td>
+            </tr>
+            <tr class="exit-summary__row-total">
+              <td><strong>Net Cash Received</strong></td>
+              <td class="num {{ 'gain' if exit_summary.net_cash_received_gbp >= 0 else 'loss' }}">
+                <strong>&pound;{{ "%.2f" % exit_summary.net_cash_received_gbp }}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="muted exit-summary__note">
+          This is the actual cash you receive from the sale.
+        </p>
+      </section>
+
+      <section class="exit-summary__section">
+        <h4 class="exit-summary__heading">2) Investment Performance (Paid Shares Only)</h4>
+        <table class="exit-summary__table">
+          <tbody>
+            <tr>
+              <td>Out-of-pocket cost (after tax at purchase)</td>
+              <td class="num loss">-&pound;{{ "%.2f" % exit_summary.out_of_pocket_cost_gbp }}</td>
+            </tr>
+            <tr>
+              <td>Net Cash Received</td>
+              <td class="num">&pound;{{ "%.2f" % exit_summary.net_cash_received_gbp }}</td>
+            </tr>
+            <tr class="exit-summary__row-total">
+              <td><strong>Investment P&amp;L</strong></td>
+              <td class="num {{ 'gain' if exit_summary.investment_pnl_gbp >= 0 else 'loss' }}">
+                <strong>&pound;{{ "%.2f" % exit_summary.investment_pnl_gbp }}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="exit-summary__section">
+        <h4 class="exit-summary__heading">3) Scheme Incentive Impact</h4>
+        <div class="alert alert-warning exit-summary__warning">
+          These shares were free but are forfeited due to early sale. This is not deducted from cash received.
+        </div>
+        <table class="exit-summary__table">
+          <tbody>
+            <tr>
+              <td>Matching shares forfeited (non-cash opportunity loss)</td>
+              <td class="num loss">&pound;{{ "%.2f" % exit_summary.matching_share_impact_gbp }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="exit-summary__section exit-summary__section--wide">
+        <h4 class="exit-summary__heading">4) Total Economic Outcome</h4>
+        <table class="exit-summary__table">
+          <tbody>
+            <tr>
+              <td>Investment P&amp;L</td>
+              <td class="num {{ 'gain' if exit_summary.investment_pnl_gbp >= 0 else 'loss' }}">
+                &pound;{{ "%.2f" % exit_summary.investment_pnl_gbp }}
+              </td>
+            </tr>
+            <tr>
+              <td>Matching Share Impact</td>
+              <td class="num loss">&pound;{{ "%.2f" % exit_summary.matching_share_impact_gbp }}</td>
+            </tr>
+            <tr class="exit-summary__row-total">
+              <td><strong>Net Economic Outcome</strong></td>
+              <td class="num {{ 'gain' if exit_summary.net_economic_result_gbp >= 0 else 'loss' }}">
+                <strong>&pound;{{ "%.2f" % exit_summary.net_economic_result_gbp }}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Commit form -- only shown when fully allocated -->
+{% if result.is_fully_allocated %}
+<div class="card" style="margin-top:1rem; border-color: var(--success);">
+  <div class="card__header">
+    <span class="card__title">Commit Disposal</span>
+    <span class="muted" style="font-size:0.85rem;">Writes to database &mdash; cannot be undone</span>
+  </div>
+
+  <form method="post" action="/simulate/commit">
+    <!-- Hidden carry-over from simulation -->
+    <input type="hidden" name="security_id"        value="{{ prev.security_id }}">
+    <input type="hidden" name="quantity"            value="{{ prev.quantity }}">
+    <input type="hidden" name="price_per_share_gbp" value="{{ prev.price_per_share_gbp }}">
+    <input type="hidden" name="scheme_type"         value="{{ prev.scheme_type }}">
+
+    <div class="form-grid">
+
+      <div class="form-field">
+        <label for="transaction_date">Transaction Date *</label>
+        <input id="transaction_date" name="transaction_date" type="date" required>
+        <span class="form-hint">The date the disposal settled / was executed.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="broker_fees_gbp_commit">Broker Fees (GBP)</label>
+        <input id="broker_fees_gbp_commit" name="broker_fees_gbp" type="text"
+               placeholder="0.00" value="{{ prev.broker_fees_gbp if prev else '' }}">
+        <span class="form-hint">Optional. Keep this aligned with simulation inputs.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="broker_reference">Broker Reference</label>
+        <input id="broker_reference" name="broker_reference" type="text"
+               placeholder="Optional">
+      </div>
+
+      <div class="form-field">
+        <label for="external_id">External ID</label>
+        <input id="external_id" name="external_id" type="text"
+               placeholder="Optional idempotency key">
+        <span class="form-hint">Must be unique if provided; prevents duplicate commits.</span>
+      </div>
+
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes" placeholder="Optional notes"></textarea>
+      </div>
+
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"
+              onclick="return confirm('Commit disposal of {{ prev.quantity }} shares at &pound;{{ prev.price_per_share_gbp }}/share?\n\nThis cannot be undone.')">
+        Commit Disposal
+      </button>
+      <a href="/simulate" class="btn btn-secondary">Start Again</a>
+    </div>
+  </form>
+</div>
+{% else %}
+<div class="alert alert-info" style="margin-top:1rem;">
+  Partial allocation &mdash; fix the shortfall before committing.
+  Ensure you have enough active lots for the requested quantity.
+</div>
+{% endif %}
+
+{% endif %}
+
+<script>
+(function () {
+  var securitySel = document.getElementById('security_id');
+  var schemeSel = document.getElementById('scheme_type');
+  var qtyInput = document.getElementById('quantity');
+  var priceInput = document.getElementById('price_per_share_gbp');
+  var maxBtn = document.getElementById('btn-max');
+  var qtyHint = document.getElementById('qty-available');
+  var meta = {{ simulate_meta | tojson if simulate_meta else '{}' }};
+
+  function decimalOrZero(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function selectedMeta() {
+    if (!securitySel || !securitySel.value) return null;
+    return meta[securitySel.value] || null;
+  }
+
+  function availableQtyForSelection() {
+    var s = selectedMeta();
+    if (!s) return "";
+    if (schemeSel && schemeSel.value) {
+      return s.available_by_scheme[schemeSel.value] || "0";
+    }
+    return s.available_quantity || "0";
+  }
+
+  function updateHintsAndDefaults() {
+    var s = selectedMeta();
+    if (!s) {
+      if (qtyHint) qtyHint.textContent = "";
+      return;
+    }
+
+    var maxQty = availableQtyForSelection();
+    if (qtyHint) qtyHint.textContent = "Available for this selection: " + maxQty;
+
+    if (priceInput && (!priceInput.value || priceInput.dataset.autoFilled === "true")) {
+      if (s.latest_price_gbp) {
+        priceInput.value = s.latest_price_gbp;
+        priceInput.dataset.autoFilled = "true";
+      }
+    }
+  }
+
+  if (priceInput) {
+    priceInput.addEventListener('input', function () {
+      priceInput.dataset.autoFilled = "false";
+    });
+  }
+  if (securitySel) {
+    securitySel.addEventListener('change', updateHintsAndDefaults);
+  }
+  if (schemeSel) {
+    schemeSel.addEventListener('change', updateHintsAndDefaults);
+  }
+  if (maxBtn) {
+    maxBtn.addEventListener('click', function () {
+      var maxQty = availableQtyForSelection();
+      if (qtyInput) qtyInput.value = maxQty;
+    });
+  }
+
+  updateHintsAndDefaults();
+})();
+</script>
+
+{% endblock %}
+

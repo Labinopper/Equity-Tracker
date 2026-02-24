@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}Net Value - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <h1>Net Value</h1>
+  <div class="page-actions">
+    <button onclick="window.print()" class="btn btn-secondary btn-sm">Print</button>
+  </div>
+</div>
+
+<p class="muted net-intro">
+  Hypothetical sell-all breakdown. Employment tax is estimated and not a filing calculation.
+  Estimates cover IT + NIC + Student Loan where scheme rules apply.
+  ISA holdings are treated as tax-sheltered.
+  Consult a qualified tax adviser before acting on these figures.
+</p>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat__label">Gross Market Value</div>
+    {% if summary.total_market_value_gbp is not none %}
+    <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">Estimated Employment Tax</div>
+    {% if summary.est_total_cgt_liability_gbp is not none %}
+    <div class="stat__value warning-text">&pound;{{ summary.est_total_cgt_liability_gbp | money }}</div>
+    <div class="stat-caption">IT + NIC + Student Loan (eligible schemes)</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat stat--gain">
+    <div class="stat__label">Est. Net Liquidation</div>
+    {% if summary.est_total_net_liquidation_gbp is not none %}
+    <div class="stat__value gain">&pound;{{ summary.est_total_net_liquidation_gbp | money }}</div>
+    <div class="stat-caption">Gross minus estimated employment tax</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">Total Cost Basis</div>
+    <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
+  </div>
+</div>
+
+{% if not settings or (settings.default_gross_income == 0 and settings.default_other_income == 0) %}
+<div class="alert alert-warning">
+  Income settings are zero. Employment-tax estimates may understate your actual position.
+  <a href="/settings">Configure in Settings</a>
+</div>
+{% endif %}
+
+{% if not summary.securities %}
+<div class="empty-state"><p>No securities with active lots.</p></div>
+{% else %}
+{% for ss in summary.securities %}
+{% if ss.active_lots %}
+<div class="card card-spaced">
+  <div class="security-header">
+    <div class="security-header__left">
+      <span class="security-ticker">{{ ss.security.ticker }}</span>
+      <span class="security-name">{{ ss.security.name }}</span>
+      {% if ss.has_forfeiture_risk %}<span class="badge badge-warning">Forfeiture Risk</span>{% endif %}
+      {% if ss.has_sip_qualifying_risk %}<span class="badge badge-warning">Tax Window</span>{% endif %}
+    </div>
+    <div class="security-header__actions">
+      <span class="muted security-currency">{{ ss.security.currency }}</span>
+      {% if ss.price_as_of %}
+      <span class="muted mono-small">Price as of {{ ss.price_as_of }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if ss.market_value_gbp is not none %}
+  <div class="net-value-grid net-summary-grid">
+    <div class="net-value-item">
+      <div class="net-value-item__label">Quantity</div>
+      <div class="net-value-item__value">{{ ss.total_quantity }}</div>
+    </div>
+    <div class="net-value-item">
+      <div class="net-value-item__label">Gross Market Value</div>
+      <div class="net-value-item__value">&pound;{{ ss.market_value_gbp | money }}</div>
+    </div>
+    <div class="net-value-item">
+      <div class="net-value-item__label">Cost Basis</div>
+      <div class="net-value-item__value">&pound;{{ ss.total_cost_basis_gbp | money }}</div>
+    </div>
+    <div class="net-value-item">
+      <div class="net-value-item__label">Unrealised Gain (Cost Basis)</div>
+      {% if ss.unrealised_gain_cgt_gbp is not none %}
+      <div class="net-value-item__value {% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
+        {% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}
+      </div>
+      {% else %}
+      <div class="net-value-item__value muted">-</div>
+      {% endif %}
+    </div>
+    {% if ss.est_cgt_gbp is not none %}
+    <div class="net-value-item">
+      <div class="net-value-item__label">Estimated Employment Tax</div>
+      <div class="net-value-item__value warning-text">&pound;{{ ss.est_cgt_gbp | money }}</div>
+    </div>
+    <div class="net-value-item">
+      <div class="net-value-item__label">Est. Net Proceeds</div>
+      <div class="net-value-item__value gain">&pound;{{ ss.est_net_proceeds_gbp | money }}</div>
+      <div class="net-value-item__note">Gross minus employment-tax estimate.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="security-meta">
+    <span class="muted">No live price available. Net value cannot be estimated.</span>
+  </div>
+  {% endif %}
+
+  {% if ss.current_price_gbp is not none %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Scheme</th>
+          <th>Sellability Status</th>
+          <th>Tax Year</th>
+          <th class="num">Qty Remaining</th>
+          <th class="num">Cost Basis</th>
+          <th class="num">Mkt Value</th>
+          <th class="num">P&amp;L (Cost Basis)</th>
+          <th class="num">Estimated Employment Tax</th>
+          <th>Est. Net Proceeds</th>
+          <th>Risk Flags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ls in ss.active_lots %}
+        <tr>
+          <td class="mono-small">{{ ls.lot.acquisition_date }}</td>
+          <td>
+            {% set st = ls.lot.scheme_type %}
+            {% set scheme = st | lower | replace('_','-') %}
+            {% if 'rsu' in scheme %}
+            <span class="badge badge-rsu">{{ st }}</span>
+            {% elif 'espp' in scheme %}
+            <span class="badge badge-espp">{{ st }}</span>
+            {% elif 'sip' in scheme %}
+            <span class="badge badge-sip">{{ st }}</span>
+            {% elif st == 'ISA' %}
+            <span class="badge badge-isa">ISA</span>
+            {% else %}
+            <span class="badge badge-broker">{{ st }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if ls.sellability_status == 'LOCKED' %}
+            <span class="badge badge-warning">Locked until {{ ls.sellability_unlock_date }}</span>
+            {% elif ls.sellability_status == 'AT_RISK' %}
+            <span class="badge badge-warning">At-risk</span>
+            {% else %}
+            <span class="badge badge-sellable">Sellable</span>
+            {% endif %}
+          </td>
+          <td class="mono-small">{{ ls.lot.tax_year }}</td>
+          <td class="num">{{ ls.lot.quantity_remaining }}</td>
+          <td class="num">&pound;{{ ls.cost_basis_total_gbp | money }}</td>
+          <td class="num">&pound;{{ ls.market_value_gbp | money }}</td>
+          {% if ls.unrealised_gain_cgt_gbp is not none %}
+          <td class="num {% if ls.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
+            {% if ls.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ls.unrealised_gain_cgt_gbp | money }}
+          </td>
+          {% else %}
+          <td class="num muted">-</td>
+          {% endif %}
+
+          {% if ls.est_cgt_on_lot_gbp is not none %}
+          <td class="num warning-text">&pound;{{ ls.est_cgt_on_lot_gbp | money }}</td>
+          {% else %}
+          <td class="num muted">-</td>
+          {% endif %}
+
+          {% if ls.est_net_proceeds_gbp is not none %}
+          <td class="num {% if ls.est_net_proceeds_gbp < 0 %}loss{% else %}gain{% endif %}">
+            &pound;{{ ls.est_net_proceeds_gbp | money }}
+          </td>
+          {% else %}
+          <td class="lot-reason">{{ ls.est_net_proceeds_reason or "Unavailable" }}</td>
+          {% endif %}
+
+          <td class="risk-cell">
+            {% if st == 'RSU' %}
+            {% if ls.sellability_status == 'LOCKED' %}
+            <span class="badge badge-warning" title="RSU cannot be sold before vest date">Pre-Vest Lock</span>
+            {% endif %}
+            <span class="badge badge-warning" title="Income tax charged at vest date">IT at vest</span>
+            {% endif %}
+            {% if ls.sellability_status == 'AT_RISK' %}
+            <span class="badge badge-warning">Forfeiture Risk</span>
+            {% elif ls.forfeiture_risk and ls.forfeiture_risk.in_window %}
+            <span class="badge badge-warning" title="Forfeiture window ends {{ ls.forfeiture_risk.end_date }}">Forfeiture Risk ({{ ls.forfeiture_risk.days_remaining }}d)</span>
+            {% endif %}
+            {% if ls.sip_qualifying_status and ls.sip_qualifying_status.category.value != 'FIVE_PLUS_YEARS' %}
+            <span class="badge badge-warning">Tax Window</span>
+            {% endif %}
+            {% if st == 'ISA' %}
+            <span class="badge badge-sellable">Tax-sheltered</span>
+            {% elif st != 'RSU' and not (ls.forfeiture_risk and ls.forfeiture_risk.in_window) and not (ls.sip_qualifying_status and ls.sip_qualifying_status.category.value != 'FIVE_PLUS_YEARS') %}
+            <span class="muted">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endfor %}
+
+<div class="alert alert-info disclaimer-box">
+  <strong>Disclaimer:</strong>
+  These are estimates only. Tax rates may change. ESPP+ forfeiture windows are estimated from acquisition dates.
+  RSU income tax is generally assessed at vest and is not part of disposal proceeds.
+  ISA disposals are shown as tax-sheltered.
+  For filing decisions, use the <a href="/cgt">CGT Report</a> and consult a qualified adviser.
+</div>
+{% endif %}
+{% endblock %}

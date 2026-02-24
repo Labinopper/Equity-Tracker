@@ -1,0 +1,768 @@
+﻿{% extends "base.html" %}
+{% block title %}Add Lot - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Add Lot</h1></div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form id="add-lot-form" method="post" action="/portfolio/add-lot">
+    <div class="form-grid">
+
+      <!-- â”€â”€ Base fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+
+      <div class="form-field">
+        <label for="security_id">Security *</label>
+        <select id="security_id" name="security_id" required>
+          <option value="">- select -</option>
+          {% for sec in securities %}
+          <option value="{{ sec.id }}"
+            {% if prev and prev.security_id == sec.id %}selected
+            {% elif preselect == sec.id %}selected{% endif %}>
+            {{ sec.ticker }} - {{ sec.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label for="scheme_type">Scheme Type *</label>
+        <select id="scheme_type" name="scheme_type" required>
+          {% for st in scheme_types %}
+          <option value="{{ st }}"
+            {{ 'selected' if prev and prev.scheme_type == st }}>
+            {% if st == "ESPP_PLUS" %}
+            ESPP+
+            {% else %}
+            {{ st }}
+            {% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div
+        id="row-acquisition-date"
+        class="form-field"
+        data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+      >
+        <label for="acquisition_date">Acquisition Date *</label>
+        <input
+          id="acquisition_date"
+          name="acquisition_date"
+          type="date"
+          data-scheme-required="true"
+          value="{{ prev.acquisition_date if prev else default_acquisition_date }}"
+        >
+      </div>
+
+      <div
+        id="row-rsu-vesting-date"
+        class="form-field"
+        data-schemes="RSU"
+        data-required-schemes="RSU"
+        hidden
+      >
+        <label for="rsu_vesting_date">Vesting Date *</label>
+        <input
+          id="rsu_vesting_date"
+          name="rsu_vesting_date"
+          type="date"
+          data-scheme-required="true"
+          value="{{ prev.rsu_vesting_date if prev else default_rsu_vesting_date }}"
+        >
+      </div>
+
+      <div class="form-field">
+        <label id="quantity-label" for="quantity">Quantity *</label>
+        <input
+          id="quantity"
+          name="quantity"
+          type="text"
+          required
+          placeholder="e.g. 100"
+          value="{{ prev.quantity if prev else '' }}"
+        >
+        <span id="qty-espp-hint" class="form-hint" hidden>
+          Matched shares are entered separately below and cannot be sold for 6 months.
+        </span>
+      </div>
+
+      <!-- â”€â”€ Scheme Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+
+      <div class="scheme-section-head" style="grid-column:1/-1;">Scheme Details</div>
+
+      <!--
+        All scheme-specific rows start with the HTML `hidden` attribute.
+        The inline style below adds `[hidden] { display: none !important }` to
+        prevent `.form-field { display: flex }` from overriding it.
+        JS sets row.hidden = true/false; required is also toggled per scheme.
+      -->
+
+      <div
+        id="row-rsu-fmv-note"
+        class="form-field"
+        data-schemes="RSU"
+        hidden
+      >
+        <label for="rsu_fmv_at_vest_gbp">Taxable Value at Vest (FMV, GBP per share)</label>
+        <input
+          id="rsu_fmv_at_vest_gbp"
+          name="rsu_fmv_at_vest_gbp"
+          type="hidden"
+          value="{{ prev.rsu_fmv_at_vest_gbp if prev else '0.00' }}"
+        >
+        <span class="form-hint">
+          Hidden field: auto-estimated from latest tracked price and submitted as pending.
+          Uses 0.00 until a live price is available; confirm final vest FMV later via Edit Lot.
+        </span>
+      </div>
+
+      <div
+        id="row-price-input-currency"
+        class="form-field"
+        data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        hidden
+      >
+        <label for="price_input_currency">Input Currency *</label>
+        <select
+          id="price_input_currency"
+          name="price_input_currency"
+          data-scheme-required="true"
+        >
+          {% for ccy in price_input_currencies %}
+          <option
+            value="{{ ccy }}"
+            {% if prev and prev.price_input_currency == ccy %}
+            selected
+            {% elif (not prev) and default_price_input_currency == ccy %}
+            selected
+            {% endif %}
+          >
+            {{ ccy }}
+          </option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">
+          Add-lot entry can be in GBP or USD. Values are converted and stored in GBP for reporting.
+        </span>
+      </div>
+
+      <div
+        id="row-purchase-price"
+        class="form-field"
+        data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        hidden
+      >
+        <!--
+          Label text is set by JS on scheme change:
+          â€¢ ESPP      -> "Purchase Price (what you paid, {CCY} per share) *"
+          â€¢ ESPP_PLUS -> "Gross Purchase Price (salary funded, {CCY} per share) *"
+          â€¢ BROKERAGE -> "Acquisition Price ({CCY} per share) *"
+        -->
+        <label id="label-purchase-price" for="purchase_price_per_share_gbp">
+          Purchase Price (what you paid, GBP per share) *
+        </label>
+        <input
+          id="purchase_price_per_share_gbp"
+          name="purchase_price_per_share_gbp"
+          type="text"
+          placeholder="e.g. 145.32"
+          value="{{ prev.purchase_price_per_share_gbp if prev else '' }}"
+          data-scheme-required="true"
+        >
+      </div>
+
+      <div
+        id="row-espp-plus-net-price"
+        class="form-field"
+        data-schemes="ESPP_PLUS"
+        hidden
+      >
+        <label for="espp_plus_net_price_per_share_gbp">
+          Net Price (after tax at purchase, input currency per share)
+        </label>
+        <input
+          id="espp_plus_net_price_per_share_gbp"
+          name="espp_plus_net_price_per_share_gbp"
+          type="text"
+          placeholder="Auto-calculated from income settings"
+          value="{{ prev.espp_plus_net_price_per_share_gbp if prev else '' }}"
+        >
+        <input
+          id="espp_plus_net_price_overridden"
+          name="espp_plus_net_price_overridden"
+          type="hidden"
+          value="{{ prev.espp_plus_net_price_overridden if prev else 'false' }}"
+        >
+        <span class="form-hint">
+          Auto-populated from current tax settings. You can overwrite this value if needed.
+        </span>
+      </div>
+
+      <div
+        id="row-espp-fmv"
+        class="form-field"
+        data-schemes="ESPP"
+        hidden
+      >
+        <label id="label-espp-fmv" for="espp_fmv_at_purchase_gbp">Market Price at Purchase (FMV, input currency per share)</label>
+        <input
+          id="espp_fmv_at_purchase_gbp"
+          name="espp_fmv_at_purchase_gbp"
+          type="text"
+          placeholder="Optional"
+          value="{{ prev.espp_fmv_at_purchase_gbp if prev else '' }}"
+        >
+        <span class="form-hint">
+          Optional. Stored for reference only; not used in true-cost calculation for this ESPP scheme.
+        </span>
+      </div>
+
+      <div
+        id="row-matched-shares"
+        class="form-field"
+        data-schemes="ESPP_PLUS"
+        hidden
+      >
+        <label for="matched_shares_quantity">
+          Matched Shares Quantity
+          <span class="badge-locked">Locked 6 months</span>
+        </label>
+        <input
+          id="matched_shares_quantity"
+          name="matched_shares_quantity"
+          type="text"
+          placeholder="Optional; empty treated as 0"
+          value="{{ prev.matched_shares_quantity if prev else '' }}"
+        >
+        <input
+          id="matched_shares_overridden"
+          name="matched_shares_overridden"
+          type="hidden"
+          value="{{ prev.matched_shares_overridden if prev else 'false' }}"
+        >
+        <span class="form-hint">
+          Defaults to 1/7 of employee quantity for ESPP+; you can overwrite this.
+        </span>
+      </div>
+
+      <!-- â”€â”€ Derived Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!--
+        Hidden until: qty > 0 AND all required scheme fields filled.
+        Content and label change per scheme. No placeholder dash shown
+        when data is incomplete â€” the section simply stays hidden.
+      -->
+      <div id="derived-summary-wrapper" style="grid-column:1/-1;" hidden>
+        <div class="derived-summary">
+          <span id="derived-summary-label" class="derived-summary__label">Estimated cost</span>
+          <span id="derived-summary-amount" class="derived-summary__amount">â€”</span>
+          <p id="derived-summary-caveat" class="derived-summary__caveat form-hint"></p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- â”€â”€ Additional Details (Notes) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <div class="details-accordion">
+      <button
+        id="details-toggle"
+        type="button"
+        class="details-accordion__toggle"
+        aria-expanded="false"
+        aria-controls="details-body"
+      >
+        <span>Additional Details</span>
+        <span id="details-chevron">â–¸</span>
+      </button>
+      <div id="details-body" class="details-accordion__body">
+        <div class="form-grid" style="padding:0.8rem 0 0.2rem;">
+          <div class="form-field" style="grid-column:1 / -1;">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" placeholder="Optional notes">{{ prev.notes if prev else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Add Lot</button>
+      <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<style>
+/* Prevent .form-field { display: flex } from overriding the hidden attribute */
+[hidden] { display: none !important; }
+
+/* â”€â”€ Scheme Details section divider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.scheme-section-head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, #5a6a8a);
+  border-top: 1px solid var(--border, #1f2740);
+  padding-top: 0.35rem;
+}
+
+/* â”€â”€ "Locked 6 months" badge on Matched Shares label â”€â”€â”€â”€â”€â”€ */
+.badge-locked {
+  display: inline-block;
+  background: rgba(240, 160, 48, 0.12);
+  color: var(--warning, #f0a030);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+}
+
+/* â”€â”€ Derived Summary card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.derived-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: var(--info-bg, rgba(61, 120, 240, 0.08));
+  border: 1px solid rgba(61, 120, 240, 0.2);
+  border-radius: 6px;
+  padding: 0.65rem 0.9rem;
+}
+.derived-summary__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted, #5a6a8a);
+}
+.derived-summary__amount {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-heading, #e8eaf0);
+  letter-spacing: -0.01em;
+}
+.derived-summary__caveat {
+  margin-top: 0.1rem;
+}
+
+/* â”€â”€ Additional Details collapsible â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.details-accordion {
+  border: 1px solid var(--border, #2a3350);
+  border-radius: 8px;
+  background: var(--bg-card-alt, #1c2133);
+  margin-bottom: 1.5rem;
+}
+.details-accordion__toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary, #e8ecf4);
+  font-weight: 600;
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+}
+.details-accordion__body {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 220ms ease, opacity 180ms ease;
+  padding: 0 0.9rem;
+}
+.details-accordion__body.open {
+  max-height: 220px;
+  opacity: 1;
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  var form          = document.getElementById('add-lot-form');
+  var securitySel   = document.getElementById('security_id');
+  var schemeSel     = document.getElementById('scheme_type');
+  var qtyLabel      = document.getElementById('quantity-label');
+  var qtyEsppHint   = document.getElementById('qty-espp-hint');
+  var labelPurchase = document.getElementById('label-purchase-price');
+  var labelEsppFmv  = document.getElementById('label-espp-fmv');
+
+  var inRsuFmv   = document.getElementById('rsu_fmv_at_vest_gbp');
+  var inPriceInputCurrency = document.getElementById('price_input_currency');
+  var inPurchase = document.getElementById('purchase_price_per_share_gbp');
+  var inEsppPlusNet = document.getElementById('espp_plus_net_price_per_share_gbp');
+  var inEsppPlusNetOverridden = document.getElementById('espp_plus_net_price_overridden');
+  var inMatchedShares = document.getElementById('matched_shares_quantity');
+  var inMatchedSharesOverridden = document.getElementById('matched_shares_overridden');
+  var inEsppFmv  = document.getElementById('espp_fmv_at_purchase_gbp');
+  var inQty      = document.getElementById('quantity');
+  var notesArea  = document.getElementById('notes');
+
+  var derivedWrapper = document.getElementById('derived-summary-wrapper');
+  var derivedLabel   = document.getElementById('derived-summary-label');
+  var derivedAmount  = document.getElementById('derived-summary-amount');
+  var derivedCaveat  = document.getElementById('derived-summary-caveat');
+
+  var detailsToggle  = document.getElementById('details-toggle');
+  var detailsBody    = document.getElementById('details-body');
+  var detailsChevron = document.getElementById('details-chevron');
+
+  var settingsAvailable = {{ 'true' if settings_available else 'false' }};
+  var esppCombinedRate  = Number("{{ espp_combined_rate }}");
+  var rsuTaxRate        = Number("{{ rsu_tax_rate }}");
+  var rsuLivePrices     = {{ rsu_live_prices | tojson if rsu_live_prices else '{}' }};
+
+  /* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  function asNum(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function includesScheme(csv, scheme) {
+    if (!csv || !scheme) return false;
+    return csv.split(',').map(function (s) { return s.trim(); }).indexOf(scheme) !== -1;
+  }
+
+  function selectedInputCurrency() {
+    if (!inPriceInputCurrency || !inPriceInputCurrency.value) return 'GBP';
+    return inPriceInputCurrency.value.toUpperCase() === 'USD' ? 'USD' : 'GBP';
+  }
+
+  function formatMoney(n, currencyCode) {
+    var symbol = currencyCode === 'USD' ? '$' : '\u00a3';
+    return symbol + n.toFixed(2) + ' per share';
+  }
+
+  function rateIsUsable() {
+    return settingsAvailable && Number.isFinite(esppCombinedRate);
+  }
+
+  function rsuRateIsUsable() {
+    return settingsAvailable && Number.isFinite(rsuTaxRate);
+  }
+
+  function computeEsppPlusNetPerShare() {
+    var purchase = asNum(inPurchase.value);
+    if (!(purchase > 0) || !rateIsUsable()) return NaN;
+    return purchase * (1 - esppCombinedRate);
+  }
+
+  function isNetOverridden() {
+    if (!inEsppPlusNetOverridden) return false;
+    return String(inEsppPlusNetOverridden.value).toLowerCase() === 'true';
+  }
+
+  function setNetOverridden(v) {
+    if (!inEsppPlusNetOverridden) return;
+    inEsppPlusNetOverridden.value = v ? 'true' : 'false';
+  }
+
+  function syncEsppPlusNetPrice(force) {
+    if (!inEsppPlusNet || schemeSel.value !== 'ESPP_PLUS') return;
+    if (!force && isNetOverridden()) return;
+    var computed = computeEsppPlusNetPerShare();
+    if (Number.isFinite(computed)) {
+      inEsppPlusNet.value = computed.toFixed(2);
+      setNetOverridden(false);
+      return;
+    }
+    if (force) {
+      inEsppPlusNet.value = '';
+      setNetOverridden(false);
+    }
+  }
+
+  function syncRsuFmv() {
+    if (!inRsuFmv || !securitySel || schemeSel.value !== 'RSU') return;
+    var sid = securitySel.value;
+    if (!sid) {
+      inRsuFmv.value = '0.00';
+      return;
+    }
+    var px = Number(rsuLivePrices[sid]);
+    if (Number.isFinite(px) && px > 0) {
+      inRsuFmv.value = px.toFixed(2);
+      return;
+    }
+    inRsuFmv.value = '0.00';
+  }
+
+  function isMatchedOverridden() {
+    if (!inMatchedSharesOverridden) return false;
+    return String(inMatchedSharesOverridden.value).toLowerCase() === 'true';
+  }
+
+  function setMatchedOverridden(v) {
+    if (!inMatchedSharesOverridden) return;
+    inMatchedSharesOverridden.value = v ? 'true' : 'false';
+  }
+
+  function formatQty(n) {
+    return n.toFixed(4).replace(/\.?0+$/, '');
+  }
+
+  function computeDefaultMatchedShares() {
+    var qty = asNum(inQty.value);
+    if (!(qty > 0)) return NaN;
+    return qty / 7;
+  }
+
+  function syncMatchedShares(force) {
+    if (!inMatchedShares || schemeSel.value !== 'ESPP_PLUS') return;
+    if (!force && isMatchedOverridden()) return;
+
+    var computed = computeDefaultMatchedShares();
+    if (Number.isFinite(computed) && computed > 0) {
+      inMatchedShares.value = formatQty(computed);
+      setMatchedOverridden(false);
+      return;
+    }
+    if (force) {
+      inMatchedShares.value = '';
+      setMatchedOverridden(false);
+    }
+  }
+
+  /* â”€â”€ Additional Details collapsible â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  function openDetails(open) {
+    detailsBody.classList.toggle('open', open);
+    detailsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    detailsChevron.textContent = open ? '\u25be' : '\u25b8';
+  }
+
+  detailsToggle.addEventListener('click', function () {
+    openDetails(!detailsBody.classList.contains('open'));
+  });
+
+  /* â”€â”€ Scheme field visibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  function applySchemeVisibility() {
+    var scheme = schemeSel.value;
+    console.log('[add-lot] scheme selected:', scheme);
+
+    form.querySelectorAll('[data-schemes]').forEach(function (row) {
+      var visible     = includesScheme(row.getAttribute('data-schemes'), scheme);
+      var mustRequire = visible && includesScheme(row.getAttribute('data-required-schemes'), scheme);
+
+      row.hidden = !visible;
+
+      row.querySelectorAll('input, select, textarea').forEach(function (field) {
+        field.required = (field.dataset.schemeRequired === 'true') ? mustRequire : false;
+        if (!visible) { field.value = ''; }
+      });
+    });
+  }
+
+  function applySchemeFields() {
+    var scheme     = schemeSel.value;
+    var isEsppPlus = (scheme === 'ESPP_PLUS');
+    var inputCurrency = selectedInputCurrency();
+    var ccyPerShare = inputCurrency + ' per share';
+
+    /* Quantity label + ESPP_PLUS helper */
+    qtyLabel.textContent = isEsppPlus ? 'Quantity (employee shares) *' : 'Quantity *';
+    qtyEsppHint.hidden   = !isEsppPlus;
+
+    /*
+      Purchase price label differs by scheme:
+      â€¢ BROKERAGE/ISA -> "Acquisition Price (GBP per share) *"
+      â€¢ ESPP      -> "Purchase Price (what you paid, GBP per share) *"
+      â€¢ ESPP_PLUS -> "Gross Purchase Price (salary funded, GBP per share) *"
+    */
+    if (labelPurchase) {
+      if (scheme === 'BROKERAGE' || scheme === 'ISA') {
+        labelPurchase.textContent = 'Acquisition Price (' + ccyPerShare + ') *';
+      } else if (scheme === 'ESPP_PLUS') {
+        labelPurchase.textContent = 'Gross Purchase Price (salary funded, ' + ccyPerShare + ') *';
+      } else {
+        labelPurchase.textContent = 'Purchase Price (what you paid, ' + ccyPerShare + ') *';
+      }
+    }
+    if (labelEsppFmv) {
+      labelEsppFmv.textContent = 'Market Price at Purchase (FMV, ' + ccyPerShare + ')';
+    }
+
+    applySchemeVisibility();
+    syncRsuFmv();
+    syncMatchedShares(false);
+    syncEsppPlusNetPrice(false);
+    updateDerivedSummary();
+  }
+
+  /* â”€â”€ Derived Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  function updateDerivedSummary() {
+    var scheme   = schemeSel.value;
+    var qty      = asNum(inQty.value);
+    var purchase = asNum(inPurchase.value);
+    var rsuFmv   = asNum(inRsuFmv.value);
+    var esppFmv  = asNum(inEsppFmv.value);
+
+    /*
+      Show the card only once the minimum required inputs are present.
+      If incomplete, hide entirely â€” no placeholder dash or prompt text.
+    */
+    var ready = false;
+    if (scheme === 'RSU')                            ready = (qty > 0);
+    if (scheme === 'BROKERAGE' || scheme === 'ISA') ready = (qty > 0 && purchase > 0);
+    if (scheme === 'ESPP' || scheme === 'ESPP_PLUS') ready = (qty > 0 && purchase > 0);
+
+    derivedWrapper.hidden = !ready;
+    if (!ready) return;
+
+    if (scheme === 'RSU') {
+      derivedLabel.textContent  = 'Estimated vest tax cost per share';
+      if (!(rsuFmv > 0)) {
+        derivedAmount.textContent = formatMoney(0, 'GBP');
+        derivedCaveat.textContent =
+          'Pending latest tracked price. Taxable value remains £0.00 until live price is available.';
+      } else if (rsuRateIsUsable()) {
+        derivedAmount.textContent = formatMoney(rsuFmv * rsuTaxRate, 'GBP');
+        derivedCaveat.textContent =
+          'Calculated as FMV at vest × (Income Tax + NI) from your settings.';
+      } else {
+        derivedAmount.textContent = '\u2014';
+        derivedCaveat.textContent =
+          'Configure tax settings to estimate RSU vest tax cost.';
+      }
+
+    } else if (scheme === 'BROKERAGE' || scheme === 'ISA') {
+      /* Straightforward: true cost equals acquisition price. No estimation needed. */
+      var ccy = selectedInputCurrency();
+      derivedLabel.textContent  = (scheme === 'ISA') ? 'ISA acquisition cost' : 'Acquisition cost';
+      derivedAmount.textContent = formatMoney(purchase, ccy);
+      derivedCaveat.textContent = (scheme === 'ISA')
+        ? 'ISA holdings are tax-sheltered at disposal. Stored in GBP for reporting.'
+        : 'Stored in GBP for reporting.';
+
+    } else if (scheme === 'ESPP_PLUS') {
+      /*
+        ESPP_PLUS: show the net price that will be used as employee true cost.
+        It is auto-calculated from current income settings unless overridden.
+      */
+      var plusCcy = selectedInputCurrency();
+      derivedLabel.textContent = 'Net price per share';
+      var netFromInput = asNum(inEsppPlusNet.value);
+      if (Number.isFinite(netFromInput) && netFromInput > 0) {
+        derivedAmount.textContent = formatMoney(netFromInput, plusCcy);
+        derivedCaveat.textContent = isNetOverridden()
+          ? 'Using your manual override. Stored in GBP for reporting.'
+          : 'Auto-calculated from your configured marginal rates and stored in GBP for reporting.';
+      } else if (rateIsUsable()) {
+        derivedAmount.textContent = formatMoney(computeEsppPlusNetPerShare(), plusCcy);
+        derivedCaveat.textContent =
+          'Auto-calculated from your configured marginal rates and stored in GBP for reporting.';
+      } else {
+        derivedAmount.textContent = '\u2014';
+        derivedCaveat.textContent =
+          'Configure tax settings to auto-calculate net price.';
+      }
+
+    } else {
+      /*
+        ESPP (non-plus): funded from net pay (post-PAJE).
+        No income tax is due on the discount at acquisition; CGT applies only at disposal.
+      True economic cost = purchase price paid from net salary.
+      */
+      var esppCcy = selectedInputCurrency();
+      derivedLabel.textContent  = 'True economic cost';
+      derivedAmount.textContent = formatMoney(purchase, esppCcy);
+      derivedCaveat.textContent =
+        'Your ESPP contributions come from net pay. No income tax applies on the discount at acquisition \u2014 CGT applies only at disposal. Stored in GBP for reporting.';
+    }
+  }
+
+  /* â”€â”€ Event wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  schemeSel.addEventListener('change', applySchemeFields);
+  if (securitySel) {
+    securitySel.addEventListener('change', function () {
+      syncRsuFmv();
+      updateDerivedSummary();
+    });
+  }
+  if (inPriceInputCurrency) {
+    inPriceInputCurrency.addEventListener('change', function () {
+      applySchemeFields();
+      updateDerivedSummary();
+    });
+  }
+
+  [inQty, inPurchase, inRsuFmv, inEsppFmv].forEach(function (el) {
+    el.addEventListener('input',  updateDerivedSummary);
+    el.addEventListener('change', updateDerivedSummary);
+  });
+
+  if (inPurchase) {
+    inPurchase.addEventListener('input', function () {
+      syncEsppPlusNetPrice(false);
+      updateDerivedSummary();
+    });
+  }
+
+  if (inQty) {
+    inQty.addEventListener('input', function () {
+      syncMatchedShares(false);
+      syncEsppPlusNetPrice(false);
+      updateDerivedSummary();
+    });
+    inQty.addEventListener('change', function () {
+      syncMatchedShares(false);
+    });
+  }
+
+  if (inMatchedShares) {
+    inMatchedShares.addEventListener('input', function () {
+      if (schemeSel.value !== 'ESPP_PLUS') return;
+      var raw = inMatchedShares.value.trim();
+      if (!raw) {
+        setMatchedOverridden(false);
+        syncMatchedShares(false);
+      } else {
+        setMatchedOverridden(true);
+      }
+    });
+  }
+
+  if (inEsppPlusNet) {
+    inEsppPlusNet.addEventListener('input', function () {
+      if (schemeSel.value !== 'ESPP_PLUS') return;
+      var raw = inEsppPlusNet.value.trim();
+      if (!raw) {
+        setNetOverridden(false);
+        syncEsppPlusNetPrice(false);
+      } else {
+        setNetOverridden(true);
+      }
+      updateDerivedSummary();
+    });
+  }
+
+  /* â”€â”€ Initialise â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /* Auto-expand Additional Details if Notes already has content (e.g. after a validation error) */
+  if (notesArea && notesArea.value.trim()) {
+    openDetails(true);
+  }
+
+  applySchemeFields();
+
+})();
+</script>
+{% endblock %}
+

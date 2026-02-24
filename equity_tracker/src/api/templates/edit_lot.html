@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Edit Lot - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <h1>Edit Lot</h1>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="card__header">
+    <span class="card__title">Lot Correction</span>
+  </div>
+
+  <div class="edit-lot-meta">
+    <div><strong>Lot ID:</strong> <span class="mono-small">{{ lot.id }}</span></div>
+    <div><strong>Security:</strong> {{ security.ticker if security else lot.security_id }} - {{ security.name if security else "" }}</div>
+    <div><strong>Scheme:</strong> {{ lot.scheme_type }}</div>
+    <div><strong>Disposed Qty:</strong> {{ disposed_qty }}</div>
+    <div><strong>Current Remaining Qty:</strong> {{ lot.quantity_remaining }}</div>
+  </div>
+
+  <form id="edit-lot-form" method="post" action="/portfolio/edit-lot" class="edit-lot-form">
+    <input type="hidden" name="lot_id" value="{{ lot.id }}">
+    <input type="hidden" id="disposed_qty" value="{{ disposed_qty }}">
+
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="acquisition_date">Acquisition Date *</label>
+        <input id="acquisition_date" name="acquisition_date" type="date" required value="{{ prev.acquisition_date }}">
+      </div>
+      <div class="form-field">
+        <label for="tax_year">Tax Year *</label>
+        <input id="tax_year" name="tax_year" type="text" required value="{{ prev.tax_year }}" placeholder="e.g. 2025-26">
+      </div>
+      <div class="form-field">
+        <label for="quantity">Quantity *</label>
+        <input id="quantity" name="quantity" type="text" required value="{{ prev.quantity }}">
+        <span class="form-hint">Must remain >= disposed quantity ({{ disposed_qty }}).</span>
+      </div>
+      <div class="form-field">
+        <label for="acquisition_price_gbp">Acquisition Price (GBP) *</label>
+        <input id="acquisition_price_gbp" name="acquisition_price_gbp" type="text" required value="{{ prev.acquisition_price_gbp }}">
+      </div>
+      <div class="form-field">
+        <label for="true_cost_per_share_gbp">True Cost per Share (GBP) *</label>
+        <input id="true_cost_per_share_gbp" name="true_cost_per_share_gbp" type="text" required value="{{ prev.true_cost_per_share_gbp }}">
+      </div>
+      <div class="form-field">
+        <label for="fmv_at_acquisition_gbp">FMV at Acquisition (GBP)</label>
+        <input id="fmv_at_acquisition_gbp" name="fmv_at_acquisition_gbp" type="text" value="{{ prev.fmv_at_acquisition_gbp }}">
+      </div>
+      <div class="form-field edit-lot-notes">
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes">{{ prev.notes }}</textarea>
+      </div>
+    </div>
+
+    <div class="edit-summary" id="edit-summary">
+      <div class="edit-summary__title">Confirmation Summary</div>
+      <div class="edit-summary__row">New Quantity Remaining: <strong id="new-remaining">-</strong></div>
+      <div class="edit-summary__row">Acquisition Date: <strong id="summary-acq-date">-</strong></div>
+      <div class="edit-summary__row">Tax Year: <strong id="summary-tax-year">-</strong></div>
+      <div class="edit-summary__row">Acquisition Price: <strong id="summary-acq-price">-</strong></div>
+      <div class="edit-summary__row">True Cost per Share: <strong id="summary-true-cost">-</strong></div>
+    </div>
+
+    <div class="form-field form-field-inline">
+      <label class="checkbox-inline">
+        <input id="confirm_changes" name="confirm_changes" type="checkbox" value="yes" required>
+        I confirm the summary and want to save these corrections.
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Changes</button>
+      <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  var quantityEl = document.getElementById("quantity");
+  var disposedEl = document.getElementById("disposed_qty");
+  var acqDateEl = document.getElementById("acquisition_date");
+  var taxYearEl = document.getElementById("tax_year");
+  var acqPriceEl = document.getElementById("acquisition_price_gbp");
+  var trueCostEl = document.getElementById("true_cost_per_share_gbp");
+
+  var remainingEl = document.getElementById("new-remaining");
+  var summaryAcqDateEl = document.getElementById("summary-acq-date");
+  var summaryTaxYearEl = document.getElementById("summary-tax-year");
+  var summaryAcqPriceEl = document.getElementById("summary-acq-price");
+  var summaryTrueCostEl = document.getElementById("summary-true-cost");
+
+  function asNum(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function updateSummary() {
+    var disposed = asNum(disposedEl.value);
+    var qty = asNum(quantityEl.value);
+    if (Number.isFinite(disposed) && Number.isFinite(qty)) {
+      remainingEl.textContent = (qty - disposed).toFixed(4).replace(/\\.0+$/, "").replace(/(\\.\\d*?)0+$/, "$1");
+    } else {
+      remainingEl.textContent = "-";
+    }
+
+    summaryAcqDateEl.textContent = acqDateEl.value || "-";
+    summaryTaxYearEl.textContent = taxYearEl.value || "-";
+    summaryAcqPriceEl.textContent = acqPriceEl.value || "-";
+    summaryTrueCostEl.textContent = trueCostEl.value || "-";
+  }
+
+  [quantityEl, acqDateEl, taxYearEl, acqPriceEl, trueCostEl].forEach(function (el) {
+    if (!el) {
+      return;
+    }
+    el.addEventListener("input", updateSummary);
+    el.addEventListener("change", updateSummary);
+  });
+
+  updateSummary();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}CGT Report — Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>CGT Report</h1></div>
+
+<!-- Tax year tabs -->
+<div class="tax-year-tabs">
+  {% for y in tax_years %}
+  <a href="/cgt?tax_year={{ y }}&include_tax_due={{ include_tax_due }}"
+     class="{{ 'active' if y == active_year }}">{{ y }}</a>
+  {% endfor %}
+</div>
+
+<!-- Options bar -->
+<form method="get" action="/cgt" style="margin-bottom:1.25rem;" class="filter-bar">
+  <input type="hidden" name="tax_year" value="{{ active_year }}">
+  <label>
+    <input type="checkbox" name="include_tax_due" value="true"
+           {{ 'checked' if include_tax_due }}
+           onchange="this.form.submit()">
+    Include CGT due (uses saved income settings)
+  </label>
+  <div class="form-field" style="display:inline-flex; align-items:center; gap:0.5rem;">
+    <label for="prior_year_losses" style="white-space:nowrap;">Prior-year losses £</label>
+    <input id="prior_year_losses" name="prior_year_losses" type="text"
+           value="{{ prior_year_losses }}" style="width:120px;">
+    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+  </div>
+</form>
+
+<!-- Summary stats -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat__label">Taxable Disposals</div>
+    <div class="stat__value">{{ report.disposal_lines | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Taxable Proceeds</div>
+    <div class="stat__value">£{{ report.total_proceeds_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Total Gains</div>
+    <div class="stat__value gain">£{{ report.total_gains_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Total Losses</div>
+    <div class="stat__value loss">£{{ report.total_losses_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Net Gain</div>
+    <div class="stat__value {{ 'gain' if report.net_gain_gbp >= 0 else 'loss' }}">
+      £{{ report.net_gain_gbp | money }}
+    </div>
+  </div>
+</div>
+{% if report.isa_exempt_proceeds_gbp > 0 %}
+<div class="alert alert-info">
+  ISA disposals are tax-sheltered and excluded from CGT totals.
+  Exempt proceeds: Â£{{ report.isa_exempt_proceeds_gbp | money }}.
+  Exempt gain/loss: Â£{{ report.isa_exempt_gain_gbp | money }}.
+</div>
+{% endif %}
+
+<!-- Disposal lines table -->
+{% if not report.disposal_lines %}
+<div class="empty-state">
+  {% if report.isa_exempt_proceeds_gbp > 0 %}
+  No taxable disposals in {{ active_year }}.
+  {% else %}
+  No disposals in {{ active_year }}.
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Security</th>
+          <th class="num">Qty</th>
+          <th class="num">Proceeds</th>
+          <th class="num">Cost Basis</th>
+          <th class="num">Gain / Loss</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in report.disposal_lines %}
+        <tr>
+          <td>{{ line.transaction.transaction_date }}</td>
+          <td>{{ line.security.ticker }}</td>
+          <td class="num">{{ line.total_quantity }}</td>
+          <td class="num">£{{ line.total_proceeds_gbp | money }}</td>
+          <td class="num">
+            {% set cost = line.total_proceeds_gbp - line.total_gain_gbp %}
+            £{{ cost | money }}
+          </td>
+          <td class="num {{ 'gain' if line.total_gain_gbp >= 0 else 'loss' }}">
+            £{{ line.total_gain_gbp | money }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- CGT due panel -->
+{% if report.cgt_result %}
+{% set r = report.cgt_result %}
+<div class="cgt-panel">
+  <h3>CGT Due — {{ active_year }}</h3>
+  <div class="cgt-grid">
+    <div class="cgt-item">
+      <div class="cgt-item__label">Annual Exempt Amount</div>
+      <div class="cgt-item__value">£{{ r.annual_exempt_amount | money }}</div>
+    </div>
+    <div class="cgt-item">
+      <div class="cgt-item__label">Taxable Gain</div>
+      <div class="cgt-item__value">£{{ r.taxable_gain | money }}</div>
+    </div>
+    <div class="cgt-item">
+      <div class="cgt-item__label">Tax at Basic Rate</div>
+      <div class="cgt-item__value">£{{ r.tax_at_basic_rate | money }}</div>
+    </div>
+    <div class="cgt-item">
+      <div class="cgt-item__label">Tax at Higher Rate</div>
+      <div class="cgt-item__value">£{{ r.tax_at_higher_rate | money }}</div>
+    </div>
+    <div class="cgt-item">
+      <div class="cgt-item__label">Total CGT</div>
+      <div class="cgt-item__value" style="font-size:1.4rem; color:var(--text-heading);">
+        £{{ r.total_cgt | money }}
+      </div>
+    </div>
+    <div class="cgt-item">
+      <div class="cgt-item__label">Effective Rate</div>
+      <div class="cgt-item__value">{{ r.effective_rate }}%</div>
+    </div>
+  </div>
+  {% if r.notes %}
+  <div class="cgt-notes">
+    <ul>{% for note in r.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+</div>
+{% elif include_tax_due %}
+<div class="alert alert-info" style="margin-top:1rem;">
+  CGT due calculation requires income settings to be saved.
+  <a href="/settings">Configure in Settings →</a>
+</div>
+{% endif %}
+
+{% endblock %}
