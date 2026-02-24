@@ -22,6 +22,7 @@ class SettingsSchema(BaseModel):
     default_other_income: str        # Decimal → str
     default_tax_year: str
     show_exhausted_lots: bool
+    hide_values: bool
 
     @classmethod
     def from_app_settings(cls, s) -> "SettingsSchema":  # s: AppSettings
@@ -32,6 +33,7 @@ class SettingsSchema(BaseModel):
             default_other_income=str(s.default_other_income),
             default_tax_year=s.default_tax_year,
             show_exhausted_lots=s.show_exhausted_lots,
+            hide_values=s.hide_values,
         )
 
 
@@ -56,6 +58,7 @@ class UpdateSettingsRequest(BaseModel):
         ..., description="Default tax year shown in reports, e.g. '2024-25'"
     )
     show_exhausted_lots: bool = False
+    hide_values: bool = False
 
     model_config = {
         "json_schema_extra": {
@@ -66,6 +69,7 @@ class UpdateSettingsRequest(BaseModel):
                 "default_other_income": "0.00",
                 "default_tax_year": "2024-25",
                 "show_exhausted_lots": False,
+                "hide_values": False,
             }
         }
     }

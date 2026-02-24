@@ -70,6 +70,12 @@
           Show exhausted lots in portfolio
         </label>
         <span class="form-hint">When checked, lots with zero remaining quantity are shown.</span>
+        <label>
+          <input type="checkbox" name="hide_values" value="on"
+                 {{ 'checked' if settings and settings.hide_values }}>
+          Hide monetary values
+        </label>
+        <span class="form-hint">Masks currency amounts across the UI while keeping percentages visible.</span>
       </div>
 
     </div>

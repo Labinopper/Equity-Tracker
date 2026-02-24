@@ -604,6 +604,7 @@ def test_get_settings_defaults(client):
     assert "default_gross_income" in body
     assert isinstance(body["default_gross_income"], str)
     assert isinstance(body["show_exhausted_lots"], bool)
+    assert isinstance(body["hide_values"], bool)
 
 
 def test_put_settings_round_trip(client):
@@ -614,6 +615,7 @@ def test_put_settings_round_trip(client):
         "default_other_income": "500.00",
         "default_tax_year": "2024-25",
         "show_exhausted_lots": True,
+        "hide_values": True,
     }
     put_resp = client.put("/api/settings", json=payload)
     assert put_resp.status_code == 200
@@ -622,6 +624,7 @@ def test_put_settings_round_trip(client):
     assert body["default_pension_sacrifice"] == "6000.00"
     assert body["default_student_loan_plan"] == 2
     assert body["show_exhausted_lots"] is True
+    assert body["hide_values"] is True
 
     # GET should return the saved values
     get_resp = client.get("/api/settings")

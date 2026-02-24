@@ -2907,6 +2907,7 @@ async def settings_submit(
     default_other_income: str = Form("0"),
     default_tax_year: str = Form(...),
     show_exhausted_lots: str = Form(""),
+    hide_values: str = Form(""),
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
@@ -2934,6 +2935,7 @@ async def settings_submit(
     settings.default_other_income = other
     settings.default_tax_year = default_tax_year
     settings.show_exhausted_lots = show_exhausted_lots.lower() in ("on", "true", "1", "yes")
+    settings.hide_values = hide_values.lower() in ("on", "true", "1", "yes")
     settings.save()
 
     return RedirectResponse("/settings?msg=Settings+saved.", status_code=303)

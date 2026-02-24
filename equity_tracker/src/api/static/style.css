@@ -167,6 +167,21 @@ code, pre {
   flex: 1;
 }
 
+.topbar__privacy {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(240, 160, 48, 0.45);
+  background: rgba(240, 160, 48, 0.12);
+  color: var(--warning);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .topbar__nav a {
   color: var(--text-muted);
   padding: 0 0.9rem;

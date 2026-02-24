@@ -45,6 +45,7 @@ class AppSettings:
     # ── UI preferences ──────────────────────────────────────────────────────
     default_tax_year: str
     show_exhausted_lots: bool
+    hide_values: bool
 
     def __init__(self) -> None:
         # Income defaults — all zero so the user must enter their own figures
@@ -56,6 +57,7 @@ class AppSettings:
         # UI defaults
         self.default_tax_year = "2024-25"
         self.show_exhausted_lots = False
+        self.hide_values = False
 
         # Internal — set by load(), not serialized under this name
         self._settings_path: Path = Path("settings.json")
@@ -107,6 +109,7 @@ class AppSettings:
             "default_other_income": str(self.default_other_income),
             "default_tax_year": self.default_tax_year,
             "show_exhausted_lots": self.show_exhausted_lots,
+            "hide_values": self.hide_values,
         }
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -134,6 +137,8 @@ class AppSettings:
             self.default_tax_year = str(data["default_tax_year"])
         if "show_exhausted_lots" in data:
             self.show_exhausted_lots = bool(data["show_exhausted_lots"])
+        if "hide_values" in data:
+            self.hide_values = bool(data["hide_values"])
 
 
 # ── Module helpers ───────────────────────────────────────────────────────────

@@ -87,6 +87,7 @@ async def update_settings(
     settings.default_other_income = req.default_other_income
     settings.default_tax_year = req.default_tax_year
     settings.show_exhausted_lots = req.show_exhausted_lots
+    settings.hide_values = req.hide_values
 
     settings.save()
     return SettingsSchema.from_app_settings(settings)

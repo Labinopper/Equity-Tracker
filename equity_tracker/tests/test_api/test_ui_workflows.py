@@ -2098,6 +2098,37 @@ def test_settings_nuke_db_drops_and_recreates_schema(client):
     assert catalog_count > 0
 
 
+def test_hide_values_masks_monetary_values_in_ui(client, db_engine):
+    _, db_path = db_engine
+    settings = AppSettings.defaults_for(db_path)
+    settings.hide_values = True
+    settings.save()
+
+    sec_id = _add_security(client, ticker="UIHIDE")
+    _add_lot_via_api(client, sec_id, quantity="5", price="10.00")
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date(2026, 2, 24),
+            close_price_original_ccy="12.00",
+            close_price_gbp="12.00",
+            currency="GBP",
+            source="test-hide-ui",
+        )
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "Values Hidden" in home.text
+    assert "••••" in home.text
+    assert "&pound;12.00" not in home.text
+
+    risk = client.get("/risk")
+    assert risk.status_code == 200
+    assert "100.00%" in risk.text
+    assert "&pound;••••" in risk.text
+
+
 def test_per_scheme_page_renders_current_and_historic_rows(client):
     sec_id = _add_security(client, ticker="UIPERSCHEME")
     add = client.post(

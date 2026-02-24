@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="{{ 'values-hidden' if hide_values else '' }}">
 <div class="layout">
 
   <header class="topbar">
@@ -26,6 +26,9 @@
       <a href="/audit"         class="{{ 'active' if request.url.path == '/audit' }}">Audit</a>
       <a href="/settings"      class="{{ 'active' if request.url.path == '/settings' }}">Settings</a>
     </nav>
+    {% if hide_values %}
+    <span class="topbar__privacy">Values Hidden</span>
+    {% endif %}
   </header>
 
   <main class="main">
