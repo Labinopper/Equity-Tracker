@@ -265,6 +265,9 @@ class Lot(Base):
         String(30), nullable=True
     )
     original_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    broker_currency: Mapped[Optional[str]] = mapped_column(
+        String(3), nullable=True
+    )    # e.g. "USD", "GBP" (broker holding currency context)
     fx_rate_at_acquisition: Mapped[Optional[str]] = mapped_column(
         String(30), nullable=True
     )

@@ -30,9 +30,18 @@ from src.services import LotSummary, PortfolioService, PortfolioSummary, Securit
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _add_basic_security(ticker: str = "TEST", name: str = "Test Corp") -> object:
-    """Add a GBP security and return the Security object."""
-    return PortfolioService.add_security(ticker, name, "GBP", is_manual_override=True)
+def _add_basic_security(
+    ticker: str = "TEST",
+    name: str = "Test Corp",
+    currency: str = "GBP",
+) -> object:
+    """Add a security and return the Security object."""
+    return PortfolioService.add_security(
+        ticker,
+        name,
+        currency,
+        is_manual_override=True,
+    )
 
 
 def _add_basic_lot(
@@ -395,6 +404,42 @@ class TestGetPortfolioSummary:
         ss = summary.securities[0]
         assert ss.fx_as_of == old_fx
         assert ss.fx_is_stale is True
+
+    def test_summary_exposes_native_and_gbp_values_with_fx_basis(self, app_context):
+        sec = _add_basic_security("NATIVE", currency="USD")
+        PortfolioService.add_lot(
+            security_id=sec.id,
+            scheme_type="BROKERAGE",
+            acquisition_date=date(2024, 1, 15),
+            quantity=Decimal("2"),
+            acquisition_price_gbp=Decimal("80.00"),
+            true_cost_per_share_gbp=Decimal("80.00"),
+            broker_currency="USD",
+        )
+
+        with AppContext.write_session() as sess:
+            PriceRepository(sess).upsert(
+                security_id=sec.id,
+                price_date=date.today(),
+                close_price_original_ccy="110.00",
+                close_price_gbp="88.00",
+                currency="USD",
+                source="google_sheets:2026-02-24 12:00:00|fx:2026-02-24 12:00:00",
+            )
+
+        summary = PortfolioService.get_portfolio_summary()
+        ss = summary.securities[0]
+        ls = ss.active_lots[0]
+        assert ss.current_price_native == Decimal("110.00")
+        assert ss.current_price_gbp == Decimal("88.00")
+        assert ss.market_value_native == Decimal("220.00")
+        assert ss.market_value_native_currency == "USD"
+        assert ss.market_value_gbp == Decimal("176.00")
+        assert ls.market_value_native == Decimal("220.00")
+        assert ls.market_value_native_currency == "USD"
+        assert ls.market_value_gbp == Decimal("176.00")
+        assert summary.valuation_currency == "GBP"
+        assert summary.fx_conversion_basis is not None
 
 
 # ===========================================================================
@@ -944,6 +989,25 @@ class TestTransferLot:
         ]
         assert len(broker_lots) == 1
         assert Decimal(broker_lots[0].quantity_remaining) == Decimal("10")
+        assert broker_lots[0].broker_currency == "GBP"
+
+    def test_transfer_lot_accepts_explicit_destination_broker_currency(self, app_context):
+        sec = _add_basic_security("TRCUR", currency="USD")
+        lot = _add_basic_lot(
+            sec.id,
+            scheme_type="RSU",
+            quantity="10",
+            acquisition_price="10.00",
+            true_cost="4.00",
+            acquisition_date=date.today() - timedelta(days=10),
+        )
+
+        updated, _ = PortfolioService.transfer_lot_to_brokerage(
+            lot_id=lot.id,
+            destination_broker_currency="USD",
+        )
+        assert updated.scheme_type == "BROKERAGE"
+        assert updated.broker_currency == "USD"
 
     def test_transfer_espp_rejects_fractional_quantity(self, app_context):
         sec = _add_basic_security("TRFRAC")

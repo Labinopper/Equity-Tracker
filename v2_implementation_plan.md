@@ -6,8 +6,9 @@
 **Constraint:** No changes to existing core functions unless absolutely essential.
 
 **Execution status snapshot (2026-02-24):**
-- Completed: CF-01 (`v1.10.0`), CF-02 (`v1.10.1`), ET20-EPIC-03 (`v2.0.0`), CF-04 (`v2.0.1`), CF-05 (`v2.0.2`), ET20-EPIC-08 Phase 1 (`v2.0.3`).
-- Current next stage: ET20-EPIC-04 calendar (`v2.1.0`).
+- Completed and release-synced: CF-01 (v1.10.0), CF-02 (v1.10.1), ET20-EPIC-03 (v2.0.0), CF-04 (v2.0.1), CF-05 (v2.0.2), ET20-EPIC-08 Phase 1 (v2.0.3).
+- Implemented in working tree, pending release-note/version sync: ET20-EPIC-04 calendar (v2.1.0 target), ET20-EPIC-06 Phase A broker currency (v2.1.1 target).
+- Next delivery stage after sync: CF-06 UI debt cleanup (v2.1.2).
 
 ---
 
@@ -166,7 +167,7 @@ New v2 pages should use the cleaned-up style system, not inherit the debt. Remov
 - Full regression after each pass.
 
 **Files touched:** Template files only. No Python logic changes.
-**Target:** `v2.1.1` (bundle with or after ET20-EPIC-03 Risk Panel delivery)
+**Target:** `v2.1.2` (after urgent multi-currency tracking phase)
 
 ---
 
@@ -308,7 +309,11 @@ Scenario results must reconcile to per-lot/tax reports. Export (JSON/CSV) requir
 **Complexity:** M | **Core changes needed:** Minimal, contained, and additive
 **Note:** Absorbs v1 roadmap item `v1.13.0` (FX generalization). No additional scope added.
 
-**What it does:** Explicit staleness thresholds, quota-aware refresh strategy, FX provider option, price fallback with budget display, multi-currency FX path.
+**What it does:** Broker currency tracking (USD/GBP) plus explicit staleness thresholds, quota-aware refresh strategy, FX provider option, price fallback with budget display, and broader multi-currency FX path.
+
+**Phased delivery decision (2026-02-24 update):**
+- **Phase A (urgent functional scope, target `v2.1.1`)**: broker currency tracking for holdings/cash context where applicable (`USD`/`GBP`), native-currency plus GBP-converted visibility, and FX-basis timestamps in key decision surfaces.
+- **Phase B (platform hardening, target `v2.7.0`)**: full data-reliability package (staleness controls, provider abstraction, graceful fallbacks) and generalized multi-currency expansion beyond the initial broker-currency scope.
 
 **Where minimal extension is needed (and why it is safe):**
 The existing `sheets_fx_service.py` and `price_service.py` handle USD→GBP only. Multi-currency requires a new `fx_service.py` abstraction that the price service can call. The existing USD→GBP path becomes the default implementation of that abstraction — no existing function logic changes, only a new wrapper/dispatcher is introduced.
@@ -478,7 +483,8 @@ Widget on/off state is stored in `localStorage` under key `analytics.widget_visi
 | `v2.0.2` | CF-05 TemplateResponse migration | Technical debt; fix before adding more templates |
 | `v2.0.3` | Chart.js infrastructure (EPIC-08 Phase 1) | CDN tag + theme config + analytics service foundation; enables all subsequent chart work |
 | `v2.1.0` | ET20-EPIC-04 Calendar | Fully additive, reads existing lot dates |
-| `v2.1.1` | CF-06 UI encoding + inline style debt | Polish debt; clean before further page additions |
+| `v2.1.1` | ET20-EPIC-06 Phase A Broker Currency Tracking | Urgent functional requirement: track broker USD/GBP currency context with native + GBP visibility |
+| `v2.1.2` | CF-06 UI encoding + inline style debt | Polish debt; clean before further page additions |
 | `v2.2.0` | ET20-EPIC-08 Analytics Dashboard (Groups A + B widgets) | Portfolio-over-time, scheme/security concentration, liquidity, unrealised P&L, CGT-year charts |
 | `v2.3.0` | ET20-EPIC-01 Tax-Year Planner | Depends on CF-02; enables EPIC-08 Group B tax chart data |
 | `v2.4.0` | ET20-EPIC-02 Dividends | New DividendEntry model (isolated); adds yield data to analytics |
@@ -486,7 +492,7 @@ Widget on/off state is stored in `localStorage` under key `analytics.widget_visi
 | `v2.6.0` | ET20-EPIC-05 Scenario Lab | Depends on ET20-EPIC-01; largest scope |
 | `v2.6.1` | ET20-EPIC-08 Group C charts (Risk stress/forfeiture) | Enabled once EPIC-03 risk service is live |
 | `v2.6.2` | ET20-EPIC-08 Group D charts (Timeline/calendar) | Enabled once EPIC-04 calendar service is live |
-| `v2.7.0` | ET20-EPIC-06 Data Reliability + Multi-Currency | Platform enabler; ships last to preserve stability |
+| `v2.7.0` | ET20-EPIC-06 Phase B Data Reliability + Multi-Currency hardening | Platform hardening and generalized expansion after urgent Phase A delivery |
 
 ---
 
@@ -559,124 +565,74 @@ All other existing files remain untouched.
 
 ---
 
-## Codex Execution Instructions
+## Codex Execution Instructions (Lean)
 
-These instructions govern how Codex should approach all v2 implementation work. They take precedence over any general conventions when in conflict.
-
----
-
-### 1. Progress Log — Required
-
-**Before starting any file change, create or update `CODEX_PROGRESS.md`** in the project root (`c:\Users\labin\OneDrive\Documents\Portfolio\`).
-
-Format each entry as:
-```
-[YYYY-MM-DD HH:MM] [VERSION TARGET] [STATUS] [FILE PATH] [ACTION] [NOTES]
-```
-
-Example:
-```
-[2026-02-24 14:30] [v2.0.0] [STARTED] src/services/risk_service.py — Creating risk aggregation service
-[2026-02-24 14:45] [v2.0.0] [COMPLETED] src/services/risk_service.py — Created; tests pass (5 new tests)
-[2026-02-24 14:46] [v2.0.0] [STARTED] src/api/routers/risk.py — Creating risk router
-```
-
-**Update the log entry to `[COMPLETED]` or `[FAILED]` immediately after finishing each file.** Do not batch log updates. The log is the resume point if a session times out.
-
-**If a session times out mid-task:** On the next session, read `CODEX_PROGRESS.md` first. Find the last `[STARTED]` entry without a corresponding `[COMPLETED]` — that is the file to resume or re-examine. Verify the file's current state before continuing.
+These instructions reduce logging overhead while preserving reliable pause/resume handoff.
 
 ---
 
-### 2. Existing Code — Do Not Touch Without a Strong Reason
+### 1. Progress Log (Checkpoint-Based)
 
-**Before editing any file that already exists and is not listed in the "Existing files that require any change" table:** Stop. Create a question entry in `CODEX_QUESTIONS.md` (see section 4), proceed with the best guess, and flag it clearly in `CODEX_PROGRESS.md`.
+Use `CODEX_PROGRESS.md` with this format:
+```
+[YYYY-MM-DD HH:MM] [VERSION/STREAM] [STATUS] [SCOPE] - [NOTE]
+```
 
-The definition of "strong reason":
-- The file is explicitly listed in the plan's change table, OR
-- An existing test is failing due to a clear bug in that file introduced by a new file you just created, AND fixing it requires only a minimal targeted change, OR
-- A feature cannot be implemented without this file being changed.
+Minimum required entries per stage:
+1. `STARTED` with stage/EPIC scope.
+2. `TEST` baseline (`python -m pytest -q`) result.
+3. `CHECKPOINT` only for blockers, major decisions, or scope changes.
+4. `TEST` targeted suites (one consolidated entry per run group).
+5. `TEST` full regression result.
+6. `COMPLETED` with short changed-area summary and commit hash (or `not committed`).
+7. `PAUSED` with exact resume pointer when handing off mid-stage.
 
-**If in doubt, do not edit the existing file.** Add a new file or service instead.
+Default: do not log per-file started/completed entries.
 
 ---
 
-### 3. Testing Protocol — Non-Negotiable
+### 2. Existing Code Changes
 
-**For every EPIC, in this exact order:**
-
-**Step 1: Baseline before starting**
-```
-python -m pytest -q
-```
-Record the result in `CODEX_PROGRESS.md`. Do not proceed if the baseline fails — create a `CODEX_QUESTIONS.md` entry instead.
-
-**Step 2: After writing each new file**
-Run targeted tests if a relevant test file exists for the module:
-```
-python -m pytest -q tests/[relevant_test_file].py
-```
-If no targeted test file exists yet, proceed to Step 3.
-
-**Step 3: After completing all files for an EPIC**
-Write tests for new code first, then run:
-```
-python -m pytest -q
-```
-Full regression must pass. If it fails:
-- Do NOT continue to the next EPIC.
-- Do NOT mark the EPIC as complete.
-- Investigate the failure, fix it in the new code (not by changing existing tests), and re-run.
-- If the failure cannot be resolved without touching existing code, create a `CODEX_QUESTIONS.md` entry.
-
-**New tests must cover:**
-- Happy path (valid inputs, expected outputs)
-- Empty state (no lots, no prices, empty DB)
-- Error/unavailable state (missing prices, stale FX)
-- Any new API endpoint: status 200 on valid request, status 422/400 on invalid input, no 500 under normal conditions
+Prefer planned additive files. If an unplanned existing file must be edited, log one `CHECKPOINT` and add a concise entry to `CODEX_QUESTIONS.md` describing why.
 
 ---
 
-### 4. Questions File — Proceed and Flag
+### 3. Testing Protocol
 
-**If Codex is unsure how to proceed on any implementation detail:** Do NOT stop working. Instead:
+For each stage:
+1. Baseline full regression before implementation.
+2. Targeted tests after meaningful implementation batches.
+3. Full regression before stage completion.
 
-1. Create or append to `CODEX_QUESTIONS.md` in the project root.
-2. Format each question as:
-```
-## Q[N] — [EPIC/CF ID] — [Short title]
-**File in question:** [file path]
-**Question:** [Clear description of what is uncertain]
-**Best guess taken:** [Description of what was implemented as the best guess]
-**Where to review:** [File path and line number range where the guess is implemented]
-**Date:** [YYYY-MM-DD]
-```
-3. Implement the best guess.
-4. Continue working on other files.
-5. The user will review `CODEX_QUESTIONS.md` and provide answers. Those answers become inputs for a follow-up session to make any corrections needed.
+Do not mark a stage complete with failing tests.
 
 ---
 
-### 5. EPIC Completion Checklist
+### 4. Questions Handling
 
-Before marking an EPIC as complete in `CODEX_PROGRESS.md`:
-- [ ] All new files listed for the EPIC are created
-- [ ] All new endpoints return valid responses (manually verified or covered by tests)
-- [ ] Full regression passes: `python -m pytest -q`
-- [ ] No new inline `style=` attributes added to templates (use existing CSS classes or add new class to `style.css`)
-- [ ] No hard-coded GBP symbols or currency strings — use existing template conventions
-- [ ] `CODEX_PROGRESS.md` is updated with `[COMPLETED]` status for all files in the EPIC
-- [ ] If any questions were raised during this EPIC, they are recorded in `CODEX_QUESTIONS.md`
+If uncertain, do not block execution:
+1. Record the question in `CODEX_QUESTIONS.md`.
+2. Implement the best-guess path.
+3. Log a `CHECKPOINT` in `CODEX_PROGRESS.md`.
 
 ---
 
-### 6. One EPIC at a Time
+### 5. Stage Completion Checklist
 
-Complete each EPIC fully (all files, all tests passing) before starting the next. Do not start a new EPIC if the current one has unresolved test failures or open `[STARTED]` log entries.
+- Required files/routes for the stage are implemented.
+- Targeted and full tests are green.
+- Any non-standard decisions are captured in `CODEX_QUESTIONS.md`.
+- One `COMPLETED` entry exists in `CODEX_PROGRESS.md`.
 
-The delivery sequence in this document is the intended order. Deviating from it requires a reason recorded in `CODEX_PROGRESS.md`.
+---
+
+### 6. Stage Sequencing
+
+Work one roadmap stage at a time. Do not start the next stage until the current stage has either `COMPLETED` or an explicit `PAUSED` handoff entry.
 
 ---
 
 ### 7. Version Bumping
 
-**Do not bump the version number in `PROJECT_STATUS.md` or `PROJECT_REFERENCE.md` automatically.** Version bumps are the user's responsibility. Codex should note in `CODEX_PROGRESS.md` that a version bump is pending for the user's review after each EPIC completes.
+Version bump and release-note confirmation remain user-controlled. Codex should mark version sync as pending/completed in checkpoint logs.
+

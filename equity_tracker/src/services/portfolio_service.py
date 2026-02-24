@@ -143,6 +143,8 @@ class LotSummary:
     cost_basis_total_gbp: Decimal
     true_cost_total_gbp: Decimal
     market_value_gbp: Decimal | None = field(default=None)
+    market_value_native: Decimal | None = field(default=None)
+    market_value_native_currency: str | None = field(default=None)
     unrealised_gain_cgt_gbp: Decimal | None = field(default=None)
     unrealised_gain_economic_gbp: Decimal | None = field(default=None)
     # Phase V
@@ -165,7 +167,10 @@ class SecuritySummary:
     total_cost_basis_gbp: Decimal
     total_true_cost_gbp: Decimal
     # Phase L: live price data (None when no price has been fetched yet)
+    current_price_native: Decimal | None = field(default=None)
     current_price_gbp: Decimal | None = field(default=None)
+    market_value_native: Decimal | None = field(default=None)
+    market_value_native_currency: str | None = field(default=None)
     market_value_gbp: Decimal | None = field(default=None)
     unrealised_gain_cgt_gbp: Decimal | None = field(default=None)
     unrealised_gain_economic_gbp: Decimal | None = field(default=None)
@@ -202,6 +207,8 @@ class PortfolioSummary:
     # None when no USD securities have a stored price.
     fx_as_of: str | None = field(default=None)
     fx_is_stale: bool = field(default=False)
+    valuation_currency: str = field(default="GBP")
+    fx_conversion_basis: str | None = field(default=None)
     # NOTE: field name kept for API compatibility; value now represents
     # portfolio-level estimated employment tax only.
     est_total_cgt_liability_gbp: Decimal | None = field(default=None)
@@ -227,6 +234,22 @@ def _is_fx_stale(fx_as_of: str | None, stale_minutes: int = 10) -> bool:
         return (datetime.now(timezone.utc) - ts) > timedelta(minutes=stale_minutes)
     except (ValueError, TypeError):
         return False
+
+
+def _normalize_broker_currency(raw_value: str | None) -> str | None:
+    """
+    Normalize broker holding currency.
+
+    Returns None for blank values. Supports Phase A currencies only: USD/GBP.
+    """
+    if raw_value is None:
+        return None
+    cleaned = raw_value.strip().upper()
+    if not cleaned:
+        return None
+    if cleaned not in {"USD", "GBP"}:
+        raise ValueError("broker_currency must be one of ['USD', 'GBP'].")
+    return cleaned
 
 
 def _espp_plus_employee_lot_ids(lots: list[Lot]) -> set[str]:
@@ -890,7 +913,22 @@ class PortfolioService:
                 # Phase L: attach live price data when available
                 price_row = price_repo.get_latest(security.id)
                 if price_row is not None and price_row.close_price_gbp is not None:
+                    try:
+                        current_price_native = Decimal(price_row.close_price_original_ccy)
+                    except (ValueError, TypeError):
+                        current_price_native = None
+                    native_currency = (
+                        (price_row.currency or security.currency or "").strip().upper()
+                        or None
+                    )
                     current_price = Decimal(price_row.close_price_gbp)
+                    market_value_native = (
+                        (total_qty * current_price_native).quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP
+                        )
+                        if current_price_native is not None
+                        else None
+                    )
                     market_value  = (total_qty * current_price).quantize(
                         Decimal("0.01"), rounding=ROUND_HALF_UP
                     )
@@ -920,9 +958,18 @@ class PortfolioService:
                     sec_fx_is_stale = _is_fx_stale(sec_fx_as_of)
                     # Back-fill per-lot market value and P&L
                     for ls in lot_summaries:
+                        lot_mkt_native = (
+                            (ls.quantity_remaining * current_price_native).quantize(
+                                Decimal("0.01"), rounding=ROUND_HALF_UP
+                            )
+                            if current_price_native is not None
+                            else None
+                        )
                         lot_mkt = (ls.quantity_remaining * current_price).quantize(
                             Decimal("0.01"), rounding=ROUND_HALF_UP
                         )
+                        ls.market_value_native = lot_mkt_native
+                        ls.market_value_native_currency = native_currency
                         ls.market_value_gbp = lot_mkt
                         ls.unrealised_gain_cgt_gbp = lot_mkt - ls.cost_basis_total_gbp
                         ls.unrealised_gain_economic_gbp = lot_mkt - ls.true_cost_total_gbp
@@ -981,7 +1028,10 @@ class PortfolioService:
                         else None
                     )
                 else:
+                    current_price_native = None
                     current_price = None
+                    market_value_native = None
+                    native_currency = security.currency
                     market_value  = None
                     unrealised_cgt      = None
                     unrealised_economic = None
@@ -1023,7 +1073,10 @@ class PortfolioService:
                     total_quantity=total_qty,
                     total_cost_basis_gbp=total_cost,
                     total_true_cost_gbp=total_true,
+                    current_price_native=current_price_native,
                     current_price_gbp=current_price,
+                    market_value_native=market_value_native,
+                    market_value_native_currency=native_currency,
                     market_value_gbp=market_value,
                     unrealised_gain_cgt_gbp=unrealised_cgt,
                     unrealised_gain_economic_gbp=unrealised_economic,
@@ -1059,6 +1112,27 @@ class PortfolioService:
             fx_as_of_vals = [ss.fx_as_of for ss in security_summaries if ss.fx_as_of]
             portfolio_fx_as_of = fx_as_of_vals[0] if fx_as_of_vals else None
             fx_is_stale = _is_fx_stale(portfolio_fx_as_of)
+            has_non_gbp_native_values = any(
+                ss.market_value_gbp is not None
+                and ss.market_value_native_currency is not None
+                and ss.market_value_native_currency != "GBP"
+                for ss in security_summaries
+            )
+            if total_market is None:
+                fx_conversion_basis = None
+            elif has_non_gbp_native_values:
+                if portfolio_fx_as_of:
+                    fx_conversion_basis = (
+                        "Totals are GBP-based; non-GBP values use latest stored FX conversion."
+                    )
+                else:
+                    fx_conversion_basis = (
+                        "Totals are GBP-based; non-GBP values use stored GBP price conversions."
+                    )
+            else:
+                fx_conversion_basis = (
+                    "All valued positions are GBP-denominated; no FX conversion applied."
+                )
 
             # Portfolio-level estimated employment tax (sum of per-security
             # hypothetical sell-all estimates).
@@ -1086,6 +1160,8 @@ class PortfolioService:
                 total_market_value_gbp=total_market,
                 fx_as_of=portfolio_fx_as_of,
                 fx_is_stale=fx_is_stale,
+                valuation_currency="GBP",
+                fx_conversion_basis=fx_conversion_basis,
                 est_total_cgt_liability_gbp=portfolio_est_cgt,
                 est_total_net_liquidation_gbp=portfolio_est_net,
             )
@@ -1378,6 +1454,7 @@ class PortfolioService:
         fmv_at_acquisition_gbp: Decimal | None = None,
         acquisition_price_original_ccy: Decimal | None = None,
         original_currency: str | None = None,
+        broker_currency: str | None = None,
         fx_rate_at_acquisition: Decimal | None = None,
         fx_rate_source: str | None = None,
         external_id: str | None = None,
@@ -1389,6 +1466,21 @@ class PortfolioService:
     ) -> Lot:
         lot_repo = LotRepository(sess)
         audit = AuditRepository(sess)
+        normalized_original_currency = (
+            original_currency.strip().upper()
+            if original_currency is not None and original_currency.strip()
+            else None
+        )
+        normalized_broker_currency = _normalize_broker_currency(broker_currency)
+        if normalized_broker_currency is None:
+            normalized_broker_currency = _normalize_broker_currency(
+                normalized_original_currency
+            )
+        if normalized_broker_currency is None and scheme_type in {"BROKERAGE", "ISA"}:
+            security = SecurityRepository(sess).get_by_id(security_id)
+            normalized_broker_currency = _normalize_broker_currency(
+                security.currency if security is not None else None
+            ) or "GBP"
 
         lot = Lot(
             security_id=security_id,
@@ -1406,11 +1498,8 @@ class PortfolioService:
                 if acquisition_price_original_ccy is not None
                 else None
             ),
-            original_currency=(
-                original_currency.strip().upper()
-                if original_currency is not None and original_currency.strip()
-                else None
-            ),
+            original_currency=normalized_original_currency,
+            broker_currency=normalized_broker_currency,
             fx_rate_at_acquisition=(
                 str(fx_rate_at_acquisition) if fx_rate_at_acquisition is not None else None
             ),
@@ -1441,6 +1530,7 @@ class PortfolioService:
         fmv_at_acquisition_gbp: Decimal | None = None,
         acquisition_price_original_ccy: Decimal | None = None,
         original_currency: str | None = None,
+        broker_currency: str | None = None,
         fx_rate_at_acquisition: Decimal | None = None,
         fx_rate_source: str | None = None,
         external_id: str | None = None,
@@ -1469,6 +1559,7 @@ class PortfolioService:
             acquisition_price_original_ccy:
                                      Optional original-currency acquisition price/share.
             original_currency      : Optional original currency code (e.g. "USD").
+            broker_currency        : Optional broker holding currency (Phase A: "USD"/"GBP").
             fx_rate_at_acquisition : Optional FX rate used to convert original currency
                                      to GBP at acquisition.
             fx_rate_source         : Optional FX source label.
@@ -1503,6 +1594,7 @@ class PortfolioService:
                 fmv_at_acquisition_gbp=fmv_at_acquisition_gbp,
                 acquisition_price_original_ccy=acquisition_price_original_ccy,
                 original_currency=original_currency,
+                broker_currency=broker_currency,
                 fx_rate_at_acquisition=fx_rate_at_acquisition,
                 fx_rate_source=fx_rate_source,
                 external_id=external_id,
@@ -1528,6 +1620,7 @@ class PortfolioService:
         tax_year: str | None = None,
         acquisition_price_original_ccy: Decimal | None = None,
         original_currency: str | None = None,
+        broker_currency: str | None = None,
         fx_rate_at_acquisition: Decimal | None = None,
         fx_rate_source: str | None = None,
         employee_import_source: str | None = None,
@@ -1565,6 +1658,7 @@ class PortfolioService:
                     fmv_at_acquisition_gbp=employee_fmv_at_acquisition_gbp,
                     acquisition_price_original_ccy=acquisition_price_original_ccy,
                     original_currency=original_currency,
+                    broker_currency=broker_currency,
                     fx_rate_at_acquisition=fx_rate_at_acquisition,
                     fx_rate_source=fx_rate_source,
                     import_source=employee_import_source,
@@ -1584,6 +1678,7 @@ class PortfolioService:
                         fmv_at_acquisition_gbp=employee_fmv_at_acquisition_gbp,
                         acquisition_price_original_ccy=Decimal("0"),
                         original_currency=original_currency,
+                        broker_currency=broker_currency,
                         fx_rate_at_acquisition=fx_rate_at_acquisition,
                         fx_rate_source=fx_rate_source,
                         notes=notes,
@@ -1605,6 +1700,7 @@ class PortfolioService:
         tax_year: str,
         fmv_at_acquisition_gbp: Decimal | None,
         notes: str | None,
+        broker_currency: str | None = None,
     ) -> tuple[Lot, str | None]:
         """
         Edit safe-to-correct lot fields and write a single audit UPDATE entry.
@@ -1614,6 +1710,7 @@ class PortfolioService:
           - quantity (quantity_remaining is adjusted to preserve disposed amount)
           - acquisition_price_gbp, true_cost_per_share_gbp, fmv_at_acquisition_gbp
           - notes
+          - broker_currency (optional update; USD/GBP)
         """
         if quantity <= Decimal("0"):
             raise ValueError("quantity must be greater than zero.")
@@ -1663,6 +1760,8 @@ class PortfolioService:
                 (str(fmv_at_acquisition_gbp) if fmv_at_acquisition_gbp is not None else None),
             )
             _set("notes", notes.strip() if notes is not None and notes.strip() else None)
+            if broker_currency is not None:
+                _set("broker_currency", _normalize_broker_currency(broker_currency))
 
             audit_id: str | None = None
             if old_values:
@@ -1685,6 +1784,7 @@ class PortfolioService:
         notes: str | None = None,
         settings: AppSettings | None = None,
         quantity: Decimal | None = None,
+        destination_broker_currency: str | None = None,
     ) -> tuple[Lot, str]:
         """
         Transfer an eligible lot into BROKERAGE custody without disposal.
@@ -1697,6 +1797,7 @@ class PortfolioService:
             employment_tax_event_repo = EmploymentTaxEventRepository(sess)
             audit = AuditRepository(sess)
             lot = lot_repo.require_by_id(lot_id)
+            security = SecurityRepository(sess).require_by_id(lot.security_id)
             today = date.today()
 
             requested_qty = quantity
@@ -1722,6 +1823,12 @@ class PortfolioService:
                     "Matched lots in forfeiture window are lost on transfer."
                 )
 
+            explicit_destination_broker_currency = (
+                _normalize_broker_currency(destination_broker_currency)
+                if destination_broker_currency is not None
+                else None
+            )
+
             def _merge_notes(existing: str | None, extra: str) -> str:
                 base = existing.strip() if existing else ""
                 return f"{base}\n{extra}".strip() if base else extra
@@ -1735,10 +1842,30 @@ class PortfolioService:
             def _broker_transfer_external_id(source_lot_id: str) -> str:
                 return f"transfer-origin-lot:{source_lot_id}"
 
+            def _try_phase_a_currency(value: str | None) -> str | None:
+                try:
+                    return _normalize_broker_currency(value)
+                except ValueError:
+                    return None
+
+            def _resolve_destination_broker_currency(source_lot: Lot) -> str:
+                if explicit_destination_broker_currency is not None:
+                    return explicit_destination_broker_currency
+                for candidate in (
+                    source_lot.broker_currency,
+                    source_lot.original_currency,
+                    security.currency,
+                ):
+                    normalized = _try_phase_a_currency(candidate)
+                    if normalized is not None:
+                        return normalized
+                return "GBP"
+
             def _upsert_broker_lot_for_source(
                 source_lot: Lot,
                 move_qty: Decimal,
                 note_line: str,
+                destination_currency: str,
             ) -> Lot:
                 transfer_key = _broker_transfer_external_id(source_lot.id)
                 existing_broker = lot_repo.get_by_external_id(transfer_key)
@@ -1755,11 +1882,22 @@ class PortfolioService:
                     old_qty = existing_broker.quantity
                     old_remaining = existing_broker.quantity_remaining
                     old_notes = existing_broker.notes or ""
+                    old_broker_currency = existing_broker.broker_currency
+                    existing_currency = _try_phase_a_currency(old_broker_currency)
+                    if (
+                        existing_currency is not None
+                        and existing_currency != destination_currency
+                    ):
+                        raise ValueError(
+                            "Transfer currency conflicts with existing source-linked "
+                            "BROKERAGE lot currency."
+                        )
                     new_qty = Decimal(old_qty) + move_qty
                     new_remaining = Decimal(old_remaining) + move_qty
                     existing_broker.quantity = str(new_qty)
                     existing_broker.quantity_remaining = str(new_remaining)
                     existing_broker.notes = _merge_notes(old_notes, note_line)
+                    existing_broker.broker_currency = destination_currency
                     audit.log_update(
                         table_name="lots",
                         record_id=existing_broker.id,
@@ -1767,11 +1905,13 @@ class PortfolioService:
                             "quantity": old_qty,
                             "quantity_remaining": old_remaining,
                             "notes": old_notes,
+                            "broker_currency": old_broker_currency or "",
                         },
                         new_values={
                             "quantity": existing_broker.quantity,
                             "quantity_remaining": existing_broker.quantity_remaining,
                             "notes": existing_broker.notes or "",
+                            "broker_currency": existing_broker.broker_currency or "",
                         },
                         notes=(
                             "Merged FIFO transfer quantity from source lot "
@@ -1793,6 +1933,7 @@ class PortfolioService:
                     fmv_at_acquisition_gbp=source_lot.fmv_at_acquisition_gbp,
                     acquisition_price_original_ccy=source_lot.acquisition_price_original_ccy,
                     original_currency=source_lot.original_currency,
+                    broker_currency=destination_currency,
                     fx_rate_at_acquisition=source_lot.fx_rate_at_acquisition,
                     fx_rate_source=source_lot.fx_rate_source,
                     broker_reference=source_lot.broker_reference,
@@ -1846,6 +1987,7 @@ class PortfolioService:
                         f"available as whole shares ({total_available_whole})."
                     )
 
+                resolved_transfer_currency = _resolve_destination_broker_currency(lot)
                 remaining_to_move = transfer_qty
                 primary_transferred_lot: Lot | None = None
                 affected_source_lot_ids: list[str] = []
@@ -1870,6 +2012,7 @@ class PortfolioService:
                         src,
                         move_qty,
                         transfer_line,
+                        resolved_transfer_currency,
                     )
                     if primary_transferred_lot is None:
                         primary_transferred_lot = broker_lot
@@ -1994,6 +2137,8 @@ class PortfolioService:
 
             source_scheme = lot.scheme_type
             old_notes = lot.notes or ""
+            old_broker_currency = lot.broker_currency
+            resolved_transfer_currency = _resolve_destination_broker_currency(lot)
             transfer_note_parts = [
                 f"Transfer {source_scheme} -> BROKERAGE (non-disposal)"
             ]
@@ -2014,11 +2159,13 @@ class PortfolioService:
                 "scheme_type": source_scheme,
                 "import_source": lot.import_source or "",
                 "notes": old_notes,
+                "broker_currency": old_broker_currency or "",
             }
 
             lot.scheme_type = "BROKERAGE"
             lot.import_source = "ui_transfer_to_brokerage"
             lot.notes = merged_notes
+            lot.broker_currency = resolved_transfer_currency
 
             if source_scheme == "ESPP_PLUS":
                 employment_tax_event_repo.add(
@@ -2043,6 +2190,7 @@ class PortfolioService:
                 "scheme_type": lot.scheme_type,
                 "import_source": lot.import_source,
                 "notes": lot.notes,
+                "broker_currency": lot.broker_currency or "",
             }
 
             entry = audit.log_update(

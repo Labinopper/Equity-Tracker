@@ -53,6 +53,15 @@
         <label for="fmv_at_acquisition_gbp">FMV at Acquisition (GBP)</label>
         <input id="fmv_at_acquisition_gbp" name="fmv_at_acquisition_gbp" type="text" value="{{ prev.fmv_at_acquisition_gbp }}">
       </div>
+      {% if lot.scheme_type in ("BROKERAGE", "ISA") %}
+      <div class="form-field">
+        <label for="broker_currency">Broker Holding Currency *</label>
+        <select id="broker_currency" name="broker_currency" required>
+          <option value="GBP" {% if prev.broker_currency == "GBP" %}selected{% endif %}>GBP</option>
+          <option value="USD" {% if prev.broker_currency == "USD" %}selected{% endif %}>USD</option>
+        </select>
+      </div>
+      {% endif %}
       <div class="form-field edit-lot-notes">
         <label for="notes">Notes</label>
         <textarea id="notes" name="notes">{{ prev.notes }}</textarea>
@@ -66,6 +75,9 @@
       <div class="edit-summary__row">Tax Year: <strong id="summary-tax-year">-</strong></div>
       <div class="edit-summary__row">Acquisition Price: <strong id="summary-acq-price">-</strong></div>
       <div class="edit-summary__row">True Cost per Share: <strong id="summary-true-cost">-</strong></div>
+      {% if lot.scheme_type in ("BROKERAGE", "ISA") %}
+      <div class="edit-summary__row">Broker Holding Currency: <strong id="summary-broker-currency">-</strong></div>
+      {% endif %}
     </div>
 
     <div class="form-field form-field-inline">
@@ -90,12 +102,14 @@
   var taxYearEl = document.getElementById("tax_year");
   var acqPriceEl = document.getElementById("acquisition_price_gbp");
   var trueCostEl = document.getElementById("true_cost_per_share_gbp");
+  var brokerCurrencyEl = document.getElementById("broker_currency");
 
   var remainingEl = document.getElementById("new-remaining");
   var summaryAcqDateEl = document.getElementById("summary-acq-date");
   var summaryTaxYearEl = document.getElementById("summary-tax-year");
   var summaryAcqPriceEl = document.getElementById("summary-acq-price");
   var summaryTrueCostEl = document.getElementById("summary-true-cost");
+  var summaryBrokerCurrencyEl = document.getElementById("summary-broker-currency");
 
   function asNum(v) {
     var n = Number(v);
@@ -115,9 +129,12 @@
     summaryTaxYearEl.textContent = taxYearEl.value || "-";
     summaryAcqPriceEl.textContent = acqPriceEl.value || "-";
     summaryTrueCostEl.textContent = trueCostEl.value || "-";
+    if (summaryBrokerCurrencyEl) {
+      summaryBrokerCurrencyEl.textContent = brokerCurrencyEl ? (brokerCurrencyEl.value || "-") : "-";
+    }
   }
 
-  [quantityEl, acqDateEl, taxYearEl, acqPriceEl, trueCostEl].forEach(function (el) {
+  [quantityEl, acqDateEl, taxYearEl, acqPriceEl, trueCostEl, brokerCurrencyEl].forEach(function (el) {
     if (!el) {
       return;
     }

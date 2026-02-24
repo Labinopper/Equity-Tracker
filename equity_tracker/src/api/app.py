@@ -57,6 +57,7 @@ from . import _state
 from .routers import (
     admin,
     analytics,
+    calendar,
     catalog,
     portfolio,
     prices,
@@ -231,6 +232,7 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSO
 
 app.include_router(admin.router)
 app.include_router(analytics.router)
+app.include_router(calendar.router)
 app.include_router(catalog.router)
 app.include_router(portfolio.router)
 app.include_router(prices.router)

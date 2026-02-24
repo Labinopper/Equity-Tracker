@@ -1470,6 +1470,42 @@ def _normalize_price_input_currency(raw_value: str) -> str:
     return currency
 
 
+def _phase_a_broker_currency_or_none(raw_value: str | None) -> str | None:
+    """Return USD/GBP for Phase A broker-currency tracking, otherwise None."""
+    if raw_value is None:
+        return None
+    cleaned = raw_value.strip().upper()
+    if cleaned in PRICE_INPUT_CURRENCIES:
+        return cleaned
+    return None
+
+
+def _suggest_broker_currency(
+    *,
+    source_broker_currency: str | None,
+    source_original_currency: str | None,
+    security_currency: str | None,
+) -> str:
+    """
+    Resolve a default broker holding currency for UI transfer flows.
+
+    Preference:
+      1) existing lot broker_currency
+      2) original acquisition currency
+      3) security currency
+      4) GBP fallback
+    """
+    for candidate in (
+        source_broker_currency,
+        source_original_currency,
+        security_currency,
+    ):
+        resolved = _phase_a_broker_currency_or_none(candidate)
+        if resolved is not None:
+            return resolved
+    return "GBP"
+
+
 def _resolve_input_fx_to_gbp(price_input_currency: str) -> tuple[Decimal, str]:
     """
     Resolve FX rate used to convert Add Lot price inputs to GBP.
@@ -2012,6 +2048,11 @@ async def add_lot_submit(
                 settings=settings,
             )
             true_cost = derived_true_cost or purchase_price
+            broker_currency = (
+                normalized_price_input_currency
+                if scheme_type in {"BROKERAGE", "ISA"}
+                else None
+            )
 
             PortfolioService.add_lot(
                 security_id=security_id,
@@ -2023,6 +2064,7 @@ async def add_lot_submit(
                 fmv_at_acquisition_gbp=espp_fmv,
                 acquisition_price_original_ccy=purchase_price_input,
                 original_currency=normalized_price_input_currency,
+                broker_currency=broker_currency,
                 fx_rate_at_acquisition=fx_rate_to_gbp,
                 fx_rate_source=fx_rate_source,
                 notes=notes.strip() or None,
@@ -2098,6 +2140,7 @@ async def add_lot_submit(
                 matched_quantity=matched_qty,
                 acquisition_price_original_ccy=purchase_price_input,
                 original_currency=normalized_price_input_currency,
+                broker_currency=normalized_price_input_currency,
                 fx_rate_at_acquisition=fx_rate_to_gbp,
                 fx_rate_source=fx_rate_source,
                 employee_import_source=employee_import_source,
@@ -2147,6 +2190,14 @@ def _render_edit_lot_page(
             "true_cost_per_share_gbp": lot.true_cost_per_share_gbp,
             "tax_year": lot.tax_year,
             "fmv_at_acquisition_gbp": lot.fmv_at_acquisition_gbp or "",
+            "broker_currency": (
+                lot.broker_currency
+                or _suggest_broker_currency(
+                    source_broker_currency=lot.broker_currency,
+                    source_original_currency=lot.original_currency,
+                    security_currency=security.currency if security is not None else None,
+                )
+            ),
             "notes": lot.notes or "",
         },
     }
@@ -2181,6 +2232,7 @@ async def edit_lot_submit(
     true_cost_per_share_gbp: str = Form(...),
     tax_year: str = Form(...),
     fmv_at_acquisition_gbp: str = Form(""),
+    broker_currency: str = Form(""),
     notes: str = Form(""),
     confirm_changes: str = Form(""),
 ) -> HTMLResponse:
@@ -2194,6 +2246,7 @@ async def edit_lot_submit(
         "true_cost_per_share_gbp": true_cost_per_share_gbp,
         "tax_year": tax_year,
         "fmv_at_acquisition_gbp": fmv_at_acquisition_gbp,
+        "broker_currency": broker_currency,
         "notes": notes,
     }
 
@@ -2225,6 +2278,21 @@ async def edit_lot_submit(
             status_code=422,
         )
 
+    normalized_broker_currency: str | None = None
+    if broker_currency.strip():
+        try:
+            normalized_broker_currency = _normalize_price_input_currency(
+                broker_currency
+            )
+        except ValueError as exc:
+            return _render_edit_lot_page(
+                request,
+                lot_id=lot_id,
+                error=str(exc),
+                prev=prev,
+                status_code=422,
+            )
+
     try:
         _, audit_id = PortfolioService.edit_lot(
             lot_id=lot_id,
@@ -2234,6 +2302,7 @@ async def edit_lot_submit(
             true_cost_per_share_gbp=true_cost,
             tax_year=tax_year.strip(),
             fmv_at_acquisition_gbp=fmv,
+            broker_currency=normalized_broker_currency,
             notes=notes,
         )
     except (KeyError, ValueError) as exc:
@@ -2284,6 +2353,11 @@ def _load_transfer_candidates() -> list[dict[str, str]]:
                 )
                 whole_qty = total_qty.to_integral_value(rounding=ROUND_FLOOR)
                 if whole_qty > Decimal("0"):
+                    suggested_broker_currency = _suggest_broker_currency(
+                        source_broker_currency=fifo_head.broker_currency,
+                        source_original_currency=fifo_head.original_currency,
+                        security_currency=sec.currency,
+                    )
                     candidates.append(
                         {
                             "lot_id": fifo_head.id,
@@ -2291,13 +2365,15 @@ def _load_transfer_candidates() -> list[dict[str, str]]:
                             "label": (
                                 f"{sec.ticker} | ESPP (FIFO pool) | "
                                 f"oldest acq {fifo_head.acquisition_date} | "
-                                f"whole qty {whole_qty} | raw qty {total_qty}"
+                                f"whole qty {whole_qty} | raw qty {total_qty} | "
+                                f"broker ccy {suggested_broker_currency}"
                             ),
                             "scheme_type": "ESPP",
                             "quantity_remaining": str(total_qty),
                             "default_transfer_quantity": str(whole_qty),
                             "whole_quantity_available": str(whole_qty),
                             "acquisition_date": fifo_head.acquisition_date.isoformat(),
+                            "broker_currency": suggested_broker_currency,
                         }
                     )
 
@@ -2312,6 +2388,11 @@ def _load_transfer_candidates() -> list[dict[str, str]]:
                 # ESPP+ matched lots are forfeiture-linked and not direct transfer inputs.
                 if lot.scheme_type == "ESPP_PLUS" and lot.matching_lot_id is not None:
                     continue
+                suggested_broker_currency = _suggest_broker_currency(
+                    source_broker_currency=lot.broker_currency,
+                    source_original_currency=lot.original_currency,
+                    security_currency=sec.currency,
+                )
                 candidates.append(
                     {
                         "lot_id": lot.id,
@@ -2319,13 +2400,15 @@ def _load_transfer_candidates() -> list[dict[str, str]]:
                         "label": (
                             f"{sec.ticker} | {lot.scheme_type} | "
                             f"acq {lot.acquisition_date} | "
-                            f"qty {lot.quantity_remaining}"
+                            f"qty {lot.quantity_remaining} | "
+                            f"broker ccy {suggested_broker_currency}"
                         ),
                         "scheme_type": lot.scheme_type,
                         "quantity_remaining": lot.quantity_remaining,
                         "default_transfer_quantity": lot.quantity_remaining,
                         "whole_quantity_available": lot.quantity_remaining,
                         "acquisition_date": lot.acquisition_date.isoformat(),
+                        "broker_currency": suggested_broker_currency,
                     }
                 )
     return candidates
@@ -2337,6 +2420,7 @@ def _render_transfer_lot_page(
     error: str | None = None,
     preselect_lot_id: str | None = None,
     quantity: str = "",
+    broker_currency: str = "",
     notes: str = "",
     status_code: int = 200,
 ) -> HTMLResponse:
@@ -2355,6 +2439,24 @@ def _render_transfer_lot_page(
                         ):
                             resolved_preselect_lot_id = candidate["lot_id"]
                             break
+    resolved_broker_currency = broker_currency.strip().upper()
+    if not resolved_broker_currency:
+        selected_candidate = None
+        if resolved_preselect_lot_id:
+            selected_candidate = next(
+                (
+                    c for c in candidates
+                    if c.get("lot_id") == resolved_preselect_lot_id
+                ),
+                None,
+            )
+        if selected_candidate is None and candidates:
+            selected_candidate = candidates[0]
+        resolved_broker_currency = (
+            selected_candidate.get("broker_currency", "GBP")
+            if selected_candidate is not None
+            else "GBP"
+        )
     return _html_template_response(
         "transfer_lot.html",
         {
@@ -2363,6 +2465,7 @@ def _render_transfer_lot_page(
             "error": error,
             "preselect_lot_id": resolved_preselect_lot_id,
             "quantity": quantity,
+            "broker_currency": resolved_broker_currency,
             "notes": notes,
         },
         status_code=status_code,
@@ -2397,6 +2500,7 @@ async def transfer_lot_submit(
     request: Request,
     lot_id: str = Form(...),
     quantity: str = Form(""),
+    broker_currency: str = Form(""),
     notes: str = Form(""),
     confirm_transfer: str = Form(""),
 ) -> HTMLResponse:
@@ -2409,6 +2513,7 @@ async def transfer_lot_submit(
             error="Confirm the transfer summary before continuing.",
             preselect_lot_id=lot_id,
             quantity=quantity,
+            broker_currency=broker_currency,
             notes=notes,
             status_code=422,
         )
@@ -2423,6 +2528,24 @@ async def transfer_lot_submit(
                 error=f"Invalid transfer quantity: {exc}",
                 preselect_lot_id=lot_id,
                 quantity=quantity,
+                broker_currency=broker_currency,
+                notes=notes,
+                status_code=422,
+            )
+
+    normalized_broker_currency: str | None = None
+    if broker_currency.strip():
+        try:
+            normalized_broker_currency = _normalize_price_input_currency(
+                broker_currency
+            )
+        except ValueError as exc:
+            return _render_transfer_lot_page(
+                request,
+                error=str(exc),
+                preselect_lot_id=lot_id,
+                quantity=quantity,
+                broker_currency=broker_currency,
                 notes=notes,
                 status_code=422,
             )
@@ -2435,6 +2558,7 @@ async def transfer_lot_submit(
             notes=notes,
             settings=settings,
             quantity=transfer_qty,
+            destination_broker_currency=normalized_broker_currency,
         )
     except (KeyError, ValueError) as exc:
         return _render_transfer_lot_page(
@@ -2442,6 +2566,7 @@ async def transfer_lot_submit(
             error=str(exc),
             preselect_lot_id=lot_id,
             quantity=quantity,
+            broker_currency=broker_currency,
             notes=notes,
             status_code=422,
         )

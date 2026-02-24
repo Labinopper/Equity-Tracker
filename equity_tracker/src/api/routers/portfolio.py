@@ -136,6 +136,7 @@ async def add_lot(
             acquisition_price_gbp=req.acquisition_price_gbp,
             true_cost_per_share_gbp=req.true_cost_per_share_gbp,
             fmv_at_acquisition_gbp=req.fmv_at_acquisition_gbp,
+            broker_currency=req.broker_currency,
             tax_year=req.tax_year,
             grant_id=req.grant_id,
             external_id=req.external_id,
@@ -171,6 +172,7 @@ async def edit_lot(
             true_cost_per_share_gbp=req.true_cost_per_share_gbp,
             tax_year=req.tax_year,
             fmv_at_acquisition_gbp=req.fmv_at_acquisition_gbp,
+            broker_currency=req.broker_currency,
             notes=req.notes,
         )
     except KeyError as exc:
@@ -204,6 +206,7 @@ async def transfer_lot(
             notes=req.notes,
             settings=settings,
             quantity=req.quantity,
+            destination_broker_currency=req.broker_currency,
         )
     except KeyError as exc:
         raise HTTPException(

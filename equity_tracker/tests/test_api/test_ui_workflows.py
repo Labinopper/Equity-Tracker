@@ -243,6 +243,7 @@ def test_add_lot_isa_success(client):
     assert lot.scheme_type == "ISA"
     assert Decimal(lot.acquisition_price_gbp) == Decimal("8.50")
     assert Decimal(lot.true_cost_per_share_gbp) == Decimal("8.50")
+    assert lot.broker_currency == "GBP"
 
 
 def test_add_lot_brokerage_usd_converts_to_gbp_and_persists_fx_metadata(client, monkeypatch):
@@ -283,6 +284,7 @@ def test_add_lot_brokerage_usd_converts_to_gbp_and_persists_fx_metadata(client, 
     assert Decimal(lot.true_cost_per_share_gbp) == Decimal("80.0000")
     assert Decimal(lot.acquisition_price_original_ccy) == Decimal("100.00")
     assert lot.original_currency == "USD"
+    assert lot.broker_currency == "USD"
     assert Decimal(lot.fx_rate_at_acquisition) == Decimal("0.8000")
     assert lot.fx_rate_source == "google_sheets_fx_tab"
 
@@ -763,6 +765,46 @@ def test_edit_lot_submit_updates_lot_and_redirects_with_audit_reference(client):
     assert updated.acquisition_price_gbp == "11.00"
 
 
+def test_edit_lot_submit_updates_broker_currency_for_brokerage_lot(client):
+    sec_id = _add_security(client, ticker="UIEDITCCY")
+    add = client.post(
+        "/portfolio/lots",
+        json={
+            "security_id": sec_id,
+            "scheme_type": "BROKERAGE",
+            "acquisition_date": "2025-01-15",
+            "quantity": "5",
+            "acquisition_price_gbp": "10.00",
+            "true_cost_per_share_gbp": "10.00",
+            "broker_currency": "GBP",
+        },
+    )
+    assert add.status_code == 201, add.text
+    lot_id = add.json()["id"]
+
+    resp = client.post(
+        "/portfolio/edit-lot",
+        data={
+            "lot_id": lot_id,
+            "acquisition_date": "2025-02-01",
+            "quantity": "5",
+            "acquisition_price_gbp": "10.00",
+            "true_cost_per_share_gbp": "10.00",
+            "tax_year": "2024-25",
+            "fmv_at_acquisition_gbp": "",
+            "broker_currency": "USD",
+            "notes": "ccy fix",
+            "confirm_changes": "yes",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    with AppContext.read_session() as sess:
+        updated = LotRepository(sess).require_by_id(lot_id)
+    assert updated.broker_currency == "USD"
+
+
 def test_edit_lot_submit_requires_confirmation(client):
     sec_id = _add_security(client, ticker="UIEDITCONF")
     _add_lot_via_api(client, sec_id, quantity="5", price="10.00")
@@ -807,6 +849,7 @@ def test_transfer_lot_form_renders_candidates_and_warning(client):
     assert "Transfer to Brokerage" in resp.text
     assert "Transfer rules:" in resp.text
     assert "Quantity to Transfer" in resp.text
+    assert "Destination Broker Currency" in resp.text
     assert "Transfers into ISA are not supported. Use dispose then Add Lot in ISA." in resp.text
 
 
@@ -923,6 +966,42 @@ def test_transfer_lot_submit_updates_scheme_and_redirects_with_audit(client):
     ]
     assert len(broker_lots) == 1
     assert Decimal(broker_lots[0].quantity_remaining) == Decimal("5")
+    assert broker_lots[0].broker_currency == "GBP"
+
+
+def test_transfer_lot_submit_respects_selected_destination_broker_currency(client):
+    sec_id = _add_security(client, ticker="UITRCCY", currency="USD")
+    add = client.post(
+        "/portfolio/lots",
+        json={
+            "security_id": sec_id,
+            "scheme_type": "RSU",
+            "acquisition_date": "2025-01-15",
+            "quantity": "5",
+            "acquisition_price_gbp": "10.00",
+            "true_cost_per_share_gbp": "4.00",
+        },
+    )
+    assert add.status_code == 201, add.text
+    lot_id = add.json()["id"]
+
+    resp = client.post(
+        "/portfolio/transfer-lot",
+        data={
+            "lot_id": lot_id,
+            "quantity": "5",
+            "broker_currency": "USD",
+            "notes": "move with ccy",
+            "confirm_transfer": "yes",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    with AppContext.read_session() as sess:
+        transferred = LotRepository(sess).require_by_id(lot_id)
+    assert transferred.scheme_type == "BROKERAGE"
+    assert transferred.broker_currency == "USD"
 
 
 def test_transfer_lot_submit_requires_confirmation(client):

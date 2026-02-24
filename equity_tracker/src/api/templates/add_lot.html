@@ -150,6 +150,7 @@
         </select>
         <span class="form-hint">
           Add-lot entry can be in GBP or USD. Values are converted and stored in GBP for reporting.
+          For BROKERAGE/ISA lots this also sets the broker holding currency.
         </span>
       </div>
 
@@ -647,8 +648,8 @@
       derivedLabel.textContent  = (scheme === 'ISA') ? 'ISA acquisition cost' : 'Acquisition cost';
       derivedAmount.textContent = formatMoney(purchase, ccy);
       derivedCaveat.textContent = (scheme === 'ISA')
-        ? 'ISA holdings are tax-sheltered at disposal. Stored in GBP for reporting.'
-        : 'Stored in GBP for reporting.';
+        ? 'ISA holdings are tax-sheltered at disposal. Stored in GBP for reporting; broker holding currency is retained.'
+        : 'Stored in GBP for reporting; broker holding currency is retained.';
 
     } else if (scheme === 'ESPP_PLUS') {
       /*

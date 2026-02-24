@@ -13,8 +13,18 @@
   Hypothetical sell-all breakdown. Employment tax is estimated and not a filing calculation.
   Estimates cover IT + NIC + Student Loan where scheme rules apply.
   ISA holdings are treated as tax-sheltered.
+  Totals are displayed in {{ summary.valuation_currency }}.
   Consult a qualified tax adviser before acting on these figures.
 </p>
+
+{% if summary.fx_conversion_basis or summary.fx_as_of %}
+<div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
+  {% if summary.fx_conversion_basis %}{{ summary.fx_conversion_basis }}{% endif %}
+  {% if summary.fx_as_of %}
+  {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}.
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="stats">
   <div class="stat">
@@ -74,6 +84,14 @@
       {% if ss.price_as_of %}
       <span class="muted mono-small">Price as of {{ ss.price_as_of }}</span>
       {% endif %}
+      {% if ss.current_price_native is not none and ss.market_value_native_currency %}
+      <span class="muted mono-small">
+        Price {{ ss.market_value_native_currency }} {{ ss.current_price_native | money }}
+        {% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}
+        / &pound;{{ ss.current_price_gbp | money }}
+        {% endif %}
+      </span>
+      {% endif %}
     </div>
   </div>
 
@@ -85,7 +103,12 @@
     </div>
     <div class="net-value-item">
       <div class="net-value-item__label">Gross Market Value</div>
-      <div class="net-value-item__value">&pound;{{ ss.market_value_gbp | money }}</div>
+      <div class="net-value-item__value">
+        {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
+        {{ ss.market_value_native_currency }} {{ ss.market_value_native | money }} /
+        {% endif %}
+        &pound;{{ ss.market_value_gbp | money }}
+      </div>
     </div>
     <div class="net-value-item">
       <div class="net-value-item__label">Cost Basis</div>
@@ -168,7 +191,12 @@
           <td class="mono-small">{{ ls.lot.tax_year }}</td>
           <td class="num">{{ ls.lot.quantity_remaining }}</td>
           <td class="num">&pound;{{ ls.cost_basis_total_gbp | money }}</td>
-          <td class="num">&pound;{{ ls.market_value_gbp | money }}</td>
+          <td class="num">
+            {% if ls.market_value_native is not none and ls.market_value_native_currency and ls.market_value_native_currency != "GBP" %}
+            {{ ls.market_value_native_currency }} {{ ls.market_value_native | money }} /
+            {% endif %}
+            &pound;{{ ls.market_value_gbp | money }}
+          </td>
           {% if ls.unrealised_gain_cgt_gbp is not none %}
           <td class="num {% if ls.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
             {% if ls.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ls.unrealised_gain_cgt_gbp | money }}

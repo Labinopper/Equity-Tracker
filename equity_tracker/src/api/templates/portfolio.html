@@ -90,15 +90,19 @@
   Employment-tax estimates cover IT + NIC + Student Loan where scheme rules apply.
   ISA lots are treated as tax-sheltered in this estimate.
   Est. Net Liquidity includes only shares sellable today and excludes locked/forfeiture-restricted value.
+  All totals are shown in {{ summary.valuation_currency }}.
   <a href="/net-value">Full breakdown</a>
 </p>
 
-{% if summary.fx_as_of %}
+{% if summary.fx_as_of or summary.fx_conversion_basis %}
 <div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %} info-compact">
   {% if summary.fx_is_stale %}Warning: {% endif %}
-  FX (USD to GBP) as of {{ summary.fx_as_of }}
-  {% if summary.fx_is_stale %}
-  - rate is stale (>10 min old); refresh prices to update.
+  {% if summary.fx_conversion_basis %}{{ summary.fx_conversion_basis }}{% endif %}
+  {% if summary.fx_as_of %}
+  {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}
+  {% endif %}
+  {% if summary.fx_is_stale and summary.fx_as_of %}
+  - rate may be stale (>10 min old); refresh prices to update.
   {% endif %}
 </div>
 {% endif %}
@@ -161,6 +165,9 @@
         | Cost Basis &pound;{{ ss.total_cost_basis_gbp | money }}
         | True Cost &pound;{{ ss.total_true_cost_gbp | money }}
         {% if ss.market_value_gbp is not none %}
+        {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
+        | Market Value {{ ss.market_value_native_currency }} {{ ss.market_value_native | money }}
+        {% endif %}
         | Market Value &pound;{{ ss.market_value_gbp | money }}
         {% else %}
         | Market Value unavailable
@@ -173,8 +180,22 @@
     <span>Qty <strong>{{ "%.2f"|format(ss.total_quantity) }}</strong></span>
     <span>Cost basis <strong>&pound;{{ ss.total_cost_basis_gbp | money }}</strong></span>
     <span>True cost <strong>&pound;{{ ss.total_true_cost_gbp | money }}</strong></span>
+    {% if ss.current_price_native is not none and ss.market_value_native_currency %}
+    <span>
+      Price <strong>{{ ss.market_value_native_currency }} {{ ss.current_price_native | money }}</strong>
+      {% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}
+      / <strong>&pound;{{ ss.current_price_gbp | money }}</strong>
+      {% endif %}
+    </span>
+    {% endif %}
     {% if ss.market_value_gbp is not none %}
-    <span>Mkt value <strong>&pound;{{ ss.market_value_gbp | money }}</strong></span>
+    <span>
+      Mkt value
+      {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
+      <strong>{{ ss.market_value_native_currency }} {{ ss.market_value_native | money }}</strong> /
+      {% endif %}
+      <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
+    </span>
     {% if ss.unrealised_gain_cgt_gbp is not none %}
     <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
       P&amp;L (Cost Basis)
@@ -211,7 +232,13 @@
       <span class="net-panel-summary">
         <span>Cost Basis: <strong>&pound;{{ ss.total_cost_basis_gbp | money }}</strong></span>
         <span>True Cost: <strong>&pound;{{ ss.total_true_cost_gbp | money }}</strong></span>
-        <span>Mkt Value: <strong>&pound;{{ ss.market_value_gbp | money }}</strong></span>
+        <span>
+          Mkt Value:
+          {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
+          <strong>{{ ss.market_value_native_currency }} {{ ss.market_value_native | money }}</strong> /
+          {% endif %}
+          <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
+        </span>
         {% if ss.est_cgt_gbp is not none %}
         <span class="warning-text">Employment Tax: <strong>-&pound;{{ ss.est_cgt_gbp | money }}</strong></span>
         <span class="gain">Net: <strong>&pound;{{ ss.est_net_proceeds_gbp | money }}</strong></span>
@@ -236,7 +263,12 @@
         </div>
         <div class="net-value-item">
           <div class="net-value-item__label">Gross Market Value</div>
-          <div class="net-value-item__value">&pound;{{ ss.market_value_gbp | money }}</div>
+          <div class="net-value-item__value">
+            {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
+            {{ ss.market_value_native_currency }} {{ ss.market_value_native | money }} /
+            {% endif %}
+            &pound;{{ ss.market_value_gbp | money }}
+          </div>
         </div>
         {% if ss.unrealised_gain_cgt_gbp is not none %}
         <div class="net-value-item">

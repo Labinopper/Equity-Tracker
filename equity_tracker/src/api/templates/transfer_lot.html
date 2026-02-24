@@ -28,6 +28,7 @@
             data-qty="{{ c.quantity_remaining }}"
             data-default-qty="{{ c.default_transfer_quantity }}"
             data-whole-qty="{{ c.whole_quantity_available }}"
+            data-broker-currency="{{ c.broker_currency }}"
             data-acq="{{ c.acquisition_date }}"
             {% if preselect_lot_id == c.lot_id %}selected{% endif %}
           >
@@ -41,6 +42,14 @@
         <label>Destination</label>
         <input type="text" value="BROKERAGE" readonly>
         <span class="form-hint">Destination is fixed for this workflow.</span>
+      </div>
+      <div class="form-field">
+        <label for="broker_currency">Destination Broker Currency *</label>
+        <select id="broker_currency" name="broker_currency" required>
+          <option value="GBP" {% if broker_currency == "GBP" %}selected{% endif %}>GBP</option>
+          <option value="USD" {% if broker_currency == "USD" %}selected{% endif %}>USD</option>
+        </select>
+        <span class="form-hint">Tracks holding currency context on the destination brokerage lot.</span>
       </div>
 
       <div class="form-field">
@@ -78,6 +87,7 @@
       <div class="edit-summary__row">Quantity Remaining: <strong id="summary-source-qty">-</strong></div>
       <div class="edit-summary__row">Whole Shares Available (FIFO): <strong id="summary-whole-qty">-</strong></div>
       <div class="edit-summary__row">Requested Transfer Quantity: <strong id="summary-transfer-qty">-</strong></div>
+      <div class="edit-summary__row">Destination Broker Currency: <strong id="summary-broker-currency">-</strong></div>
       <div class="edit-summary__row">Acquisition Date: <strong id="summary-source-acq">-</strong></div>
       <div class="edit-summary__row">Destination Scheme: <strong>BROKERAGE</strong></div>
       <div class="edit-summary__row">Audit Trail: <strong>Recorded in lots audit log</strong></div>
@@ -101,11 +111,13 @@
 (function () {
   var lotSelect = document.getElementById("lot_id");
   var qtyInput = document.getElementById("quantity");
+  var brokerCurrencySelect = document.getElementById("broker_currency");
   var qtyHint = document.getElementById("transfer-qty-hint");
   var schemeEl = document.getElementById("summary-source-scheme");
   var qtyEl = document.getElementById("summary-source-qty");
   var wholeQtyEl = document.getElementById("summary-whole-qty");
   var transferQtyEl = document.getElementById("summary-transfer-qty");
+  var brokerCurrencyEl = document.getElementById("summary-broker-currency");
   var acqEl = document.getElementById("summary-source-acq");
 
   function updateSummary() {
@@ -115,6 +127,7 @@
       qtyEl.textContent = "-";
       if (wholeQtyEl) wholeQtyEl.textContent = "-";
       transferQtyEl.textContent = "-";
+      if (brokerCurrencyEl) brokerCurrencyEl.textContent = "-";
       acqEl.textContent = "-";
       return;
     }
@@ -132,6 +145,13 @@
     }
     if (transferQtyEl) {
       transferQtyEl.textContent = (qtyInput && qtyInput.value.trim()) ? qtyInput.value.trim() : defaultQty;
+    }
+    var suggestedBrokerCurrency = option.getAttribute("data-broker-currency") || "GBP";
+    if (brokerCurrencySelect) {
+      brokerCurrencySelect.value = suggestedBrokerCurrency;
+    }
+    if (brokerCurrencyEl) {
+      brokerCurrencyEl.textContent = brokerCurrencySelect ? brokerCurrencySelect.value : suggestedBrokerCurrency;
     }
     if (qtyInput) {
       if (scheme === "ESPP") {
@@ -156,6 +176,12 @@
     qtyInput.addEventListener("input", function () {
       if (!transferQtyEl) return;
       transferQtyEl.textContent = qtyInput.value.trim() || "-";
+    });
+  }
+  if (brokerCurrencySelect) {
+    brokerCurrencySelect.addEventListener("change", function () {
+      if (!brokerCurrencyEl) return;
+      brokerCurrencyEl.textContent = brokerCurrencySelect.value || "-";
     });
   }
   updateSummary();

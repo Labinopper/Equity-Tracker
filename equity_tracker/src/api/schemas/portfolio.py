@@ -66,6 +66,11 @@ class LotSchema(BaseModel):
     acquisition_price_gbp: str
     true_cost_per_share_gbp: str
     fmv_at_acquisition_gbp: str | None = None
+    acquisition_price_original_ccy: str | None = None
+    original_currency: str | None = None
+    broker_currency: str | None = None
+    fx_rate_at_acquisition: str | None = None
+    fx_rate_source: str | None = None
     grant_id: str | None = None
     external_id: str | None = None
     broker_reference: str | None = None
@@ -84,6 +89,11 @@ class LotSchema(BaseModel):
             acquisition_price_gbp=lot.acquisition_price_gbp,
             true_cost_per_share_gbp=lot.true_cost_per_share_gbp,
             fmv_at_acquisition_gbp=lot.fmv_at_acquisition_gbp,
+            acquisition_price_original_ccy=lot.acquisition_price_original_ccy,
+            original_currency=lot.original_currency,
+            broker_currency=lot.broker_currency,
+            fx_rate_at_acquisition=lot.fx_rate_at_acquisition,
+            fx_rate_source=lot.fx_rate_source,
             grant_id=lot.grant_id,
             external_id=lot.external_id,
             broker_reference=lot.broker_reference,
@@ -96,6 +106,8 @@ class LotSummarySchema(BaseModel):
     cost_basis_total_gbp: str
     true_cost_total_gbp: str
     market_value_gbp: str | None = None
+    market_value_native: str | None = None
+    market_value_native_currency: str | None = None
     unrealised_gain_cgt_gbp: str | None = None
     unrealised_gain_economic_gbp: str | None = None
     est_cgt_on_lot_gbp: str | None = None
@@ -114,6 +126,12 @@ class LotSummarySchema(BaseModel):
             market_value_gbp=(
                 str(ls.market_value_gbp) if ls.market_value_gbp is not None else None
             ),
+            market_value_native=(
+                str(ls.market_value_native)
+                if ls.market_value_native is not None
+                else None
+            ),
+            market_value_native_currency=ls.market_value_native_currency,
             unrealised_gain_cgt_gbp=(
                 str(ls.unrealised_gain_cgt_gbp)
                 if ls.unrealised_gain_cgt_gbp is not None
@@ -150,7 +168,10 @@ class SecuritySummarySchema(BaseModel):
     total_cost_basis_gbp: str
     total_true_cost_gbp: str
     # Phase L: live price fields (None when no price has been fetched)
+    current_price_native: str | None = None
     current_price_gbp: str | None = None
+    market_value_native: str | None = None
+    market_value_native_currency: str | None = None
     market_value_gbp: str | None = None
     unrealised_gain_cgt_gbp: str | None = None
     unrealised_gain_economic_gbp: str | None = None
@@ -173,7 +194,10 @@ class SecuritySummarySchema(BaseModel):
             total_quantity=str(ss.total_quantity),
             total_cost_basis_gbp=str(ss.total_cost_basis_gbp),
             total_true_cost_gbp=str(ss.total_true_cost_gbp),
+            current_price_native=str(ss.current_price_native) if ss.current_price_native is not None else None,
             current_price_gbp=str(ss.current_price_gbp) if ss.current_price_gbp is not None else None,
+            market_value_native=str(ss.market_value_native) if ss.market_value_native is not None else None,
+            market_value_native_currency=ss.market_value_native_currency,
             market_value_gbp=str(ss.market_value_gbp) if ss.market_value_gbp is not None else None,
             unrealised_gain_cgt_gbp=str(ss.unrealised_gain_cgt_gbp) if ss.unrealised_gain_cgt_gbp is not None else None,
             unrealised_gain_economic_gbp=str(ss.unrealised_gain_economic_gbp) if ss.unrealised_gain_economic_gbp is not None else None,
@@ -202,6 +226,8 @@ class PortfolioSummarySchema(BaseModel):
     total_market_value_gbp: str | None = None
     fx_as_of: str | None = None
     fx_is_stale: bool = False
+    valuation_currency: str = "GBP"
+    fx_conversion_basis: str | None = None
     est_total_cgt_liability_gbp: str | None = None
     est_total_net_liquidation_gbp: str | None = None
 
@@ -216,6 +242,8 @@ class PortfolioSummarySchema(BaseModel):
             total_market_value_gbp=str(ps.total_market_value_gbp) if ps.total_market_value_gbp is not None else None,
             fx_as_of=ps.fx_as_of,
             fx_is_stale=ps.fx_is_stale,
+            valuation_currency=ps.valuation_currency,
+            fx_conversion_basis=ps.fx_conversion_basis,
             est_total_cgt_liability_gbp=(
                 str(ps.est_total_cgt_liability_gbp)
                 if ps.est_total_cgt_liability_gbp is not None
@@ -289,6 +317,10 @@ class AddLotRequest(BaseModel):
     acquisition_price_gbp: Decimal = Field(..., ge=0, description="CGT cost basis per share")
     true_cost_per_share_gbp: Decimal = Field(..., ge=0, description="Economic cost per share")
     fmv_at_acquisition_gbp: Decimal | None = Field(None, ge=0)
+    broker_currency: str | None = Field(
+        None,
+        description="Optional broker holding currency for BROKERAGE/ISA lots (USD/GBP).",
+    )
     tax_year: str | None = Field(None, description="UK tax year e.g. '2024-25'; auto-derived if omitted")
     grant_id: str | None = None
     external_id: str | None = Field(None, description="Idempotency key; must be unique across all lots")
@@ -304,6 +336,16 @@ class AddLotRequest(BaseModel):
                 f"scheme_type must be one of: {list(VALID_SCHEME_TYPES)}"
             )
         return v
+
+    @field_validator("broker_currency")
+    @classmethod
+    def validate_broker_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().upper()
+        if cleaned not in {"USD", "GBP"}:
+            raise ValueError("broker_currency must be one of: ['USD', 'GBP']")
+        return cleaned
 
     model_config = {
         "json_schema_extra": {
@@ -329,7 +371,18 @@ class EditLotRequest(BaseModel):
     true_cost_per_share_gbp: Decimal = Field(..., ge=0)
     tax_year: str = Field(..., min_length=1, max_length=7)
     fmv_at_acquisition_gbp: Decimal | None = Field(None, ge=0)
+    broker_currency: str | None = None
     notes: str | None = None
+
+    @field_validator("broker_currency")
+    @classmethod
+    def validate_edit_broker_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().upper()
+        if cleaned not in {"USD", "GBP"}:
+            raise ValueError("broker_currency must be one of: ['USD', 'GBP']")
+        return cleaned
 
 
 class SimulateDisposalRequest(BaseModel):
@@ -507,6 +560,10 @@ class TransferLotRequest(BaseModel):
             "with whole-share constraints; RSU/ESPP_PLUS require full lot transfer."
         ),
     )
+    broker_currency: str | None = Field(
+        default=None,
+        description="Optional destination broker holding currency (USD/GBP).",
+    )
     notes: str | None = None
 
     @field_validator("destination_scheme")
@@ -518,6 +575,16 @@ class TransferLotRequest(BaseModel):
                 "destination_scheme must be BROKERAGE. "
                 "ISA requires disposal then Add Lot."
             )
+        return cleaned
+
+    @field_validator("broker_currency")
+    @classmethod
+    def validate_transfer_broker_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().upper()
+        if cleaned not in {"USD", "GBP"}:
+            raise ValueError("broker_currency must be one of: ['USD', 'GBP']")
         return cleaned
 
 

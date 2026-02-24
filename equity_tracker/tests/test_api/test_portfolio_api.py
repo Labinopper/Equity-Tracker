@@ -19,6 +19,7 @@ import json
 
 from src.app_context import AppContext
 from src.db.repository.lots import LotRepository
+from src.db.repository.prices import PriceRepository
 from src.db.repository.transactions import TransactionRepository
 
 
@@ -166,6 +167,25 @@ def test_add_lot_allows_isa_scheme_type(client):
     assert resp.json()["scheme_type"] == "ISA"
 
 
+def test_add_lot_brokerage_accepts_broker_currency(client):
+    sec = _add_security(client, ticker="BROKCCY", currency="USD")
+    resp = client.post(
+        "/portfolio/lots",
+        json={
+            "security_id": sec["id"],
+            "scheme_type": "BROKERAGE",
+            "acquisition_date": "2024-06-15",
+            "quantity": "10",
+            "acquisition_price_gbp": "100",
+            "true_cost_per_share_gbp": "100",
+            "broker_currency": "USD",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["broker_currency"] == "USD"
+
+
 def test_add_lot_negative_quantity_returns_422(client):
     sec = _add_security(client)
     resp = client.post(
@@ -280,6 +300,7 @@ def test_transfer_lot_to_brokerage_is_non_disposal(client):
     body = transfer.json()
     assert body["lot"]["scheme_type"] == "BROKERAGE"
     assert body["lot"]["quantity"] == "4"
+    assert body["lot"]["broker_currency"] == "GBP"
     assert body["audit_id"]
 
     with AppContext.read_session() as sess:
@@ -314,6 +335,33 @@ def test_transfer_lot_rejects_fractional_espp_quantity(client):
     )
     assert transfer.status_code == 422
     assert "whole shares" in transfer.text
+
+
+def test_transfer_lot_allows_destination_broker_currency_override(client):
+    sec = _add_security(client, ticker="TRCCYAPI", currency="USD")
+    lot_resp = client.post(
+        "/portfolio/lots",
+        json={
+            "security_id": sec["id"],
+            "scheme_type": "RSU",
+            "acquisition_date": "2025-01-15",
+            "quantity": "10",
+            "acquisition_price_gbp": "10.00",
+            "true_cost_per_share_gbp": "4.00",
+        },
+    )
+    assert lot_resp.status_code == 201, lot_resp.text
+    lot = lot_resp.json()
+
+    transfer = client.post(
+        f"/portfolio/lots/{lot['id']}/transfer",
+        json={
+            "destination_scheme": "BROKERAGE",
+            "broker_currency": "USD",
+        },
+    )
+    assert transfer.status_code == 200, transfer.text
+    assert transfer.json()["lot"]["broker_currency"] == "USD"
 
 
 def test_transfer_lot_allows_whole_quantity_when_source_remaining_is_fractional(client):
@@ -491,6 +539,49 @@ def test_portfolio_summary_no_floats(client):
     # Deserialise raw JSON and check no float values appear
     raw = json.loads(resp.text)
     _assert_no_floats(raw)
+
+
+def test_portfolio_summary_includes_native_and_gbp_fields_with_fx_basis(client):
+    sec = _add_security(client, ticker="SUMFX", currency="USD")
+    add = client.post(
+        "/portfolio/lots",
+        json={
+            "security_id": sec["id"],
+            "scheme_type": "BROKERAGE",
+            "acquisition_date": "2024-06-15",
+            "quantity": "2",
+            "acquisition_price_gbp": "80.00",
+            "true_cost_per_share_gbp": "80.00",
+            "broker_currency": "USD",
+        },
+    )
+    assert add.status_code == 201, add.text
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec["id"],
+            price_date=date.today(),
+            close_price_original_ccy="110.00",
+            close_price_gbp="88.00",
+            currency="USD",
+            source="google_sheets:2026-02-24 12:00:00|fx:2026-02-24 12:00:00",
+        )
+
+    resp = client.get("/portfolio/summary")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valuation_currency"] == "GBP"
+    assert body["fx_conversion_basis"] is not None
+    ss = body["securities"][0]
+    assert ss["current_price_native"] == "110.00"
+    assert ss["current_price_gbp"] == "88.00"
+    assert ss["market_value_native"] == "220.00"
+    assert ss["market_value_gbp"] == "176.00"
+    assert ss["market_value_native_currency"] == "USD"
+    ls = ss["active_lots"][0]
+    assert ls["market_value_native"] == "220.00"
+    assert ls["market_value_gbp"] == "176.00"
+    assert ls["market_value_native_currency"] == "USD"
 
 
 def _assert_no_floats(obj):
