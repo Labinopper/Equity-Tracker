@@ -5,6 +5,10 @@
 **Based on:** `v2 Strategy.md` (6 EPICs + EPIC-08) + v1 roadmap carry-forward, reviewed against `v1.9.16` codebase
 **Constraint:** No changes to existing core functions unless absolutely essential.
 
+**Execution status snapshot (2026-02-24):**
+- Completed: CF-01 (`v1.10.0`), CF-02 (`v1.10.1`), ET20-EPIC-03 (`v2.0.0`), CF-04 (`v2.0.1`), CF-05 (`v2.0.2`), ET20-EPIC-08 Phase 1 (`v2.0.3`).
+- Current next stage: ET20-EPIC-04 calendar (`v2.1.0`).
+
 ---
 
 ## Viability Verdict

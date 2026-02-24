@@ -1,7 +1,7 @@
 # Equity Tracker - Project Status
 
 Last updated: 2026-02-24  
-Current version: `v1.9.17`
+Current version: `v2.0.3`
 
 ## Source of Truth Policy
 - `PROJECT_STATUS.md` is the high-level source of truth for current state, version, and roadmap.
@@ -25,6 +25,10 @@ Deliver a reliable local decision-support app for equity holdings:
 ## Changelog (Skimmable)
 | Version | Date | Summary | Why it matters |
 |---|---|---|---|
+| `v2.0.3` | 2026-02-24 | Delivered ET20-EPIC-08 Phase 1 chart infrastructure: new `/analytics` page, `/api/analytics/summary`, `/api/analytics/portfolio-over-time`, Chart.js theme partial, and analytics navigation wiring | Establishes the reusable analytics foundation and data contracts for subsequent dashboard groups without changing core tax/FIFO engines |
+| `v2.0.2` | 2026-02-24 | Completed CF-05 Starlette `TemplateResponse` request-first migration across UI/risk routes and regression validation | Removes active framework deprecation warnings before additional template-heavy v2 delivery |
+| `v2.0.1` | 2026-02-24 | Completed CF-04 global `Hide values` mode with persisted setting, API/schema wiring, UI masking behavior, and privacy indicator | Adds app-wide privacy control while preserving workflow context and percentage-based decision signals |
+| `v2.0.0` | 2026-02-24 | Delivered ET20-EPIC-03 Concentration and Liquidity Risk Panel (`/risk` + `/api/risk/summary`) with concentration, sellability split, and stress outputs | Ships the first v2 decision-support surface on top of existing portfolio data with additive-only architecture |
 | `v1.9.17` | 2026-02-24 | Daily ticker freshness upgraded with DB-backed per-refresh price snapshots and market-aware status messaging: stale/no-change warnings only surface during open market windows, while closed sessions show `market closed (opening in ...)` countdown hints | Distinguishes true intraday staleness risk from normal out-of-hours inactivity and gives explicit timing context for when live movement should resume |
 | `v1.9.16` | 2026-02-24 | Portfolio security collapse state persistence fix: per-security hidden/shown lot sections are now remembered across refresh cycles | Prevents manual hide/show decisions from being reset by `Refresh Prices`, keeping the working view stable during repeated intraday refreshes |
 | `v1.9.15` | 2026-02-24 | Portfolio homepage UX cleanup: removed `Securities` stat tile (retained the other seven), added per-security collapsible lot sections with single-line collapsed lot summaries, and expanded `Est. Net Proceeds` panel to surface top-level metrics (`Total Quantity`, `Cost Basis`, `True Cost`, `Market Value`, P&L, tax, net) | Reduces visual noise, allows faster scan/hide workflows per security, and aligns the proceeds breakdown with the same core portfolio metrics shown at top level |
@@ -62,9 +66,10 @@ Deliver a reliable local decision-support app for equity holdings:
 ## Current Delivery Status
 - Usability sequence `S1` through `S7` is implemented.
 - `ISA` is first-class across model, add-lot UI, portfolio/net-value display, and reporting semantics.
-- Latest regression: `450 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
+- Latest regression: `471 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
 - Validation Output Suite targeted gates: `4 passed` (`python -m pytest tests/test_api/test_validation_report_api.py tests/test_services/test_validation_report_cli.py -q`, 2026-02-24).
-- IA/navigation redesign baseline for a decision-engine UX is defined and approved for implementation planning (no tax/FIFO logic changes).
+- v2 foundation milestones completed: ET20-EPIC-03 Risk Panel (`v2.0.0`), CF-04 Hide Values (`v2.0.1`), CF-05 TemplateResponse migration (`v2.0.2`), ET20-EPIC-08 Phase 1 analytics foundation (`v2.0.3`).
+- IA/navigation redesign rollout is in progress: additive `Risk` and `Analytics` pages are live; full six-tab migration remains roadmap work.
 
 ## Current In-Scope Capabilities
 - Portfolio tracking in GBP with lot-level views.
@@ -80,6 +85,9 @@ Deliver a reliable local decision-support app for equity holdings:
   - current vs previous (historic disposal) table rows with financial values (`cost basis`, `true cost`, gross value/proceeds, tax/economic P&L).
   - `Est. Net Liquidation` reflects summed post-tax economic P&L outcomes for current lots (decision-first net outcome), not gross market-value cash totals.
   - ESPP+ explicit potential forfeiture value visibility for early-sell scenarios.
+- Risk surface (`/risk` UI, `/api/risk/summary` API) with concentration, sellable-vs-locked exposure, and stress-test aggregation outputs.
+- Analytics foundation (`/analytics` UI, `/api/analytics/summary`, `/api/analytics/portfolio-over-time`) with chart widgets, toggles, and table fallbacks.
+- Global `Hide values` privacy mode with persisted settings and context-aware monetary masking across UI pages.
 - Reliable portfolio refresh diagnostics (`idle/updating/success/error`, `last success`, `last error`, `next refresh`).
 - Price refresh now backfills missing historical daily closes to earliest acquisition date per held security (stored in `price_history` with `source=yfinance_history`), so late lot entry still gets prior daily coverage.
 - Portfolio security cards show a per-ticker daily move tracker (`Up/Down/Flat %` and quantity-weighted GBP move) from latest vs previous stored close.
@@ -104,6 +112,7 @@ Deliver a reliable local decision-support app for equity holdings:
 - ESPP+ table grouping by purchase event:
   - one row for `ESPP+ (Paid + Match)` with paid/match quantity split and explicit match-effect handling (`INCLUDED`, `FORFEITED`, `LOCKED`, `NONE`).
 - Lot correction workflow with audit trail.
+- ESPP+ dual-lot add flow is atomic: paid+match lot creation runs in one transactional service path with rollback safety.
 - Non-disposal transfer workflow (`RSU`/`ESPP`/`ESPP_PLUS` -> `BROKERAGE`) with audit trail and scheme-specific guardrails:
   - `ESPP` transfer is scheme-level in UI (FIFO pool per security), supports editable quantity, defaults to max transferable FIFO whole shares, and enforces whole-share-only input.
   - `ESPP` whole-share transfers are allocated by strict FIFO lot order (raw quantities), including fractional FIFO head remainders before newer lots.
@@ -111,7 +120,7 @@ Deliver a reliable local decision-support app for equity holdings:
   - `ESPP` partial transfers split custody into independent active lots (`ESPP` remainder + `BROKERAGE` transfer lot); later remainder transfer merges into the same broker lot for that source lot.
   - `RSU` transfer only after vest date and must use full remaining lot quantity.
   - `ESPP+` transfer from employee lot forfeits linked in-window matched lots and must use full remaining lot quantity.
-  - `ESPP+` transfer marks transfer-time employment tax eligibility.
+  - `ESPP+` transfer records transfer-time employment tax eligibility as a structured `EmploymentTaxEvent`.
   - direct transfer to `ISA` is blocked (`dispose -> Add Lot` required).
 - Canonical badge semantics:
   - `Forfeiture Risk`
@@ -150,24 +159,26 @@ Deliver a reliable local decision-support app for equity holdings:
 
 ## Known Issues (High Level, Open)
 1. UI polish debt remains outside recently touched flows:
-   - inline style debt still present (`71` `style=` occurrences in templates)
-   - residual mojibake/encoding artifacts still present (`28` matches across key UI/service/router files).
-2. Starlette `TemplateResponse` request-first migration is not completed (deprecation warnings still present).
-3. ESPP+ dual-lot add flow is still non-atomic (two write calls).
-4. FX conversion remains effectively USD->GBP-centric.
-5. Global privacy masking (`Hide values`) is not yet implemented.
-6. ESPP+ transfer-time employment tax eligibility is currently notes/audit text only, not a structured tax event usable by reporting.
+   - residual inline `style=` usage remains in templates.
+   - residual mojibake/encoding artifacts remain in UI/docs text.
+2. FX conversion remains effectively USD->GBP-centric; generalized multi-currency support is not yet shipped.
+3. IA/navigation redesign is partially delivered (Risk + Analytics additive pages live), but the full six-tab decision-engine navigation model is not yet fully migrated.
+4. Analytics dashboard is foundation-first at `v2.0.3`; Group B/C/D chart sets depend on subsequent EPIC deliveries.
 
-## Roadmap (Post S1-S7, Version Targets)
-1. `v1.10.0` Implement global `Hide values` mode (mask monetary values app-wide, preserve percentages).
-2. `v1.11.0` Complete UI polish debt reduction:
+## Roadmap (Next v2 Stages)
+1. `v2.1.0` ET20-EPIC-04 Calendar (`/calendar` + `/api/calendar/events`) for vest/forfeiture/tax timeline visibility.
+2. `v2.1.1` CF-06 UI polish debt reduction:
    - remove remaining inline styles
    - remove remaining mojibake/encoding artifacts
    - keep responsive and keyboard behavior intact.
-3. `v1.11.1` Migrate `TemplateResponse` usage to request-first signature.
-4. `v1.12.0` Make ESPP+ employee/matched lot creation atomic in one transactional service path.
-5. `v1.13.0` Generalize FX handling beyond USD->GBP.
-6. `v2.0.0` Implement approved IA/navigation redesign (`Decide`, `Liquidity`, `Schemes`, `Risk`, `Simulate`, `Advanced`) and enforce sellable-only `Est. Net Liquidity` semantics in primary UX surfaces.
+3. `v2.2.0` ET20-EPIC-08 Analytics expansion (Groups A+B completion, including tax-position chart data).
+4. `v2.3.0` ET20-EPIC-01 Tax-Year Realization Planner.
+5. `v2.4.0` ET20-EPIC-02 Dividend Net-Return and Tax Drag Dashboard.
+6. `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme enhancements (filters/sorts/formula breakdown/preferences/focus mode).
+7. `v2.6.0` ET20-EPIC-05 Scenario Lab for multi-lot decision comparisons.
+8. `v2.6.1` ET20-EPIC-08 Group C risk charts (stress and forfeiture-at-risk widgets).
+9. `v2.6.2` ET20-EPIC-08 Group D timeline charts (calendar/event widgets).
+10. `v2.7.0` ET20-EPIC-06 Data Reliability and Multi-Currency foundation.
 
 ## Portfolio Page Follow-On Opportunities
 1. Add quick row filters (`All`, `Warnings`, `Locked`, `Forfeiture Risk`) to reduce scanning time on large holdings.

@@ -25,10 +25,10 @@ Resolved since original audit:
 Still open:
 - Non-CGT pages still carry legacy `cgt` field naming in internals.
 - Remaining mojibake literals on some templates.
-- Starlette TemplateResponse deprecation warnings.
-- ESPP+ dual-lot create path is non-atomic.
 - FX remains mostly USD->GBP focused.
 - SIP-like 3-5 year NIC gap finding is superseded by clarified policy (NI not due after 3 years in this model).
+- TemplateResponse deprecation finding is now resolved (request-first migration shipped in `v2.0.2`).
+- ESPP+ dual-lot atomicity finding is now resolved (transactional pair write shipped in `v1.10.0`).
 
 ## Open Findings (Evidence-Based)
 
@@ -36,8 +36,6 @@ Still open:
 |---|---|---|---|---|
 | P1 | Non-CGT pages still use legacy `cgt` naming in data fields | `portfolio_service.py` uses `est_cgt_gbp`, `est_total_cgt_liability_gbp`; templates display these in employment-tax context | Conceptual drift and developer confusion | Introduce employment-tax-native field names/aliases for non-CGT flows |
 | P1 | Mojibake still present in templates | Corrupted literals remain in `templates/portfolio.html` and `templates/add_lot.html` | UX trust/readability issue | Replace bad literals with clean UTF-8 or entities and add assertions |
-| P1 | Deprecated TemplateResponse call shape | test warnings from Starlette indicate request-first migration needed | Upgrade fragility and noisy CI output | Migrate helper + call sites to request-first signature |
-| P1 | ESPP+ pair creation is non-atomic | `ui.py` currently creates employee then matched lot in separate service calls | Partial write risk under failure | Add single transactional service method for ESPP+ pair creation |
 | P2 | FX generalization incomplete | Conversion path is primarily USD->GBP | Inaccurate valuation for other currencies | Generalize FX pair handling and explicit missing-rate errors |
 
 ## Prioritized Backlog (Current)
@@ -45,8 +43,6 @@ Still open:
 ### P1
 1. Rename non-CGT `cgt` internal fields/labels to employment-tax-safe names.
 2. Remove remaining mojibake from templates.
-3. Resolve TemplateResponse deprecation warnings.
-4. Make ESPP+ dual-lot writes atomic.
 
 ### P2
 1. Expand FX conversion beyond USD.
@@ -59,14 +55,13 @@ Still open:
 - Currency architecture risk: current path assumes a narrow FX setup.
 
 ## Suggested Next Milestones
-1. Milestone A: terminology + encoding + template API deprecation cleanup.
-2. Milestone B: ESPP+ atomic write refactor.
-3. Milestone C: FX generalization.
-4. Milestone D: scheme configuration groundwork and grant workflow deepening.
+1. Milestone A: terminology + encoding cleanup.
+2. Milestone B: FX generalization.
+3. Milestone C: scheme configuration groundwork and grant workflow deepening.
 
 ## Paste Block for PROJECT_STATUS.md
 ### Codex Architectural Audit - 2026-02-24 (Refreshed)
 - Core P0 disposal-fee gap is closed; broker fees now flow through gain calculations.
-- Main active risks are terminology drift (`cgt` naming on non-CGT pages), template encoding cleanup, and ESPP+ non-atomic pair creation.
+- Main active risks are terminology drift (`cgt` naming on non-CGT pages), template encoding cleanup, and FX generalization.
 - Additional technical debt remains in FX generalization.
-- Recommended sequence: (1) naming/encoding/deprecation cleanup, (2) atomic ESPP+ writes, (3) FX generalization.
+- Recommended sequence: (1) naming/encoding cleanup, (2) FX generalization, (3) terminology hardening.

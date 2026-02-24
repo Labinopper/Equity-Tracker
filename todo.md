@@ -1,23 +1,76 @@
 # TODO - Backlog Inbox
 
 ## Active Backlog (Unprocessed)
-- [ ] For 'Per Scheme' page include 'Show x scheme' tickbox as a QoL setting. 
 - [ ] Release governance: for each shipped change, bump SemVer (`MAJOR.MINOR.PATCH`) in `PROJECT_STATUS.md`.
 - [ ] Release governance: add a matching changelog entry in `PROJECT_STATUS.md` and technical note in `PROJECT_REFERENCE.md`.
 - [ ] Release governance: attach targeted + full test evidence to release notes in `todo.md`.
-- [ ] Implement global `Hide values` mode (mask monetary values app-wide, keep percentages visible).
+- [ ] Deliver ET20-EPIC-04 calendar timeline surfaces (`/calendar` + `/api/calendar/events`).
 - [ ] Run UI polish debt cleanup pass:
   - remove remaining inline style usage in templates
   - remove remaining mojibake/encoding artifacts
   - keep responsive/keyboard behavior intact.
-- [ ] Migrate Starlette `TemplateResponse` usage to request-first signature.
-- [ ] Make ESPP+ dual-lot creation atomic in one transactional service method.
+- [ ] Expand analytics dashboard beyond Phase 1 (Groups A+B completion including tax-position charts).
+- [ ] Deliver ET20-EPIC-01 tax-year realization planner.
+- [ ] Deliver ET20-EPIC-02 dividend net-return and tax-drag dashboard.
+- [ ] Deliver ET20-EPIC-07 portfolio/per-scheme QoL features:
+  - portfolio quick filters and scenario sorting
+  - formula breakdown hover/expand
+  - persistent table preferences + focus mode
+  - per-scheme visibility toggle (`Show x scheme`).
+- [ ] Deliver ET20-EPIC-05 scenario lab for multi-lot decisions.
+- [ ] Enable ET20-EPIC-08 Group C charts (risk stress + forfeiture-at-risk widgets).
+- [ ] Enable ET20-EPIC-08 Group D charts (calendar timeline widgets).
 - [ ] Generalize FX path beyond USD->GBP.
-- [ ] Promote ESPP+ transfer-time employment tax eligibility from notes-only into a structured tax event usable by reporting/reconciliation.
 
 ---
 
 ## Processed
+
+### Patch Release `v2.0.3` - ET20-EPIC-08 Phase 1 Analytics Foundation (Completed 2026-02-24)
+
+- [x] Add analytics service/router/template foundation:
+  - `/analytics` page shell with widget toggles and table fallbacks
+  - `/api/analytics/summary`
+  - `/api/analytics/portfolio-over-time`
+  - shared Chart.js theme partial and base-template script block support.
+- [x] Wire analytics route in app navigation and router registration.
+- [x] Add analytics service/API/UI tests.
+  - Evidence (targeted): `python -m pytest -q tests/test_services/test_analytics_service.py tests/test_api/test_analytics_api.py`
+  - Result: `9 passed`.
+- [x] Run full regression after EPIC-08 Phase 1.
+  - Evidence (full): `python -m pytest -q`
+  - Result: `471 passed, 3 skipped`.
+
+### Patch Release `v2.0.2` - CF-05 TemplateResponse Request-First Migration (Completed 2026-02-24)
+
+- [x] Migrate UI/risk `TemplateResponse` call paths to request-first signature.
+- [x] Validate UI rendering stability after signature migration.
+  - Evidence (targeted): `python -m pytest -q tests/test_api/test_ui_workflows.py tests/test_api/test_risk_api.py`
+  - Result: `79 passed`.
+- [x] Run full regression after CF-05 migration.
+  - Evidence (full): `python -m pytest -q`
+  - Result: `462 passed, 3 skipped`.
+
+### Patch Release `v2.0.1` - CF-04 Global Hide Values Mode (Completed 2026-02-24)
+
+- [x] Add persisted `hide_values` setting across model/schema/API/UI paths.
+- [x] Add global privacy indicator and context-aware monetary masking behavior.
+- [x] Extend settings and UI workflow test coverage for hide-values mode.
+  - Evidence (targeted): settings/risk/ui targeted subsets passed.
+- [x] Run full regression after CF-04 delivery.
+  - Evidence (full): `python -m pytest -q`
+  - Result: `462 passed, 3 skipped`.
+
+### Minor Release `v2.0.0` - ET20-EPIC-03 Risk Panel (Completed 2026-02-24)
+
+- [x] Add risk service aggregation for concentration/liquidity/stress views.
+- [x] Add `/risk` UI and `/api/risk/summary` API route + schemas.
+- [x] Add risk service/API/UI regression coverage.
+  - Evidence (targeted): `python -m pytest -q tests/test_services/test_risk_service.py tests/test_api/test_risk_api.py`
+  - Result: `6 passed`.
+- [x] Run full regression after risk panel delivery.
+  - Evidence (full): `python -m pytest -q`
+  - Result: `461 passed, 3 skipped`.
 
 ### Patch Release `v1.9.17` - Daily Ticker Snapshot Freshness + Market-Closed Countdown (Completed 2026-02-24)
 

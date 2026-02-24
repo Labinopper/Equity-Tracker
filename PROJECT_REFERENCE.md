@@ -22,7 +22,7 @@ Primary layers:
 ## 2) Versioning and Release Log
 
 Current version:
-- `v1.9.17`
+- `v2.0.3`
 
 SemVer rules:
 - `MAJOR`: breaking behavior/contracts/data semantics.
@@ -38,6 +38,10 @@ Release update rules:
 Detailed release log:
 | Version | Date | Scope | Validation |
 |---|---|---|---|
+| `v2.0.3` | 2026-02-24 | ET20-EPIC-08 Phase 1 analytics foundation: add `AnalyticsService`, `/analytics` UI, `/api/analytics/summary`, `/api/analytics/portfolio-over-time`, Chart.js theme partial, analytics nav wiring, and hide-values-aware payload suppression | `python -m pytest -q tests/test_services/test_analytics_service.py tests/test_api/test_analytics_api.py` + `python -m pytest -q` |
+| `v2.0.2` | 2026-02-24 | CF-05 framework migration: convert UI/risk template responses to Starlette request-first signature and remove deprecation warnings | `python -m pytest -q tests/test_api/test_ui_workflows.py tests/test_api/test_risk_api.py` + `python -m pytest -q` |
+| `v2.0.1` | 2026-02-24 | CF-04 global privacy mode: add persisted `hide_values` setting, API/UI wiring, context-aware money masking filter, and topbar privacy indicator | targeted settings/risk/UI regression subset + `python -m pytest -q` |
+| `v2.0.0` | 2026-02-24 | ET20-EPIC-03 risk panel delivery: add `RiskService`, `/risk` page, `/api/risk/summary`, schemas, and app/router wiring | `python -m pytest -q tests/test_services/test_risk_service.py tests/test_api/test_risk_api.py` + `python -m pytest -q` |
 | `v1.9.17` | 2026-02-24 | Daily ticker freshness/staleness infrastructure: add `price_ticker_snapshots` table + repository methods, persist per-refresh displayed GBP ticker values from `PriceService.fetch_all/fetch_and_store`, and render market-aware freshness hints (`No change ... (market open)` vs `market closed (opening in ...)`) in portfolio daily-change badges | `python -m pytest -q tests/test_services/test_price_service.py tests/test_api/test_ui_workflows.py` + `python -m pytest -q` |
 | `v1.9.16` | 2026-02-24 | Portfolio collapse-state persistence: security lot-section hide/show is stored per security id (`portfolio.security_visibility.v1`) and restored on load so refresh does not reopen hidden sections | `python -m pytest -q tests/test_services/test_price_service.py tests/test_api/test_ui_workflows.py` + `python -m pytest -q` |
 | `v1.9.15` | 2026-02-24 | Portfolio UI structure cleanup: remove top `Securities` stat tile, add per-security collapsible lot sections with single-line collapsed summaries, and expand `Est. Net Proceeds` details to include top-level fields (`Total Quantity`, `Cost Basis`, `True Cost`, `Market Value`, both unrealised P&L views, tax, net proceeds) | `python -m pytest -q tests/test_services/test_price_service.py tests/test_api/test_ui_workflows.py` + `python -m pytest -q` |
@@ -98,7 +102,7 @@ Transfer behavior rules:
 - `ESPP_PLUS` transfer must be initiated from the employee lot, not a matched lot.
 - `ESPP_PLUS` transfer requires full remaining lot quantity.
 - `ESPP_PLUS` transfer forfeits linked matched lots still in forfeiture window.
-- `ESPP_PLUS` transfer marks transfer-time employment-tax eligibility (estimated when settings/price permit).
+- `ESPP_PLUS` transfer records transfer-time employment-tax eligibility as a structured `EmploymentTaxEvent` (estimated when settings/price permit).
 - Transfer into `ISA` is not allowed; required workflow is `dispose -> Add Lot` in `ISA`.
 
 ## 3.1 IA / Navigation Baseline (Approved)
@@ -270,7 +274,7 @@ Tax-year support window:
 
 Latest full regression:
 - Command: `python -m pytest -q`
-- Result: `440 passed, 3 skipped`
+- Result: `471 passed, 3 skipped`
 
 Latest tax-band gates:
 - `python -m pytest -q tests/test_tax_engine/test_bands.py` -> `3 passed`
@@ -305,28 +309,29 @@ New/updated ISA-focused tests include:
 ## 9) Open Technical Debt (Detailed)
 
 1. UI encoding debt remains:
-- mojibake artifacts still present (current scan: `28` matches across key UI/service/router files).
+- mojibake artifacts still present (current scan: `68` matches across key UI/service/router/style files).
 
 2. Inline presentation debt remains:
-- template inline style usage still present (current scan: `71` `style=` occurrences).
+- template inline style usage still present (current scan: `60` `style=` occurrences in templates).
 
-3. Framework migration debt:
-- Starlette `TemplateResponse` request-first signature deprecation warnings still active.
-
-4. ESPP+ add-lot atomicity:
-- employee + matched lot creation still uses separate write calls.
-
-5. FX generalization:
+3. FX generalization:
 - valuation flow remains primarily USD->GBP-oriented.
 
-6. ESPP+ transfer tax-event modeling:
-- transfer-time employment tax eligibility is currently recorded in lot notes/audit text only.
-- no structured tax event exists yet for reporting/reconciliation workflows.
+4. IA/navigation rollout debt:
+- additive `Risk` and `Analytics` pages are live, but the full six-surface decision-engine IA migration is not complete.
+
+5. Analytics scope debt:
+- dashboard currently ships Group A foundation widgets; later chart groups depend on not-yet-shipped EPIC data surfaces.
 
 ## 10) Next Technical Roadmap (with Version Targets)
 
-1. `v1.9.0` Global privacy mode (`Hide values`) with percentage visibility preserved.
-2. `v1.10.0` UI debt cleanup pass (encoding + inline style extraction into shared CSS).
-3. `v1.10.1` `TemplateResponse` deprecation migration.
-4. `v1.11.0` ESPP+ dual-lot transactional add method.
-5. `v1.12.0` FX multi-currency generalization.
+1. `v2.1.0` ET20-EPIC-04 calendar timeline surfaces (`/calendar` + `/api/calendar/events`).
+2. `v2.1.1` CF-06 UI debt cleanup pass (encoding + inline style extraction into shared CSS).
+3. `v2.2.0` ET20-EPIC-08 analytics expansion (Groups A+B completion, including tax-position charts).
+4. `v2.3.0` ET20-EPIC-01 tax-year realization planner.
+5. `v2.4.0` ET20-EPIC-02 dividend net-return and tax-drag dashboard.
+6. `v2.5.0` ET20-EPIC-07 portfolio/per-scheme QoL enhancements.
+7. `v2.6.0` ET20-EPIC-05 scenario lab for multi-lot comparisons.
+8. `v2.6.1` ET20-EPIC-08 Group C risk charts.
+9. `v2.6.2` ET20-EPIC-08 Group D calendar/timeline charts.
+10. `v2.7.0` ET20-EPIC-06 data reliability and multi-currency foundation.
