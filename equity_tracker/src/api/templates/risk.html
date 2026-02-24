@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Risk - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Risk</h1>
+    <p class="muted">Concentration, liquidity mix, and simple stress outcomes from current portfolio state.</p>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat stat--accent">
+    <span class="stat__label">Total Market Value</span>
+    <span class="stat__value">&pound;{{ risk_summary.total_market_value_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Top Holding</span>
+    <span class="stat__value">{{ risk_summary.top_holding_pct }}%</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Sellable</span>
+    <span class="stat__value">&pound;{{ risk_summary.liquidity.sellable_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Locked</span>
+    <span class="stat__value">&pound;{{ risk_summary.liquidity.locked_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">At Risk</span>
+    <span class="stat__value">&pound;{{ risk_summary.liquidity.at_risk_gbp|money }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Top Holdings Concentration</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Market Value</th>
+          <th class="num">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if risk_summary.security_concentration %}
+          {% for row in risk_summary.security_concentration %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="num">&pound;{{ row.value_gbp|money }}</td>
+            <td class="num">{{ row.pct_of_total }}%</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" class="muted">No priced holdings available.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Scheme Concentration</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scheme</th>
+          <th class="num">Market Value</th>
+          <th class="num">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if risk_summary.scheme_concentration %}
+          {% for row in risk_summary.scheme_concentration %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="num">&pound;{{ row.value_gbp|money }}</td>
+            <td class="num">{{ row.pct_of_total }}%</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" class="muted">No priced holdings available.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Liquidity Mix</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th class="num">Value</th>
+          <th class="num">% of Classified</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Sellable</td>
+          <td class="num">&pound;{{ risk_summary.liquidity.sellable_gbp|money }}</td>
+          <td class="num">{{ risk_summary.liquidity.sellable_pct }}%</td>
+        </tr>
+        <tr>
+          <td>Locked</td>
+          <td class="num">&pound;{{ risk_summary.liquidity.locked_gbp|money }}</td>
+          <td class="num">{{ risk_summary.liquidity.locked_pct }}%</td>
+        </tr>
+        <tr>
+          <td>At Risk</td>
+          <td class="num">&pound;{{ risk_summary.liquidity.at_risk_gbp|money }}</td>
+          <td class="num">{{ risk_summary.liquidity.at_risk_pct }}%</td>
+        </tr>
+        <tr>
+          <td>Unpriced Lots</td>
+          <td class="num">{{ risk_summary.liquidity.unpriced_lot_count }}</td>
+          <td class="num">-</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Stress Test (Hypothetical)</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Shock</th>
+          <th class="num">Stressed Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for point in risk_summary.stress_points %}
+        <tr>
+          <td>{{ point.shock_label }}</td>
+          <td class="num">&pound;{{ point.stressed_market_value_gbp|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if risk_summary.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in risk_summary.notes %}
+        <tr>
+          <td>{{ note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

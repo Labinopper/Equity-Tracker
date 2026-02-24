@@ -54,7 +54,7 @@ from ..app_context import AppContext
 from ..db.engine import DatabaseEngine
 from ..db.migration_manager import ensure_migrated
 from . import _state
-from .routers import admin, catalog, portfolio, prices, reports, settings, ui
+from .routers import admin, catalog, portfolio, prices, reports, risk, settings, ui
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +224,7 @@ app.include_router(catalog.router)
 app.include_router(portfolio.router)
 app.include_router(prices.router)
 app.include_router(reports.router)
+app.include_router(risk.router)
 app.include_router(settings.router)
 app.include_router(ui.router)
 
