@@ -19,11 +19,16 @@ def _add_security(ticker: str):
     )
 
 
-def _add_lot(security_id: str, quantity: str) -> None:
+def _add_lot(
+    security_id: str,
+    quantity: str,
+    *,
+    acquisition_date: date = date(2025, 1, 15),
+) -> None:
     PortfolioService.add_lot(
         security_id=security_id,
         scheme_type="BROKERAGE",
-        acquisition_date=date(2025, 1, 15),
+        acquisition_date=acquisition_date,
         quantity=Decimal(quantity),
         acquisition_price_gbp=Decimal("10.00"),
         true_cost_per_share_gbp=Decimal("10.00"),
@@ -40,6 +45,21 @@ def _add_price(security_id: str, price_date: date, close_gbp: str) -> None:
             currency="GBP",
             source="test-analytics",
         )
+
+
+def _commit_disposal(
+    security_id: str,
+    *,
+    quantity: str,
+    price_per_share_gbp: str,
+    transaction_date: date,
+) -> None:
+    PortfolioService.commit_disposal(
+        security_id=security_id,
+        quantity=Decimal(quantity),
+        price_per_share_gbp=Decimal(price_per_share_gbp),
+        transaction_date=transaction_date,
+    )
 
 
 def test_portfolio_over_time_empty_portfolio_returns_explicit_reason(app_context):
@@ -114,3 +134,45 @@ def test_summary_respects_hide_values_mode(app_context):
     assert portfolio_time["hidden"] is True
     assert portfolio_time["has_data"] is False
     assert portfolio_time["reason"] == "Values hidden by privacy mode."
+
+
+def test_tax_position_payload_contains_group_b_rows_across_tax_years(app_context):
+    sec = _add_security("ANTAX")
+    _add_lot(sec.id, "5", acquisition_date=date(2024, 1, 15))
+
+    _commit_disposal(
+        sec.id,
+        quantity="2",
+        price_per_share_gbp="12.00",
+        transaction_date=date(2024, 7, 10),
+    )
+    _commit_disposal(
+        sec.id,
+        quantity="1",
+        price_per_share_gbp="11.00",
+        transaction_date=date(2025, 7, 10),
+    )
+
+    settings = AppSettings()
+    settings.default_tax_year = "2025-26"
+
+    payload = AnalyticsService.get_tax_position(settings=settings)
+
+    assert payload["active_tax_year"] == "2025-26"
+    assert payload["widgets"]["cgt_year_position"]["has_data"] is True
+    assert payload["widgets"]["gain_loss_history"]["has_data"] is True
+    assert payload["widgets"]["economic_vs_tax"]["has_data"] is True
+
+    years = [row["tax_year"] for row in payload["widgets"]["gain_loss_history"]["rows"]]
+    assert years == ["2024-25", "2025-26"]
+
+
+def test_tax_position_respects_hide_values_mode(app_context):
+    settings = AppSettings()
+    settings.hide_values = True
+
+    payload = AnalyticsService.get_tax_position(settings=settings)
+
+    assert payload["widgets"]["cgt_year_position"]["hidden"] is True
+    assert payload["widgets"]["gain_loss_history"]["hidden"] is True
+    assert payload["widgets"]["economic_vs_tax"]["hidden"] is True

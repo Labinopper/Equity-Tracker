@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Analytics - Equity Tracker{% endblock %}
 
 {% block content %}
@@ -64,6 +64,33 @@
           <td>
             <label>
               <input type="checkbox" class="analytics-widget-toggle" data-widget-id="unrealised-pnl" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Tax-Year CGT Position</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="cgt-year-position" checked>
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Gain/Loss by Tax Year</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="gain-loss-history">
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Economic vs Tax P&amp;L</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="economic-vs-tax">
               Enabled
             </label>
           </td>
@@ -277,6 +304,132 @@
   </div>
 </div>
 
+<div class="card analytics-widget" data-widget-id="cgt-year-position">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.cgt_year_position.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.cgt_year_position.subtitle }}</p>
+  <canvas id="chart-cgt-year-position" aria-label="Tax-year CGT position chart"></canvas>
+  <p class="muted" data-empty-for="cgt-year-position" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-cgt-year-position">
+    Show table
+  </button>
+  <div id="table-cgt-year-position" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Tax Year</th>
+          <th class="num">Annual Exempt Amount</th>
+          <th class="num">Realised Gains</th>
+          <th class="num">Realised Losses</th>
+          <th class="num">Remaining AEA</th>
+          <th class="num">Taxable Gain</th>
+          <th class="num">Total CGT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.cgt_year_position.rows %}
+          {% for row in widgets.cgt_year_position.rows %}
+          <tr>
+            <td>{{ row.tax_year }}</td>
+            <td class="num">&pound;{{ row.annual_exempt_amount_gbp|money }}</td>
+            <td class="num">&pound;{{ row.realised_gains_gbp|money }}</td>
+            <td class="num">&pound;{{ row.realised_losses_gbp|money }}</td>
+            <td class="num">&pound;{{ row.remaining_aea_gbp|money }}</td>
+            <td class="num">&pound;{{ row.taxable_gain_gbp|money }}</td>
+            <td class="num">&pound;{{ row.total_cgt_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="7" class="muted">{{ widgets.cgt_year_position.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="gain-loss-history">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.gain_loss_history.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.gain_loss_history.subtitle }}</p>
+  <canvas id="chart-gain-loss-history" aria-label="Gain and loss history chart"></canvas>
+  <p class="muted" data-empty-for="gain-loss-history" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-gain-loss-history">
+    Show table
+  </button>
+  <div id="table-gain-loss-history" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Tax Year</th>
+          <th class="num">Realised Gains</th>
+          <th class="num">Realised Losses</th>
+          <th class="num">Net Gain</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.gain_loss_history.rows %}
+          {% for row in widgets.gain_loss_history.rows %}
+          <tr>
+            <td>{{ row.tax_year }}</td>
+            <td class="num">&pound;{{ row.gains_gbp|money }}</td>
+            <td class="num">&pound;{{ row.losses_gbp|money }}</td>
+            <td class="num">&pound;{{ row.net_gain_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="muted">{{ widgets.gain_loss_history.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="economic-vs-tax">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.economic_vs_tax.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.economic_vs_tax.subtitle }}</p>
+  <canvas id="chart-economic-vs-tax" aria-label="Economic versus tax gain chart"></canvas>
+  <p class="muted" data-empty-for="economic-vs-tax" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-economic-vs-tax">
+    Show table
+  </button>
+  <div id="table-economic-vs-tax" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Tax Year</th>
+          <th class="num">CGT Net Gain</th>
+          <th class="num">Economic Net Gain</th>
+          <th class="num">Delta (Economic - CGT)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.economic_vs_tax.rows %}
+          {% for row in widgets.economic_vs_tax.rows %}
+          <tr>
+            <td>{{ row.tax_year }}</td>
+            <td class="num">&pound;{{ row.cgt_net_gain_gbp|money }}</td>
+            <td class="num">&pound;{{ row.economic_net_gain_gbp|money }}</td>
+            <td class="num">&pound;{{ row.delta_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="muted">{{ widgets.economic_vs_tax.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Coming Soon</h2>
@@ -324,7 +477,10 @@
     "scheme-concentration": true,
     "security-concentration": true,
     "liquidity-breakdown": true,
-    "unrealised-pnl": true
+    "unrealised-pnl": true,
+    "cgt-year-position": true,
+    "gain-loss-history": false,
+    "economic-vs-tax": false
   };
 
   var widgetById = {
@@ -332,7 +488,10 @@
     "scheme-concentration": widgets.scheme_concentration || {},
     "security-concentration": widgets.security_concentration || {},
     "liquidity-breakdown": widgets.liquidity_breakdown || {},
-    "unrealised-pnl": widgets.unrealised_pnl || {}
+    "unrealised-pnl": widgets.unrealised_pnl || {},
+    "cgt-year-position": widgets.cgt_year_position || {},
+    "gain-loss-history": widgets.gain_loss_history || {},
+    "economic-vs-tax": widgets.economic_vs_tax || {}
   };
 
   function toNumber(value) {
@@ -341,7 +500,7 @@
   }
 
   function formatMoney(value) {
-    return "£" + Number(value).toLocaleString(undefined, {
+    return "\u00A3" + Number(value).toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
@@ -621,6 +780,191 @@
     });
   }
 
+  function renderCgtYearPosition() {
+    var widget = widgetById["cgt-year-position"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("cgt-year-position", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    if (!rows.length) {
+      setWidgetMessage("cgt-year-position", "Insufficient data.");
+      return;
+    }
+    var row = rows[0];
+    var labels = [row.tax_year || "Tax Year"];
+    var realised = [toNumber(row.realised_gains_gbp) || 0];
+    var allowance = [toNumber(row.annual_exempt_amount_gbp) || 0];
+    var taxable = [toNumber(row.taxable_gain_gbp) || 0];
+
+    setWidgetMessage("cgt-year-position", "");
+    createChart("cgt-year-position", {
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            type: "bar",
+            label: "Realised Gains",
+            data: realised,
+            backgroundColor: theme.accent
+          },
+          {
+            type: "line",
+            label: "Annual Exempt Amount",
+            data: allowance,
+            borderColor: theme.warning,
+            backgroundColor: theme.warning,
+            pointRadius: 3,
+            pointHoverRadius: 4
+          },
+          {
+            type: "bar",
+            label: "Taxable Gain",
+            data: taxable,
+            backgroundColor: theme.loss
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderGainLossHistory() {
+    var widget = widgetById["gain-loss-history"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("gain-loss-history", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    if (!rows.length) {
+      setWidgetMessage("gain-loss-history", "Insufficient data.");
+      return;
+    }
+
+    var labels = [];
+    var gains = [];
+    var losses = [];
+    rows.forEach(function (row) {
+      var g = toNumber(row.gains_gbp);
+      var l = toNumber(row.losses_gbp);
+      if (g === null || l === null) {
+        return;
+      }
+      labels.push(row.tax_year);
+      gains.push(g);
+      losses.push(-l);
+    });
+
+    if (!labels.length) {
+      setWidgetMessage("gain-loss-history", "Insufficient data.");
+      return;
+    }
+
+    setWidgetMessage("gain-loss-history", "");
+    createChart("gain-loss-history", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Gains",
+            data: gains,
+            backgroundColor: theme.gain
+          },
+          {
+            label: "Losses",
+            data: losses,
+            backgroundColor: theme.loss
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { stacked: true },
+          y: {
+            stacked: true,
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderEconomicVsTax() {
+    var widget = widgetById["economic-vs-tax"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("economic-vs-tax", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    if (!rows.length) {
+      setWidgetMessage("economic-vs-tax", "Insufficient data.");
+      return;
+    }
+
+    var labels = [];
+    var cgtValues = [];
+    var economicValues = [];
+
+    rows.forEach(function (row) {
+      var c = toNumber(row.cgt_net_gain_gbp);
+      var e = toNumber(row.economic_net_gain_gbp);
+      if (c === null || e === null) {
+        return;
+      }
+      labels.push(row.tax_year);
+      cgtValues.push(c);
+      economicValues.push(e);
+    });
+
+    if (!labels.length) {
+      setWidgetMessage("economic-vs-tax", "Insufficient data.");
+      return;
+    }
+
+    setWidgetMessage("economic-vs-tax", "");
+    createChart("economic-vs-tax", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "CGT Net Gain",
+            data: cgtValues,
+            backgroundColor: theme.accent
+          },
+          {
+            label: "Economic Net Gain",
+            data: economicValues,
+            backgroundColor: theme.gain
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
   function loadVisibility() {
     var visibility = Object.assign({}, defaultVisibility);
     try {
@@ -691,6 +1035,9 @@
   renderSecurityConcentration();
   renderLiquidityBreakdown();
   renderUnrealisedPnl();
+  renderCgtYearPosition();
+  renderGainLossHistory();
+  renderEconomicVsTax();
 
   var visibility = loadVisibility();
   applyVisibility(visibility);
@@ -699,3 +1046,4 @@
 })();
 </script>
 {% endblock %}
+

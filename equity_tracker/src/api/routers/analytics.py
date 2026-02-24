@@ -45,6 +45,12 @@ async def api_analytics_summary(_: None = Depends(db_required)) -> dict:
     return AnalyticsService.get_summary(settings=settings)
 
 
+@router.get("/api/analytics/tax-position")
+async def api_analytics_tax_position(_: None = Depends(db_required)) -> dict:
+    settings = _load_settings()
+    return AnalyticsService.get_tax_position(settings=settings)
+
+
 @router.get("/analytics", response_class=HTMLResponse, include_in_schema=False)
 async def analytics_page(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():

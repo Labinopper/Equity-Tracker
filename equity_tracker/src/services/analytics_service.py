@@ -17,9 +17,12 @@ from typing import Any
 from sqlalchemy import select
 
 from ..app_context import AppContext
-from ..db.models import PriceHistory
+from ..core.tax_engine import available_tax_years, get_bands, tax_year_for_date
+from ..core.tax_engine.context import TaxContext
+from ..db.models import PriceHistory, Transaction
 from ..settings import AppSettings
 from .portfolio_service import PortfolioService
+from .report_service import ReportService
 from .risk_service import RiskService
 
 _GBP_Q = Decimal("0.01")
@@ -203,6 +206,8 @@ class AnalyticsService:
 
         portfolio_over_time = AnalyticsService.get_portfolio_over_time(settings=settings)
 
+        tax_position = AnalyticsService.get_tax_position(settings=settings)
+
         if hide_values:
             return {
                 "generated_at_utc": generated_at_utc,
@@ -228,6 +233,21 @@ class AnalyticsService:
                         widget_id="unrealised-pnl",
                         title="Unrealised P&L by Security",
                         subtitle="Cost basis and true cost versus current market value.",
+                    ),
+                    "cgt_year_position": _hidden_widget(
+                        widget_id="cgt-year-position",
+                        title="Tax-Year CGT Position",
+                        subtitle="Annual exempt amount, realised gains, and remaining allowance.",
+                    ),
+                    "gain_loss_history": _hidden_widget(
+                        widget_id="gain-loss-history",
+                        title="Gain/Loss by Tax Year",
+                        subtitle="Realised gains and losses split by UK tax year.",
+                    ),
+                    "economic_vs_tax": _hidden_widget(
+                        widget_id="economic-vs-tax",
+                        title="Economic vs Tax P&L",
+                        subtitle="Net economic gain versus CGT-basis gain by tax year.",
                     ),
                 },
                 "notes": ["Monetary analytics widgets are hidden while privacy mode is enabled."],
@@ -331,6 +351,7 @@ class AnalyticsService:
         unrealised_rows = [row for _, row in sortable_rows]
 
         notes = list(risk_summary.notes)
+        notes.extend(tax_position.get("notes", []))
         notes.append("Group C and D chart widgets remain placeholders until their source EPICs ship.")
 
         return {
@@ -375,6 +396,150 @@ class AnalyticsService:
                     "reason": None if unrealised_rows else "No priced holdings available.",
                     "rows": unrealised_rows,
                 },
+                "cgt_year_position": tax_position["widgets"]["cgt_year_position"],
+                "gain_loss_history": tax_position["widgets"]["gain_loss_history"],
+                "economic_vs_tax": tax_position["widgets"]["economic_vs_tax"],
+            },
+            "notes": notes,
+        }
+
+    @staticmethod
+    def get_tax_position(
+        settings: AppSettings | None = None,
+    ) -> dict[str, Any]:
+        """
+        Build Group B analytics widgets (tax and return context).
+        """
+        active_tax_year = AnalyticsService._active_tax_year(settings=settings)
+
+        if bool(settings and settings.hide_values):
+            return {
+                "active_tax_year": active_tax_year,
+                "widgets": {
+                    "cgt_year_position": _hidden_widget(
+                        widget_id="cgt-year-position",
+                        title="Tax-Year CGT Position",
+                        subtitle="Annual exempt amount, realised gains, and remaining allowance.",
+                    ),
+                    "gain_loss_history": _hidden_widget(
+                        widget_id="gain-loss-history",
+                        title="Gain/Loss by Tax Year",
+                        subtitle="Realised gains and losses split by UK tax year.",
+                    ),
+                    "economic_vs_tax": _hidden_widget(
+                        widget_id="economic-vs-tax",
+                        title="Economic vs Tax P&L",
+                        subtitle="Net economic gain versus CGT-basis gain by tax year.",
+                    ),
+                },
+                "notes": ["Tax and returns widgets are hidden while privacy mode is enabled."],
+            }
+
+        tax_context = AnalyticsService._tax_context_for_year(
+            settings=settings,
+            tax_year=active_tax_year,
+        )
+        active_cgt = ReportService.cgt_summary(active_tax_year, tax_context=tax_context)
+        active_aea = get_bands(active_tax_year).cgt_annual_exempt_amount
+        active_positive_gain = max(active_cgt.net_gain_gbp, Decimal("0"))
+        active_remaining_aea = max(active_aea - active_positive_gain, Decimal("0"))
+        active_taxable_gain = max(active_positive_gain - active_aea, Decimal("0"))
+
+        cgt_year_rows = [
+            {
+                "tax_year": active_tax_year,
+                "annual_exempt_amount_gbp": _money_str(active_aea),
+                "realised_gains_gbp": _money_str(active_cgt.total_gains_gbp),
+                "realised_losses_gbp": _money_str(active_cgt.total_losses_gbp),
+                "net_gain_gbp": _money_str(active_cgt.net_gain_gbp),
+                "remaining_aea_gbp": _money_str(active_remaining_aea),
+                "taxable_gain_gbp": _money_str(
+                    active_cgt.cgt_result.taxable_gain
+                    if active_cgt.cgt_result is not None
+                    else active_taxable_gain
+                ),
+                "total_cgt_gbp": _money_str(
+                    active_cgt.cgt_result.total_cgt
+                    if active_cgt.cgt_result is not None
+                    else Decimal("0")
+                ),
+            }
+        ]
+
+        history_rows: list[dict[str, str]] = []
+        economic_vs_tax_rows: list[dict[str, str]] = []
+        tax_years_with_disposals = AnalyticsService._tax_years_with_disposals()
+
+        for tax_year in tax_years_with_disposals:
+            cgt_report = ReportService.cgt_summary(tax_year)
+            eco_report = ReportService.economic_gain_summary(tax_year)
+
+            history_rows.append(
+                {
+                    "tax_year": tax_year,
+                    "gains_gbp": _money_str(cgt_report.total_gains_gbp),
+                    "losses_gbp": _money_str(cgt_report.total_losses_gbp),
+                    "net_gain_gbp": _money_str(cgt_report.net_gain_gbp),
+                }
+            )
+
+            economic_vs_tax_rows.append(
+                {
+                    "tax_year": tax_year,
+                    "cgt_net_gain_gbp": _money_str(cgt_report.net_gain_gbp),
+                    "economic_net_gain_gbp": _money_str(eco_report.net_economic_gain_gbp),
+                    "delta_gbp": _money_str(
+                        eco_report.net_economic_gain_gbp - cgt_report.net_gain_gbp
+                    ),
+                }
+            )
+
+        notes = [
+            f"CGT position is keyed to tax year {active_tax_year}.",
+        ]
+        if active_cgt.cgt_result is None:
+            notes.append("Total CGT is shown as 0.00 when income settings are unavailable.")
+        if not history_rows:
+            notes.append("No disposal history found for gain/loss tax-year charts.")
+
+        return {
+            "active_tax_year": active_tax_year,
+            "widgets": {
+                "cgt_year_position": {
+                    "widget_id": "cgt-year-position",
+                    "title": "Tax-Year CGT Position",
+                    "subtitle": "Annual exempt amount, realised gains, and remaining allowance.",
+                    "hidden": False,
+                    "has_data": bool(cgt_year_rows),
+                    "reason": None if cgt_year_rows else "No tax-year position data available.",
+                    "rows": cgt_year_rows,
+                },
+                "gain_loss_history": {
+                    "widget_id": "gain-loss-history",
+                    "title": "Gain/Loss by Tax Year",
+                    "subtitle": "Realised gains and losses split by UK tax year.",
+                    "hidden": False,
+                    "has_data": bool(history_rows),
+                    "reason": (
+                        None
+                        if history_rows
+                        else "No taxable disposal history available."
+                    ),
+                    "rows": history_rows,
+                },
+                "economic_vs_tax": {
+                    "widget_id": "economic-vs-tax",
+                    "title": "Economic vs Tax P&L",
+                    "subtitle": "Net economic gain versus CGT-basis gain by tax year.",
+                    "hidden": False,
+                    "has_data": bool(economic_vs_tax_rows),
+                    "reason": (
+                        None
+                        if economic_vs_tax_rows
+                        else "No disposal history available for comparison."
+                    ),
+                    "rows": economic_vs_tax_rows,
+                },
             },
             "notes": notes,
         }
@@ -415,3 +580,40 @@ class AnalyticsService:
             by_security[row.security_id][row.price_date] = value
 
         return by_security
+
+    @staticmethod
+    def _active_tax_year(settings: AppSettings | None) -> str:
+        supported = available_tax_years()
+        preferred = settings.default_tax_year if settings is not None else None
+        if preferred in supported:
+            return preferred
+        return supported[-1]
+
+    @staticmethod
+    def _tax_context_for_year(
+        *,
+        settings: AppSettings | None,
+        tax_year: str,
+    ) -> TaxContext | None:
+        if settings is None:
+            return None
+        return TaxContext(
+            tax_year=tax_year,
+            gross_employment_income=settings.default_gross_income,
+            pension_sacrifice=settings.default_pension_sacrifice,
+            other_income=settings.default_other_income,
+            student_loan_plan=settings.default_student_loan_plan,
+        )
+
+    @staticmethod
+    def _tax_years_with_disposals() -> list[str]:
+        with AppContext.read_session() as sess:
+            disposal_dates = list(
+                sess.scalars(
+                    select(Transaction.transaction_date)
+                    .where(Transaction.transaction_type == "DISPOSAL")
+                ).all()
+            )
+        if not disposal_dates:
+            return []
+        return sorted({tax_year_for_date(d) for d in disposal_dates})

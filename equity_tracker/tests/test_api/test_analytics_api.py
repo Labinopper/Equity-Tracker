@@ -6,6 +6,7 @@ from decimal import Decimal
 from src.api import _state
 from src.app_context import AppContext
 from src.db.repository.prices import PriceRepository
+from src.services.portfolio_service import PortfolioService
 from src.settings import AppSettings
 
 
@@ -50,6 +51,21 @@ def _add_price(security_id: str, price_date: date, close_gbp: str) -> None:
         )
 
 
+def _commit_disposal(
+    security_id: str,
+    *,
+    quantity: str,
+    price_per_share_gbp: str,
+    transaction_date: date,
+) -> None:
+    PortfolioService.commit_disposal(
+        security_id=security_id,
+        quantity=Decimal(quantity),
+        price_per_share_gbp=Decimal(price_per_share_gbp),
+        transaction_date=transaction_date,
+    )
+
+
 def test_api_analytics_summary_and_portfolio_time_empty_db(client):
     summary_resp = client.get("/api/analytics/summary")
     assert summary_resp.status_code == 200
@@ -63,6 +79,9 @@ def test_api_analytics_summary_and_portfolio_time_empty_db(client):
     assert "security_concentration" in summary["widgets"]
     assert "liquidity_breakdown" in summary["widgets"]
     assert "unrealised_pnl" in summary["widgets"]
+    assert "cgt_year_position" in summary["widgets"]
+    assert "gain_loss_history" in summary["widgets"]
+    assert "economic_vs_tax" in summary["widgets"]
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
     assert series_resp.status_code == 200
@@ -71,6 +90,13 @@ def test_api_analytics_summary_and_portfolio_time_empty_db(client):
     assert series["has_data"] is False
     assert series["reason"] == "No active lots available."
     assert series["points"] == []
+
+    tax_resp = client.get("/api/analytics/tax-position")
+    assert tax_resp.status_code == 200
+    tax_payload = tax_resp.json()
+    assert "active_tax_year" in tax_payload
+    assert "widgets" in tax_payload
+    assert "cgt_year_position" in tax_payload["widgets"]
 
 
 def test_api_analytics_endpoints_return_data_when_prices_exist(client):
@@ -107,6 +133,9 @@ def test_analytics_ui_page_renders_widget_controls_and_table_toggle(client):
     assert "analytics-widget-toggle" in resp.text
     assert "Show table" in resp.text
     assert "analytics.widget_visibility.v1" in resp.text
+    assert "cgt-year-position" in resp.text
+    assert "gain-loss-history" in resp.text
+    assert "economic-vs-tax" in resp.text
 
 
 def test_api_analytics_respects_hide_values_setting(client):
@@ -123,6 +152,7 @@ def test_api_analytics_respects_hide_values_setting(client):
     assert summary["hide_values"] is True
     assert summary["widgets"]["portfolio_value_time"]["hidden"] is True
     assert summary["widgets"]["scheme_concentration"]["reason"] == "Values hidden by privacy mode."
+    assert summary["widgets"]["cgt_year_position"]["hidden"] is True
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
     assert series_resp.status_code == 200
@@ -131,6 +161,30 @@ def test_api_analytics_respects_hide_values_setting(client):
     assert series["has_data"] is False
     assert series["reason"] == "Values hidden by privacy mode."
 
+    tax_resp = client.get("/api/analytics/tax-position")
+    assert tax_resp.status_code == 200
+    tax_payload = tax_resp.json()
+    assert tax_payload["widgets"]["cgt_year_position"]["hidden"] is True
+
     page_resp = client.get("/analytics")
     assert page_resp.status_code == 200
     assert "Values hidden by privacy mode." in page_resp.text
+
+
+def test_api_analytics_tax_position_returns_history_when_disposals_exist(client):
+    sec_id = _add_security(client, "ANTAXAPI")
+    _add_lot(client, sec_id, quantity="5")
+    _commit_disposal(
+        sec_id,
+        quantity="2",
+        price_per_share_gbp="12.00",
+        transaction_date=date(2025, 7, 8),
+    )
+
+    tax_resp = client.get("/api/analytics/tax-position")
+    assert tax_resp.status_code == 200
+    payload = tax_resp.json()
+
+    assert payload["widgets"]["cgt_year_position"]["has_data"] is True
+    assert payload["widgets"]["gain_loss_history"]["has_data"] is True
+    assert payload["widgets"]["economic_vs_tax"]["has_data"] is True
