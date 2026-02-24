@@ -35,8 +35,9 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 ## Current Delivery Status
 - S1-S7 usability baseline is implemented.
 - v2 shipped through `v2.1.1`: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1, Calendar timeline, and Broker Currency Phase A.
+- Working tree implementation has progressed through `v2.4.0` (Tax-Year Planner and Dividend dashboard), pending release-note/version sync.
 - Latest released full regression: `487 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
-- Next planned stage: `v2.1.2` CF-06 UI polish debt cleanup.
+- Next planned stage: `v2.4.1` high-priority tax-plan compensation-aware refinement (IT/NI/SL + pension levers).
 
 ## In-Scope Capability Summary
 - Portfolio, per-lot, and per-scheme decision surfaces in GBP.
@@ -48,21 +49,19 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 - Global hide-values mode is live.
 
 ## Known Gaps (Open)
-1. UI polish debt: residual inline styles and mojibake/encoding artifacts.
-2. FX architecture still needs broader generalization/hardening beyond narrow paths.
-3. IA/navigation migration is partial (additive pages are live; full six-surface navigation rollout remains).
-4. Analytics Groups B/C/D depend on subsequent EPIC delivery.
+1. Tax-plan guidance is still CGT-heavy and needs compensation-aware salary/bonus modeling (IT/NI/SL + pension lever what-ifs).
+2. UI polish debt: residual inline styles and mojibake/encoding artifacts.
+3. FX architecture still needs broader generalization/hardening beyond narrow paths.
+4. IA/navigation migration is partial (additive pages are live; full six-surface navigation rollout remains).
+5. Analytics Groups C/D depend on subsequent EPIC delivery.
 
 ## Roadmap (Ordered)
-1. `v2.1.2` CF-06 UI polish debt reduction (inline style and encoding cleanup).
-2. `v2.2.0` ET20-EPIC-08 Analytics expansion (Groups A+B completion).
-3. `v2.3.0` ET20-EPIC-01 Tax-Year Realization Planner.
-4. `v2.4.0` ET20-EPIC-02 Dividend net-return/tax-drag dashboard.
-5. `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL enhancements.
-6. `v2.6.0` ET20-EPIC-05 Scenario Lab.
-7. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
-8. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
-9. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening.
+1. `v2.4.1` ET20-EPIC-01B Tax-Plan compensation-aware refinement (high priority): model IT/NI/SL and pension-salary tradeoffs to answer "sell vs hold" at bonus/taper boundaries.
+2. `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL enhancements.
+3. `v2.6.0` ET20-EPIC-05 Scenario Lab.
+4. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
+5. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
+6. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening.
 
 ## Working Rules
 - Keep this file short and decision-focused.

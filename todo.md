@@ -10,6 +10,9 @@
 - [x] Confirm latest release regression evidence (`487 passed, 3 skipped`) for `v2.1.1`.
 
 ## Active Backlog
+- [ ] HIGH PRIORITY (`ET20-EPIC-01B`): Refine Tax Plan for salary/bonus decisions with explicit IT/NI/SL + pension tradeoff modeling.
+  - key questions: "I'm at 99k income, should I sell 5k of stock?" and "I'm at 101k income, should I increase pension contributions?"
+  - planner output must include marginal impact before/after sale and before/after pension adjustment.
 - [x] CF-06 UI polish debt cleanup:
   - remove remaining inline `style=` usage in templates
   - remove remaining mojibake/encoding artifacts

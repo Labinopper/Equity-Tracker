@@ -208,6 +208,33 @@ Must clearly surface "assumptions" panel (income estimate, AEA usage to date) an
 
 ---
 
+### ET20-EPIC-01B - Compensation-Aware Tax Plan Refinement (High Priority)
+**Complexity:** M | **Core changes needed:** None (additive to ET20-EPIC-01 surfaces)
+**Priority decision (2026-02-24):** Promote immediately as the next stage after ET20-EPIC-02 delivery.
+
+**What it does:** Extends `/tax-plan` from CGT-only projections into salary/bonus-aware decision support with explicit IT/NI/Student Loan and pension-adjustment tradeoffs.
+
+**Decision questions this stage must answer:**
+- "I'm at 99k income, should I sell 5k worth of stock?"
+- "I'm at 101k income, should I increase pension contributions before selling?"
+
+**Why it is additive:**
+Existing tax primitives already exist (`get_marginal_rates`, `personal_allowance`, tax-year bands, settings income context). This stage composes those with ET20-EPIC-01 outputs in new service payload sections and UI panels. No core engine behavior changes are required.
+
+**Planned additive files/changes:**
+| File | Purpose |
+|---|---|
+| `src/services/tax_plan_service.py` | Add compensation-aware scenario rows (sell amount, pension delta, marginal IT/NI/SL deltas, net cash/economic outcomes) |
+| `src/api/routers/tax_plan.py` | Extend API inputs/payload for compensation what-if scenarios |
+| `src/templates/tax_plan.html` | Add salary/bonus + pension decision workflow controls and comparison tables |
+| `tests/test_services/test_tax_plan_service.py` | Add 100k taper-boundary and marginal-rate scenario coverage |
+| `tests/test_api/test_tax_plan_api.py` | Add payload/UI regression tests for compensation-aware planner panels |
+
+**Accepted limitations:**
+Outputs remain advisory estimates. Assumptions (income timing, bonus timing, pension mechanism) must be explicit and user-adjustable.
+
+---
+
 ### ET20-EPIC-02 — Dividend Net-Return and Tax Drag Dashboard
 **Complexity:** M | **Core changes needed:** Additive model extension only
 
@@ -487,6 +514,7 @@ Widget on/off state is stored in `localStorage` under key `analytics.widget_visi
 | `v2.2.0` | ET20-EPIC-08 Analytics Dashboard (Groups A + B widgets) | Portfolio-over-time, scheme/security concentration, liquidity, unrealised P&L, CGT-year charts |
 | `v2.3.0` | ET20-EPIC-01 Tax-Year Planner | Depends on CF-02; enables EPIC-08 Group B tax chart data |
 | `v2.4.0` | ET20-EPIC-02 Dividends | New DividendEntry model (isolated); adds yield data to analytics |
+| `v2.4.1` | ET20-EPIC-01B Compensation-Aware Tax Plan refinement | High-priority salary/bonus decision support with IT/NI/SL and pension tradeoff what-ifs |
 | `v2.5.0` | ET20-EPIC-07 Portfolio + Per-Scheme Enhancements | QoL; independent, can shift if needed |
 | `v2.6.0` | ET20-EPIC-05 Scenario Lab | Depends on ET20-EPIC-01; largest scope |
 | `v2.6.1` | ET20-EPIC-08 Group C charts (Risk stress/forfeiture) | Enabled once EPIC-03 risk service is live |
