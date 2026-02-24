@@ -96,6 +96,9 @@ _CA_TYPE_CHECK = (
 _AUDIT_ACTION_CHECK = (
     "action IN ('INSERT','UPDATE','CORRECTION','REVERSAL')"
 )
+_DIVIDEND_TREATMENT_CHECK = (
+    "tax_treatment IN ('TAXABLE','ISA_EXEMPT')"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +156,9 @@ class Security(Base):
         back_populates="security", lazy="select", cascade="all, delete-orphan"
     )
     transactions: Mapped[list[Transaction]] = relationship(
+        back_populates="security", lazy="select", cascade="all, delete-orphan"
+    )
+    dividend_entries: Mapped[list[DividendEntry]] = relationship(
         back_populates="security", lazy="select", cascade="all, delete-orphan"
     )
     price_history: Mapped[list[PriceHistory]] = relationship(
@@ -489,6 +495,44 @@ class EmploymentTaxEvent(Base):
 
     lot: Mapped[Lot] = relationship(lazy="select")
     security: Mapped[Security] = relationship(lazy="select")
+
+
+# ---------------------------------------------------------------------------
+# dividend_entries
+# ---------------------------------------------------------------------------
+
+class DividendEntry(Base):
+    """
+    Manual dividend record used by the dividend dashboard.
+
+    tax_treatment:
+      - TAXABLE: dividend contributes to estimated dividend tax.
+      - ISA_EXEMPT: dividend is tracked but excluded from tax due.
+    """
+
+    __tablename__ = "dividend_entries"
+    __table_args__ = (
+        CheckConstraint(_DIVIDEND_TREATMENT_CHECK, name="ck_dividend_entries_treatment"),
+        Index("ix_dividend_entries_security_date", "security_id", "dividend_date"),
+        Index("ix_dividend_entries_date", "dividend_date"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    security_id: Mapped[str] = mapped_column(
+        ForeignKey("securities.id", ondelete="RESTRICT"), nullable=False
+    )
+    dividend_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount_gbp: Mapped[str] = mapped_column(String(30), nullable=False)
+    tax_treatment: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="TAXABLE"
+    )
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+    security: Mapped[Security] = relationship(back_populates="dividend_entries")
 
 
 # ---------------------------------------------------------------------------

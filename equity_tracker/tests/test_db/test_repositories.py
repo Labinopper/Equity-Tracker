@@ -24,6 +24,7 @@ import pytest
 from src.db.models import Lot, Security, Transaction
 from src.db.repository import (
     AuditRepository,
+    DividendEntryRepository,
     DisposalRepository,
     EmploymentTaxEventRepository,
     LotRepository,
@@ -407,6 +408,62 @@ class TestEmploymentTaxEventRepository:
         assert len(rows) == 2
         assert rows[0].event_date == date(2024, 8, 1)
         assert rows[1].event_date == date(2024, 5, 1)
+
+
+# ---------------------------------------------------------------------------
+# DividendEntryRepository
+# ---------------------------------------------------------------------------
+
+class TestDividendEntryRepository:
+
+    def test_add_and_list_for_security(self, session):
+        sec = _security("DIVSEC")
+        session.add(sec)
+        session.flush()
+
+        repo = DividendEntryRepository(session)
+        created = repo.add(
+            security_id=sec.id,
+            dividend_date=date(2026, 2, 1),
+            amount_gbp=Decimal("12.34"),
+            tax_treatment="TAXABLE",
+            source="manual",
+            notes="q1",
+        )
+        session.flush()
+
+        rows = repo.list_for_security(sec.id)
+        assert len(rows) == 1
+        assert rows[0].id == created.id
+        assert rows[0].amount_gbp == "12.34"
+        assert rows[0].tax_treatment == "TAXABLE"
+        assert rows[0].source == "manual"
+        assert rows[0].notes == "q1"
+
+    def test_list_all_orders_by_newest_dividend_date(self, session):
+        sec = _security("DIVORD")
+        session.add(sec)
+        session.flush()
+
+        repo = DividendEntryRepository(session)
+        repo.add(
+            security_id=sec.id,
+            dividend_date=date(2025, 6, 1),
+            amount_gbp=Decimal("10"),
+            tax_treatment="TAXABLE",
+        )
+        repo.add(
+            security_id=sec.id,
+            dividend_date=date(2026, 1, 1),
+            amount_gbp=Decimal("20"),
+            tax_treatment="ISA_EXEMPT",
+        )
+        session.flush()
+
+        rows = repo.list_all()
+        assert len(rows) == 2
+        assert rows[0].dividend_date == date(2026, 1, 1)
+        assert rows[1].dividend_date == date(2025, 6, 1)
 
 # ---------------------------------------------------------------------------
 # SecurityRepository — update()

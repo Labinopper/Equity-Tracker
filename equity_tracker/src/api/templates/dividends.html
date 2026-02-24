@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}Dividends - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Dividends</h1>
+    <p class="muted">Track dividend flow, estimated tax drag, and net return context in GBP.</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<p class="muted">As of {{ dividends.as_of_date }}. Generated {{ dividends.generated_at_utc }}.</p>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Add Dividend</h2>
+  </div>
+  <form method="post" action="/dividends/add" class="inline-form">
+    <label for="security_id">Security</label>
+    <select id="security_id" name="security_id" required>
+      <option value="">Select security</option>
+      {% for security in dividends.security_options %}
+      <option
+        value="{{ security.id }}"
+        {{ 'selected' if prev and prev.security_id == security.id }}
+      >
+        {{ security.ticker }} - {{ security.name }}
+      </option>
+      {% endfor %}
+    </select>
+
+    <label for="dividend_date">Dividend Date</label>
+    <input
+      id="dividend_date"
+      type="date"
+      name="dividend_date"
+      required
+      value="{{ prev.dividend_date if prev else dividends.as_of_date }}"
+    >
+
+    <label for="amount_gbp">Amount (GBP)</label>
+    <input
+      id="amount_gbp"
+      type="text"
+      name="amount_gbp"
+      inputmode="decimal"
+      placeholder="0.00"
+      required
+      value="{{ prev.amount_gbp if prev else '' }}"
+    >
+
+    <label for="tax_treatment">Tax Treatment</label>
+    <select id="tax_treatment" name="tax_treatment" required>
+      {% for treatment in tax_treatments %}
+      <option
+        value="{{ treatment }}"
+        {{ 'selected' if (prev and prev.tax_treatment == treatment) or (not prev and treatment == 'TAXABLE') }}
+      >
+        {{ treatment }}
+      </option>
+      {% endfor %}
+    </select>
+
+    <label for="source">Source</label>
+    <input
+      id="source"
+      type="text"
+      name="source"
+      value="{{ prev.source if prev else 'manual' }}"
+    >
+
+    <label for="notes">Notes</label>
+    <input
+      id="notes"
+      type="text"
+      name="notes"
+      value="{{ prev.notes if prev else '' }}"
+    >
+
+    <button type="submit" class="btn btn-primary">Add Entry</button>
+  </form>
+</div>
+
+{% if dividends.hide_values %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Dashboard Hidden</h2>
+  </div>
+  <p class="muted">Dividend values are hidden while privacy mode is enabled.</p>
+</div>
+{% else %}
+<div class="stats">
+  <div class="stat stat--accent">
+    <span class="stat__label">Trailing 12M Dividends</span>
+    <span class="stat__value">&pound;{{ dividends.summary.trailing_12m_total_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Forecast 12M Dividends</span>
+    <span class="stat__value">&pound;{{ dividends.summary.forecast_12m_total_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Estimated Dividend Tax</span>
+    <span class="stat__value">&pound;{{ dividends.summary.estimated_tax_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Estimated Net Dividends</span>
+    <span class="stat__value">&pound;{{ dividends.summary.estimated_net_dividends_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Tax Drag</span>
+    <span class="stat__value">{{ dividends.summary.tax_drag_pct }}%</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Tax-Year Dividend Summary</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tax Year</th>
+          <th class="num">Entries</th>
+          <th class="num">Total Dividends</th>
+          <th class="num">Taxable Dividends</th>
+          <th class="num">ISA-Exempt Dividends</th>
+          <th class="num">Allowance Used</th>
+          <th class="num">Taxable After Allowance</th>
+          <th class="num">Estimated Tax</th>
+          <th class="num">Estimated Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if dividends.tax_years %}
+          {% for row in dividends.tax_years %}
+          <tr>
+            <td>{{ row.tax_year }}</td>
+            <td class="num">{{ row.entry_count }}</td>
+            <td class="num">&pound;{{ row.total_dividends_gbp|money }}</td>
+            <td class="num">&pound;{{ row.taxable_dividends_gbp|money }}</td>
+            <td class="num">&pound;{{ row.isa_exempt_dividends_gbp|money }}</td>
+            <td class="num">&pound;{{ row.dividend_allowance_gbp|money }}</td>
+            <td class="num">&pound;{{ row.taxable_after_allowance_gbp|money }}</td>
+            <td class="num">&pound;{{ row.estimated_dividend_tax_gbp|money }}</td>
+            <td class="num">&pound;{{ row.estimated_net_after_tax_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="9" class="muted">No tax-year dividend data available.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Dividend Entries</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Tax Year</th>
+          <th>Security</th>
+          <th>Treatment</th>
+          <th class="num">Amount</th>
+          <th>Source</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if dividends.entries %}
+          {% for row in dividends.entries %}
+          <tr>
+            <td>
+              {{ row.dividend_date }}
+              {% if row.is_forecast %}
+              <div class="muted">Forecast</div>
+              {% endif %}
+            </td>
+            <td>{{ row.tax_year }}</td>
+            <td>{{ row.ticker }}</td>
+            <td>{{ row.tax_treatment }}</td>
+            <td class="num">&pound;{{ row.amount_gbp|money }}</td>
+            <td>{{ row.source or '-' }}</td>
+            <td>{{ row.notes or '-' }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="7" class="muted">No dividend entries recorded yet.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if dividends.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in dividends.notes %}
+        <tr>
+          <td>{{ note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -22,6 +22,7 @@ from .portfolio_service import (
     PortfolioSummary,
     SecuritySummary,
 )
+from .dividend_service import DividendService
 from .report_service import (
     CgtSummaryReport,
     DisposalLine,
@@ -36,6 +37,7 @@ __all__ = [
     "PortfolioSummary",
     "SecuritySummary",
     "LotSummary",
+    "DividendService",
     # ReportService
     "ReportService",
     "CgtSummaryReport",

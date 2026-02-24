@@ -18,6 +18,7 @@ Usage:
 
 from .audit import AuditRepository
 from .catalog import SecurityCatalogRepository
+from .dividends import DividendEntryRepository
 from .disposals import DisposalRepository
 from .employment_tax_events import EmploymentTaxEventRepository
 from .lots import LotRepository
@@ -28,6 +29,7 @@ from .transactions import TransactionRepository
 __all__ = [
     "AuditRepository",
     "SecurityCatalogRepository",
+    "DividendEntryRepository",
     "DisposalRepository",
     "EmploymentTaxEventRepository",
     "LotRepository",
