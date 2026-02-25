@@ -128,6 +128,8 @@ def test_add_lot_template_has_per_scheme_field_mappings(client):
     assert 'name="price_input_currency"' in html
     assert 'value="GBP"' in html
     assert 'value="USD"' in html
+    assert "Currency Workflow" in html
+    assert "currency-workflow-rate" in html
     # FMV-at-purchase row is shown for ESPP only; ESPP_PLUS no longer uses FMV.
     assert 'data-schemes="ESPP"' in html
     assert 'data-schemes="ESPP,ESPP_PLUS"' not in html
@@ -259,7 +261,7 @@ def test_add_lot_brokerage_usd_converts_to_gbp_and_persists_fx_metadata(client, 
         }
 
     monkeypatch.setattr(
-        "src.api.routers.ui.SheetsFxService.read_fx_rates",
+        "src.api.routers.ui.FxService.read_rates",
         staticmethod(_fx),
     )
 
@@ -293,7 +295,7 @@ def test_add_lot_usd_rejects_when_usd2gbp_rate_missing(client, monkeypatch):
     sec_id = _add_security(client, ticker="UIUSDMISS", currency="USD")
 
     monkeypatch.setattr(
-        "src.api.routers.ui.SheetsFxService.read_fx_rates",
+        "src.api.routers.ui.FxService.read_rates",
         staticmethod(lambda: {}),
     )
 
@@ -310,6 +312,49 @@ def test_add_lot_usd_rejects_when_usd2gbp_rate_missing(client, monkeypatch):
     )
     assert resp.status_code == 422
     assert b"USD-&gt;GBP conversion rate (USD2GBP) was not found" in resp.content
+
+
+def test_add_lot_brokerage_eur_converts_to_gbp_and_persists_fx_metadata(client, monkeypatch):
+    sec_id = _add_security(client, ticker="UIEUROK", currency="EUR")
+
+    def _fx() -> dict[str, FxRow]:
+        return {
+            "EUR2GBP": FxRow(
+                pair="EUR2GBP",
+                rate=Decimal("0.8500"),
+                as_of="2026-02-24 12:30:00",
+            )
+        }
+
+    monkeypatch.setattr(
+        "src.api.routers.ui.FxService.read_rates",
+        staticmethod(_fx),
+    )
+
+    resp = _post_add_lot_ui(
+        client,
+        {
+            "security_id": sec_id,
+            "scheme_type": "BROKERAGE",
+            "acquisition_date": "2025-03-01",
+            "quantity": "2.5",
+            "price_input_currency": "EUR",
+            "purchase_price_per_share_gbp": "100.00",
+        },
+    )
+    assert resp.status_code == 303
+
+    with AppContext.read_session() as sess:
+        lots = LotRepository(sess).get_all_lots_for_security(sec_id)
+    assert len(lots) == 1
+    lot = lots[0]
+    assert Decimal(lot.acquisition_price_gbp) == Decimal("85.0000")
+    assert Decimal(lot.true_cost_per_share_gbp) == Decimal("85.0000")
+    assert Decimal(lot.acquisition_price_original_ccy) == Decimal("100.00")
+    assert lot.original_currency == "EUR"
+    assert lot.broker_currency == "EUR"
+    assert Decimal(lot.fx_rate_at_acquisition) == Decimal("0.8500")
+    assert lot.fx_rate_source == "google_sheets_fx_tab"
 
 
 def test_add_lot_rsu_success(client, db_engine):
@@ -2386,6 +2431,17 @@ def test_cgt_page_shows_isa_exempt_notice(client):
     assert f"No taxable disposals in {tax_year}." in page.text
 
 
+def test_cgt_page_uses_tax_year_selector_controls(client):
+    tax_years = client.get("/reports/tax-years").json()
+    target = tax_years[min(1, len(tax_years) - 1)]
+    page = client.get(f"/cgt?tax_year={target}")
+    assert page.status_code == 200
+    assert 'class="tax-year-selector"' in page.text
+    assert 'id="cgt-tax-year"' in page.text
+    assert "Prev" in page.text
+    assert "Next" in page.text
+
+
 def test_economic_gain_page_shows_isa_exempt_notice(client):
     sec_id = _add_security(client, ticker="UIECOISA")
     add = client.post(
@@ -2418,4 +2474,15 @@ def test_economic_gain_page_shows_isa_exempt_notice(client):
     assert page.status_code == 200
     assert "ISA disposals are tax-sheltered and excluded from this report total." in page.text
     assert f"No taxable disposals in {tax_year}." in page.text
+
+
+def test_economic_gain_page_uses_tax_year_selector_controls(client):
+    tax_years = client.get("/reports/tax-years").json()
+    target = tax_years[min(1, len(tax_years) - 1)]
+    page = client.get(f"/economic-gain?tax_year={target}")
+    assert page.status_code == 200
+    assert 'class="tax-year-selector"' in page.text
+    assert 'id="economic-tax-year"' in page.text
+    assert "Prev" in page.text
+    assert "Next" in page.text
 

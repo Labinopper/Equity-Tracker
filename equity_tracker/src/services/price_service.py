@@ -1,5 +1,5 @@
-"""
-PriceService — fetch and store live market prices via Google Sheets.
+﻿"""
+PriceService â€” fetch and store live market prices via Google Sheets.
 
 Design notes:
   - fetch_all() reads the Google Sheets "prices" tab once and stores a
@@ -9,16 +9,15 @@ Design notes:
     earliest lot acquisition date for that security.
   - fetch_and_store() reads the sheet and stores for one specific security.
   - Currency conversion rules:
-      GBP  → price stored as-is (no conversion needed).
-      GBX  → normalised to GBP by SheetsPriceService (÷100) before reaching
+      GBP  -> price stored as-is (no conversion needed).
+      GBX  -> normalised to GBP by SheetsPriceService (÷100) before reaching
              this layer; treated identically to GBP here.
-      USD  → converted to GBP using the "USD2GBP" rate from the "fx" Sheet tab.
-             GBP_price = USD_price × fx_rate.
+      Non-GBP -> converted to GBP using provider FX rates.
   - The source field encodes both timestamps for later display:
       GBP securities : "google_sheets:{price_ts}"
-      USD securities : "google_sheets:{price_ts}|fx:{fx_ts}"
+      Non-GBP securities : "google_sheets:{price_ts}|fx:{fx_ts}"
   - All monetary values are Decimal throughout.
-  - PriceService methods are static — no instance state required.
+  - PriceService methods are static â€” no instance state required.
   - Failures from SheetsPriceService or SheetsFxService are caught here;
     per-security failures are recorded but do not abort the loop.
 """
@@ -35,6 +34,7 @@ from sqlalchemy import func, select
 from ..app_context import AppContext
 from ..db.models import Lot
 from ..db.repository import PriceRepository, SecurityRepository
+from .fx_service import FxService
 from .sheets_fx_service import SheetsFxService
 from .sheets_price_service import SheetsPriceService
 
@@ -69,7 +69,7 @@ class PriceSnapshot:
                                from source for convenient display; None when
                                source is not a Sheets row.
     fx_as_of                 : the "fx" tab column D timestamp used for the
-                               USD→GBP conversion; None for GBP securities.
+                               USDâ†’GBP conversion; None for GBP securities.
     """
     security_id: str
     price_gbp: Decimal
@@ -228,7 +228,7 @@ class PriceService:
     any method.
     """
 
-    # ── Write ─────────────────────────────────────────────────────────────
+    # â”€â”€ Write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @staticmethod
     def _earliest_lot_date(security_id: str) -> date | None:
@@ -244,7 +244,7 @@ class PriceService:
         ticker: str,
         currency: str,
         exchange: str | None,
-        usd_to_gbp_rate: Decimal | None = None,
+        native_to_gbp_rate: Decimal | None = None,
     ) -> int:
         """
         Backfill pre-existing daily closes to acquisition-date coverage.
@@ -279,20 +279,13 @@ class PriceService:
             return 0
 
         ccy = currency.strip().upper()
-        if ccy not in {"GBP", "USD"}:
+        if ccy != "GBP" and native_to_gbp_rate is None:
             logger.info(
-                "Skipping history backfill for %s (%s): unsupported currency %s.",
+                "Skipping %s history backfill for %s (%s): %s->GBP rate unavailable.",
+                ccy,
                 ticker,
                 security_id,
                 ccy,
-            )
-            return 0
-
-        if ccy == "USD" and usd_to_gbp_rate is None:
-            logger.info(
-                "Skipping USD history backfill for %s (%s): USD2GBP rate unavailable.",
-                ticker,
-                security_id,
             )
             return 0
 
@@ -320,8 +313,8 @@ class PriceService:
             price_repo = PriceRepository(sess)
             for price_date, close_original in sorted(closes.items()):
                 close_gbp: Decimal | None
-                if ccy == "USD":
-                    close_gbp = (close_original * usd_to_gbp_rate).quantize(
+                if ccy != "GBP":
+                    close_gbp = (close_original * native_to_gbp_rate).quantize(
                         _GBP_DECIMAL_QUANT,
                         rounding=ROUND_HALF_UP,
                     )
@@ -353,7 +346,7 @@ class PriceService:
     def fetch_and_store(security_id: str) -> PriceSnapshot:
         """
         Fetch the latest market price for a security via Google Sheets,
-        convert to GBP if needed (USD→GBP via the "fx" tab), and persist a
+        convert to GBP if needed via provider FX rates, and persist a
         PriceHistory row.
 
         Raises:
@@ -363,7 +356,7 @@ class PriceService:
 
         Returns a PriceSnapshot with the GBP price.
         """
-        # 1. Read security from DB ──────────────────────────────────────────
+        # 1. Read security from DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         with AppContext.read_session() as sess:
             sec_repo = SecurityRepository(sess)
             security = sec_repo.get_by_id(security_id)
@@ -373,7 +366,7 @@ class PriceService:
             currency = security.currency
             exchange = security.exchange
 
-        # 2. Read prices from sheet ─────────────────────────────────────────
+        # 2. Read prices from sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         prices = SheetsPriceService.read_prices()
         row = prices.get(ticker.upper())
         if row is None:
@@ -382,31 +375,26 @@ class PriceService:
                 "Add it to the sheet or call POST /prices/sync-tickers."
             )
 
-        # 3. Apply FX conversion for non-GBP currencies ────────────────────
+        # 3. Apply FX conversion for non-GBP currencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         price_date = datetime.now(tz=timezone.utc).date()
         fx_as_of: str | None = None
-        usd_to_gbp_rate_for_backfill: Decimal | None = None
+        native_to_gbp_rate_for_backfill: Decimal | None = None
 
-        if row.currency.upper() == "USD":
-            fx_rates = SheetsFxService.read_fx_rates()
-            fx_row = fx_rates.get("USD2GBP")
-            if fx_row is None:
-                raise RuntimeError(
-                    "FX rate 'USD2GBP' not found in Google Sheets fx tab. "
-                    "Add a row with pair='USD2GBP' and a GOOGLEFINANCE rate."
-                )
-            price_gbp = (row.price * fx_row.rate).quantize(
-                _GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP
-            )
-            usd_to_gbp_rate_for_backfill = fx_row.rate
-            fx_as_of = fx_row.as_of or None
-            source = _build_source_with_fx(row.last_refresh, fx_row.as_of)
-        else:
+        if row.currency.upper() == "GBP":
             # GBP (or GBX already normalised to GBP by SheetsPriceService)
             price_gbp = row.price.quantize(_GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP)
             source = _build_source(row.last_refresh)
+        else:
+            fx_rates = SheetsFxService.read_fx_rates()
+            quote = FxService.get_rate(row.currency, "GBP", rates=fx_rates)
+            price_gbp = (row.price * quote.rate).quantize(
+                _GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP
+            )
+            native_to_gbp_rate_for_backfill = quote.rate
+            fx_as_of = quote.as_of
+            source = _build_source_with_fx(row.last_refresh, quote.as_of or "")
 
-        # 4. Persist PriceHistory ───────────────────────────────────────────
+        # 4. Persist PriceHistory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         with AppContext.write_session() as sess:
             price_repo = PriceRepository(sess)
             previous_row = price_repo.get_latest_before(security_id, price_date)
@@ -434,7 +422,7 @@ class PriceService:
             )
 
         logger.info(
-            "Stored Sheets price for %s (%s): £%s [%s]",
+            "Stored Sheets price for %s (%s): Â£%s [%s]",
             ticker, security_id, price_gbp, row.last_refresh or "no timestamp",
         )
 
@@ -443,7 +431,7 @@ class PriceService:
             ticker=ticker,
             currency=currency,
             exchange=exchange,
-            usd_to_gbp_rate=usd_to_gbp_rate_for_backfill,
+            native_to_gbp_rate=native_to_gbp_rate_for_backfill,
         )
 
         return PriceSnapshot(
@@ -464,8 +452,8 @@ class PriceService:
         from the "fx" tab in a single run, then store a PriceHistory row for
         every matching security.
 
-        USD prices are converted to GBP using the "USD2GBP" rate from the fx
-        tab. GBP/GBX prices are stored as-is (GBX already normalised by
+        Non-GBP prices are converted to GBP using provider FX rates.
+        GBP/GBX prices are stored as-is (GBX already normalised by
         SheetsPriceService).
 
         Returns a summary dict::
@@ -484,13 +472,13 @@ class PriceService:
         completes.  If the Sheet itself is unavailable, all securities are
         recorded as failed.
         """
-        # 1. Read all securities from DB ────────────────────────────────────
+        # 1. Read all securities from DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         with AppContext.read_session() as sess:
             sec_repo = SecurityRepository(sess)
             securities = sec_repo.list_all()
             sec_items = [(s.id, s.ticker, s.currency, s.exchange) for s in securities]
 
-        # 2. Read all prices from Sheet in one call ─────────────────────────
+        # 2. Read all prices from Sheet in one call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             sheet_prices = SheetsPriceService.read_prices()
         except RuntimeError as exc:
@@ -509,19 +497,17 @@ class PriceService:
                 ],
             }
 
-        # 3. Read FX rates once for all securities ──────────────────────────
+        # 3. Read FX rates once for all securities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             fx_rates = SheetsFxService.read_fx_rates()
         except RuntimeError as exc:
             logger.warning(
-                "Google Sheets fx tab unavailable — USD securities will fail: %s", exc
+                "Google Sheets fx tab unavailable - non-GBP securities will fail: %s",
+                exc,
             )
             fx_rates = {}
 
-        fx_row_global = fx_rates.get("USD2GBP")
-        usd_to_gbp_rate = fx_row_global.rate if fx_row_global is not None else None
-
-        # 4. Store a PriceHistory row per matched security ──────────────────
+        # 4. Store a PriceHistory row per matched security â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         price_date = datetime.now(tz=timezone.utc).date()
         fetched = 0
         backfilled_days = 0
@@ -543,19 +529,16 @@ class PriceService:
                 continue
 
             try:
+                native_to_gbp_rate: Decimal | None = None
                 # Apply FX conversion for non-GBP currencies
-                if row.currency.upper() == "USD":
-                    fx_row = fx_rates.get("USD2GBP")
-                    if fx_row is None:
-                        raise RuntimeError(
-                            "FX rate 'USD2GBP' not found in Google Sheets fx tab. "
-                            "Add a row with pair='USD2GBP' and a GOOGLEFINANCE rate."
-                        )
-                    price_gbp = (row.price * fx_row.rate).quantize(
+                if row.currency.upper() != "GBP":
+                    quote = FxService.get_rate(row.currency, "GBP", rates=fx_rates)
+                    price_gbp = (row.price * quote.rate).quantize(
                         _GBP_DECIMAL_QUANT,
                         rounding=ROUND_HALF_UP,
                     )
-                    source = _build_source_with_fx(row.last_refresh, fx_row.as_of)
+                    native_to_gbp_rate = quote.rate
+                    source = _build_source_with_fx(row.last_refresh, quote.as_of or "")
                 else:
                     price_gbp = row.price.quantize(
                         _GBP_DECIMAL_QUANT,
@@ -590,7 +573,7 @@ class PriceService:
                     )
 
                 logger.info(
-                    "Stored Sheets price for %s: £%s [%s]",
+                    "Stored Sheets price for %s: Â£%s [%s]",
                     ticker, price_gbp, row.last_refresh or "no timestamp",
                 )
                 fetched += 1
@@ -599,7 +582,7 @@ class PriceService:
                     ticker=ticker,
                     currency=currency,
                     exchange=exchange,
-                    usd_to_gbp_rate=usd_to_gbp_rate,
+                    native_to_gbp_rate=native_to_gbp_rate,
                 )
             except Exception as exc:
                 logger.warning(
@@ -618,7 +601,7 @@ class PriceService:
             "backfilled_days": backfilled_days,
         }
 
-    # ── Read ──────────────────────────────────────────────────────────────
+    # â”€â”€ Read â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @staticmethod
     def get_latest(security_id: str) -> PriceSnapshot | None:

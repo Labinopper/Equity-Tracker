@@ -8,13 +8,26 @@
   Most relevant for SIP Partnership shares purchased from gross salary.
 </p>
 
-<!-- Tax year tabs -->
-<div class="tax-year-tabs">
-  {% for y in tax_years %}
-  <a href="/economic-gain?tax_year={{ y }}"
-     class="{{ 'active' if y == active_year }}">{{ y }}</a>
-  {% endfor %}
-</div>
+<form method="get" action="/economic-gain" class="tax-year-selector">
+  <label for="economic-tax-year" class="filter-label">Tax Year</label>
+  <div class="tax-year-selector__controls">
+    {% if previous_tax_year %}
+    <button type="submit" name="tax_year" value="{{ previous_tax_year }}" class="btn btn-secondary btn-sm">&larr; Prev</button>
+    {% else %}
+    <button type="button" class="btn btn-secondary btn-sm" disabled>&larr; Prev</button>
+    {% endif %}
+    <select id="economic-tax-year" name="tax_year" onchange="this.form.submit()">
+      {% for y in tax_years %}
+      <option value="{{ y }}" {% if y == active_year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    {% if next_tax_year %}
+    <button type="submit" name="tax_year" value="{{ next_tax_year }}" class="btn btn-secondary btn-sm">Next &rarr;</button>
+    {% else %}
+    <button type="button" class="btn btn-secondary btn-sm" disabled>Next &rarr;</button>
+    {% endif %}
+  </div>
+</form>
 
 <!-- Summary stats -->
 <div class="stats">

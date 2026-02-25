@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
@@ -61,6 +61,7 @@ from ..db.repository import (
     SecurityRepository,
 )
 from ..settings import AppSettings
+from .staleness_service import StalenessService
 
 
 # ---------------------------------------------------------------------------
@@ -220,35 +221,26 @@ class PortfolioSummary:
 # ---------------------------------------------------------------------------
 
 def _is_fx_stale(fx_as_of: str | None, stale_minutes: int = 10) -> bool:
-    """
-    Return True if the FX timestamp is older than stale_minutes.
-
-    Expects a string in "YYYY-MM-DD HH:MM:SS" format (as returned by Google
-    Sheets). Returns False for None or unparseable values — do not show a
-    false staleness warning.
-    """
-    if not fx_as_of:
-        return False
-    try:
-        ts = datetime.strptime(fx_as_of, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - ts) > timedelta(minutes=stale_minutes)
-    except (ValueError, TypeError):
-        return False
+    """Backward-compatible wrapper around shared staleness logic."""
+    return StalenessService.is_fx_stale(
+        fx_as_of,
+        stale_after_minutes=stale_minutes,
+    )
 
 
 def _normalize_broker_currency(raw_value: str | None) -> str | None:
     """
     Normalize broker holding currency.
 
-    Returns None for blank values. Supports Phase A currencies only: USD/GBP.
+    Returns None for blank values. Phase B supports generalized 3-letter ISO.
     """
     if raw_value is None:
         return None
     cleaned = raw_value.strip().upper()
     if not cleaned:
         return None
-    if cleaned not in {"USD", "GBP"}:
-        raise ValueError("broker_currency must be one of ['USD', 'GBP'].")
+    if len(cleaned) != 3 or not cleaned.isalpha():
+        raise ValueError("broker_currency must be a 3-letter ISO currency code.")
     return cleaned
 
 
@@ -866,6 +858,8 @@ class PortfolioService:
             security_summaries: list[SecuritySummary] = []
 
             show_exhausted = settings.show_exhausted_lots if settings else False
+            price_stale_after_days = settings.price_stale_after_days if settings else 1
+            fx_stale_after_minutes = settings.fx_stale_after_minutes if settings else 10
 
             for security in sec_repo.list_all():
                 all_lots = lot_repo.get_all_lots_for_security(security.id)
@@ -954,8 +948,15 @@ class PortfolioService:
                     else:
                         price_refreshed_at = None
                         sec_fx_as_of = None
-                    price_is_stale = price_as_of < today
-                    sec_fx_is_stale = _is_fx_stale(sec_fx_as_of)
+                    price_is_stale = StalenessService.is_price_stale(
+                        price_as_of,
+                        stale_after_days=price_stale_after_days,
+                        today=today,
+                    )
+                    sec_fx_is_stale = StalenessService.is_fx_stale(
+                        sec_fx_as_of,
+                        stale_after_minutes=fx_stale_after_minutes,
+                    )
                     # Back-fill per-lot market value and P&L
                     for ls in lot_summaries:
                         lot_mkt_native = (
@@ -1111,7 +1112,10 @@ class PortfolioService:
             # securities (all USD securities share the same "fx" tab rate).
             fx_as_of_vals = [ss.fx_as_of for ss in security_summaries if ss.fx_as_of]
             portfolio_fx_as_of = fx_as_of_vals[0] if fx_as_of_vals else None
-            fx_is_stale = _is_fx_stale(portfolio_fx_as_of)
+            fx_is_stale = StalenessService.is_fx_stale(
+                portfolio_fx_as_of,
+                stale_after_minutes=fx_stale_after_minutes,
+            )
             has_non_gbp_native_values = any(
                 ss.market_value_gbp is not None
                 and ss.market_value_native_currency is not None
@@ -1559,7 +1563,7 @@ class PortfolioService:
             acquisition_price_original_ccy:
                                      Optional original-currency acquisition price/share.
             original_currency      : Optional original currency code (e.g. "USD").
-            broker_currency        : Optional broker holding currency (Phase A: "USD"/"GBP").
+            broker_currency        : Optional broker holding currency (3-letter ISO).
             fx_rate_at_acquisition : Optional FX rate used to convert original currency
                                      to GBP at acquisition.
             fx_rate_source         : Optional FX source label.
@@ -1710,7 +1714,7 @@ class PortfolioService:
           - quantity (quantity_remaining is adjusted to preserve disposed amount)
           - acquisition_price_gbp, true_cost_per_share_gbp, fmv_at_acquisition_gbp
           - notes
-          - broker_currency (optional update; USD/GBP)
+          - broker_currency (optional update; 3-letter ISO)
         """
         if quantity <= Decimal("0"):
             raise ValueError("quantity must be greater than zero.")

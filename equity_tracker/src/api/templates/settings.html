@@ -63,6 +63,20 @@
         <span class="form-hint">Pre-selected year on CGT and Economic Gain reports.</span>
       </div>
 
+      <div class="form-field">
+        <label for="price_stale_after_days">Price Stale After (days)</label>
+        <input id="price_stale_after_days" name="price_stale_after_days" type="number" min="0"
+               value="{{ settings.price_stale_after_days if settings else 1 }}">
+        <span class="form-hint">Portfolio flags prices stale when older than this many days.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="fx_stale_after_minutes">FX Stale After (minutes)</label>
+        <input id="fx_stale_after_minutes" name="fx_stale_after_minutes" type="number" min="0"
+               value="{{ settings.fx_stale_after_minutes if settings else 10 }}">
+        <span class="form-hint">Portfolio flags FX basis stale when older than this many minutes.</span>
+      </div>
+
       <div class="form-field form-field-end">
         <label class="checkbox-inline">
           <input type="checkbox" name="show_exhausted_lots" value="on"

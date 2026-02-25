@@ -1507,6 +1507,24 @@ tr:hover td.loss {
   color: #fff;
 }
 
+.tax-year-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.tax-year-selector__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tax-year-selector__controls select {
+  min-width: 140px;
+}
+
 /* -- Filter bar ----------------------------------------- */
 
 .filter-bar {

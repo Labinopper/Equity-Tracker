@@ -319,7 +319,7 @@ class AddLotRequest(BaseModel):
     fmv_at_acquisition_gbp: Decimal | None = Field(None, ge=0)
     broker_currency: str | None = Field(
         None,
-        description="Optional broker holding currency for BROKERAGE/ISA lots (USD/GBP).",
+        description="Optional broker holding currency for BROKERAGE/ISA lots (3-letter ISO).",
     )
     tax_year: str | None = Field(None, description="UK tax year e.g. '2024-25'; auto-derived if omitted")
     grant_id: str | None = None
@@ -343,8 +343,8 @@ class AddLotRequest(BaseModel):
         if v is None:
             return None
         cleaned = v.strip().upper()
-        if cleaned not in {"USD", "GBP"}:
-            raise ValueError("broker_currency must be one of: ['USD', 'GBP']")
+        if len(cleaned) != 3 or not cleaned.isalpha():
+            raise ValueError("broker_currency must be a 3-letter ISO currency code.")
         return cleaned
 
     model_config = {
@@ -380,8 +380,8 @@ class EditLotRequest(BaseModel):
         if v is None:
             return None
         cleaned = v.strip().upper()
-        if cleaned not in {"USD", "GBP"}:
-            raise ValueError("broker_currency must be one of: ['USD', 'GBP']")
+        if len(cleaned) != 3 or not cleaned.isalpha():
+            raise ValueError("broker_currency must be a 3-letter ISO currency code.")
         return cleaned
 
 
@@ -562,7 +562,7 @@ class TransferLotRequest(BaseModel):
     )
     broker_currency: str | None = Field(
         default=None,
-        description="Optional destination broker holding currency (USD/GBP).",
+        description="Optional destination broker holding currency (3-letter ISO).",
     )
     notes: str | None = None
 
@@ -583,8 +583,8 @@ class TransferLotRequest(BaseModel):
         if v is None:
             return None
         cleaned = v.strip().upper()
-        if cleaned not in {"USD", "GBP"}:
-            raise ValueError("broker_currency must be one of: ['USD', 'GBP']")
+        if len(cleaned) != 3 or not cleaned.isalpha():
+            raise ValueError("broker_currency must be a 3-letter ISO currency code.")
         return cleaned
 
 

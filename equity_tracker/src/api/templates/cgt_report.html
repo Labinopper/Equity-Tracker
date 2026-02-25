@@ -4,13 +4,28 @@
 {% block content %}
 <div class="page-title"><h1>CGT Report</h1></div>
 
-<!-- Tax year tabs -->
-<div class="tax-year-tabs">
-  {% for y in tax_years %}
-  <a href="/cgt?tax_year={{ y }}&include_tax_due={{ include_tax_due }}"
-     class="{{ 'active' if y == active_year }}">{{ y }}</a>
-  {% endfor %}
-</div>
+<form method="get" action="/cgt" class="tax-year-selector">
+  <input type="hidden" name="include_tax_due" value="{{ 'true' if include_tax_due else 'false' }}">
+  <input type="hidden" name="prior_year_losses" value="{{ prior_year_losses }}">
+  <label for="cgt-tax-year" class="filter-label">Tax Year</label>
+  <div class="tax-year-selector__controls">
+    {% if previous_tax_year %}
+    <button type="submit" name="tax_year" value="{{ previous_tax_year }}" class="btn btn-secondary btn-sm">&larr; Prev</button>
+    {% else %}
+    <button type="button" class="btn btn-secondary btn-sm" disabled>&larr; Prev</button>
+    {% endif %}
+    <select id="cgt-tax-year" name="tax_year" onchange="this.form.submit()">
+      {% for y in tax_years %}
+      <option value="{{ y }}" {% if y == active_year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    {% if next_tax_year %}
+    <button type="submit" name="tax_year" value="{{ next_tax_year }}" class="btn btn-secondary btn-sm">Next &rarr;</button>
+    {% else %}
+    <button type="button" class="btn btn-secondary btn-sm" disabled>Next &rarr;</button>
+    {% endif %}
+  </div>
+</form>
 
 <!-- Options bar -->
 <form method="get" action="/cgt" class="filter-bar filter-bar-spacious">

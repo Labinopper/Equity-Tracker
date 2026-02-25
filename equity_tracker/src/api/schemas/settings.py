@@ -23,6 +23,8 @@ class SettingsSchema(BaseModel):
     default_tax_year: str
     show_exhausted_lots: bool
     hide_values: bool
+    price_stale_after_days: int
+    fx_stale_after_minutes: int
 
     @classmethod
     def from_app_settings(cls, s) -> "SettingsSchema":  # s: AppSettings
@@ -34,6 +36,8 @@ class SettingsSchema(BaseModel):
             default_tax_year=s.default_tax_year,
             show_exhausted_lots=s.show_exhausted_lots,
             hide_values=s.hide_values,
+            price_stale_after_days=s.price_stale_after_days,
+            fx_stale_after_minutes=s.fx_stale_after_minutes,
         )
 
 
@@ -59,6 +63,12 @@ class UpdateSettingsRequest(BaseModel):
     )
     show_exhausted_lots: bool = False
     hide_values: bool = False
+    price_stale_after_days: int = Field(
+        1, ge=0, description="Price staleness threshold in days for dashboard warnings."
+    )
+    fx_stale_after_minutes: int = Field(
+        10, ge=0, description="FX staleness threshold in minutes for dashboard warnings."
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -70,6 +80,8 @@ class UpdateSettingsRequest(BaseModel):
                 "default_tax_year": "2024-25",
                 "show_exhausted_lots": False,
                 "hide_values": False,
+                "price_stale_after_days": 1,
+                "fx_stale_after_minutes": 10,
             }
         }
     }

@@ -46,6 +46,8 @@ class AppSettings:
     default_tax_year: str
     show_exhausted_lots: bool
     hide_values: bool
+    price_stale_after_days: int
+    fx_stale_after_minutes: int
 
     def __init__(self) -> None:
         # Income defaults — all zero so the user must enter their own figures
@@ -58,6 +60,8 @@ class AppSettings:
         self.default_tax_year = "2024-25"
         self.show_exhausted_lots = False
         self.hide_values = False
+        self.price_stale_after_days = 1
+        self.fx_stale_after_minutes = 10
 
         # Internal — set by load(), not serialized under this name
         self._settings_path: Path = Path("settings.json")
@@ -110,6 +114,8 @@ class AppSettings:
             "default_tax_year": self.default_tax_year,
             "show_exhausted_lots": self.show_exhausted_lots,
             "hide_values": self.hide_values,
+            "price_stale_after_days": self.price_stale_after_days,
+            "fx_stale_after_minutes": self.fx_stale_after_minutes,
         }
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -139,6 +145,10 @@ class AppSettings:
             self.show_exhausted_lots = bool(data["show_exhausted_lots"])
         if "hide_values" in data:
             self.hide_values = bool(data["hide_values"])
+        if "price_stale_after_days" in data:
+            self.price_stale_after_days = max(0, _safe_int(data["price_stale_after_days"], 1))
+        if "fx_stale_after_minutes" in data:
+            self.fx_stale_after_minutes = max(0, _safe_int(data["fx_stale_after_minutes"], 10))
 
 
 # ── Module helpers ───────────────────────────────────────────────────────────
@@ -153,3 +163,11 @@ def _safe_decimal(value: object) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, TypeError):
         return Decimal("0")
+
+
+def _safe_int(value: object, fallback: int) -> int:
+    """Convert JSON value to int with fallback on invalid input."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return fallback

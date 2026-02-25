@@ -56,6 +56,7 @@ from ...core.tax_engine import (
 from ...core.tax_engine.context import TaxContext
 from ...db.models import Lot, LotDisposal, Transaction
 from ...db.repository import LotRepository, PriceRepository, SecurityRepository
+from ...services.fx_service import FxService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -64,7 +65,6 @@ from ...services.portfolio_service import (
 )
 from ...services.price_service import PriceService
 from ...services.report_service import ReportService
-from ...services.sheets_fx_service import SheetsFxService
 from ...services.sheets_price_service import SheetsPriceService
 from ...settings import AppSettings
 from .. import _state
@@ -74,7 +74,7 @@ router = APIRouter(tags=["ui"])
 
 ADD_LOT_SCHEME_TYPES = ("RSU", "ESPP", "ESPP_PLUS", "BROKERAGE", "ISA")
 SIMULATE_SCHEME_TYPES = ["", *ADD_LOT_SCHEME_TYPES]
-PRICE_INPUT_CURRENCIES = ("GBP", "USD")
+DEFAULT_PRICE_INPUT_CURRENCIES = ("GBP", "USD")
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 _DAILY_STALE_WHILE_OPEN_MINUTES = 20
 _US_MARKET_EXCHANGES = {
@@ -1460,24 +1460,110 @@ def _tax_context_from_settings(
     )
 
 
+def _normalize_iso_currency(raw_value: str, *, field_name: str) -> str:
+    """Normalize and validate a 3-letter ISO currency code."""
+    cleaned = (raw_value or "").strip().upper()
+    if len(cleaned) != 3 or not cleaned.isalpha():
+        raise ValueError(f"{field_name} must be a 3-letter ISO currency code.")
+    return cleaned
+
+
 def _normalize_price_input_currency(raw_value: str) -> str:
-    """Normalize and validate Add Lot input currency."""
-    currency = (raw_value or "GBP").strip().upper()
-    if currency not in PRICE_INPUT_CURRENCIES:
-        raise ValueError(
-            f"price_input_currency must be one of {list(PRICE_INPUT_CURRENCIES)}."
-        )
-    return currency
+    """Normalize Add Lot input currency (Phase B: generalized 3-letter ISO)."""
+    raw = raw_value.strip() if raw_value else "GBP"
+    return _normalize_iso_currency(raw, field_name="price_input_currency")
 
 
 def _phase_a_broker_currency_or_none(raw_value: str | None) -> str | None:
-    """Return USD/GBP for Phase A broker-currency tracking, otherwise None."""
+    """Return normalized currency when valid, otherwise None."""
     if raw_value is None:
         return None
-    cleaned = raw_value.strip().upper()
-    if cleaned in PRICE_INPUT_CURRENCIES:
-        return cleaned
-    return None
+    try:
+        return _normalize_iso_currency(raw_value, field_name="broker_currency")
+    except ValueError:
+        return None
+
+
+def _ordered_currency_codes(codes: set[str]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    remaining = set(codes)
+    for preferred in DEFAULT_PRICE_INPUT_CURRENCIES:
+        if preferred in remaining:
+            ordered.append(preferred)
+            remaining.remove(preferred)
+    ordered.extend(sorted(remaining))
+    return tuple(ordered)
+
+
+def _price_input_currency_options(securities: list) -> tuple[str, ...]:
+    """
+    Currency choices shown on Add Lot.
+
+    Always include GBP/USD for continuity, then add security-native currencies
+    discovered in the current portfolio.
+    """
+    codes = set(DEFAULT_PRICE_INPUT_CURRENCIES)
+    for security in securities:
+        if security is None:
+            continue
+        code = _phase_a_broker_currency_or_none(getattr(security, "currency", None))
+        if code is not None:
+            codes.add(code)
+    return _ordered_currency_codes(codes)
+
+
+def _broker_currency_options(*candidates: str | None) -> tuple[str, ...]:
+    """Broker-currency selector options for edit/transfer workflows."""
+    codes = set(DEFAULT_PRICE_INPUT_CURRENCIES)
+    for candidate in candidates:
+        normalized = _phase_a_broker_currency_or_none(candidate)
+        if normalized is not None:
+            codes.add(normalized)
+    return _ordered_currency_codes(codes)
+
+
+def _build_add_lot_currency_workflow(
+    *,
+    securities: list,
+    currency_options: tuple[str, ...],
+) -> dict:
+    """
+    Build Add Lot currency-workflow context.
+
+    Includes security currency map plus best-effort quote-to-GBP metadata.
+    """
+    security_currency_by_id: dict[str, str] = {}
+    for security in securities:
+        if security is None:
+            continue
+        currency = _phase_a_broker_currency_or_none(getattr(security, "currency", None))
+        security_currency_by_id[getattr(security, "id")] = currency or "GBP"
+
+    fx_to_gbp: dict[str, dict[str, str]] = {}
+    fx_error: str | None = None
+    try:
+        fx_rates = FxService.read_rates()
+    except RuntimeError as exc:
+        fx_rates = {}
+        fx_error = str(exc)
+
+    for currency in currency_options:
+        try:
+            quote = FxService.get_rate(currency, "GBP", rates=fx_rates)
+        except Exception:
+            continue
+        fx_to_gbp[currency] = {
+            "rate": str(quote.rate),
+            "as_of": quote.as_of or "",
+            "path": " -> ".join(quote.path),
+            "source": quote.source,
+        }
+
+    return {
+        "security_currency_by_id": security_currency_by_id,
+        "fx_to_gbp": fx_to_gbp,
+        "fx_error": fx_error,
+    }
 
 
 def _suggest_broker_currency(
@@ -1517,20 +1603,24 @@ def _resolve_input_fx_to_gbp(price_input_currency: str) -> tuple[Decimal, str]:
         return Decimal("1"), "identity_gbp"
 
     try:
-        fx_rates = SheetsFxService.read_fx_rates()
+        quote = FxService.get_rate(price_input_currency, "GBP")
     except RuntimeError as exc:
+        currency = price_input_currency.upper()
+        if currency == "USD":
+            if "USD2GBP" in str(exc):
+                raise ValueError(
+                    "USD->GBP conversion rate (USD2GBP) was not found in the FX source."
+                ) from exc
+            raise ValueError(
+                "USD->GBP conversion is unavailable. Refresh FX data and try again."
+            ) from exc
         raise ValueError(
-            "USD->GBP conversion is unavailable. Refresh FX data and try again."
+            f"{currency}->GBP conversion is unavailable. Add FX pair data and try again."
         ) from exc
 
-    fx_row = fx_rates.get("USD2GBP")
-    if fx_row is None:
-        raise ValueError(
-            "USD->GBP conversion rate (USD2GBP) was not found in the FX source."
-        )
-    if fx_row.rate <= Decimal("0"):
-        raise ValueError("USD->GBP conversion rate must be greater than zero.")
-    return fx_row.rate, "google_sheets_fx_tab"
+    if quote.rate <= Decimal("0"):
+        raise ValueError(f"{price_input_currency.upper()}->GBP conversion rate must be greater than zero.")
+    return quote.rate, quote.source
 
 
 def _convert_input_price_to_gbp(amount: Decimal, fx_rate_to_gbp: Decimal) -> Decimal:
@@ -1639,6 +1729,9 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         {
             "request": request,
             "summary": summary,
+            "settings": settings,
+            "price_stale_after_days": settings.price_stale_after_days if settings else 1,
+            "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
             "security_daily_changes": security_daily_changes,
             "position_rows_by_security": position_rows_by_security,
             "portfolio_est_net_liquidity": portfolio_est_net_liquidity,
@@ -1826,6 +1919,11 @@ async def add_lot_form(
     )
     summary = PortfolioService.get_portfolio_summary()
     securities = [ss.security for ss in summary.securities]
+    currency_options = _price_input_currency_options(securities)
+    currency_workflow = _build_add_lot_currency_workflow(
+        securities=securities,
+        currency_options=currency_options,
+    )
     rsu_live_prices = {
         ss.security.id: f"{ss.current_price_gbp:.2f}"
         for ss in summary.securities
@@ -1838,7 +1936,8 @@ async def add_lot_form(
             "request": request,
             "securities": securities,
             "scheme_types": ADD_LOT_SCHEME_TYPES,
-            "price_input_currencies": PRICE_INPUT_CURRENCIES,
+            "price_input_currencies": currency_options,
+            "currency_workflow": currency_workflow,
             "preselect": security_id,
             "error": error,
             "default_acquisition_date": today.isoformat(),
@@ -1884,6 +1983,11 @@ async def add_lot_submit(
         today = date_type.today()
         summary = PortfolioService.get_portfolio_summary()
         securities = [ss.security for ss in summary.securities]
+        currency_options = _price_input_currency_options(securities)
+        currency_workflow = _build_add_lot_currency_workflow(
+            securities=securities,
+            currency_options=currency_options,
+        )
         rsu_live_prices = {
             ss.security.id: f"{ss.current_price_gbp:.2f}"
             for ss in summary.securities
@@ -1904,7 +2008,8 @@ async def add_lot_submit(
                 "request": request,
                 "securities": securities,
                 "scheme_types": ADD_LOT_SCHEME_TYPES,
-                "price_input_currencies": PRICE_INPUT_CURRENCIES,
+                "price_input_currencies": currency_options,
+                "currency_workflow": currency_workflow,
                 "preselect": security_id,
                 "error": err,
                 "prev": {
@@ -2176,30 +2281,38 @@ def _render_edit_lot_page(
         security = SecurityRepository(sess).get_by_id(lot.security_id)
 
     disposed_qty = Decimal(lot.quantity) - Decimal(lot.quantity_remaining)
+    default_prev = {
+        "acquisition_date": lot.acquisition_date.isoformat(),
+        "quantity": lot.quantity,
+        "acquisition_price_gbp": lot.acquisition_price_gbp,
+        "true_cost_per_share_gbp": lot.true_cost_per_share_gbp,
+        "tax_year": lot.tax_year,
+        "fmv_at_acquisition_gbp": lot.fmv_at_acquisition_gbp or "",
+        "broker_currency": (
+            lot.broker_currency
+            or _suggest_broker_currency(
+                source_broker_currency=lot.broker_currency,
+                source_original_currency=lot.original_currency,
+                security_currency=security.currency if security is not None else None,
+            )
+        ),
+        "notes": lot.notes or "",
+    }
+    resolved_prev = prev or default_prev
+    broker_currency_options = _broker_currency_options(
+        resolved_prev.get("broker_currency"),
+        lot.broker_currency,
+        lot.original_currency,
+        security.currency if security is not None else None,
+    )
     context = {
         "request": request,
         "lot": lot,
         "security": security,
         "disposed_qty": disposed_qty,
         "error": error,
-        "prev": prev
-        or {
-            "acquisition_date": lot.acquisition_date.isoformat(),
-            "quantity": lot.quantity,
-            "acquisition_price_gbp": lot.acquisition_price_gbp,
-            "true_cost_per_share_gbp": lot.true_cost_per_share_gbp,
-            "tax_year": lot.tax_year,
-            "fmv_at_acquisition_gbp": lot.fmv_at_acquisition_gbp or "",
-            "broker_currency": (
-                lot.broker_currency
-                or _suggest_broker_currency(
-                    source_broker_currency=lot.broker_currency,
-                    source_original_currency=lot.original_currency,
-                    security_currency=security.currency if security is not None else None,
-                )
-            ),
-            "notes": lot.notes or "",
-        },
+        "prev": resolved_prev,
+        "broker_currency_options": broker_currency_options,
     }
     return _html_template_response("edit_lot.html", context, status_code=status_code)
 
@@ -2281,8 +2394,9 @@ async def edit_lot_submit(
     normalized_broker_currency: str | None = None
     if broker_currency.strip():
         try:
-            normalized_broker_currency = _normalize_price_input_currency(
-                broker_currency
+            normalized_broker_currency = _normalize_iso_currency(
+                broker_currency,
+                field_name="broker_currency",
             )
         except ValueError as exc:
             return _render_edit_lot_page(
@@ -2457,6 +2571,10 @@ def _render_transfer_lot_page(
             if selected_candidate is not None
             else "GBP"
         )
+    broker_currency_options = _broker_currency_options(
+        resolved_broker_currency,
+        *[c.get("broker_currency") for c in candidates],
+    )
     return _html_template_response(
         "transfer_lot.html",
         {
@@ -2466,6 +2584,7 @@ def _render_transfer_lot_page(
             "preselect_lot_id": resolved_preselect_lot_id,
             "quantity": quantity,
             "broker_currency": resolved_broker_currency,
+            "broker_currency_options": broker_currency_options,
             "notes": notes,
         },
         status_code=status_code,
@@ -2536,8 +2655,9 @@ async def transfer_lot_submit(
     normalized_broker_currency: str | None = None
     if broker_currency.strip():
         try:
-            normalized_broker_currency = _normalize_price_input_currency(
-                broker_currency
+            normalized_broker_currency = _normalize_iso_currency(
+                broker_currency,
+                field_name="broker_currency",
             )
         except ValueError as exc:
             return _render_transfer_lot_page(
@@ -2893,6 +3013,20 @@ async def commit_disposal(
 # CGT report â€” GET /cgt
 # ---------------------------------------------------------------------------
 
+def _tax_year_nav_context(
+    tax_years: list[str],
+    active_year: str,
+) -> dict[str, str | None | int]:
+    idx = tax_years.index(active_year)
+    prev_year = tax_years[idx - 1] if idx > 0 else None
+    next_year = tax_years[idx + 1] if idx < len(tax_years) - 1 else None
+    return {
+        "active_year_index": idx,
+        "previous_tax_year": prev_year,
+        "next_tax_year": next_year,
+    }
+
+
 @router.get("/cgt", response_class=HTMLResponse, include_in_schema=False)
 async def cgt_report(
     request: Request,
@@ -2910,6 +3044,7 @@ async def cgt_report(
 
     if active_year not in tax_years:
         active_year = tax_years[-1]
+    nav = _tax_year_nav_context(tax_years, active_year)
 
     try:
         losses = Decimal(prior_year_losses)
@@ -2943,6 +3078,9 @@ async def cgt_report(
             "include_tax_due": include_tax_due,
             "prior_year_losses": str(losses),
             "settings": settings,
+            "active_year_index": nav["active_year_index"],
+            "previous_tax_year": nav["previous_tax_year"],
+            "next_tax_year": nav["next_tax_year"],
         },
     )
 
@@ -2966,6 +3104,7 @@ async def economic_gain_report(
     active_year = tax_year or (settings.default_tax_year if settings else tax_years[-1])
     if active_year not in tax_years:
         active_year = tax_years[-1]
+    nav = _tax_year_nav_context(tax_years, active_year)
 
     report = ReportService.economic_gain_summary(active_year)
 
@@ -2977,6 +3116,9 @@ async def economic_gain_report(
             "report": report,
             "tax_years": tax_years,
             "active_year": active_year,
+            "active_year_index": nav["active_year_index"],
+            "previous_tax_year": nav["previous_tax_year"],
+            "next_tax_year": nav["next_tax_year"],
         },
     )
 
@@ -3045,6 +3187,8 @@ async def settings_submit(
     default_student_loan_plan: str = Form(""),
     default_other_income: str = Form("0"),
     default_tax_year: str = Form(...),
+    price_stale_after_days: str = Form("1"),
+    fx_stale_after_minutes: str = Form("10"),
     show_exhausted_lots: str = Form(""),
     hide_values: str = Form(""),
 ) -> HTMLResponse:
@@ -3059,11 +3203,20 @@ async def settings_submit(
         pension = Decimal(default_pension_sacrifice or "0")
         other = Decimal(default_other_income or "0")
         plan: int | None = int(default_student_loan_plan) if default_student_loan_plan else None
+        price_stale_days = int(price_stale_after_days or "1")
+        fx_stale_minutes = int(fx_stale_after_minutes or "10")
     except (ValueError, InvalidOperation) as exc:
         return _render_settings_page(
             request,
             db_path,
             error=f"Invalid value: {exc}",
+            status_code=422,
+        )
+    if price_stale_days < 0 or fx_stale_minutes < 0:
+        return _render_settings_page(
+            request,
+            db_path,
+            error="Staleness thresholds must be zero or greater.",
             status_code=422,
         )
 
@@ -3073,6 +3226,8 @@ async def settings_submit(
     settings.default_student_loan_plan = plan
     settings.default_other_income = other
     settings.default_tax_year = default_tax_year
+    settings.price_stale_after_days = price_stale_days
+    settings.fx_stale_after_minutes = fx_stale_minutes
     settings.show_exhausted_lots = show_exhausted_lots.lower() in ("on", "true", "1", "yes")
     settings.hide_values = hide_values.lower() in ("on", "true", "1", "yes")
     settings.save()

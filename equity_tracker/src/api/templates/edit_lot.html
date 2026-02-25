@@ -57,8 +57,9 @@
       <div class="form-field">
         <label for="broker_currency">Broker Holding Currency *</label>
         <select id="broker_currency" name="broker_currency" required>
-          <option value="GBP" {% if prev.broker_currency == "GBP" %}selected{% endif %}>GBP</option>
-          <option value="USD" {% if prev.broker_currency == "USD" %}selected{% endif %}>USD</option>
+          {% for code in broker_currency_options %}
+          <option value="{{ code }}" {% if prev.broker_currency == code %}selected{% endif %}>{{ code }}</option>
+          {% endfor %}
         </select>
       </div>
       {% endif %}

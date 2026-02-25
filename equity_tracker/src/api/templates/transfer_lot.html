@@ -46,8 +46,9 @@
       <div class="form-field">
         <label for="broker_currency">Destination Broker Currency *</label>
         <select id="broker_currency" name="broker_currency" required>
-          <option value="GBP" {% if broker_currency == "GBP" %}selected{% endif %}>GBP</option>
-          <option value="USD" {% if broker_currency == "USD" %}selected{% endif %}>USD</option>
+          {% for code in broker_currency_options %}
+          <option value="{{ code }}" {% if broker_currency == code %}selected{% endif %}>{{ code }}</option>
+          {% endfor %}
         </select>
         <span class="form-hint">Tracks holding currency context on the destination brokerage lot.</span>
       </div>

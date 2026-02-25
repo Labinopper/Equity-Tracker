@@ -149,9 +149,36 @@
           {% endfor %}
         </select>
         <span class="form-hint">
-          Add-lot entry can be in GBP or USD. Values are converted and stored in GBP for reporting.
+          Add-lot entry can be in GBP, USD, or tracked security currencies. Values are converted and stored in GBP for reporting.
           For BROKERAGE/ISA lots this also sets the broker holding currency.
         </span>
+      </div>
+
+      <div id="row-currency-workflow" class="row-full">
+        <div class="currency-workflow">
+          <div class="currency-workflow__title">Currency Workflow</div>
+          <div class="currency-workflow__grid">
+            <div class="currency-workflow__item">
+              <span class="currency-workflow__label">Security Currency</span>
+              <strong id="currency-workflow-security">-</strong>
+            </div>
+            <div class="currency-workflow__item">
+              <span class="currency-workflow__label">Input Currency</span>
+              <strong id="currency-workflow-input">GBP</strong>
+            </div>
+            <div class="currency-workflow__item">
+              <span class="currency-workflow__label">FX to GBP</span>
+              <strong id="currency-workflow-rate">1.0000</strong>
+            </div>
+            <div class="currency-workflow__item">
+              <span class="currency-workflow__label">FX As Of</span>
+              <strong id="currency-workflow-asof">-</strong>
+            </div>
+          </div>
+          <p id="currency-workflow-note" class="form-hint">
+            Converted values are stored in GBP with FX basis metadata.
+          </p>
+        </div>
       </div>
 
       <div
@@ -387,6 +414,35 @@
   max-height: 220px;
   opacity: 1;
 }
+
+.currency-workflow {
+  border: 1px solid var(--border, #2a3350);
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  background: var(--bg-card-alt, #1c2133);
+}
+.currency-workflow__title {
+  font-size: 0.74rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted, #5a6a8a);
+  margin-bottom: 0.55rem;
+  font-weight: 600;
+}
+.currency-workflow__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.55rem;
+}
+.currency-workflow__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.currency-workflow__label {
+  font-size: 0.73rem;
+  color: var(--text-muted, #5a6a8a);
+}
 </style>
 
 <script>
@@ -425,6 +481,14 @@
   var esppCombinedRate  = Number("{{ espp_combined_rate }}");
   var rsuTaxRate        = Number("{{ rsu_tax_rate }}");
   var rsuLivePrices     = {{ rsu_live_prices | tojson if rsu_live_prices else '{}' }};
+  var securityCurrencyById = {{ (currency_workflow.security_currency_by_id if currency_workflow else {}) | tojson }};
+  var fxToGbp = {{ (currency_workflow.fx_to_gbp if currency_workflow else {}) | tojson }};
+  var fxError = {{ (currency_workflow.fx_error if currency_workflow else '') | tojson }};
+  var currencySecurityEl = document.getElementById('currency-workflow-security');
+  var currencyInputEl = document.getElementById('currency-workflow-input');
+  var currencyRateEl = document.getElementById('currency-workflow-rate');
+  var currencyAsOfEl = document.getElementById('currency-workflow-asof');
+  var currencyNoteEl = document.getElementById('currency-workflow-note');
 
   /* -- Helpers -------------------------------------------- */
 
@@ -440,12 +504,54 @@
 
   function selectedInputCurrency() {
     if (!inPriceInputCurrency || !inPriceInputCurrency.value) return 'GBP';
-    return inPriceInputCurrency.value.toUpperCase() === 'USD' ? 'USD' : 'GBP';
+    var raw = String(inPriceInputCurrency.value).toUpperCase();
+    return /^[A-Z]{3}$/.test(raw) ? raw : 'GBP';
+  }
+
+  function selectedSecurityCurrency() {
+    if (!securitySel || !securitySel.value) return 'GBP';
+    var raw = String(securityCurrencyById[securitySel.value] || 'GBP').toUpperCase();
+    return /^[A-Z]{3}$/.test(raw) ? raw : 'GBP';
   }
 
   function formatMoney(n, currencyCode) {
-    var symbol = currencyCode === 'USD' ? '$' : '\u00a3';
-    return symbol + n.toFixed(2) + ' per share';
+    if (currencyCode === 'GBP') return '\u00a3' + n.toFixed(2) + ' per share';
+    if (currencyCode === 'USD') return '$' + n.toFixed(2) + ' per share';
+    return currencyCode + ' ' + n.toFixed(2) + ' per share';
+  }
+
+  function updateCurrencyWorkflow() {
+    if (!currencySecurityEl || !currencyInputEl || !currencyRateEl || !currencyAsOfEl || !currencyNoteEl) {
+      return;
+    }
+    var securityCcy = selectedSecurityCurrency();
+    var inputCcy = selectedInputCurrency();
+    currencySecurityEl.textContent = securityCcy;
+    currencyInputEl.textContent = inputCcy;
+
+    if (inputCcy === 'GBP') {
+      currencyRateEl.textContent = '1.0000';
+      currencyAsOfEl.textContent = '-';
+      currencyNoteEl.textContent = 'GBP input uses identity conversion.';
+      return;
+    }
+
+    var quote = fxToGbp[inputCcy];
+    if (quote && quote.rate) {
+      currencyRateEl.textContent = quote.rate;
+      currencyAsOfEl.textContent = quote.as_of || '-';
+      var pathText = quote.path ? (' Path: ' + quote.path + '.') : '';
+      currencyNoteEl.textContent = 'Converted values are stored in GBP with FX basis metadata.' + pathText;
+      return;
+    }
+
+    currencyRateEl.textContent = '-';
+    currencyAsOfEl.textContent = '-';
+    if (fxError) {
+      currencyNoteEl.textContent = 'FX source unavailable: ' + fxError;
+    } else {
+      currencyNoteEl.textContent = 'No available FX path to GBP for ' + inputCcy + '.';
+    }
   }
 
   function rateIsUsable() {
@@ -603,6 +709,7 @@
     syncMatchedShares(false);
     syncEsppPlusNetPrice(false);
     updateDerivedSummary();
+    updateCurrencyWorkflow();
   }
 
   /* -- Derived Summary ------------------------------------ */
@@ -691,18 +798,20 @@
   /* -- Event wiring --------------------------------------- */
 
   schemeSel.addEventListener('change', applySchemeFields);
-  if (securitySel) {
-    securitySel.addEventListener('change', function () {
-      syncRsuFmv();
-      updateDerivedSummary();
-    });
-  }
+    if (securitySel) {
+      securitySel.addEventListener('change', function () {
+        syncRsuFmv();
+        updateCurrencyWorkflow();
+        updateDerivedSummary();
+      });
+    }
   if (inPriceInputCurrency) {
-    inPriceInputCurrency.addEventListener('change', function () {
-      applySchemeFields();
-      updateDerivedSummary();
-    });
-  }
+      inPriceInputCurrency.addEventListener('change', function () {
+        applySchemeFields();
+        updateCurrencyWorkflow();
+        updateDerivedSummary();
+      });
+    }
 
   [inQty, inPurchase, inRsuFmv, inEsppFmv].forEach(function (el) {
     el.addEventListener('input',  updateDerivedSummary);
@@ -762,6 +871,7 @@
   }
 
   applySchemeFields();
+  updateCurrencyWorkflow();
 
 })();
 </script>

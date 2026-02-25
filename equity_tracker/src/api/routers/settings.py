@@ -88,6 +88,8 @@ async def update_settings(
     settings.default_tax_year = req.default_tax_year
     settings.show_exhausted_lots = req.show_exhausted_lots
     settings.hide_values = req.hide_values
+    settings.price_stale_after_days = req.price_stale_after_days
+    settings.fx_stale_after_minutes = req.fx_stale_after_minutes
 
     settings.save()
     return SettingsSchema.from_app_settings(settings)

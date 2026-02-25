@@ -67,8 +67,9 @@ Decision cells render either numeric values or explicit reason text. Silent blan
 Portfolio routes include refresh diagnostics and daily-change freshness context derived from stored ticker snapshots.
 
 ### Currency visibility contract
-- Broker holding currency (`USD`/`GBP`) is tracked for applicable holdings through add/edit/transfer flows.
+- Broker holding currency (3-letter ISO codes, with `USD`/`GBP` defaults) is tracked for applicable holdings through add/edit/transfer flows.
 - Portfolio and net-value surfaces expose native-currency and GBP-converted value context with explicit FX basis metadata.
+- Add Lot exposes explicit currency workflow context (input currency, security currency, FX path/as-of) when conversion is required.
 
 ## 6) Tax and Reporting Semantics
 - ISA is treated as tax-sheltered in portfolio/reporting surfaces.
@@ -76,15 +77,13 @@ Portfolio routes include refresh diagnostics and daily-change freshness context 
 - Tax-year support includes published values through `2026-27`, with deterministic carry-forward through `2035-36` for unpublished years.
 
 ## 7) Current Technical Debt
-1. Broader FX generalization and reliability hardening still pending (ET20-EPIC-06 Phase B).
-2. IA/navigation rollout still partial.
-3. CGT reporting tax-year selector UX refinement remains pending.
+1. IA/navigation rollout is still partial.
+2. Post-`v2.1.1` working-tree deliveries require release-note/version sync.
 
 ## 8) Test Baseline Snapshot
 - Latest release-synced full regression (`v2.1.1`): `python -m pytest -q` -> `487 passed, 3 skipped`.
-- Latest working-tree full regression: `python -m pytest -q` -> `526 passed, 3 skipped` (2026-02-25).
+- Latest working-tree full regression: `python -m pytest -q` -> `533 passed, 3 skipped` (2026-02-25).
 
 ## 9) Technical Roadmap Dependencies (Next)
-1. ET20-EPIC-06 Phase B (`v2.7.0`): reliability + generalized multi-currency hardening.
-2. ET20-EPIC-09 (`v2.7.1`): CGT tax-year selector refinement.
-3. Release-note/version sync remains pending for post-`v2.1.1` working-tree stages.
+1. Release-note/version sync for post-`v2.1.1` working-tree stages (`v2.1.2` through `v2.7.1`).
+2. Remaining IA/navigation expansion decisions to be promoted into the next scoped stage.

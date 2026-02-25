@@ -102,7 +102,7 @@
   {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}
   {% endif %}
   {% if summary.fx_is_stale and summary.fx_as_of %}
-  - rate may be stale (>10 min old); refresh prices to update.
+  - rate may be stale (>{{ fx_stale_after_minutes }} min old); refresh prices to update.
   {% endif %}
 </div>
 {% endif %}
@@ -241,11 +241,11 @@
     </span>
     {% endif %}
     <span class="muted mono-small {% if ss.price_is_stale %}stale-flag{% endif %}">
-      Price as of {{ ss.price_as_of }}{% if ss.price_is_stale %} (stale){% endif %}
+      Price as of {{ ss.price_as_of }}{% if ss.price_is_stale %} (stale >{{ price_stale_after_days }}d){% endif %}
     </span>
     {% if ss.fx_as_of %}
     <span class="muted mono-small {% if ss.fx_is_stale %}stale-flag{% endif %}">
-      FX as of {{ ss.fx_as_of }}{% if ss.fx_is_stale %} (stale){% endif %}
+      FX as of {{ ss.fx_as_of }}{% if ss.fx_is_stale %} (stale >{{ fx_stale_after_minutes }}m){% endif %}
     </span>
     {% endif %}
     {% endif %}
