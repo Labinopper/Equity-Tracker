@@ -19,7 +19,7 @@
 - [ ] `ET20-EPIC-09` reporting QoL: refine CGT tax-year selection UX.
 
 ## Completed in Working Tree (No Longer Outstanding)
-- [x] `ET20-EPIC-01B` compensation-aware tax-plan refinement (IT/NI/SL + pension what-if).
+- [x] `ET20-EPIC-01B` compensation-aware tax-plan refinement (IT/NI/SL + pension what-if + sell-this-year vs sell-next-year timing deltas).
 - [x] `ET20-EPIC-07` portfolio/per-scheme QoL package (quick filters/sort, formula expanders, persistent view prefs, focus mode, per-scheme visibility toggles).
 - [x] `ET20-EPIC-08` analytics expansion Groups A+B.
 - [x] `ET20-EPIC-01` tax-year realization planner.
@@ -27,6 +27,11 @@
 - [x] `CF-06` UI polish debt cleanup.
 
 ## Recent Completed Evidence
+
+### `v2.5.1` ET20-EPIC-01B Compensation Timing Refinement (working tree)
+- Targeted: `python -m pytest -q tests/test_services/test_tax_plan_service.py` -> `5 passed`.
+- Targeted: `python -m pytest -q tests/test_api/test_tax_plan_api.py` -> `5 passed`.
+- Full regression: `python -m pytest -q` -> `515 passed, 3 skipped`.
 
 ### `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL (working tree)
 - Targeted: `python -m pytest -q tests/test_api/test_ui_workflows.py` -> `79 passed`.

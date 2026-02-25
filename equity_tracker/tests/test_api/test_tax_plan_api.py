@@ -108,20 +108,29 @@ def test_api_tax_plan_compensation_query_params_and_ui_sections(client):
 
     assert comp["inputs"]["gross_income_gbp"] == "101000.00"
     assert comp["inputs"]["sell_amount_gbp"] == "5000.00"
-    assert len(comp["rows"]) == 3
+    assert len(comp["rows"]) == 5
 
     rows = {row["scenario_id"]: row for row in comp["rows"]}
     assert rows["sell_baseline"]["in_pa_taper_zone_after_bonus"] is True
     assert rows["sell_baseline"]["marginal_rates_pct"]["income_tax"] == "60.00"
     assert rows["sell_with_extra_pension"]["in_pa_taper_zone_after_bonus"] is False
     assert rows["sell_with_extra_pension"]["marginal_rates_pct"]["income_tax"] == "40.00"
+    assert rows["sell_next_tax_year"]["planning_tax_year"] == payload["next_tax_year"]
+    assert rows["sell_next_tax_year_with_extra_pension"]["planning_tax_year"] == payload["next_tax_year"]
     assert Decimal(comp["comparison"]["ani_reduction_from_extra_pension_gbp"]) == Decimal("3000.00")
+    assert "sell_next_vs_sell_delta_gbp" in comp["comparison"]
+    assert "timing_comparison" in comp
+    assert (
+        comp["timing_comparison"]["baseline_pension"]["income_tax_delta_wait_vs_sell_now_gbp"]
+        is not None
+    )
 
     page = client.get("/tax-plan", params=params)
     assert page.status_code == 200
     assert "Compensation What-If (IT / NI / SF + CGT)" in page.text
+    assert "Sell Timing Comparison (Wait vs Sell This Year)" in page.text
     assert "Sale Gain Assumption" in page.text
-    assert "Sell + increase pension first" in page.text
+    assert "Sell next tax year + increase pension first" in page.text
 
 
 def test_api_tax_plan_respects_hide_values_setting(client):

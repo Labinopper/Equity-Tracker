@@ -136,7 +136,21 @@ def test_tax_plan_compensation_rows_include_sell_hold_and_pension_variants(app_c
     PortfolioService.add_lot(
         security_id=sec.id,
         scheme_type="BROKERAGE",
-        acquisition_date=date(2025, 2, 1),
+        acquisition_date=date(2025, 1, 15),
+        quantity=Decimal("300"),
+        acquisition_price_gbp=Decimal("10.00"),
+        true_cost_per_share_gbp=Decimal("10.00"),
+    )
+    PortfolioService.commit_disposal(
+        security_id=sec.id,
+        quantity=Decimal("300"),
+        price_per_share_gbp=Decimal("20.00"),
+        transaction_date=date(2025, 8, 1),
+    )
+    PortfolioService.add_lot(
+        security_id=sec.id,
+        scheme_type="BROKERAGE",
+        acquisition_date=date(2025, 9, 1),
         quantity=Decimal("1000"),
         acquisition_price_gbp=Decimal("10.00"),
         true_cost_per_share_gbp=Decimal("10.00"),
@@ -160,9 +174,13 @@ def test_tax_plan_compensation_rows_include_sell_hold_and_pension_variants(app_c
         "hold_baseline",
         "sell_baseline",
         "sell_with_extra_pension",
+        "sell_next_tax_year",
+        "sell_next_tax_year_with_extra_pension",
     }
     assert comp["sale_assumption"]["method"] == "portfolio-weighted-cost-ratio"
     assert comp["sale_assumption"]["estimated_gain_ratio_pct"] == "50.00"
+    assert rows["sell_baseline"]["planning_tax_year"] == payload["active_tax_year"]
+    assert rows["sell_next_tax_year"]["planning_tax_year"] == payload["next_tax_year"]
 
     hold_net = Decimal(rows["hold_baseline"]["net_decision_cash_gbp"])
     sell_net = Decimal(rows["sell_baseline"]["net_decision_cash_gbp"])
@@ -177,6 +195,15 @@ def test_tax_plan_compensation_rows_include_sell_hold_and_pension_variants(app_c
         Decimal(comp["comparison"]["ani_reduction_from_extra_pension_gbp"])
         == Decimal("1000.00")
     )
+    assert "sell_next_vs_sell_delta_gbp" in comp["comparison"]
+    assert "sell_next_with_pension_vs_sell_with_pension_delta_gbp" in comp["comparison"]
+
+    timing = comp["timing_comparison"]
+    assert timing["sell_this_tax_year"] == payload["active_tax_year"]
+    assert timing["sell_next_tax_year"] == payload["next_tax_year"]
+    assert Decimal(
+        timing["baseline_pension"]["combined_tax_drag_delta_wait_vs_sell_now_gbp"]
+    ) <= Decimal("0")
 
 
 def test_tax_plan_compensation_highlights_101k_taper_and_pension_escape(app_context):

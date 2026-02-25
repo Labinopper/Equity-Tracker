@@ -474,6 +474,7 @@ def _build_compensation_row(
     return {
         "scenario_id": scenario_id,
         "label": label,
+        "planning_tax_year": tax_year,
         "gross_income_gbp": _money_str(gross_income_gbp),
         "bonus_gbp": _money_str(bonus_gbp),
         "sell_amount_gbp": _money_str(sell_amount_gbp),
@@ -870,7 +871,7 @@ class TaxPlanService:
 
         hold_row = _build_compensation_row(
             scenario_id="hold_baseline",
-            label="Hold (no sale, no pension change)",
+            label="Hold this tax year (no sale, no pension change)",
             tax_year=current_tax_year,
             gross_income_gbp=compensation_inputs.gross_income_gbp,
             bonus_gbp=compensation_inputs.bonus_gbp,
@@ -884,8 +885,22 @@ class TaxPlanService:
         )
         sell_row = _build_compensation_row(
             scenario_id="sell_baseline",
-            label="Sell (current pension level)",
+            label="Sell this tax year (current pension level)",
             tax_year=current_tax_year,
+            gross_income_gbp=compensation_inputs.gross_income_gbp,
+            bonus_gbp=compensation_inputs.bonus_gbp,
+            sell_amount_gbp=compensation_inputs.sell_amount_gbp,
+            base_pension_sacrifice_gbp=base_pension_sacrifice,
+            additional_pension_sacrifice_gbp=_ZERO,
+            other_income_gbp=other_income,
+            student_loan_plan=student_loan_plan,
+            estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
+            estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
+        )
+        sell_next_row = _build_compensation_row(
+            scenario_id="sell_next_tax_year",
+            label="Sell next tax year (current pension level)",
+            tax_year=next_tax_year,
             gross_income_gbp=compensation_inputs.gross_income_gbp,
             bonus_gbp=compensation_inputs.bonus_gbp,
             sell_amount_gbp=compensation_inputs.sell_amount_gbp,
@@ -898,7 +913,7 @@ class TaxPlanService:
         )
         sell_with_pension_row = _build_compensation_row(
             scenario_id="sell_with_extra_pension",
-            label="Sell + increase pension first",
+            label="Sell this tax year + increase pension first",
             tax_year=current_tax_year,
             gross_income_gbp=compensation_inputs.gross_income_gbp,
             bonus_gbp=compensation_inputs.bonus_gbp,
@@ -910,10 +925,80 @@ class TaxPlanService:
             estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
             estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
         )
+        sell_next_with_pension_row = _build_compensation_row(
+            scenario_id="sell_next_tax_year_with_extra_pension",
+            label="Sell next tax year + increase pension first",
+            tax_year=next_tax_year,
+            gross_income_gbp=compensation_inputs.gross_income_gbp,
+            bonus_gbp=compensation_inputs.bonus_gbp,
+            sell_amount_gbp=compensation_inputs.sell_amount_gbp,
+            base_pension_sacrifice_gbp=base_pension_sacrifice,
+            additional_pension_sacrifice_gbp=compensation_inputs.additional_pension_sacrifice_gbp,
+            other_income_gbp=other_income,
+            student_loan_plan=student_loan_plan,
+            estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
+            estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
+        )
+
+        def _bonus_tax_component(row: dict[str, Any], component: str) -> Decimal:
+            breakdown = row.get("bonus_tax_breakdown_gbp", {})
+            if not isinstance(breakdown, dict):
+                return _ZERO
+            return _to_decimal(breakdown.get(component)) or _ZERO
+
+        def _timing_delta(
+            wait_row: dict[str, Any], sell_now_row: dict[str, Any]
+        ) -> dict[str, str | None]:
+            wait_income_tax = _bonus_tax_component(wait_row, "income_tax_gbp")
+            wait_ni = _bonus_tax_component(wait_row, "national_insurance_gbp")
+            wait_sl = _bonus_tax_component(wait_row, "student_loan_gbp")
+            wait_payroll_total = _bonus_tax_component(wait_row, "total_gbp")
+            wait_cgt = _to_decimal(wait_row["projected_incremental_cgt_from_sale_gbp"]) or _ZERO
+            wait_net_cash = _to_decimal(wait_row["net_decision_cash_gbp"]) or _ZERO
+
+            sell_now_income_tax = _bonus_tax_component(sell_now_row, "income_tax_gbp")
+            sell_now_ni = _bonus_tax_component(sell_now_row, "national_insurance_gbp")
+            sell_now_sl = _bonus_tax_component(sell_now_row, "student_loan_gbp")
+            sell_now_payroll_total = _bonus_tax_component(sell_now_row, "total_gbp")
+            sell_now_cgt = _to_decimal(sell_now_row["projected_incremental_cgt_from_sale_gbp"]) or _ZERO
+            sell_now_net_cash = _to_decimal(sell_now_row["net_decision_cash_gbp"]) or _ZERO
+
+            return {
+                "income_tax_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(wait_income_tax - sell_now_income_tax)
+                ),
+                "national_insurance_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(wait_ni - sell_now_ni)
+                ),
+                "student_finance_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(wait_sl - sell_now_sl)
+                ),
+                "payroll_tax_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(wait_payroll_total - sell_now_payroll_total)
+                ),
+                "sale_cgt_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(wait_cgt - sell_now_cgt)
+                ),
+                "combined_tax_drag_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(
+                        (wait_payroll_total + wait_cgt)
+                        - (sell_now_payroll_total + sell_now_cgt)
+                    )
+                ),
+                "net_cash_delta_wait_vs_sell_now_gbp": _money_str(
+                    _q_money(wait_net_cash - sell_now_net_cash)
+                ),
+            }
 
         hold_net_cash = _to_decimal(hold_row["net_decision_cash_gbp"]) or _ZERO
         sell_net_cash = _to_decimal(sell_row["net_decision_cash_gbp"]) or _ZERO
-        sell_pension_net_cash = _to_decimal(sell_with_pension_row["net_decision_cash_gbp"]) or _ZERO
+        sell_next_net_cash = _to_decimal(sell_next_row["net_decision_cash_gbp"]) or _ZERO
+        sell_pension_net_cash = (
+            _to_decimal(sell_with_pension_row["net_decision_cash_gbp"]) or _ZERO
+        )
+        sell_next_pension_net_cash = (
+            _to_decimal(sell_next_with_pension_row["net_decision_cash_gbp"]) or _ZERO
+        )
         sell_ani = _to_decimal(sell_row["adjusted_net_income_after_bonus_gbp"]) or _ZERO
         sell_pension_ani = (
             _to_decimal(sell_with_pension_row["adjusted_net_income_after_bonus_gbp"]) or _ZERO
@@ -926,6 +1011,11 @@ class TaxPlanService:
         sell_pension_cgt = (
             _to_decimal(sell_with_pension_row["projected_incremental_cgt_from_sale_gbp"]) or _ZERO
         )
+        timing_delta_baseline = _timing_delta(sell_next_row, sell_row)
+        timing_delta_with_pension = _timing_delta(
+            sell_next_with_pension_row,
+            sell_with_pension_row,
+        )
 
         compensation_notes: list[str] = [
             (
@@ -935,6 +1025,10 @@ class TaxPlanService:
             (
                 "Salary-sacrifice pension reduces ANI and NI/Student Finance bases; "
                 "assumes changes occur before bonus/sale events."
+            ),
+            (
+                "Sell-next-year scenarios apply the same salary, bonus, and pension inputs "
+                "to next-year tax bands so IT/NI/SF and CGT can be compared to selling now."
             ),
         ]
         if sale_estimate["method"] == "no-priced-sellable-taxable-pool-assume-full-gain":
@@ -969,13 +1063,25 @@ class TaxPlanService:
                 "estimated_loss_gbp": _money_str(sale_estimate["est_loss_gbp"]),
                 "estimated_gain_ratio_pct": str(sale_estimate["est_gain_ratio_pct"]),
             },
-            "rows": [hold_row, sell_row, sell_with_pension_row],
+            "rows": [
+                hold_row,
+                sell_row,
+                sell_next_row,
+                sell_with_pension_row,
+                sell_next_with_pension_row,
+            ],
             "comparison": {
                 "sell_vs_hold_net_cash_delta_gbp": _money_str(
                     _q_money(sell_net_cash - hold_net_cash)
                 ),
+                "sell_next_vs_sell_delta_gbp": _money_str(
+                    _q_money(sell_next_net_cash - sell_net_cash)
+                ),
                 "sell_with_pension_vs_sell_delta_gbp": _money_str(
                     _q_money(sell_pension_net_cash - sell_net_cash)
+                ),
+                "sell_next_with_pension_vs_sell_with_pension_delta_gbp": _money_str(
+                    _q_money(sell_next_pension_net_cash - sell_pension_net_cash)
                 ),
                 "ani_reduction_from_extra_pension_gbp": _money_str(
                     _q_money(sell_ani - sell_pension_ani)
@@ -993,9 +1099,16 @@ class TaxPlanService:
                     )
                 ),
             },
+            "timing_comparison": {
+                "sell_this_tax_year": current_tax_year,
+                "sell_next_tax_year": next_tax_year,
+                "baseline_pension": timing_delta_baseline,
+                "with_extra_pension": timing_delta_with_pension,
+            },
             "decision_prompts": [
                 "At 99k income, what is the net-cash impact of selling 5k now versus holding?",
                 "At 101k income, does extra pension sacrifice improve net outcomes before selling?",
+                "What changes if the same sale is delayed into the next UK tax year?",
             ],
             "notes": compensation_notes,
         }

@@ -35,8 +35,9 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 ## Current Delivery Status
 - S1-S7 usability baseline is implemented.
 - v2 shipped through `v2.1.1`: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1, Calendar timeline, and Broker Currency Phase A.
-- Working tree implementation has progressed through `v2.5.0` (Tax-Plan compensation refinement and Portfolio/Per-Scheme QoL), pending release-note/version sync.
+- Working tree implementation has progressed through `v2.5.1` (Tax-Plan compensation timing across sell-this-year vs sell-next-year, plus Portfolio/Per-Scheme QoL), pending release-note/version sync.
 - Latest released full regression: `487 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
+- Latest working-tree full regression: `515 passed, 3 skipped` (`python -m pytest -q`, 2026-02-25).
 - Next planned stage: `v2.6.0` ET20-EPIC-05 Scenario Lab.
 
 ## In-Scope Capability Summary

@@ -41,6 +41,7 @@
 </div>
 
 {% set comp = tax_plan.compensation_plan %}
+{% set timing = comp.timing_comparison %}
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Compensation What-If (IT / NI / SF + CGT)</h2>
@@ -104,9 +105,17 @@
     <span class="stat__label">Sell vs Hold Net Cash Delta</span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_vs_hold_net_cash_delta_gbp|money }}</span>
   </div>
+  <div class="stat">
+    <span class="stat__label">Sell Next Year vs This Year</span>
+    <span class="stat__value">&pound;{{ comp.comparison.sell_next_vs_sell_delta_gbp|money }}</span>
+  </div>
   <div class="stat stat--warning">
     <span class="stat__label">Sell + Pension vs Sell Delta</span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_with_pension_vs_sell_delta_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Sell Next + Pension vs This + Pension</span>
+    <span class="stat__value">&pound;{{ comp.comparison.sell_next_with_pension_vs_sell_with_pension_delta_gbp|money }}</span>
   </div>
   <div class="stat">
     <span class="stat__label">ANI Reduction from Extra Pension</span>
@@ -159,13 +168,14 @@
       <thead>
         <tr>
           <th>Scenario</th>
+          <th>Tax Year</th>
           <th class="num">ANI After Bonus</th>
           <th class="num">PA After Bonus</th>
           <th class="num">Marginal IT</th>
           <th class="num">Marginal NI</th>
           <th class="num">Marginal SF</th>
           <th class="num">Bonus Tax (IT+NI+SF)</th>
-          <th class="num">Incremental CGT (Sale)</th>
+          <th class="num">Incremental CGT (Sale Year)</th>
           <th class="num">Sale Net Cash</th>
           <th class="num">Pension Net Cash Cost</th>
           <th class="num">Net Decision Cash</th>
@@ -180,6 +190,7 @@
             <div class="muted warning-text">PA taper zone</div>
             {% endif %}
           </td>
+          <td>{{ row.planning_tax_year }}</td>
           <td class="num">&pound;{{ row.adjusted_net_income_after_bonus_gbp|money }}</td>
           <td class="num">&pound;{{ row.personal_allowance_after_bonus_gbp|money }}</td>
           <td class="num">{{ row.marginal_rates_pct.income_tax }}%</td>
@@ -192,6 +203,51 @@
           <td class="num">&pound;{{ row.net_decision_cash_gbp|money }}</td>
         </tr>
         {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Sell Timing Comparison (Wait vs Sell This Year)</h2>
+  </div>
+  <p class="muted">Positive values mean waiting until {{ timing.sell_next_tax_year }} is higher than selling in {{ timing.sell_this_tax_year }}.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scenario Basis</th>
+          <th class="num">IT Delta</th>
+          <th class="num">NI Delta</th>
+          <th class="num">SF Delta</th>
+          <th class="num">Payroll Delta</th>
+          <th class="num">CGT Delta</th>
+          <th class="num">Combined Tax Delta</th>
+          <th class="num">Net Cash Delta</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Current pension level</td>
+          <td class="num">&pound;{{ timing.baseline_pension.income_tax_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.baseline_pension.national_insurance_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.baseline_pension.student_finance_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.baseline_pension.payroll_tax_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.baseline_pension.sale_cgt_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.baseline_pension.combined_tax_drag_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.baseline_pension.net_cash_delta_wait_vs_sell_now_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td>With extra pension</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.income_tax_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.national_insurance_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.student_finance_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.payroll_tax_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.sale_cgt_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.combined_tax_drag_delta_wait_vs_sell_now_gbp|money }}</td>
+          <td class="num">&pound;{{ timing.with_extra_pension.net_cash_delta_wait_vs_sell_now_gbp|money }}</td>
+        </tr>
       </tbody>
     </table>
   </div>
