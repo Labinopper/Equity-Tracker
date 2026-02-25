@@ -1,13 +1,29 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Analytics - Equity Tracker{% endblock %}
 
 {% block content %}
 {% set widgets = analytics_summary.widgets %}
+{% set focus_groups = analytics_summary.focus_groups or [] %}
 <div class="page-title">
   <div>
     <h1>Analytics</h1>
-    <p class="muted">Configurable chart widgets for portfolio structure and decision context.</p>
+    <p class="muted">Configurable chart widgets for portfolio structure, tax posture, risk stress, and timeline timing.</p>
   </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Decision Focus</h2>
+  </div>
+  <div class="analytics-focus-row">
+    <button type="button" class="btn btn-secondary btn-sm analytics-focus-btn" data-focus-id="all">All</button>
+    {% for focus in focus_groups %}
+    <button type="button" class="btn btn-secondary btn-sm analytics-focus-btn" data-focus-id="{{ focus.id }}">
+      {{ focus.label }}
+    </button>
+    {% endfor %}
+  </div>
+  <p class="muted" id="analytics-focus-description">Use focus presets to reduce chart noise while keeping widget visibility settings intact.</p>
 </div>
 
 <div class="card">
@@ -95,11 +111,43 @@
             </label>
           </td>
         </tr>
+        <tr>
+          <td>Stress Test (Price Shocks)</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="stress-test">
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Forfeiture-At-Risk Value</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="forfeiture-at-risk">
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>Upcoming Events Timeline</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="events-timeline">
+              Enabled
+            </label>
+          </td>
+        </tr>
       </tbody>
     </table>
   </div>
+  <div class="analytics-control-actions">
+    <button type="button" class="btn btn-secondary btn-sm" id="analytics-show-all">Show all widgets</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="analytics-reset-defaults">Reset defaults</button>
+  </div>
 </div>
 
+<div class="analytics-widget-grid">
 <div class="card analytics-widget" data-widget-id="portfolio-value-time">
   <div class="card__header">
     <h2 class="card__title">{{ widgets.portfolio_value_time.title }}</h2>
@@ -430,11 +478,148 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card analytics-widget" data-widget-id="stress-test">
   <div class="card__header">
-    <h2 class="card__title">Coming Soon</h2>
+    <h2 class="card__title">{{ widgets.stress_test.title }}</h2>
   </div>
-  <p class="muted">Risk stress/forfeiture and calendar timeline charts will activate when their source EPIC data surfaces are available.</p>
+  <p class="muted">{{ widgets.stress_test.subtitle }}</p>
+  <canvas id="chart-stress-test" aria-label="Stress test chart"></canvas>
+  <p class="muted" data-empty-for="stress-test" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-stress-test">
+    Show table
+  </button>
+  <div id="table-stress-test" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Shock</th>
+          <th class="num">Stressed Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.stress_test.rows %}
+          {% for row in widgets.stress_test.rows %}
+          <tr>
+            <td>{{ row.shock_label }}</td>
+            <td class="num">&pound;{{ row.stressed_market_value_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="2" class="muted">{{ widgets.stress_test.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="forfeiture-at-risk">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.forfeiture_at_risk.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.forfeiture_at_risk.subtitle }}</p>
+  <canvas id="chart-forfeiture-at-risk" aria-label="Forfeiture at risk chart"></canvas>
+  <p class="muted" data-empty-for="forfeiture-at-risk" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-forfeiture-at-risk">
+    Show table
+  </button>
+  <div id="table-forfeiture-at-risk" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Matched Lots</th>
+          <th class="num">Value at Risk</th>
+          <th class="num">% of Total</th>
+          <th class="num">Earliest Release</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.forfeiture_at_risk.rows %}
+          {% for row in widgets.forfeiture_at_risk.rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td class="num">{{ row.lot_count }}</td>
+            <td class="num">&pound;{{ row.value_at_risk_gbp|money }}</td>
+            <td class="num">{{ row.pct_of_total }}%</td>
+            <td class="num">
+              {% if row.earliest_release_days is not none %}
+              {{ row.earliest_release_days }}d
+              {% else %}
+              -
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="5" class="muted">{{ widgets.forfeiture_at_risk.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card analytics-widget" data-widget-id="events-timeline">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.events_timeline.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.events_timeline.subtitle }}</p>
+  {% if widgets.events_timeline.as_of_date %}
+  <p class="muted">As of {{ widgets.events_timeline.as_of_date }} ({{ widgets.events_timeline.horizon_days }} day horizon)</p>
+  {% endif %}
+  <canvas id="chart-events-timeline" aria-label="Events timeline chart"></canvas>
+  <p class="muted" data-empty-for="events-timeline" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-events-timeline">
+    Show table
+  </button>
+  <div id="table-events-timeline" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Countdown</th>
+          <th>Event</th>
+          <th>Security</th>
+          <th>Scheme</th>
+          <th class="num">Value at Stake</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.events_timeline.rows %}
+          {% for row in widgets.events_timeline.rows %}
+          <tr>
+            <td>{{ row.event_date }}</td>
+            <td class="num">{{ row.days_until }}d</td>
+            <td>
+              <div>{{ row.title }}</div>
+              <div class="muted">{{ row.subtitle }}</div>
+            </td>
+            <td>{{ row.ticker or '-' }}</td>
+            <td>{{ row.scheme_type or '-' }}</td>
+            <td class="num">
+              {% if row.value_at_stake_gbp is not none %}
+              &pound;{{ row.value_at_stake_gbp|money }}
+              {% elif row.event_type in ['VEST_DATE', 'FORFEITURE_END'] %}
+              <span class="muted">Unavailable</span>
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="muted">{{ widgets.events_timeline.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 </div>
 
 {% if analytics_summary.notes %}
@@ -464,6 +649,7 @@
 (function () {
   var summary = {{ analytics_summary | tojson }};
   var widgets = summary.widgets || {};
+  var focusGroups = Array.isArray(summary.focus_groups) ? summary.focus_groups : [];
   var theme = window.analyticsChartTheme || {
     accent: "#3d78f0",
     gain: "#00d18c",
@@ -472,6 +658,7 @@
   };
   var chartInstances = {};
   var storageKey = "analytics.widget_visibility.v1";
+  var focusStorageKey = "analytics.focus_group.v1";
   var defaultVisibility = {
     "portfolio-value-time": true,
     "scheme-concentration": true,
@@ -480,7 +667,10 @@
     "unrealised-pnl": true,
     "cgt-year-position": true,
     "gain-loss-history": false,
-    "economic-vs-tax": false
+    "economic-vs-tax": false,
+    "stress-test": false,
+    "forfeiture-at-risk": false,
+    "events-timeline": false
   };
 
   var widgetById = {
@@ -491,7 +681,10 @@
     "unrealised-pnl": widgets.unrealised_pnl || {},
     "cgt-year-position": widgets.cgt_year_position || {},
     "gain-loss-history": widgets.gain_loss_history || {},
-    "economic-vs-tax": widgets.economic_vs_tax || {}
+    "economic-vs-tax": widgets.economic_vs_tax || {},
+    "stress-test": widgets.stress_test || {},
+    "forfeiture-at-risk": widgets.forfeiture_at_risk || {},
+    "events-timeline": widgets.events_timeline || {}
   };
 
   function toNumber(value) {
@@ -965,6 +1158,163 @@
     });
   }
 
+  function renderStressTest() {
+    var widget = widgetById["stress-test"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("stress-test", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var values = [];
+    rows.forEach(function (row) {
+      var value = toNumber(row.stressed_market_value_gbp);
+      if (value === null) {
+        return;
+      }
+      labels.push(row.shock_label);
+      values.push(value);
+    });
+    if (!labels.length) {
+      setWidgetMessage("stress-test", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("stress-test", "");
+    createChart("stress-test", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Stressed Net Value",
+            data: values,
+            backgroundColor: labels.map(function (label) {
+              return label.indexOf("-") === 0 ? theme.loss : (label === "+0%" || label === "0%" ? theme.accent : theme.gain);
+            })
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderForfeitureAtRisk() {
+    var widget = widgetById["forfeiture-at-risk"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("forfeiture-at-risk", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var values = [];
+    rows.forEach(function (row) {
+      var value = toNumber(row.value_at_risk_gbp);
+      if (value === null || value <= 0) {
+        return;
+      }
+      labels.push(row.ticker);
+      values.push(value);
+    });
+    if (!labels.length) {
+      setWidgetMessage("forfeiture-at-risk", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("forfeiture-at-risk", "");
+    createChart("forfeiture-at-risk", {
+      type: "doughnut",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Forfeiture-At-Risk",
+            data: values,
+            backgroundColor: [theme.warning, theme.loss, theme.accent, theme.gain, "#4ac9ff", "#a082dc"]
+          }
+        ]
+      },
+      options: {
+        responsive: true
+      }
+    });
+  }
+
+  function eventTypeColor(eventType) {
+    if (eventType === "FORFEITURE_END") {
+      return theme.warning;
+    }
+    if (eventType === "VEST_DATE") {
+      return theme.accent;
+    }
+    if (eventType === "TAX_YEAR_END") {
+      return theme.loss;
+    }
+    if (eventType === "TAX_YEAR_START") {
+      return theme.gain;
+    }
+    return theme.accent;
+  }
+
+  function renderEventsTimeline() {
+    var widget = widgetById["events-timeline"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("events-timeline", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var chartRows = rows.slice(0, 14);
+    var labels = [];
+    var values = [];
+    var colors = [];
+    chartRows.forEach(function (row) {
+      var days = toNumber(row.days_until);
+      if (days === null) {
+        return;
+      }
+      var labelPrefix = row.ticker ? row.ticker + ": " : "";
+      labels.push(row.event_date + " | " + labelPrefix + row.title);
+      values.push(days);
+      colors.push(eventTypeColor(row.event_type));
+    });
+    if (!labels.length) {
+      setWidgetMessage("events-timeline", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("events-timeline", "");
+    createChart("events-timeline", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Days Until Event",
+            data: values,
+            backgroundColor: colors
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        indexAxis: "y",
+        scales: {
+          x: {
+            ticks: {
+              callback: function (value) { return value + "d"; }
+            }
+          }
+        }
+      }
+    });
+  }
+
   function loadVisibility() {
     var visibility = Object.assign({}, defaultVisibility);
     try {
@@ -993,25 +1343,121 @@
     }
   }
 
-  function applyVisibility(visibility) {
-    document.querySelectorAll(".analytics-widget").forEach(function (card) {
-      var widgetId = card.getAttribute("data-widget-id");
-      var isVisible = visibility[widgetId] !== false;
-      card.hidden = !isVisible;
-    });
-    document.querySelectorAll(".analytics-widget-toggle").forEach(function (toggle) {
-      var widgetId = toggle.getAttribute("data-widget-id");
-      toggle.checked = visibility[widgetId] !== false;
+  function loadFocusId() {
+    var focusId = "all";
+    try {
+      var raw = window.localStorage.getItem(focusStorageKey);
+      if (raw) {
+        focusId = raw;
+      }
+    } catch (_err) {
+      return focusId;
+    }
+    return focusId;
+  }
+
+  function persistFocusId(focusId) {
+    try {
+      window.localStorage.setItem(focusStorageKey, focusId);
+    } catch (_err) {
+      return;
+    }
+  }
+
+  function focusById(focusId) {
+    if (focusId === "all") {
+      return null;
+    }
+    for (var i = 0; i < focusGroups.length; i += 1) {
+      if (focusGroups[i].id === focusId) {
+        return focusGroups[i];
+      }
+    }
+    return null;
+  }
+
+  function updateFocusButtons(focusId) {
+    document.querySelectorAll(".analytics-focus-btn").forEach(function (btn) {
+      var buttonFocusId = btn.getAttribute("data-focus-id") || "all";
+      btn.classList.toggle("is-active", buttonFocusId === focusId);
     });
   }
 
-  function wireWidgetToggles(visibility) {
+  function updateFocusDescription(focusId) {
+    var node = document.getElementById("analytics-focus-description");
+    if (!node) {
+      return;
+    }
+    var focus = focusById(focusId);
+    if (!focus) {
+      node.textContent = "Use focus presets to reduce chart noise while keeping widget visibility settings intact.";
+      return;
+    }
+    node.textContent = focus.description || "Focused widget set.";
+  }
+
+  function applyVisibilityAndFocus(state) {
+    var focus = focusById(state.focusId);
+    var allowedByFocus = null;
+    if (focus && Array.isArray(focus.widget_ids)) {
+      allowedByFocus = new Set(focus.widget_ids);
+    }
+
+    document.querySelectorAll(".analytics-widget").forEach(function (card) {
+      var widgetId = card.getAttribute("data-widget-id");
+      var visibleByToggle = state.visibility[widgetId] !== false;
+      var visibleByFocus = !allowedByFocus || allowedByFocus.has(widgetId);
+      card.hidden = !(visibleByToggle && visibleByFocus);
+    });
+    document.querySelectorAll(".analytics-widget-toggle").forEach(function (toggle) {
+      var widgetId = toggle.getAttribute("data-widget-id");
+      toggle.checked = state.visibility[widgetId] !== false;
+    });
+    updateFocusButtons(state.focusId);
+    updateFocusDescription(state.focusId);
+  }
+
+  function wireWidgetToggles(state) {
     document.querySelectorAll(".analytics-widget-toggle").forEach(function (toggle) {
       toggle.addEventListener("change", function () {
         var widgetId = toggle.getAttribute("data-widget-id");
-        visibility[widgetId] = toggle.checked;
-        applyVisibility(visibility);
-        persistVisibility(visibility);
+        state.visibility[widgetId] = toggle.checked;
+        applyVisibilityAndFocus(state);
+        persistVisibility(state.visibility);
+      });
+    });
+  }
+
+  function wireFocusControls(state) {
+    document.querySelectorAll(".analytics-focus-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.focusId = btn.getAttribute("data-focus-id") || "all";
+        applyVisibilityAndFocus(state);
+        persistFocusId(state.focusId);
+      });
+    });
+  }
+
+  function wireControlActions(state) {
+    var showAll = document.getElementById("analytics-show-all");
+    if (showAll) {
+      showAll.addEventListener("click", function () {
+        Object.keys(defaultVisibility).forEach(function (widgetId) {
+          state.visibility[widgetId] = true;
+        });
+        applyVisibilityAndFocus(state);
+        persistVisibility(state.visibility);
+      });
+    }
+
+    var resetDefaults = document.getElementById("analytics-reset-defaults");
+    if (resetDefaults) {
+      resetDefaults.addEventListener("click", function () {
+        state.visibility = Object.assign({}, defaultVisibility);
+        state.focusId = "all";
+        applyVisibilityAndFocus(state);
+        persistVisibility(state.visibility);
+        persistFocusId(state.focusId);
       });
     });
   }
@@ -1038,10 +1484,23 @@
   renderCgtYearPosition();
   renderGainLossHistory();
   renderEconomicVsTax();
+  renderStressTest();
+  renderForfeitureAtRisk();
+  renderEventsTimeline();
 
-  var visibility = loadVisibility();
-  applyVisibility(visibility);
-  wireWidgetToggles(visibility);
+  var state = {
+    visibility: loadVisibility(),
+    focusId: loadFocusId()
+  };
+
+  if (!focusById(state.focusId) && state.focusId !== "all") {
+    state.focusId = "all";
+  }
+
+  applyVisibilityAndFocus(state);
+  wireWidgetToggles(state);
+  wireFocusControls(state);
+  wireControlActions(state);
   wireTableToggles();
 })();
 </script>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from src.api import _state
@@ -82,6 +82,9 @@ def test_api_analytics_summary_and_portfolio_time_empty_db(client):
     assert "cgt_year_position" in summary["widgets"]
     assert "gain_loss_history" in summary["widgets"]
     assert "economic_vs_tax" in summary["widgets"]
+    assert "stress_test" in summary["widgets"]
+    assert "forfeiture_at_risk" in summary["widgets"]
+    assert "events_timeline" in summary["widgets"]
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
     assert series_resp.status_code == 200
@@ -116,6 +119,8 @@ def test_api_analytics_endpoints_return_data_when_prices_exist(client):
     assert len(unrealised_rows) == 1
     assert unrealised_rows[0]["ticker"] == "ANAPI"
     assert unrealised_rows[0]["market_value_gbp"] == "60.00"
+    assert len(summary["widgets"]["stress_test"]["rows"]) == 6
+    assert summary["widgets"]["events_timeline"]["has_data"] is True
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
     assert series_resp.status_code == 200
@@ -126,16 +131,74 @@ def test_api_analytics_endpoints_return_data_when_prices_exist(client):
     assert series["values_gbp"] == ["60.00"]
 
 
+def test_api_analytics_group_c_and_d_widgets_with_risk_and_calendar_inputs(client):
+    sec_rsu = _add_security(client, "ANAPIRSU")
+    sec_plus = _add_security(client, "ANAPIPLUS")
+
+    PortfolioService.add_lot(
+        security_id=sec_rsu,
+        scheme_type="RSU",
+        acquisition_date=date.today() + timedelta(days=14),
+        quantity=Decimal("6"),
+        acquisition_price_gbp=Decimal("10.00"),
+        true_cost_per_share_gbp=Decimal("10.00"),
+    )
+
+    employee = PortfolioService.add_lot(
+        security_id=sec_plus,
+        scheme_type="ESPP_PLUS",
+        acquisition_date=date.today() - timedelta(days=30),
+        quantity=Decimal("8"),
+        acquisition_price_gbp=Decimal("9.00"),
+        true_cost_per_share_gbp=Decimal("8.00"),
+        fmv_at_acquisition_gbp=Decimal("9.00"),
+    )
+    PortfolioService.add_lot(
+        security_id=sec_plus,
+        scheme_type="ESPP_PLUS",
+        acquisition_date=date.today() - timedelta(days=30),
+        quantity=Decimal("2"),
+        acquisition_price_gbp=Decimal("0.00"),
+        true_cost_per_share_gbp=Decimal("0.00"),
+        fmv_at_acquisition_gbp=Decimal("9.00"),
+        matching_lot_id=employee.id,
+        forfeiture_period_end=date.today() + timedelta(days=21),
+    )
+
+    _add_price(sec_rsu, date.today(), "15.00")
+    _add_price(sec_plus, date.today(), "12.00")
+
+    resp = client.get("/api/analytics/summary")
+    assert resp.status_code == 200
+    summary = resp.json()
+
+    forfeiture_widget = summary["widgets"]["forfeiture_at_risk"]
+    assert forfeiture_widget["has_data"] is True
+    assert forfeiture_widget["total_lot_count"] == 1
+    assert forfeiture_widget["rows"][0]["ticker"] == "ANAPIPLUS"
+    assert forfeiture_widget["rows"][0]["value_at_risk_gbp"] == "24.00"
+
+    timeline_widget = summary["widgets"]["events_timeline"]
+    assert timeline_widget["has_data"] is True
+    event_types = {row["event_type"] for row in timeline_widget["rows"]}
+    assert "VEST_DATE" in event_types
+    assert "FORFEITURE_END" in event_types
+
+
 def test_analytics_ui_page_renders_widget_controls_and_table_toggle(client):
     resp = client.get("/analytics")
     assert resp.status_code == 200
     assert "Analytics" in resp.text
     assert "analytics-widget-toggle" in resp.text
+    assert "analytics-focus-btn" in resp.text
     assert "Show table" in resp.text
     assert "analytics.widget_visibility.v1" in resp.text
     assert "cgt-year-position" in resp.text
     assert "gain-loss-history" in resp.text
     assert "economic-vs-tax" in resp.text
+    assert "stress-test" in resp.text
+    assert "forfeiture-at-risk" in resp.text
+    assert "events-timeline" in resp.text
 
 
 def test_api_analytics_respects_hide_values_setting(client):
@@ -153,6 +216,9 @@ def test_api_analytics_respects_hide_values_setting(client):
     assert summary["widgets"]["portfolio_value_time"]["hidden"] is True
     assert summary["widgets"]["scheme_concentration"]["reason"] == "Values hidden by privacy mode."
     assert summary["widgets"]["cgt_year_position"]["hidden"] is True
+    assert summary["widgets"]["stress_test"]["hidden"] is True
+    assert summary["widgets"]["forfeiture_at_risk"]["hidden"] is True
+    assert summary["widgets"]["events_timeline"]["hidden"] is True
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
     assert series_resp.status_code == 200

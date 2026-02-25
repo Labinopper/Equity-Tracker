@@ -1,6 +1,6 @@
 # Equity Tracker - Project Reference
 
-Last updated: 2026-02-24
+Last updated: 2026-02-25
 
 This is the technical companion to `PROJECT_STATUS.md`.
 Current released version: `v2.1.1`.
@@ -76,17 +76,15 @@ Portfolio routes include refresh diagnostics and daily-change freshness context 
 - Tax-year support includes published values through `2026-27`, with deterministic carry-forward through `2035-36` for unpublished years.
 
 ## 7) Current Technical Debt
-1. Remaining template inline style usage.
-2. Remaining mojibake/encoding artifacts.
-3. Broader FX generalization and reliability hardening still pending.
-4. IA/navigation rollout still partial.
-5. Analytics Group B/C/D dependencies pending later EPIC stages.
+1. Broader FX generalization and reliability hardening still pending (ET20-EPIC-06 Phase B).
+2. IA/navigation rollout still partial.
+3. CGT reporting tax-year selector UX refinement remains pending.
 
 ## 8) Test Baseline Snapshot
 - Latest release-synced full regression (`v2.1.1`): `python -m pytest -q` -> `487 passed, 3 skipped`.
-- Latest working-tree evidence for subsequent stages is tracked in `todo.md` and `CODEX_PROGRESS.md`.
+- Latest working-tree full regression: `python -m pytest -q` -> `526 passed, 3 skipped` (2026-02-25).
 
 ## 9) Technical Roadmap Dependencies (Next)
-1. CF-06 (`v2.1.2`): inline style and encoding debt cleanup.
-2. ET20-EPIC-08 expansion (`v2.2.0` onward): tax/risk/timeline chart groups.
-3. ET20-EPIC-01 and ET20-EPIC-02 feed later planning/analytics/scenario work.
+1. ET20-EPIC-06 Phase B (`v2.7.0`): reliability + generalized multi-currency hardening.
+2. ET20-EPIC-09 (`v2.7.1`): CGT tax-year selector refinement.
+3. Release-note/version sync remains pending for post-`v2.1.1` working-tree stages.

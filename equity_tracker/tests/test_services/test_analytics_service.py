@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from src.app_context import AppContext
@@ -115,11 +115,70 @@ def test_summary_payload_contains_group_a_widgets_and_unrealised_rows(app_contex
     assert "security_concentration" in summary["widgets"]
     assert "liquidity_breakdown" in summary["widgets"]
     assert "unrealised_pnl" in summary["widgets"]
+    assert "stress_test" in summary["widgets"]
+    assert "forfeiture_at_risk" in summary["widgets"]
+    assert "events_timeline" in summary["widgets"]
 
     unrealised_rows = summary["widgets"]["unrealised_pnl"]["rows"]
     assert len(unrealised_rows) == 1
     assert unrealised_rows[0]["ticker"] == "ANSUM"
     assert unrealised_rows[0]["market_value_gbp"] == "45.00"
+
+
+def test_summary_payload_includes_group_c_and_d_rows(app_context):
+    sec_rsu = _add_security("ANGCRSU")
+    sec_plus = _add_security("ANGCPLUS")
+
+    PortfolioService.add_lot(
+        security_id=sec_rsu.id,
+        scheme_type="RSU",
+        acquisition_date=date.today() + timedelta(days=14),
+        quantity=Decimal("6"),
+        acquisition_price_gbp=Decimal("10.00"),
+        true_cost_per_share_gbp=Decimal("10.00"),
+    )
+
+    employee = PortfolioService.add_lot(
+        security_id=sec_plus.id,
+        scheme_type="ESPP_PLUS",
+        acquisition_date=date.today() - timedelta(days=30),
+        quantity=Decimal("8"),
+        acquisition_price_gbp=Decimal("9.00"),
+        true_cost_per_share_gbp=Decimal("8.00"),
+        fmv_at_acquisition_gbp=Decimal("9.00"),
+    )
+    PortfolioService.add_lot(
+        security_id=sec_plus.id,
+        scheme_type="ESPP_PLUS",
+        acquisition_date=date.today() - timedelta(days=30),
+        quantity=Decimal("2"),
+        acquisition_price_gbp=Decimal("0.00"),
+        true_cost_per_share_gbp=Decimal("0.00"),
+        fmv_at_acquisition_gbp=Decimal("9.00"),
+        matching_lot_id=employee.id,
+        forfeiture_period_end=date.today() + timedelta(days=21),
+    )
+
+    _add_price(sec_rsu.id, date.today(), "15.00")
+    _add_price(sec_plus.id, date.today(), "12.00")
+
+    summary = AnalyticsService.get_summary()
+
+    stress_widget = summary["widgets"]["stress_test"]
+    assert stress_widget["has_data"] is True
+    assert len(stress_widget["rows"]) == 6
+
+    forfeiture_widget = summary["widgets"]["forfeiture_at_risk"]
+    assert forfeiture_widget["has_data"] is True
+    assert forfeiture_widget["total_lot_count"] == 1
+    assert forfeiture_widget["rows"][0]["ticker"] == "ANGCPLUS"
+    assert forfeiture_widget["rows"][0]["value_at_risk_gbp"] == "24.00"
+
+    timeline_widget = summary["widgets"]["events_timeline"]
+    assert timeline_widget["has_data"] is True
+    event_types = {row["event_type"] for row in timeline_widget["rows"]}
+    assert "VEST_DATE" in event_types
+    assert "FORFEITURE_END" in event_types
 
 
 def test_summary_respects_hide_values_mode(app_context):
@@ -131,6 +190,9 @@ def test_summary_respects_hide_values_mode(app_context):
 
     assert summary["hide_values"] is True
     assert summary["widgets"]["scheme_concentration"]["hidden"] is True
+    assert summary["widgets"]["stress_test"]["hidden"] is True
+    assert summary["widgets"]["forfeiture_at_risk"]["hidden"] is True
+    assert summary["widgets"]["events_timeline"]["hidden"] is True
     assert portfolio_time["hidden"] is True
     assert portfolio_time["has_data"] is False
     assert portfolio_time["reason"] == "Values hidden by privacy mode."

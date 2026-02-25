@@ -1,9 +1,9 @@
 """
 AnalyticsService - additive analytics payloads for the /analytics dashboard.
 
-Phase 1 scope:
+Current scope:
 - Portfolio value over time (price history x active quantities)
-- Group A summary widgets (scheme/security concentration, liquidity, unrealised P&L)
+- Group A/B/C/D summary widgets for structure, tax, risk, and timeline context
 
 No write operations are performed.
 """
@@ -21,12 +21,14 @@ from ..core.tax_engine import available_tax_years, get_bands, tax_year_for_date
 from ..core.tax_engine.context import TaxContext
 from ..db.models import PriceHistory, Transaction
 from ..settings import AppSettings
+from .calendar_service import CalendarService
 from .portfolio_service import PortfolioService
 from .report_service import ReportService
 from .risk_service import RiskService
 
 _GBP_Q = Decimal("0.01")
 _TOTAL_LABEL = "Total"
+_DEFAULT_TIMELINE_HORIZON_DAYS = 400
 
 
 def _q_money(value: Decimal) -> Decimal:
@@ -199,7 +201,7 @@ class AnalyticsService:
         settings: AppSettings | None = None,
     ) -> dict[str, Any]:
         """
-        Build Group A analytics widgets as one JSON payload.
+        Build analytics widgets as one JSON payload.
         """
         generated_at_utc = datetime.now(timezone.utc).isoformat()
         hide_values = bool(settings and settings.hide_values)
@@ -212,6 +214,7 @@ class AnalyticsService:
             return {
                 "generated_at_utc": generated_at_utc,
                 "hide_values": True,
+                "focus_groups": AnalyticsService._focus_groups(),
                 "widgets": {
                     "portfolio_value_time": portfolio_over_time,
                     "scheme_concentration": _hidden_widget(
@@ -248,6 +251,21 @@ class AnalyticsService:
                         widget_id="economic-vs-tax",
                         title="Economic vs Tax P&L",
                         subtitle="Net economic gain versus CGT-basis gain by tax year.",
+                    ),
+                    "stress_test": _hidden_widget(
+                        widget_id="stress-test",
+                        title="Stress Test (Price Shocks)",
+                        subtitle="Net liquidation value at hypothetical portfolio price moves.",
+                    ),
+                    "forfeiture_at_risk": _hidden_widget(
+                        widget_id="forfeiture-at-risk",
+                        title="Forfeiture-At-Risk Value",
+                        subtitle="Current matched-share value still inside ESPP+ forfeiture windows.",
+                    ),
+                    "events_timeline": _hidden_widget(
+                        widget_id="events-timeline",
+                        title="Upcoming Events Timeline",
+                        subtitle="Vest, forfeiture-window, and tax-year markers across the event horizon.",
                     ),
                 },
                 "notes": ["Monetary analytics widgets are hidden while privacy mode is enabled."],
@@ -350,13 +368,29 @@ class AnalyticsService:
         sortable_rows.sort(key=lambda item: item[0], reverse=True)
         unrealised_rows = [row for _, row in sortable_rows]
 
+        stress_rows = [
+            {
+                "shock_pct": str(point.shock_pct),
+                "shock_label": point.shock_label,
+                "stressed_market_value_gbp": str(point.stressed_market_value_gbp),
+            }
+            for point in risk_summary.stress_points
+        ]
+
+        forfeiture_widget, forfeiture_notes = AnalyticsService._forfeiture_at_risk_widget(
+            portfolio_summary=portfolio_summary
+        )
+        timeline_widget, timeline_notes = AnalyticsService._timeline_widget(settings=settings)
+
         notes = list(risk_summary.notes)
         notes.extend(tax_position.get("notes", []))
-        notes.append("Group C and D chart widgets remain placeholders until their source EPICs ship.")
+        notes.extend(forfeiture_notes)
+        notes.extend(timeline_notes)
 
         return {
             "generated_at_utc": generated_at_utc,
             "hide_values": hide_values,
+            "focus_groups": AnalyticsService._focus_groups(),
             "widgets": {
                 "portfolio_value_time": portfolio_over_time,
                 "scheme_concentration": {
@@ -399,9 +433,207 @@ class AnalyticsService:
                 "cgt_year_position": tax_position["widgets"]["cgt_year_position"],
                 "gain_loss_history": tax_position["widgets"]["gain_loss_history"],
                 "economic_vs_tax": tax_position["widgets"]["economic_vs_tax"],
+                "stress_test": {
+                    "widget_id": "stress-test",
+                    "title": "Stress Test (Price Shocks)",
+                    "subtitle": "Net liquidation value at hypothetical portfolio price moves.",
+                    "hidden": False,
+                    "has_data": bool(stress_rows),
+                    "reason": (
+                        None
+                        if stress_rows
+                        else "Stress-test inputs are unavailable."
+                    ),
+                    "rows": stress_rows,
+                },
+                "forfeiture_at_risk": forfeiture_widget,
+                "events_timeline": timeline_widget,
             },
             "notes": notes,
         }
+
+    @staticmethod
+    def _forfeiture_at_risk_widget(
+        *,
+        portfolio_summary,
+    ) -> tuple[dict[str, Any], list[str]]:
+        rows: list[dict[str, Any]] = []
+        total_value = Decimal("0")
+        total_lot_count = 0
+        unpriced_lot_count = 0
+
+        for security_summary in portfolio_summary.securities:
+            security_value = Decimal("0")
+            security_lot_count = 0
+            security_unpriced = 0
+            earliest_release_days: int | None = None
+
+            for lot_summary in security_summary.active_lots:
+                lot = lot_summary.lot
+                risk = lot_summary.forfeiture_risk
+                if lot.scheme_type != "ESPP_PLUS":
+                    continue
+                if lot.matching_lot_id is None:
+                    continue
+                if risk is None or not risk.in_window:
+                    continue
+
+                security_lot_count += 1
+                total_lot_count += 1
+                if earliest_release_days is None or risk.days_remaining < earliest_release_days:
+                    earliest_release_days = risk.days_remaining
+
+                if lot_summary.market_value_gbp is None:
+                    security_unpriced += 1
+                    unpriced_lot_count += 1
+                    continue
+
+                lot_value = _q_money(Decimal(lot_summary.market_value_gbp))
+                security_value += lot_value
+                total_value += lot_value
+
+            if security_lot_count == 0:
+                continue
+
+            rows.append(
+                {
+                    "security_id": security_summary.security.id,
+                    "ticker": security_summary.security.ticker,
+                    "lot_count": security_lot_count,
+                    "value_at_risk_gbp": _money_str(security_value),
+                    "pct_of_total": "0.00",
+                    "earliest_release_days": earliest_release_days,
+                    "unpriced_lot_count": security_unpriced,
+                }
+            )
+
+        for row in rows:
+            row_value = Decimal(row["value_at_risk_gbp"])
+            row["pct_of_total"] = _pct_str(row_value, total_value)
+
+        rows.sort(
+            key=lambda row: (
+                Decimal(row["value_at_risk_gbp"]),
+                row["lot_count"],
+                row["ticker"],
+            ),
+            reverse=True,
+        )
+
+        notes: list[str] = []
+        if total_lot_count > 0:
+            notes.append(
+                "Forfeiture-at-risk reflects ESPP+ matched-share value that would be lost on in-window disposal."
+            )
+        if unpriced_lot_count > 0:
+            notes.append(
+                f"{unpriced_lot_count} matched lot(s) are in-window but missing live price, so forfeiture value is understated."
+            )
+
+        widget = {
+            "widget_id": "forfeiture-at-risk",
+            "title": "Forfeiture-At-Risk Value",
+            "subtitle": "Current matched-share value still inside ESPP+ forfeiture windows.",
+            "hidden": False,
+            "has_data": bool(rows) and total_value > Decimal("0"),
+            "reason": (
+                "No in-window ESPP+ matched-share forfeiture risk."
+                if not rows
+                else (
+                    "In-window matched lots exist but live price data is unavailable."
+                    if total_value <= Decimal("0")
+                    else None
+                )
+            ),
+            "rows": rows,
+            "total_value_at_risk_gbp": _money_str(total_value),
+            "total_lot_count": total_lot_count,
+            "unpriced_lot_count": unpriced_lot_count,
+        }
+        return widget, notes
+
+    @staticmethod
+    def _timeline_widget(
+        *,
+        settings: AppSettings | None,
+    ) -> tuple[dict[str, Any], list[str]]:
+        payload = CalendarService.get_events_payload(
+            settings=settings,
+            horizon_days=_DEFAULT_TIMELINE_HORIZON_DAYS,
+        )
+        events = payload.get("events", [])
+
+        rows: list[dict[str, Any]] = []
+        for event in events:
+            rows.append(
+                {
+                    "event_id": event["event_id"],
+                    "event_type": event["event_type"],
+                    "event_date": event["event_date"],
+                    "days_until": event["days_until"],
+                    "title": event["title"],
+                    "subtitle": event["subtitle"],
+                    "ticker": event["ticker"],
+                    "scheme_type": event["scheme_type"],
+                    "value_at_stake_gbp": event["value_at_stake_gbp"],
+                    "has_live_value": bool(event["has_live_value"]),
+                }
+            )
+
+        widget = {
+            "widget_id": "events-timeline",
+            "title": "Upcoming Events Timeline",
+            "subtitle": "Vest, forfeiture-window, and tax-year markers across the event horizon.",
+            "hidden": False,
+            "has_data": bool(rows),
+            "reason": (
+                None
+                if rows
+                else f"No upcoming events in the next {_DEFAULT_TIMELINE_HORIZON_DAYS} day(s)."
+            ),
+            "rows": rows,
+            "event_counts": payload.get("event_counts", {}),
+            "horizon_days": payload.get("horizon_days", _DEFAULT_TIMELINE_HORIZON_DAYS),
+            "as_of_date": payload.get("as_of_date"),
+        }
+        notes = list(payload.get("notes", []))
+        return widget, notes
+
+    @staticmethod
+    def _focus_groups() -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "liquidity_now",
+                "label": "Liquidity Now",
+                "description": "What can be sold now and what is blocked or at risk.",
+                "widget_ids": [
+                    "liquidity-breakdown",
+                    "stress-test",
+                    "forfeiture-at-risk",
+                ],
+            },
+            {
+                "id": "concentration_risk",
+                "label": "Concentration Risk",
+                "description": "Where value is concentrated by scheme and security.",
+                "widget_ids": [
+                    "scheme-concentration",
+                    "security-concentration",
+                    "unrealised-pnl",
+                ],
+            },
+            {
+                "id": "timing_tax",
+                "label": "Timing and Tax",
+                "description": "How tax-year position and event timing affect decisions.",
+                "widget_ids": [
+                    "cgt-year-position",
+                    "gain-loss-history",
+                    "economic-vs-tax",
+                    "events-timeline",
+                ],
+            },
+        ]
 
     @staticmethod
     def get_tax_position(

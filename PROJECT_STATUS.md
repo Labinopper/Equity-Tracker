@@ -35,10 +35,10 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 ## Current Delivery Status
 - S1-S7 usability baseline is implemented.
 - v2 shipped through `v2.1.1`: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1, Calendar timeline, and Broker Currency Phase A.
-- Working tree implementation has progressed through `v2.6.0` (Scenario Lab multi-leg planning with sensitivity/comparison/export tooling), pending release-note/version sync.
+- Working tree implementation has progressed through `v2.6.3` (ET20-EPIC-08 Group C+D widgets plus analytics UX follow-on), pending release-note/version sync.
 - Latest released full regression: `487 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
-- Latest working-tree full regression: `524 passed, 3 skipped` (`python -m pytest -q`, 2026-02-25).
-- Next planned stage: `v2.6.1` ET20-EPIC-08 Group C risk widgets.
+- Latest working-tree full regression: `526 passed, 3 skipped` (`python -m pytest -q`, 2026-02-25).
+- Next planned stage: `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening.
 
 ## In-Scope Capability Summary
 - Portfolio, per-lot, and per-scheme decision surfaces in GBP.
@@ -46,20 +46,16 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 - Add lot supports input currency selection (`GBP`/`USD`) with GBP-normalized storage and retained acquisition FX metadata.
 - Deterministic FIFO simulation/commit plus non-disposal transfer workflow with scheme guardrails.
 - Validation Output Suite (`/admin/validation_report` API + CLI) for auditable recomputation.
-- Risk (`/risk`) and analytics foundation (`/analytics`) pages are live.
+- Risk (`/risk`) and analytics dashboard (`/analytics`) Groups A-D are live with configurable widget focus/visibility and table fallbacks.
 - Global hide-values mode is live.
 
 ## Known Gaps (Open)
-1. Analytics Groups C/D widgets are pending, plus graph-density/usability follow-ons.
-2. FX architecture still needs Phase B generalization/hardening and dedicated currency workflow UX.
-3. CGT reporting tax-year selection UX refinement remains pending.
+1. FX architecture still needs Phase B generalization/hardening and dedicated currency workflow UX.
+2. CGT reporting tax-year selection UX refinement remains pending.
 
 ## Roadmap (Ordered)
-1. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
-2. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
-3. `v2.6.3` ET20-EPIC-08 analytics UX follow-on (graph density + usability alignment).
-4. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening (+ currency workflow UX).
-5. `v2.7.1` ET20-EPIC-09 CGT reporting QoL (tax-year selector refinement).
+1. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening (+ currency workflow UX).
+2. `v2.7.1` ET20-EPIC-09 CGT reporting QoL (tax-year selector refinement).
 
 ## Working Rules
 - Keep this file short and decision-focused.
