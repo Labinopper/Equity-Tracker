@@ -628,6 +628,19 @@ tr:hover td { background: var(--bg-hover); }
   display: none;
 }
 
+body.portfolio-focus-mode .portfolio-position-desktop {
+  display: none;
+}
+
+body.portfolio-focus-mode .portfolio-position-mobile {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.scheme-visibility-toggle {
+  margin-right: 0.35rem;
+}
+
 .position-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -833,6 +846,12 @@ tr:hover td.loss {
   background: var(--bg-hover);
   color: var(--text);
   border-color: var(--border-strong);
+}
+
+.portfolio-filter-btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--text);
 }
 
 .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; }

@@ -571,6 +571,30 @@ def test_portfolio_shows_est_net_proceeds_reason_when_price_missing(client):
     assert "Est. Net Proceeds unavailable: no live price available." in home.text
 
 
+def test_portfolio_page_renders_qol_view_controls(client):
+    sec_id = _add_security(client, ticker="UIQOLCTRL")
+    _add_lot_via_api(client, sec_id, quantity="5", price="10.00")
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date.today(),
+            close_price_original_ccy="12.00",
+            close_price_gbp="12.00",
+            currency="GBP",
+            source="test-ui",
+        )
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "Portfolio View Controls" in home.text
+    assert "Quick Filters" in home.text
+    assert "Sort Decision Rows" in home.text
+    assert "Focus Mode (compact decision-first view)" in home.text
+    assert "portfolio.view_prefs.v1" in home.text
+    assert "Formula" in home.text
+
+
 def test_portfolio_shows_locked_est_net_reason_for_pre_vest_rsu(client):
     sec_id = _add_security(client, ticker="UILOCKEDNET")
     vest_date = date.today() + timedelta(days=30)
@@ -2252,6 +2276,8 @@ def test_per_scheme_page_renders_current_and_historic_rows(client):
     assert "Total Prev Lots" in page.text
     assert "Unrealised P&amp;L If Sold Now (Post-Tax)" in page.text
     assert "Realised P&amp;L (Economic)" in page.text
+    assert "Scheme Visibility" in page.text
+    assert "per_scheme.visibility.v1" in page.text
 
 
 def test_per_scheme_page_shows_espp_plus_potential_forfeiture(client):

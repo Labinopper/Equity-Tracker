@@ -1,6 +1,6 @@
 # Equity Tracker - Project Status
 
-Last updated: 2026-02-24  
+Last updated: 2026-02-25  
 Current released version: `v2.1.1`
 
 ## Document Ownership (Single Responsibility)
@@ -35,9 +35,9 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 ## Current Delivery Status
 - S1-S7 usability baseline is implemented.
 - v2 shipped through `v2.1.1`: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1, Calendar timeline, and Broker Currency Phase A.
-- Working tree implementation has progressed through `v2.4.0` (Tax-Year Planner and Dividend dashboard), pending release-note/version sync.
+- Working tree implementation has progressed through `v2.5.0` (Tax-Plan compensation refinement and Portfolio/Per-Scheme QoL), pending release-note/version sync.
 - Latest released full regression: `487 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
-- Next planned stage: `v2.4.1` high-priority tax-plan compensation-aware refinement (IT/NI/SL + pension levers).
+- Next planned stage: `v2.6.0` ET20-EPIC-05 Scenario Lab.
 
 ## In-Scope Capability Summary
 - Portfolio, per-lot, and per-scheme decision surfaces in GBP.
@@ -49,19 +49,18 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 - Global hide-values mode is live.
 
 ## Known Gaps (Open)
-1. Tax-plan guidance is still CGT-heavy and needs compensation-aware salary/bonus modeling (IT/NI/SL + pension lever what-ifs).
-2. UI polish debt: residual inline styles and mojibake/encoding artifacts.
-3. FX architecture still needs broader generalization/hardening beyond narrow paths.
-4. IA/navigation migration is partial (additive pages are live; full six-surface navigation rollout remains).
-5. Analytics Groups C/D depend on subsequent EPIC delivery.
+1. Scenario Lab multi-lot planning surface is not yet implemented.
+2. Analytics Groups C/D widgets are pending, plus graph-density/usability follow-ons.
+3. FX architecture still needs Phase B generalization/hardening and dedicated currency workflow UX.
+4. CGT reporting tax-year selection UX refinement remains pending.
 
 ## Roadmap (Ordered)
-1. `v2.4.1` ET20-EPIC-01B Tax-Plan compensation-aware refinement (high priority): model IT/NI/SL and pension-salary tradeoffs to answer "sell vs hold" at bonus/taper boundaries.
-2. `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL enhancements.
-3. `v2.6.0` ET20-EPIC-05 Scenario Lab.
-4. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
-5. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
-6. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening.
+1. `v2.6.0` ET20-EPIC-05 Scenario Lab.
+2. `v2.6.1` ET20-EPIC-08 Group C risk widgets.
+3. `v2.6.2` ET20-EPIC-08 Group D timeline widgets.
+4. `v2.6.3` ET20-EPIC-08 analytics UX follow-on (graph density + usability alignment).
+5. `v2.7.0` ET20-EPIC-06 Phase B reliability and multi-currency hardening (+ currency workflow UX).
+6. `v2.7.1` ET20-EPIC-09 CGT reporting QoL (tax-year selector refinement).
 
 ## Working Rules
 - Keep this file short and decision-focused.

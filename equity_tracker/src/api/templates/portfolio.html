@@ -107,6 +107,38 @@
 </div>
 {% endif %}
 
+<div id="portfolio-view-controls" class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Portfolio View Controls</h2>
+  </div>
+  <div class="form-grid">
+    <div class="form-field">
+      <label>Quick Filters</label>
+      <div class="inline-field-row">
+        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="all">All</button>
+        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="warnings">Warnings</button>
+        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="locked">Locked</button>
+        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="forfeiture">Forfeiture Risk</button>
+      </div>
+    </div>
+    <div class="form-field">
+      <label for="portfolio-sort">Sort Decision Rows</label>
+      <select id="portfolio-sort">
+        <option value="default">Default (Acquisition Date)</option>
+        <option value="net_sell">Net If Sold Today</option>
+        <option value="net_hold">Net If Held (Next Milestone)</option>
+        <option value="net_long">Net If Long-Term (5+ Years)</option>
+        <option value="signal">Decision Signal</option>
+      </select>
+    </div>
+    <div class="form-field form-field-inline">
+      <label for="portfolio-focus-mode">Focus Mode (compact decision-first view)</label>
+      <input id="portfolio-focus-mode" type="checkbox">
+    </div>
+  </div>
+  <p class="form-hint">Filter/sort/focus preferences are stored in this browser.</p>
+</div>
+
 {% if not summary.securities %}
 <div class="empty-state">
   <p>No securities yet.</p>
@@ -331,7 +363,18 @@
           {% for row in position_rows %}
           {% set has_forfeiture_risk = row.forfeiture_risk_days_remaining is not none %}
           {% set show_locked_until = row.sellability_status == "LOCKED" and not has_forfeiture_risk %}
-          <tr>
+          {% set warning_row = has_forfeiture_risk or row.has_tax_window or row.sellability_status == "LOCKED" %}
+          <tr
+            data-position-row="1"
+            data-order-index="{{ loop.index0 }}"
+            data-has-warning="{{ '1' if warning_row else '0' }}"
+            data-is-locked="{{ '1' if row.sellability_status == 'LOCKED' else '0' }}"
+            data-is-forfeiture="{{ '1' if has_forfeiture_risk else '0' }}"
+            data-net-sold="{{ row.net_cash_if_sold if row.net_cash_if_sold is not none else '' }}"
+            data-net-held="{{ row.next_milestone_net if row.next_milestone_net is not none else '' }}"
+            data-net-long="{{ row.long_term_net if row.long_term_net is not none else '' }}"
+            data-signal-rank="{% if row.decision_title == 'Profitable and sellable' %}2{% elif row.decision_title == 'Economic loss if sold' %}0{% else %}1{% endif %}"
+          >
             <td class="mono-small">{{ row.acquisition_date }}</td>
             <td class="position-scheme-cell">
               <span class="position-scheme">{{ row.scheme_display }}</span>
@@ -362,6 +405,31 @@
             <td class="decision-zone num">
               {% if row.net_cash_if_sold is not none %}
               &pound;{{ row.net_cash_if_sold | money }}
+              <details class="position-detail-toggle">
+                <summary>Formula</summary>
+                <div class="position-detail-content">
+                  {% if row.total_mv is not none %}
+                  <div class="position-detail-line">
+                    <span>Market value</span>
+                    <span>&pound;{{ row.total_mv | money }}</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Employment tax est.</span>
+                    <span>&pound;{{ (row.total_mv - row.net_cash_if_sold) | money }}</span>
+                  </div>
+                  {% endif %}
+                  <div class="position-detail-line">
+                    <span>True cost baseline</span>
+                    <span>&pound;{{ row.paid_true_cost | money }}</span>
+                  </div>
+                  {% if row.sell_now_forfeited_match_value > 0 %}
+                  <div class="position-detail-line">
+                    <span>Forfeited match (economic impact)</span>
+                    <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
+                  </div>
+                  {% endif %}
+                </div>
+              </details>
               {% elif row.sellability_status == "LOCKED" %}
               <span class="badge badge-neutral">Locked</span>
               {% else %}
@@ -380,6 +448,21 @@
             <td class="decision-zone num">
               {% if row.next_milestone_net is not none %}
               &pound;{{ row.next_milestone_net | money }}
+              <details class="position-detail-toggle">
+                <summary>Breakdown</summary>
+                <div class="position-detail-content">
+                  <div class="position-detail-line">
+                    <span>Net if held</span>
+                    <span>&pound;{{ row.next_milestone_net | money }}</span>
+                  </div>
+                  {% if row.next_milestone_gain is not none %}
+                  <div class="position-detail-line">
+                    <span>Gain if held</span>
+                    <span>{% if row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | money }}</span>
+                  </div>
+                  {% endif %}
+                </div>
+              </details>
               {% else %}
               <span class="muted">{{ row.next_milestone_reason or "Unavailable" }}</span>
               {% endif %}
@@ -394,6 +477,21 @@
             <td class="decision-zone num">
               {% if row.long_term_net is not none %}
               &pound;{{ row.long_term_net | money }}
+              <details class="position-detail-toggle">
+                <summary>Breakdown</summary>
+                <div class="position-detail-content">
+                  <div class="position-detail-line">
+                    <span>Net long-term</span>
+                    <span>&pound;{{ row.long_term_net | money }}</span>
+                  </div>
+                  {% if row.long_term_gain is not none %}
+                  <div class="position-detail-line">
+                    <span>Gain long-term</span>
+                    <span>{% if row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | money }}</span>
+                  </div>
+                  {% endif %}
+                </div>
+              </details>
               {% else %}
               <span class="muted">{{ row.long_term_reason or "Unavailable" }}</span>
               {% endif %}
@@ -449,7 +547,19 @@
   <div class="portfolio-position-mobile">
     {% for row in position_rows %}
     {% set has_forfeiture_risk = row.forfeiture_risk_days_remaining is not none %}
-    <article class="position-card">
+    {% set warning_row = has_forfeiture_risk or row.has_tax_window or row.sellability_status == "LOCKED" %}
+    <article
+      class="position-card"
+      data-position-row="1"
+      data-order-index="{{ loop.index0 }}"
+      data-has-warning="{{ '1' if warning_row else '0' }}"
+      data-is-locked="{{ '1' if row.sellability_status == 'LOCKED' else '0' }}"
+      data-is-forfeiture="{{ '1' if has_forfeiture_risk else '0' }}"
+      data-net-sold="{{ row.net_cash_if_sold if row.net_cash_if_sold is not none else '' }}"
+      data-net-held="{{ row.next_milestone_net if row.next_milestone_net is not none else '' }}"
+      data-net-long="{{ row.long_term_net if row.long_term_net is not none else '' }}"
+      data-signal-rank="{% if row.decision_title == 'Profitable and sellable' %}2{% elif row.decision_title == 'Economic loss if sold' %}0{% else %}1{% endif %}"
+    >
       <div class="position-card__header">
         <span class="decision-icon-cell" title="{{ row.decision_title }}">{{ row.decision_signal }}</span>
         <span class="mono-small">{{ row.acquisition_date }}</span>
@@ -545,12 +655,16 @@
   var countdown = INTERVAL;
   var inFlight = false;
   var SECURITY_VISIBILITY_KEY = "portfolio.security_visibility.v1";
+  var VIEW_PREFS_KEY = "portfolio.view_prefs.v1";
   var el = document.getElementById("refresh-countdown");
   var manualForm = document.getElementById("manual-refresh-form");
   var stateEl = document.getElementById("refresh-state");
   var nextDueEl = document.getElementById("refresh-next-due");
   var lastSuccessEl = document.getElementById("refresh-last-success");
   var lastErrorEl = document.getElementById("refresh-last-error");
+  var filterButtons = document.querySelectorAll(".portfolio-filter-btn[data-filter]");
+  var sortSelect = document.getElementById("portfolio-sort");
+  var focusToggle = document.getElementById("portfolio-focus-mode");
 
   function loadSecurityVisibilityState() {
     try {
@@ -594,6 +708,174 @@
         state[securityId] = !!detailsEl.open;
         saveSecurityVisibilityState(state);
       });
+    });
+  }
+
+  function defaultViewPrefs() {
+    return {
+      filter: "all",
+      sort: "default",
+      focusMode: false
+    };
+  }
+
+  function loadViewPrefs() {
+    var prefs = defaultViewPrefs();
+    try {
+      var raw = localStorage.getItem(VIEW_PREFS_KEY);
+      if (!raw) {
+        return prefs;
+      }
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return prefs;
+      }
+      if (typeof parsed.filter === "string") {
+        prefs.filter = parsed.filter;
+      }
+      if (typeof parsed.sort === "string") {
+        prefs.sort = parsed.sort;
+      }
+      prefs.focusMode = !!parsed.focusMode;
+      return prefs;
+    } catch (err) {
+      return prefs;
+    }
+  }
+
+  function saveViewPrefs(prefs) {
+    try {
+      localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
+    } catch (err) {
+      // Ignore storage write failures.
+    }
+  }
+
+  function parseSortMetric(el, sortKey) {
+    if (sortKey === "net_sell") {
+      return Number.parseFloat(el.dataset.netSold || "");
+    }
+    if (sortKey === "net_hold") {
+      return Number.parseFloat(el.dataset.netHeld || "");
+    }
+    if (sortKey === "net_long") {
+      return Number.parseFloat(el.dataset.netLong || "");
+    }
+    if (sortKey === "signal") {
+      return Number.parseFloat(el.dataset.signalRank || "");
+    }
+    return Number.parseFloat(el.dataset.orderIndex || "0");
+  }
+
+  function compareRows(a, b, sortKey) {
+    var orderA = Number.parseInt(a.dataset.orderIndex || "0", 10);
+    var orderB = Number.parseInt(b.dataset.orderIndex || "0", 10);
+    if (sortKey === "default") {
+      return orderA - orderB;
+    }
+    var aMetric = parseSortMetric(a, sortKey);
+    var bMetric = parseSortMetric(b, sortKey);
+    var aFinite = Number.isFinite(aMetric);
+    var bFinite = Number.isFinite(bMetric);
+    if (!aFinite && !bFinite) {
+      return orderA - orderB;
+    }
+    if (!aFinite) {
+      return 1;
+    }
+    if (!bFinite) {
+      return -1;
+    }
+    if (aMetric === bMetric) {
+      return orderA - orderB;
+    }
+    return bMetric - aMetric;
+  }
+
+  function rowMatchesFilter(el, filterKey) {
+    if (filterKey === "warnings") {
+      return el.dataset.hasWarning === "1";
+    }
+    if (filterKey === "locked") {
+      return el.dataset.isLocked === "1";
+    }
+    if (filterKey === "forfeiture") {
+      return el.dataset.isForfeiture === "1";
+    }
+    return true;
+  }
+
+  function applyFilterSortToCollection(items, parent, prefs) {
+    items.forEach(function (row) {
+      var visible = rowMatchesFilter(row, prefs.filter);
+      row.style.display = visible ? "" : "none";
+    });
+    items.sort(function (a, b) {
+      return compareRows(a, b, prefs.sort);
+    });
+    items.forEach(function (row) {
+      parent.appendChild(row);
+    });
+  }
+
+  function applyPortfolioViewPrefs(prefs) {
+    document.body.classList.toggle("portfolio-focus-mode", !!prefs.focusMode);
+
+    filterButtons.forEach(function (btn) {
+      if (btn.dataset.filter === prefs.filter) {
+        btn.classList.add("is-active");
+      } else {
+        btn.classList.remove("is-active");
+      }
+    });
+
+    var securityBodies = document.querySelectorAll(".security-lots-toggle__body");
+    securityBodies.forEach(function (body) {
+      var desktopParent = body.querySelector(".portfolio-position-table tbody");
+      if (desktopParent) {
+        var desktopRows = Array.from(
+          desktopParent.querySelectorAll("tr[data-position-row='1']")
+        );
+        applyFilterSortToCollection(desktopRows, desktopParent, prefs);
+      }
+
+      var mobileParent = body.querySelector(".portfolio-position-mobile");
+      if (mobileParent) {
+        var mobileRows = Array.from(
+          mobileParent.querySelectorAll(".position-card[data-position-row='1']")
+        );
+        applyFilterSortToCollection(mobileRows, mobileParent, prefs);
+      }
+    });
+  }
+
+  function wirePortfolioViewControls() {
+    if (!sortSelect || !focusToggle) {
+      return;
+    }
+    var prefs = loadViewPrefs();
+    sortSelect.value = prefs.sort;
+    focusToggle.checked = !!prefs.focusMode;
+    applyPortfolioViewPrefs(prefs);
+
+    filterButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        prefs.filter = btn.dataset.filter || "all";
+        saveViewPrefs(prefs);
+        applyPortfolioViewPrefs(prefs);
+      });
+    });
+
+    sortSelect.addEventListener("change", function () {
+      prefs.sort = sortSelect.value || "default";
+      saveViewPrefs(prefs);
+      applyPortfolioViewPrefs(prefs);
+    });
+
+    focusToggle.addEventListener("change", function () {
+      prefs.focusMode = !!focusToggle.checked;
+      saveViewPrefs(prefs);
+      applyPortfolioViewPrefs(prefs);
     });
   }
 
@@ -682,6 +964,7 @@
   }
 
   wireSecurityVisibilityPersistence();
+  wirePortfolioViewControls();
 
   if (manualForm) {
     manualForm.addEventListener("submit", function (ev) {

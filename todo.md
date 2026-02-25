@@ -1,60 +1,41 @@
 # TODO - Backlog Inbox
 
 ## Scope of This File
-- Keep only active backlog and recent release evidence.
+- Keep only active backlog and recent stage evidence.
 - Do not keep full historical release archives here (use git history and `PROJECT_REFERENCE.md`).
 
-## Release Sync Queue (Current)
-- [x] Finalize release-note/version sync for ET20-EPIC-04 Calendar stage (`v2.1.0` released, 2026-02-24).
-- [x] Finalize release-note/version sync for ET20-EPIC-06 Phase A Broker Currency stage (`v2.1.1` released, 2026-02-24).
-- [x] Confirm latest release regression evidence (`487 passed, 3 skipped`) for `v2.1.1`.
+## Backlog Hygiene Check (2026-02-25)
+- Stale outstanding items were reconciled against delivered work.
+- Duplicate user additions were mapped into the owning EPICs.
 
-## Active Backlog
-- [ ] HIGH PRIORITY (`ET20-EPIC-01B`): Refine Tax Plan for salary/bonus decisions with explicit IT/NI/SL + pension tradeoff modeling.
-  - key questions: "I'm at 99k income, should I sell 5k of stock?" and "I'm at 101k income, should I increase pension contributions?"
-  - planner output must include marginal impact before/after sale and before/after pension adjustment.
-- [x] CF-06 UI polish debt cleanup:
-  - remove remaining inline `style=` usage in templates
-  - remove remaining mojibake/encoding artifacts
-  - keep responsive/keyboard behavior intact.
-- [ ] ET20-EPIC-08 analytics expansion (Groups A+B completion including tax-position charts).
-- [ ] ET20-EPIC-01 tax-year realization planner.
-- [ ] ET20-EPIC-02 dividend net-return and tax-drag dashboard.
-- [ ] ET20-EPIC-07 portfolio/per-scheme QoL package:
-  - portfolio quick filters and scenario sorting
-  - formula breakdown hover/expand
-  - persistent table preferences + focus mode
-  - per-scheme visibility toggle.
-- [ ] ET20-EPIC-05 scenario lab for multi-lot decisions.
-- [ ] ET20-EPIC-08 Group C charts (risk stress + forfeiture-at-risk widgets).
-- [ ] ET20-EPIC-08 Group D charts (calendar timeline widgets).
-- [ ] ET20-EPIC-06 Phase B data reliability + multi-currency hardening.
+## Active Backlog (Outstanding Only)
+- [ ] `ET20-EPIC-05` Scenario Lab for multi-lot decisions.
+- [ ] `ET20-EPIC-08 Group C` risk stress + forfeiture-at-risk widgets.
+- [ ] `ET20-EPIC-08 Group D` calendar timeline widgets.
+- [ ] `ET20-EPIC-08 UX follow-on`: graph density/layout pass (smaller cards, multiple per row).
+- [ ] `ET20-EPIC-08 UX follow-on`: usability review of analytics charts against project decision-support goals.
+- [ ] `ET20-EPIC-06 Phase B` data reliability + generalized multi-currency hardening.
+- [ ] `ET20-EPIC-06 Phase B` currency workflow next to Add Lot (user addition mapped).
+- [ ] `ET20-EPIC-09` reporting QoL: refine CGT tax-year selection UX.
 
-## User Additions (Sorted + Mapped)
-- [ ] P1 (`ET20-EPIC-02`): Add Dividend workflow (input form/path to create dividend records), so dividend dashboard work has first-class data entry.
-- [ ] P2 (`ET20-EPIC-06 Phase B`): Add Currency workflow next to Add Lot (mirrors Add Lot UX, tailored to currency balances/holdings).
-- [ ] P3 low priority (reporting QoL, schedule after `ET20-EPIC-01`): Refine CGT view tax-year selection UX.
-- [ ] TIdy up graphs - small graphs, several to a row.  Not full screen graphs.
-- [ ] Assess usability of the graphs - Do they align with the stated purpose of this project?
----
+## Completed in Working Tree (No Longer Outstanding)
+- [x] `ET20-EPIC-01B` compensation-aware tax-plan refinement (IT/NI/SL + pension what-if).
+- [x] `ET20-EPIC-07` portfolio/per-scheme QoL package (quick filters/sort, formula expanders, persistent view prefs, focus mode, per-scheme visibility toggles).
+- [x] `ET20-EPIC-08` analytics expansion Groups A+B.
+- [x] `ET20-EPIC-01` tax-year realization planner.
+- [x] `ET20-EPIC-02` dividend dashboard + dividend workflow data entry.
+- [x] `CF-06` UI polish debt cleanup.
 
 ## Recent Completed Evidence
 
-### CF-06 UI Polish Debt Cleanup (`v2.1.2` working tree)
-- Baseline: `python -m pytest -q` -> `487 passed, 3 skipped`.
-- Targeted: `python -m pytest -q tests/test_api/test_ui_workflows.py` -> `78 passed`.
-- Full regression: `python -m pytest -q` -> `487 passed, 3 skipped`.
+### `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL (working tree)
+- Targeted: `python -m pytest -q tests/test_api/test_ui_workflows.py` -> `79 passed`.
+- Full regression: `python -m pytest -q` -> `515 passed, 3 skipped`.
 
-### ET20-EPIC-06 Phase A Broker Currency Tracking (Released `v2.1.1`)
-- Baseline: `python -m pytest -q` -> `480 passed, 3 skipped`.
-- Targeted: `python -m pytest -q tests/test_services/test_portfolio_service.py tests/test_api/test_portfolio_api.py tests/test_api/test_ui_workflows.py` -> `171 passed`.
-- Full regression: `python -m pytest -q` -> `487 passed, 3 skipped`.
+### `v2.4.1` ET20-EPIC-01B Compensation-Aware Tax Plan
+- Targeted: `python -m pytest -q tests/test_services/test_tax_plan_service.py tests/test_api/test_tax_plan_api.py` -> `10 passed`.
+- Full regression: `python -m pytest -q` -> `514 passed, 3 skipped`.
 
-### ET20-EPIC-04 Calendar Timeline (Released `v2.1.0`)
-- Baseline: `python -m pytest -q` -> `471 passed, 3 skipped`.
-- Targeted: `python -m pytest -q tests/test_services/test_calendar_service.py tests/test_api/test_calendar_api.py` -> `9 passed`.
-- Full regression: `python -m pytest -q` -> `480 passed, 3 skipped`.
-
-### ET20-EPIC-08 Phase 1 Analytics Foundation (`v2.0.3`)
-- Targeted: `python -m pytest -q tests/test_services/test_analytics_service.py tests/test_api/test_analytics_api.py` -> `9 passed`.
-- Full regression: `python -m pytest -q` -> `471 passed, 3 skipped`.
+### `v2.4.0` ET20-EPIC-02 Dividend Dashboard
+- Targeted: `python -m pytest -q tests/test_tax_engine/test_dividend_tax.py tests/test_services/test_dividend_service.py tests/test_api/test_dividends_api.py tests/test_db/test_repositories.py` -> `48 passed`.
+- Full regression: `python -m pytest -q` -> `511 passed, 3 skipped`.

@@ -16,8 +16,28 @@
   <p>No scheme activity yet.</p>
 </div>
 {% else %}
-{% for sr in scheme_reports %}
 <div class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Scheme Visibility</h2>
+  </div>
+  <div class="inline-field-row">
+    {% for sr in scheme_reports %}
+    <label class="badge">
+      <input
+        type="checkbox"
+        class="scheme-visibility-toggle"
+        data-scheme-type="{{ sr.scheme_type }}"
+        checked
+      >
+      {{ sr.display_name }}
+    </label>
+    {% endfor %}
+  </div>
+  <p class="form-hint">Selection persists in this browser.</p>
+</div>
+
+{% for sr in scheme_reports %}
+<div class="card card-spaced" data-scheme-card="{{ sr.scheme_type }}">
   <div class="card__header">
     <div class="card__title">{{ sr.display_name }}</div>
     <div class="security-header__actions">
@@ -150,4 +170,59 @@
 </div>
 {% endfor %}
 {% endif %}
+
+<script>
+(function () {
+  var key = "per_scheme.visibility.v1";
+  var toggles = document.querySelectorAll(".scheme-visibility-toggle[data-scheme-type]");
+  if (!toggles.length) {
+    return;
+  }
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) {
+        return {};
+      }
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveState(state) {
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch (err) {
+      // Ignore storage write failures.
+    }
+  }
+
+  function applyState(state) {
+    toggles.forEach(function (toggle) {
+      var schemeType = toggle.dataset.schemeType;
+      var visible = !Object.prototype.hasOwnProperty.call(state, schemeType) || !!state[schemeType];
+      toggle.checked = visible;
+      var card = document.querySelector("[data-scheme-card='" + schemeType + "']");
+      if (card) {
+        card.style.display = visible ? "" : "none";
+      }
+    });
+  }
+
+  var state = loadState();
+  applyState(state);
+
+  toggles.forEach(function (toggle) {
+    toggle.addEventListener("change", function () {
+      var schemeType = toggle.dataset.schemeType;
+      state[schemeType] = !!toggle.checked;
+      saveState(state);
+      applyState(state);
+    });
+  });
+})();
+</script>
 {% endblock %}
