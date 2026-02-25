@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from src.app_context import AppContext
 from src.db.repository.prices import PriceRepository
@@ -46,13 +46,22 @@ def _upsert_price(
     source: str,
 ) -> None:
     with AppContext.write_session() as sess:
-        PriceRepository(sess).upsert(
+        row = PriceRepository(sess).upsert(
             security_id=security_id,
             price_date=price_date,
             close_price_original_ccy=original_ccy,
             close_price_gbp=gbp,
             currency=currency,
             source=source,
+        )
+        row.fetched_at = datetime(
+            price_date.year,
+            price_date.month,
+            price_date.day,
+            12,
+            0,
+            0,
+            tzinfo=timezone.utc,
         )
 
 

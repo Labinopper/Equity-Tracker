@@ -7,6 +7,7 @@ from src.app_context import AppContext
 from src.db.repository.prices import PriceRepository
 from src.services.portfolio_service import PortfolioService
 from src.services.tax_plan_service import TaxPlanService
+from src.settings import AppSettings
 
 
 def _add_security(ticker: str):
@@ -127,3 +128,96 @@ def test_tax_plan_summary_marks_locked_and_isa_rows_as_unavailable(app_context):
 
     assert rows["TPISA"]["projection_available"] is False
     assert "tax-sheltered" in rows["TPISA"]["projection_unavailable_reason"].lower()
+
+
+def test_tax_plan_compensation_rows_include_sell_hold_and_pension_variants(app_context):
+    sec = _add_security("TPCOMP")
+    _add_price(sec.id, date(2026, 2, 24), "20.00")
+    PortfolioService.add_lot(
+        security_id=sec.id,
+        scheme_type="BROKERAGE",
+        acquisition_date=date(2025, 2, 1),
+        quantity=Decimal("1000"),
+        acquisition_price_gbp=Decimal("10.00"),
+        true_cost_per_share_gbp=Decimal("10.00"),
+    )
+
+    settings = AppSettings()
+    settings.default_student_loan_plan = 2
+
+    payload = TaxPlanService.get_summary(
+        settings=settings,
+        as_of=date(2026, 2, 24),
+        compensation_gross_income_gbp=Decimal("99000"),
+        compensation_bonus_gbp=Decimal("0"),
+        compensation_sell_amount_gbp=Decimal("5000"),
+        compensation_additional_pension_sacrifice_gbp=Decimal("1000"),
+    )
+
+    comp = payload["compensation_plan"]
+    rows = {row["scenario_id"]: row for row in comp["rows"]}
+    assert set(rows) == {
+        "hold_baseline",
+        "sell_baseline",
+        "sell_with_extra_pension",
+    }
+    assert comp["sale_assumption"]["method"] == "portfolio-weighted-cost-ratio"
+    assert comp["sale_assumption"]["estimated_gain_ratio_pct"] == "50.00"
+
+    hold_net = Decimal(rows["hold_baseline"]["net_decision_cash_gbp"])
+    sell_net = Decimal(rows["sell_baseline"]["net_decision_cash_gbp"])
+    assert sell_net > hold_net
+
+    sell_plus_pension = rows["sell_with_extra_pension"]
+    assert (
+        Decimal(sell_plus_pension["pension_tax_saving_breakdown_gbp"]["total_gbp"])
+        > Decimal("0")
+    )
+    assert (
+        Decimal(comp["comparison"]["ani_reduction_from_extra_pension_gbp"])
+        == Decimal("1000.00")
+    )
+
+
+def test_tax_plan_compensation_highlights_101k_taper_and_pension_escape(app_context):
+    sec = _add_security("TPANI")
+    _add_price(sec.id, date(2026, 2, 24), "18.00")
+    PortfolioService.add_lot(
+        security_id=sec.id,
+        scheme_type="BROKERAGE",
+        acquisition_date=date(2025, 2, 1),
+        quantity=Decimal("800"),
+        acquisition_price_gbp=Decimal("10.00"),
+        true_cost_per_share_gbp=Decimal("10.00"),
+    )
+
+    settings = AppSettings()
+
+    payload = TaxPlanService.get_summary(
+        settings=settings,
+        as_of=date(2026, 2, 24),
+        compensation_gross_income_gbp=Decimal("101000"),
+        compensation_bonus_gbp=Decimal("0"),
+        compensation_sell_amount_gbp=Decimal("5000"),
+        compensation_additional_pension_sacrifice_gbp=Decimal("3000"),
+    )
+
+    rows = {
+        row["scenario_id"]: row
+        for row in payload["compensation_plan"]["rows"]
+    }
+    sell = rows["sell_baseline"]
+    sell_with_pension = rows["sell_with_extra_pension"]
+
+    assert sell["in_pa_taper_zone_after_bonus"] is True
+    assert sell["marginal_rates_pct"]["income_tax"] == "60.00"
+    assert sell_with_pension["in_pa_taper_zone_after_bonus"] is False
+    assert sell_with_pension["marginal_rates_pct"]["income_tax"] == "40.00"
+    assert (
+        Decimal(sell_with_pension["personal_allowance_after_bonus_gbp"])
+        > Decimal(sell["personal_allowance_after_bonus_gbp"])
+    )
+    assert (
+        Decimal(payload["compensation_plan"]["comparison"]["ani_reduction_from_extra_pension_gbp"])
+        == Decimal("3000.00")
+    )

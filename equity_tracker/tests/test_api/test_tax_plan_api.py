@@ -84,6 +84,46 @@ def test_api_tax_plan_returns_lot_projection_rows_when_data_exists(client):
     assert rows[0]["projected_gain_gbp"] == "40.00"
 
 
+def test_api_tax_plan_compensation_query_params_and_ui_sections(client):
+    sec_id = _add_security(client, "TPCMP")
+    _add_lot(client, sec_id, quantity="1000")
+    _add_price(sec_id, date(2026, 2, 24), "20.00")
+
+    db_path = _state.get_db_path()
+    assert db_path is not None
+    settings = AppSettings.load(db_path)
+    settings.default_student_loan_plan = 2
+    settings.save()
+
+    params = {
+        "gross_income_gbp": "101000",
+        "bonus_gbp": "0",
+        "sell_amount_gbp": "5000",
+        "additional_pension_sacrifice_gbp": "3000",
+    }
+    resp = client.get("/api/tax-plan/summary", params=params)
+    assert resp.status_code == 200
+    payload = resp.json()
+    comp = payload["compensation_plan"]
+
+    assert comp["inputs"]["gross_income_gbp"] == "101000.00"
+    assert comp["inputs"]["sell_amount_gbp"] == "5000.00"
+    assert len(comp["rows"]) == 3
+
+    rows = {row["scenario_id"]: row for row in comp["rows"]}
+    assert rows["sell_baseline"]["in_pa_taper_zone_after_bonus"] is True
+    assert rows["sell_baseline"]["marginal_rates_pct"]["income_tax"] == "60.00"
+    assert rows["sell_with_extra_pension"]["in_pa_taper_zone_after_bonus"] is False
+    assert rows["sell_with_extra_pension"]["marginal_rates_pct"]["income_tax"] == "40.00"
+    assert Decimal(comp["comparison"]["ani_reduction_from_extra_pension_gbp"]) == Decimal("3000.00")
+
+    page = client.get("/tax-plan", params=params)
+    assert page.status_code == 200
+    assert "Compensation What-If (IT / NI / SF + CGT)" in page.text
+    assert "Sale Gain Assumption" in page.text
+    assert "Sell + increase pension first" in page.text
+
+
 def test_api_tax_plan_respects_hide_values_setting(client):
     db_path = _state.get_db_path()
     assert db_path is not None

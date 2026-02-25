@@ -4,7 +4,9 @@ Tax planner routes (UI + JSON API).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 
 from ...app_context import AppContext
@@ -16,6 +18,9 @@ from ..dependencies import db_required
 
 router = APIRouter(tags=["tax-plan"])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
+_DEFAULT_SELL_AMOUNT = Decimal("5000")
+_DEFAULT_BONUS_AMOUNT = Decimal("0")
+_DEFAULT_EXTRA_PENSION = Decimal("0")
 
 
 def _load_settings() -> AppSettings | None:
@@ -34,18 +39,42 @@ def _locked_response(request: Request) -> HTMLResponse:
 
 
 @router.get("/api/tax-plan/summary")
-async def api_tax_plan_summary(_: None = Depends(db_required)) -> dict:
+async def api_tax_plan_summary(
+    gross_income_gbp: Decimal | None = Query(None, ge=0),
+    bonus_gbp: Decimal = Query(_DEFAULT_BONUS_AMOUNT, ge=0),
+    sell_amount_gbp: Decimal = Query(_DEFAULT_SELL_AMOUNT, ge=0),
+    additional_pension_sacrifice_gbp: Decimal = Query(_DEFAULT_EXTRA_PENSION, ge=0),
+    _: None = Depends(db_required),
+) -> dict:
     settings = _load_settings()
-    return TaxPlanService.get_summary(settings=settings)
+    return TaxPlanService.get_summary(
+        settings=settings,
+        compensation_gross_income_gbp=gross_income_gbp,
+        compensation_bonus_gbp=bonus_gbp,
+        compensation_sell_amount_gbp=sell_amount_gbp,
+        compensation_additional_pension_sacrifice_gbp=additional_pension_sacrifice_gbp,
+    )
 
 
 @router.get("/tax-plan", response_class=HTMLResponse, include_in_schema=False)
-async def tax_plan_page(request: Request) -> HTMLResponse:
+async def tax_plan_page(
+    request: Request,
+    gross_income_gbp: Decimal | None = Query(None, ge=0),
+    bonus_gbp: Decimal = Query(_DEFAULT_BONUS_AMOUNT, ge=0),
+    sell_amount_gbp: Decimal = Query(_DEFAULT_SELL_AMOUNT, ge=0),
+    additional_pension_sacrifice_gbp: Decimal = Query(_DEFAULT_EXTRA_PENSION, ge=0),
+) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
 
     settings = _load_settings()
-    payload = TaxPlanService.get_summary(settings=settings)
+    payload = TaxPlanService.get_summary(
+        settings=settings,
+        compensation_gross_income_gbp=gross_income_gbp,
+        compensation_bonus_gbp=bonus_gbp,
+        compensation_sell_amount_gbp=sell_amount_gbp,
+        compensation_additional_pension_sacrifice_gbp=additional_pension_sacrifice_gbp,
+    )
     return templates.TemplateResponse(
         request,
         "tax_plan.html",

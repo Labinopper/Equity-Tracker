@@ -40,6 +40,182 @@
   </div>
 </div>
 
+{% set comp = tax_plan.compensation_plan %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Compensation What-If (IT / NI / SF + CGT)</h2>
+  </div>
+  <form method="get" action="/tax-plan" class="inline-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="gross_income_gbp">Gross Employment Income (&pound;)</label>
+        <input
+          id="gross_income_gbp"
+          name="gross_income_gbp"
+          type="text"
+          inputmode="decimal"
+          value="{{ comp.inputs.gross_income_gbp }}"
+        >
+      </div>
+      <div class="form-field">
+        <label for="bonus_gbp">Planned Bonus (&pound;)</label>
+        <input
+          id="bonus_gbp"
+          name="bonus_gbp"
+          type="text"
+          inputmode="decimal"
+          value="{{ comp.inputs.bonus_gbp }}"
+        >
+      </div>
+      <div class="form-field">
+        <label for="sell_amount_gbp">Planned Stock Sale Amount (&pound;)</label>
+        <input
+          id="sell_amount_gbp"
+          name="sell_amount_gbp"
+          type="text"
+          inputmode="decimal"
+          value="{{ comp.inputs.sell_amount_gbp }}"
+        >
+      </div>
+      <div class="form-field">
+        <label for="additional_pension_sacrifice_gbp">Additional Pension Sacrifice (&pound;)</label>
+        <input
+          id="additional_pension_sacrifice_gbp"
+          name="additional_pension_sacrifice_gbp"
+          type="text"
+          inputmode="decimal"
+          value="{{ comp.inputs.additional_pension_sacrifice_gbp }}"
+        >
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Run What-If</button>
+      <a href="/tax-plan" class="btn btn-secondary">Reset</a>
+    </div>
+  </form>
+  <p class="form-hint">
+    Existing pension sacrifice in settings: &pound;{{ comp.inputs.existing_pension_sacrifice_gbp|money }}.
+    Student loan plan: {{ comp.inputs.student_loan_plan if comp.inputs.student_loan_plan is not none else 'None' }}.
+  </p>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <span class="stat__label">Sell vs Hold Net Cash Delta</span>
+    <span class="stat__value">&pound;{{ comp.comparison.sell_vs_hold_net_cash_delta_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Sell + Pension vs Sell Delta</span>
+    <span class="stat__value">&pound;{{ comp.comparison.sell_with_pension_vs_sell_delta_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">ANI Reduction from Extra Pension</span>
+    <span class="stat__value">&pound;{{ comp.comparison.ani_reduction_from_extra_pension_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Combined Tax Saved by Extra Pension</span>
+    <span class="stat__value">&pound;{{ comp.comparison.combined_tax_saved_by_extra_pension_gbp|money }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Sale Gain Assumption</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Method</th>
+          <td>{{ comp.sale_assumption.method }}</td>
+        </tr>
+        <tr>
+          <th>Sellable Taxable Market Pool</th>
+          <td>&pound;{{ comp.sale_assumption.sellable_market_value_pool_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Estimated Sale Cost Basis</th>
+          <td>&pound;{{ comp.sale_assumption.estimated_cost_basis_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Estimated Sale Gain</th>
+          <td>&pound;{{ comp.sale_assumption.estimated_gain_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Estimated Gain Ratio</th>
+          <td>{{ comp.sale_assumption.estimated_gain_ratio_pct }}%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Compensation Scenarios</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scenario</th>
+          <th class="num">ANI After Bonus</th>
+          <th class="num">PA After Bonus</th>
+          <th class="num">Marginal IT</th>
+          <th class="num">Marginal NI</th>
+          <th class="num">Marginal SF</th>
+          <th class="num">Bonus Tax (IT+NI+SF)</th>
+          <th class="num">Incremental CGT (Sale)</th>
+          <th class="num">Sale Net Cash</th>
+          <th class="num">Pension Net Cash Cost</th>
+          <th class="num">Net Decision Cash</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in comp.rows %}
+        <tr>
+          <td>
+            {{ row.label }}
+            {% if row.in_pa_taper_zone_after_bonus %}
+            <div class="muted warning-text">PA taper zone</div>
+            {% endif %}
+          </td>
+          <td class="num">&pound;{{ row.adjusted_net_income_after_bonus_gbp|money }}</td>
+          <td class="num">&pound;{{ row.personal_allowance_after_bonus_gbp|money }}</td>
+          <td class="num">{{ row.marginal_rates_pct.income_tax }}%</td>
+          <td class="num">{{ row.marginal_rates_pct.national_insurance }}%</td>
+          <td class="num">{{ row.marginal_rates_pct.student_finance }}%</td>
+          <td class="num">&pound;{{ row.bonus_tax_breakdown_gbp.total_gbp|money }}</td>
+          <td class="num">&pound;{{ row.projected_incremental_cgt_from_sale_gbp|money }}</td>
+          <td class="num">&pound;{{ row.net_cash_from_sale_after_cgt_gbp|money }}</td>
+          <td class="num">&pound;{{ row.pension_net_cash_cost_gbp|money }}</td>
+          <td class="num">&pound;{{ row.net_decision_cash_gbp|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if comp.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Compensation Notes</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in comp.notes %}
+        <tr>
+          <td>{{ note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Assumptions</h2>
