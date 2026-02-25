@@ -1,6 +1,6 @@
 # Equity Tracker - Project Reference
 
-Last updated: 2026-02-25
+Last updated: 2026-02-25 (refinement pass audit + terminology reference added)
 
 This is the technical companion to `PROJECT_STATUS.md`.
 Current released version: `v2.1.1`.
@@ -79,6 +79,28 @@ Portfolio routes include refresh diagnostics and daily-change freshness context 
 ## 7) Current Technical Debt
 1. IA/navigation rollout is still partial.
 2. Post-`v2.1.1` working-tree deliveries require release-note/version sync.
+3. **BUG-A01:** `analytics.html` line 1462 — JS syntax error (`});` → `}`) breaks all analytics charts and widget controls. Fix in v2.8.0.
+4. Refinement pass (v2.8.1–v2.8.5): 16 label/clarity items across templates. See `v2_implementation_plan.md` Refinement Pass section. All template-only.
+
+## 10) Label and Terminology Reference (Canonical Meanings)
+
+Definitions agreed during refinement audit (2026-02-25):
+
+| Term | Definition |
+|---|---|
+| **True Cost** | What you effectively paid after accounting for tax events at acquisition (income tax at vest for RSU; employer subsidy for ESPP+; purchase price for ESPP/BROKERAGE/ISA). Used in Economic Gain. |
+| **Cost Basis** | CGT allowable cost — the HMRC-recognised cost base for calculating capital gain on disposal. |
+| **Allowable Cost** | Preferred HMRC term for Cost Basis in CGT filing context. |
+| **Economic Gain** | Proceeds minus True Cost. Shows true investment return. May differ from CGT gain. |
+| **CGT Gain** | Proceeds minus Cost Basis. The gain reported for tax self-assessment. |
+| **Employment Tax** | Income Tax (IT) + National Insurance (NI) + Student Loan (SL) on scheme-eligible disposals (RSU, ESPP+). Abbreviated "IT + NI + SL". |
+| **AEA** | Annual Exempt Amount — the CGT tax-free threshold for the year. |
+| **ANI** | Adjusted Net Income — gross employment income minus pension sacrifice plus other income. Determines Personal Allowance taper above £100k. |
+| **SL** | Student Loan repayment (canonical abbreviation for this app). Not "SF" (Student Finance). |
+| **Est. Net Liquidity (Sellable)** | Sum of Net If Sold Today for **sellable rows only**. Locked and forfeiture-restricted lots are excluded. Used on Portfolio page. |
+| **Hypothetical Full Liquidation** | Gross market value minus estimated employment tax across **all lots** (including locked). Used on Net Value page. Not directly comparable to Est. Net Liquidity. |
+| **Blocked/Restricted Value** | Market value of locked lots (e.g. pre-vest RSU) + ESPP+ matched-share forfeiture-at-risk value. |
+| **Forfeiture Window** | The period after ESPP+ lot acquisition during which selling the paired employee shares forfeits the matched shares. Badge "(Xd left)" means X days remaining until the window closes (safe to sell). |
 
 ## 8) Test Baseline Snapshot
 - Latest release-synced full regression (`v2.1.1`): `python -m pytest -q` -> `487 passed, 3 skipped`.

@@ -522,6 +522,218 @@ Widget on/off state is stored in `localStorage` under key `analytics.widget_visi
 | `v2.6.2` | ET20-EPIC-08 Group D charts (Timeline/calendar) | Enabled once EPIC-04 calendar service is live |
 | `v2.7.0` | ET20-EPIC-06 Phase B Data Reliability + Multi-Currency hardening | Platform hardening and generalized expansion after urgent Phase A delivery |
 | `v2.7.1` | ET20-EPIC-09 CGT reporting QoL | Tax-year selector + prev/next navigation refinement for CGT/economic-gain reports |
+| `v2.8.0` | BUG-A01 Analytics JS syntax error | Critical: one-character fix restoring all charts and settings on Analytics page |
+| `v2.8.1–v2.8.5` | Refinement pass (labels, clarity, cross-screen consistency) | See Refinement Pass section below — template-only changes, no service logic |
+
+---
+
+## Refinement Pass (v2.8.x)
+
+Discovery date: 2026-02-25. Priority: refinements over new features per project directive.
+
+This section captures all clarity, consistency, and workflow issues identified in the full codebase audit after v2.7.1 delivery. Items are grouped: **R** = refinement/fix, **E** = existing-functionality reuse, **N** = new feature (lower priority, must serve project goals).
+
+### Guiding principle
+Assume a user with basic financial knowledge — not a tax accountant. Every label must be self-explanatory. Values must not silently differ across screens without explanation. Workflows must be self-contained.
+
+---
+
+### Clarity and Label Issues
+
+#### R01 — "SF" vs "SL" inconsistency for Student Finance/Loan
+**Files:** `tax_plan.html` (headers: "Marginal SF", "Bonus Tax (IT+NI+SF)", "SF Delta"), `simulate.html` ("IT + NIC + SL"), `net_value.html` ("IT + NIC + Student Loan")
+**Issue:** Three different abbreviations for the same concept across three screens. "SF" on Tax Plan is never defined.
+**Fix:** Standardise to "SL" everywhere in abbreviation contexts; update Tax Plan column headers from "SF" to "SL". First occurrence on any screen should expand to "SL (Student Loan)".
+
+#### R02 — "ANI" acronym undefined in Tax Plan
+**Files:** `tax_plan.html` lines 121, 172 ("ANI Reduction from Extra Pension", "ANI After Bonus")
+**Issue:** ANI (Adjusted Net Income) is an important HMRC concept but is never defined on the page. A user who doesn't know it will not understand what the column is showing.
+**Fix:** Expand column headers to "ANI (Adj. Net Income) After Bonus" and "ANI Reduction from Extra Pension". Add a one-line note in the Assumptions card: "ANI = Gross Income – Pension Sacrifice + Other Income. Affects Personal Allowance taper above £100k."
+
+#### R03 — "Forfeiture Risk (Xd)" badge wording is ambiguous
+**Files:** `portfolio.html` lines 385, 582; `net_value.html` line 232
+**Issue:** "Forfeiture Risk (30d)" reads as "you will forfeit in 30 days". The actual meaning is "you must wait 30 more days to sell safely". The two are opposites.
+**Fix:** Change to "Forfeiture Window (30d left)" on the badge. Update the Simulate forfeiture warning table's "Days Remaining" column header to "Days Until Safe to Sell" for the same reason.
+
+#### R04 — Income-zero warning absent on Portfolio page
+**Files:** `net_value.html` line 62 (has warning), `portfolio.html` (missing), `simulate.html` line 198 (contextual)
+**Issue:** Net Value shows an explicit warning when gross income and other income are both zero ("Employment-tax estimates may understate your actual position"). Portfolio shows the employment tax figure without any warning. A user who only visits Portfolio may act on a zero-income estimate without knowing it is wrong.
+**Fix:** Add the same income-zero warning to `portfolio.html` immediately after the stats bar, matching the pattern on `net_value.html` line 62–67.
+
+#### R05 — "Est. Net Liquidity (Sellable)" vs "Est. Net Liquidation" — similar labels, different scopes
+**Files:** `portfolio.html` line 65 vs `net_value.html` line 48
+**Issue:**
+- Portfolio: "Est. Net Liquidity (Sellable)" = sum of `net_cash_if_sold` for **sellable rows only** (locked rows excluded).
+- Net Value: "Est. Net Liquidation" = gross market value minus employment tax estimate for **all lots** (including locked and forfeiture-restricted).
+The labels are very similar but the numbers will always differ. Users navigating between both pages will be confused.
+**Fix:** Rename Net Value's top-level stat to "Hypothetical Full Liquidation (All Lots, incl. locked)" and add a stat-caption: "Gross value minus employment-tax estimate. Includes locked and forfeiture-restricted shares." Keep Portfolio label unchanged; its note already says "sellable only".
+
+#### R06 — Tax Plan delta stat labels lack directional context
+**Files:** `tax_plan.html` lines 105–127
+**Issue:** Stats "Sell vs Hold Net Cash Delta", "Sell + Pension vs Sell Delta", and "Sell Next + Pension vs This + Pension" do not indicate what a positive or negative value means. Users cannot tell whether a positive number is good or bad.
+**Fix:** Add a directional note to each delta stat label. Examples:
+- "Sell vs Hold Net Cash Delta (+ = sell better)"
+- "Sell + Pension vs Sell Delta (+ = adding pension saves net cash)"
+- "Sell Next Year vs This Year (+ = waiting saves net cash)"
+Alternatively, add a shared note beneath the stats bar: "Positive delta = first scenario gives more net cash."
+
+#### R07 — Tax Plan card title uses undefined "SF"
+**Files:** `tax_plan.html` line 47
+**Issue:** Card title "Compensation What-If (IT / NI / SF + CGT)" uses "SF" (Student Finance) without definition.
+**Fix:** Change to "Compensation What-If (IT / NI / SL + CGT)". Consistent with R01 fix.
+
+#### R08 — Simulate employment tax dash: "not applicable" vs "settings required" indistinguishable
+**Files:** `simulate.html` lines 123–128, 196–200
+**Issue:** When `result.sip_tax_estimates` is empty, Employment Tax and Net Proceeds show `—`. This covers three distinct states:
+1. Scheme genuinely has no employment tax (Brokerage, ISA): correct to show `—` but should say "N/A".
+2. Income settings not configured: estimate cannot be computed; should prompt user to configure settings.
+3. Scheme has employment tax (RSU/ESPP/ESPP+) but no settings: silent — the user doesn't know whether the dash is "zero tax" or "can't compute".
+**Fix:** Use the scheme type to distinguish. If no employment-tax-eligible schemes were allocated (all Brokerage/ISA), show "N/A (not applicable to these scheme types)". If eligible schemes are present but estimates are missing, show "Settings required — configure income in Settings" as a badge/link instead of `—`.
+
+#### R09 — Net Value FX banner missing staleness threshold and stale indicator
+**Files:** `net_value.html` lines 21–27 vs `portfolio.html` lines 97–108
+**Issue:** Portfolio's FX banner includes: stale/non-stale CSS class, "Warning:" prefix when stale, and "(stale >{{ fx_stale_after_minutes }}m)" annotation. Net Value's FX banner shows the conversion basis and date but does not apply the staleness check or threshold annotation.
+**Fix:** Align `net_value.html` FX banner with `portfolio.html` pattern: apply `alert-warning` when `summary.fx_is_stale`, add "Warning:" prefix, and append the "(stale >{{ fx_stale_after_minutes }}m)" text when stale. This also requires passing `fx_stale_after_minutes` in the net-value route context (check if already passed).
+
+#### R10 — "Gain If Sold Today" (Portfolio) vs "Economic Gain" (Simulate) — same concept, different labels
+**Files:** `portfolio.html` line 353 (column "Gain If Sold Today"), `simulate.html` line 117 (stat "Economic Gain")
+**Issue:** Both show economic gain (proceeds minus true cost). The Portfolio column additionally adjusts for ESPP+ forfeiture impact. Labels differ, making it harder to cross-reference results.
+**Fix:** Rename Simulate's "Economic Gain" stat to "Economic Gain (vs True Cost)" to signal what it is relative to. Add a subtitle under the stat: "Proceeds minus true cost at acquisition." This aligns the label with the project goal language "Gain vs True Cost".
+
+#### R11 — Per Scheme "Unavailable" market value has no context
+**Files:** `per_scheme.html` line 78
+**Issue:** Shows "Unavailable" for market value with no reason. Could be no price fetched yet, or price is stale.
+**Fix:** Change to "No price data" and add a micro-note identical to Portfolio: "No live price available."
+
+#### R12 — Economic Gain intro incorrectly scopes relevance to SIP only
+**Files:** `economic_gain.html` lines 7–9
+**Issue:** "Most relevant for SIP Partnership shares purchased from gross salary." But true cost is equally important for RSU (income tax at vest reduces effective cost), ESPP+ (employer subsidy), and any scheme where acquisition-time tax creates a gap between CGT cost basis and actual out-of-pocket cost.
+**Fix:** Change to: "Uses true cost per share instead of CGT cost basis — most relevant when acquisition-time tax (e.g. income tax at vest, ESPP discounts) creates a gap between what you paid and the CGT cost basis."
+
+#### R13 — Settings page intro undersells its impact
+**Files:** `settings.html` lines 6–8
+**Issue:** "Income and tax year defaults used by disposal simulation and reporting." Omits Portfolio employment tax estimates, Net Value, and Tax Plan as places where these settings directly affect displayed numbers.
+**Fix:** Expand to: "Income and tax settings used for employment-tax estimates across Portfolio, Net Value, Simulate, and Tax Plan. Staleness thresholds control when price and FX data triggers a warning badge."
+
+#### R14 — "Blocked/Restricted Value" stat has no composition hint
+**Files:** `portfolio.html` lines 73–79
+**Issue:** The stat aggregates two distinct components — (a) market value of locked lots (e.g. pre-vest RSU) and (b) ESPP+ matched-share forfeiture-at-risk value — with no visible breakdown or tooltip.
+**Fix:** Add a `stat-caption` or `form-hint` beneath the value: "Includes locked lots (e.g. pre-vest RSU) and ESPP+ matched shares at forfeiture risk." Link to Net Value for the per-lot detail breakdown.
+
+#### R15 — Portfolio P&L labels do not say "Unrealised"
+**Files:** `portfolio.html` ("P&L (Cost Basis)", "P&L (Econ)"), `simulate.html` ("Realised Gain (Cost Basis)", "Economic Gain")
+**Issue:** Portfolio shows P&L labels for unrealised positions without the word "Unrealised". Simulate shows the same basis labels for realised disposals with "Realised" prefix. The distinction is important — one is what you could get, the other is what you locked in.
+**Fix:** Prefix Portfolio labels with "Unrealised": "Unrealised P&L (Cost Basis)" and "Unrealised P&L (Economic)". This makes the distinction explicit without changing the calculation.
+
+#### R16 — CGT Report "Cost Basis" column is a derived value, not labeled as allowable cost
+**Files:** `cgt_report.html` line 111: `{% set cost = line.total_proceeds_gbp - line.total_gain_gbp %}`
+**Issue:** The column is labeled "Cost Basis" but is computed as Proceeds − Gain. The correct HMRC term for this is "Allowable Cost" (or "Allowable Expenditure"). Using "Cost Basis" here also creates confusion with the CGT cost basis shown in other contexts.
+**Fix:** Rename column header from "Cost Basis" to "Allowable Cost" to align with HMRC self-assessment terminology.
+
+---
+
+### Existing Functionality Reuse Opportunities
+
+#### E01 — Income-zero warning pattern: replicate on Portfolio
+Already described as R04. Pattern from `net_value.html` lines 62–67 to be reused in `portfolio.html`.
+
+#### E02 — FX staleness banner pattern: replicate on Net Value
+Already described as R09. Pattern from `portfolio.html` lines 97–108 to be reused in `net_value.html`.
+
+#### E03 — Simulate's "available quantity" hint: surface sellable pool on Tax Plan
+**Files:** `simulate.html` (availableQtyForSelection JS), `tax_plan.html` (Sale Gain Assumption card)
+**Issue:** Tax Plan already computes "Sellable Taxable Market Pool" in the Sale Gain Assumption card. But the "Planned Stock Sale Amount" form field has no hint of how much is actually sellable.
+**Fix:** Add a form-hint beneath the "Planned Stock Sale Amount" field: "Sellable taxable pool: £{{ comp.sale_assumption.sellable_market_value_pool_gbp|money }}" (already available in context).
+
+#### E04 — Simulate forfeiture warning: add Calendar link
+**Files:** `simulate.html` forfeiture warning banner
+**Issue:** Simulate shows the forfeiture warning table but doesn't cross-link to Calendar for the timeline context.
+**Fix:** Add a "View in Calendar →" link in the forfeiture warning footer row.
+
+#### E05 — CGT Report: cross-link to Economic Gain Report
+**Files:** `cgt_report.html`
+**Issue:** No link from CGT Report to the Economic Gain Report. Users comparing CGT basis to economic basis must navigate manually.
+**Fix:** Add a note after the disposal table: "For true P&L comparison (accounting for acquisition-time tax), see the Economic Gain Report →" with a hyperlink.
+
+#### E06 — Economic Gain Report: cross-link to CGT Report
+**Files:** `economic_gain.html`
+**Issue:** Symmetric to E05. Economic Gain doesn't link to CGT Report.
+**Fix:** Add a note: "For CGT filing purposes, see the CGT Report →" with a hyperlink. This is especially important because the numbers will differ and users need to know why.
+
+#### E07 — Tax Plan "Sell Before vs After April": surface April-boundary context in Portfolio note
+**Files:** `portfolio.html` panel note, `tax_plan.html`
+**Issue:** The Portfolio note links to `/net-value` but not to `/tax-plan`. When tax-year end is approaching, users benefit from knowing that the timing of a sale affects CGT year allocation.
+**Fix:** Add `/tax-plan` as a second link in the Portfolio panel note: "For cross-year CGT timing, see Tax Plan."
+
+---
+
+### New Feature Recommendations (lower priority — must serve project goals)
+
+#### N01 — "Why values may differ" cross-page information note
+**Alignment:** Project goal — reliable decision support requires users to trust the numbers.
+**Description:** Many screens show "net if sold" style numbers with different bases (Portfolio uses stored prices + projected tax; Simulate uses user-entered price + precise FIFO; Net Value is hypothetical all-lots). Users who cross-reference will see different numbers and may lose trust.
+**Proposed fix:** Add a collapsible "Why may values differ between pages?" info box on Portfolio, Simulate, and Net Value that explains:
+- Portfolio: estimated from stored market price and approximate employment tax.
+- Simulate: uses the price you enter; Employment Tax requires income settings. Includes broker fees.
+- Net Value: hypothetical full liquidation across all lots (including locked). No broker fees.
+**Scope:** Template-only addition; no service/schema changes.
+
+#### N02 — Glossary of key terms
+**Alignment:** Project goal — clarity and auditability require terms to be defined.
+**Description:** True Cost, Cost Basis, Allowable Cost, Employment Tax, CGT, AEA, ANI, Economic Gain — these terms appear across six+ screens without central definitions.
+**Proposed fix:** A static `/glossary` page (or collapsible footer panel on all pages) with plain-English definitions of each term. Linked from first use on key pages.
+**Scope:** New template only; one new route; no service changes. Low effort, high clarity payoff.
+
+#### N03 — Quick link from Portfolio to Tax Plan for high-AEA-impact lots
+**Alignment:** Project goal — tax/lock/forfeiture-adjusted economic outcomes.
+**Description:** When a lot's unrealised economic gain approaches or exceeds the Annual Exempt Amount (£3,000 for 2024-25 onwards), surfacing a prompt helps users plan. This is decision-critical information that already exists in the Tax Plan but is buried.
+**Proposed fix:** In the Portfolio panel note, add: "If unrealised gains are significant, check Tax Plan for CGT timing." This is a static link addition only. A more sophisticated version would show a badge on lots where estimated gain > AEA threshold, but that requires service-layer changes.
+**Scope:** Template-only for the minimal version; service-layer change for the enhanced version.
+
+---
+
+### Analytics Page Bugs (identified 2026-02-25)
+
+These were discovered during the refinement pass and are functional bugs, not style/clarity issues.
+
+#### BUG-A01 — Analytics page JavaScript syntax error (CRITICAL — breaks all charts and settings)
+**File:** `equity_tracker/src/api/templates/analytics.html` line 1462
+**Symptom:** Charts not rendering. Widget visibility toggles not working. Focus buttons not working. Settings not changing.
+**Root cause:** In `wireControlActions()`, the closing of the `if (resetDefaults) {` block uses `});` (line 1462) instead of `}`. This is a JavaScript syntax error that prevents the entire IIFE from being parsed, so **no JavaScript on the analytics page executes at all**.
+```javascript
+// CURRENT (broken):
+    if (resetDefaults) {
+      resetDefaults.addEventListener("click", function () { ... });
+    });  // <-- syntax error: should be `}`
+  }
+
+// CORRECT:
+    if (resetDefaults) {
+      resetDefaults.addEventListener("click", function () { ... });
+    }  // <-- just close the if block
+  }
+```
+**Fix:** Change `});` on line 1462 to `}`. One-character fix. Full regression must pass after.
+
+#### BUG-A02 — Charts render before state is applied (initialisation order)
+**File:** `equity_tracker/src/api/templates/analytics.html` lines 1479–1504
+**Issue:** All `render*()` calls (lines 1479–1489) happen before `applyVisibilityAndFocus(state)` (line 1500). This means charts are rendered into potentially hidden canvases. While Chart.js will still render correctly into a non-displayed canvas, chart layout/sizing may be incorrect on first paint when a widget is later shown. This is a secondary issue that BUG-A01 is masking.
+**Fix:** After fixing BUG-A01, verify chart sizing. If charts render with incorrect dimensions (often seen as zero-height or wrong aspect ratio), move `applyVisibilityAndFocus(state)` to run before the render calls so hidden canvases are correctly hidden before Chart.js measures them. Alternatively, call `chart.resize()` when a widget becomes visible.
+
+---
+
+### Refinement Delivery Order (v2.8.x)
+
+Recommended grouping for minimal-change batches:
+
+| Batch | Items | Files touched | Rationale |
+|---|---|---|---|
+| `v2.8.0` | **BUG-A01** (analytics JS syntax error) | `analytics.html` | Critical bug — one-character fix; analytics page entirely broken without it |
+| `v2.8.1` | R01, R07 (SF→SL), R02 (ANI), R03 (forfeiture badge), R10 (Gain label), R15 (Unrealised P&L), R16 (Allowable Cost) | `tax_plan.html`, `portfolio.html`, `simulate.html` | Pure label changes; all template-only; no logic |
+| `v2.8.2` | R04 (income-zero on Portfolio), R09 (FX banner on Net Value), R14 (blocked/restricted hint) | `portfolio.html`, `net_value.html` | Small template additions; context vars may need router check for R09 |
+| `v2.8.3` | R05 (rename Net Value stat), R11 (Per Scheme unavailable), R12 (Econ Gain intro), R13 (Settings intro) | `net_value.html`, `per_scheme.html`, `economic_gain.html`, `settings.html` | Label and copy changes; template-only |
+| `v2.8.4` | R06 (delta direction hints), R08 (Simulate dash disambiguation), E03–E07 (cross-links) | `simulate.html`, `tax_plan.html`, `cgt_report.html`, `economic_gain.html`, `portfolio.html` | Cross-links and contextual notes |
+| `v2.8.5` | BUG-A02 (chart init order), N01 (why-differ note), N02 (glossary), N03 (AEA prompt) | `analytics.html`, new glossary template | Secondary bug + new feature additions; lowest priority |
 
 ---
 

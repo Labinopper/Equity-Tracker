@@ -1,6 +1,6 @@
 # Equity Tracker - Project Status
 
-Last updated: 2026-02-25  
+Last updated: 2026-02-25 (refinement pass audit)  
 Current released version: `v2.1.1`
 
 ## Document Ownership (Single Responsibility)
@@ -51,11 +51,25 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 - CGT and economic-gain reports expose a tax-year selector with previous/next navigation controls.
 
 ## Known Gaps (Open)
-- No functional delivery gaps currently tracked in this control document.
+
+### BUG-A01 — Analytics page non-functional (Critical)
+- **Symptom:** Charts not rendering, widget visibility toggles not working, focus buttons inert.
+- **Root cause:** JavaScript syntax error in `analytics.html` line 1462 — `});` instead of `}` closing the `wireControlActions` function's inner `if` block. Causes the entire IIFE to fail to parse.
+- **Fix:** Change `});` to `}` on that line. One-character fix.
+
+### BUG-A02 — Analytics chart init order (Minor, masked by BUG-A01)
+- After BUG-A01 is fixed, verify charts render at correct dimensions when `applyVisibilityAndFocus` hides widgets before Chart.js measures canvases.
+
+### Refinement pass (v2.8.x) — 16 label/clarity items identified
+- See `v2_implementation_plan.md` Refinement Pass section for full list.
+- Summary: SF/SL terminology inconsistency, ANI undefined, forfeiture badge wording, income-zero warning missing on Portfolio, Net Value stat scope confusion, Tax Plan delta labels lack directional context.
+- All items are template-only changes. No service or schema changes required.
 
 ## Roadmap (Ordered)
 1. Release-note/version sync for completed working-tree stages (`v2.1.2` through `v2.7.1`).
-2. Next functional roadmap item to be promoted from backlog after release sync.
+2. BUG-A01 fix (`v2.8.0`) — analytics JS syntax error.
+3. Refinement pass (`v2.8.1`–`v2.8.5`) — labels, clarity, cross-screen consistency.
+4. Next functional roadmap item to be promoted from backlog after refinement pass.
 
 ## Working Rules
 - Keep this file short and decision-focused.
