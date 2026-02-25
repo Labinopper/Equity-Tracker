@@ -9,7 +9,6 @@
 - Duplicate user additions were mapped into the owning EPICs.
 
 ## Active Backlog (Outstanding Only)
-- [ ] `ET20-EPIC-05` Scenario Lab for multi-lot decisions.
 - [ ] `ET20-EPIC-08 Group C` risk stress + forfeiture-at-risk widgets.
 - [ ] `ET20-EPIC-08 Group D` calendar timeline widgets.
 - [ ] `ET20-EPIC-08 UX follow-on`: graph density/layout pass (smaller cards, multiple per row).
@@ -19,6 +18,7 @@
 - [ ] `ET20-EPIC-09` reporting QoL: refine CGT tax-year selection UX.
 
 ## Completed in Working Tree (No Longer Outstanding)
+- [x] `ET20-EPIC-05` Scenario Lab for multi-lot decisions (multi-leg run/retrieve API, scenario compare/export UI, price-shock sensitivity).
 - [x] `ET20-EPIC-01B` compensation-aware tax-plan refinement (IT/NI/SL + pension what-if + sell-this-year vs sell-next-year timing deltas).
 - [x] `ET20-EPIC-07` portfolio/per-scheme QoL package (quick filters/sort, formula expanders, persistent view prefs, focus mode, per-scheme visibility toggles).
 - [x] `ET20-EPIC-08` analytics expansion Groups A+B.
@@ -28,14 +28,18 @@
 
 ## Recent Completed Evidence
 
+### `v2.6.0` ET20-EPIC-05 Scenario Lab (working tree)
+- Targeted: `python -m pytest -q tests/test_services/test_scenario_service.py tests/test_api/test_scenario_api.py` -> `9 passed`.
+- Full regression: `python -m pytest -q` -> `524 passed, 3 skipped`.
+
 ### `v2.5.1` ET20-EPIC-01B Compensation Timing Refinement (working tree)
 - Targeted: `python -m pytest -q tests/test_services/test_tax_plan_service.py` -> `5 passed`.
 - Targeted: `python -m pytest -q tests/test_api/test_tax_plan_api.py` -> `5 passed`.
-- Full regression: `python -m pytest -q` -> `515 passed, 3 skipped`.
+- Full regression: `python -m pytest -q` -> `524 passed, 3 skipped`.
 
 ### `v2.5.0` ET20-EPIC-07 Portfolio + Per-Scheme QoL (working tree)
 - Targeted: `python -m pytest -q tests/test_api/test_ui_workflows.py` -> `79 passed`.
-- Full regression: `python -m pytest -q` -> `515 passed, 3 skipped`.
+- Full regression: `python -m pytest -q` -> `524 passed, 3 skipped`.
 
 ### `v2.4.1` ET20-EPIC-01B Compensation-Aware Tax Plan
 - Targeted: `python -m pytest -q tests/test_services/test_tax_plan_service.py tests/test_api/test_tax_plan_api.py` -> `10 passed`.

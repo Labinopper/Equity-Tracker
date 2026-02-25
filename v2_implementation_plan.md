@@ -7,8 +7,8 @@
 
 **Execution status snapshot (2026-02-25):**
 - Completed and release-synced: CF-01 (v1.10.0), CF-02 (v1.10.1), ET20-EPIC-03 (v2.0.0), CF-04 (v2.0.1), CF-05 (v2.0.2), ET20-EPIC-08 Phase 1 (v2.0.3), ET20-EPIC-04 (v2.1.0), ET20-EPIC-06 Phase A (v2.1.1).
-- Completed in working tree (pending release sync): CF-06 (v2.1.2), ET20-EPIC-08 Groups A+B (v2.2.0), ET20-EPIC-01 (v2.3.0), ET20-EPIC-02 (v2.4.0), ET20-EPIC-01B (v2.4.1 + v2.5.1 timing refinement), ET20-EPIC-07 (v2.5.0).
-- Current next delivery stage: ET20-EPIC-05 Scenario Lab (v2.6.0).
+- Completed in working tree (pending release sync): CF-06 (v2.1.2), ET20-EPIC-08 Groups A+B (v2.2.0), ET20-EPIC-01 (v2.3.0), ET20-EPIC-02 (v2.4.0), ET20-EPIC-01B (v2.4.1 + v2.5.1 timing refinement), ET20-EPIC-07 (v2.5.0), ET20-EPIC-05 (v2.6.0).
+- Current next delivery stage: ET20-EPIC-08 Group C risk widgets (v2.6.1).
 
 ---
 

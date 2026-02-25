@@ -1,0 +1,851 @@
+{% extends "base.html" %}
+{% block title %}Scenario Lab - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Scenario Lab</h1>
+    <p class="muted">Build multi-leg disposal scenarios, apply price sensitivity, and compare outcomes side-by-side.</p>
+  </div>
+</div>
+
+<p class="muted">As of {{ scenario_context.as_of_date }}. Generated {{ scenario_context.generated_at_utc }}.</p>
+
+{% if scenario_context.hide_values %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Scenario Lab Hidden</h2>
+  </div>
+  <p class="muted">{{ scenario_context.hidden_reason }}</p>
+</div>
+{% else %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Build Scenario</h2>
+  </div>
+  <form id="scenario-run-form" class="inline-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="scenario-name">Scenario Name</label>
+        <input id="scenario-name" name="name" type="text" placeholder="e.g. April disposal mix">
+      </div>
+      <div class="form-field">
+        <label for="scenario-as-of-date">As-Of Date</label>
+        <input id="scenario-as-of-date" name="as_of_date" type="date" value="{{ scenario_context.as_of_date }}">
+      </div>
+      <div class="form-field">
+        <label for="price-shock-slider">Price Shock (%)</label>
+        <input
+          id="price-shock-slider"
+          name="price_shock_pct"
+          type="range"
+          min="-30"
+          max="30"
+          step="1"
+          value="0"
+        >
+        <span class="form-hint">Applied uniformly to each leg price: <strong id="price-shock-value">0%</strong></span>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="scenario-legs-table">
+        <thead>
+          <tr>
+            <th>Security</th>
+            <th>Scheme Filter</th>
+            <th class="num">Quantity</th>
+            <th class="num">Price/Share (GBP)</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="scenario-legs-body"></tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" id="scenario-add-leg" class="btn btn-secondary">Add Leg</button>
+      <button type="submit" class="btn btn-primary">Run Scenario</button>
+      <button type="button" id="scenario-clear-form" class="btn btn-secondary">Clear</button>
+    </div>
+  </form>
+  <p class="form-hint">Leave price blank to use latest market price. Remove legs that are no longer part of the run.</p>
+</div>
+
+<div id="scenario-error" class="alert alert-error" hidden></div>
+
+<div id="scenario-result-card" class="card" hidden>
+  <div class="card__header">
+    <h2 class="card__title" id="scenario-result-title">Scenario Result</h2>
+  </div>
+  <div class="stats">
+    <div class="stat stat--accent">
+      <span class="stat__label">Total Net After Employment Tax</span>
+      <span class="stat__value" id="scenario-total-net">-</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Total Proceeds</span>
+      <span class="stat__value" id="scenario-total-proceeds">-</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Economic Gain</span>
+      <span class="stat__value" id="scenario-total-economic-gain">-</span>
+    </div>
+    <div class="stat stat--warning">
+      <span class="stat__label">Employment Tax</span>
+      <span class="stat__value" id="scenario-total-tax">-</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Forfeiture Value at Risk</span>
+      <span class="stat__value" id="scenario-total-forfeiture">-</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Shortfall</span>
+      <span class="stat__value" id="scenario-total-shortfall">-</span>
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button type="button" id="scenario-export-json" class="btn btn-secondary btn-sm">Export JSON</button>
+    <button type="button" id="scenario-export-csv" class="btn btn-secondary btn-sm">Export CSV</button>
+  </div>
+
+  <h3 class="section-title-sm">Leg Breakdown</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Leg</th>
+          <th>Security</th>
+          <th>Scheme</th>
+          <th class="num">Qty Requested</th>
+          <th class="num">Qty Sold</th>
+          <th class="num">Shortfall</th>
+          <th class="num">Price Used</th>
+          <th class="num">Proceeds</th>
+          <th class="num">Economic Gain</th>
+          <th class="num">Employment Tax</th>
+          <th class="num">Net After Tax</th>
+        </tr>
+      </thead>
+      <tbody id="scenario-leg-results-body"></tbody>
+    </table>
+  </div>
+
+  <div id="scenario-notes-wrap" class="table-wrap" hidden>
+    <table>
+      <tbody id="scenario-notes-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Scenario Comparison</h2>
+  </div>
+  <div class="form-grid">
+    <div class="form-field">
+      <label for="scenario-compare-left">Scenario A</label>
+      <select id="scenario-compare-left"></select>
+    </div>
+    <div class="form-field">
+      <label for="scenario-compare-right">Scenario B</label>
+      <select id="scenario-compare-right"></select>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button type="button" id="scenario-compare-run" class="btn btn-secondary">Compare</button>
+  </div>
+  <div id="scenario-compare-error" class="alert alert-error" hidden></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th class="num">Scenario A</th>
+          <th class="num">Scenario B</th>
+          <th class="num">B - A</th>
+        </tr>
+      </thead>
+      <tbody id="scenario-compare-body">
+        <tr>
+          <td colspan="4" class="muted">Run at least two scenarios to compare.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Recent Scenarios</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>As-Of</th>
+          <th class="num">Legs</th>
+          <th class="num">Price Shock</th>
+          <th class="num">Net After Tax</th>
+          <th class="num">Economic Gain</th>
+          <th class="num">Shortfall?</th>
+        </tr>
+      </thead>
+      <tbody id="scenario-recent-body">
+        <tr>
+          <td colspan="7" class="muted">No scenarios run yet.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if scenario_context.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in scenario_context.notes %}
+        <tr>
+          <td>{{ note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  var context = {{ scenario_context | tojson }};
+  if (context.hide_values) {
+    return;
+  }
+
+  var securities = Array.isArray(context.securities) ? context.securities : [];
+  var securityMap = {};
+  securities.forEach(function (sec) {
+    securityMap[sec.id] = sec;
+  });
+
+  var recentSummaries = Array.isArray(context.recent_scenarios) ? context.recent_scenarios.slice() : [];
+  var scenarioCache = {};
+  var currentScenarioId = null;
+
+  var legsBody = document.getElementById("scenario-legs-body");
+  var addLegBtn = document.getElementById("scenario-add-leg");
+  var clearBtn = document.getElementById("scenario-clear-form");
+  var runForm = document.getElementById("scenario-run-form");
+  var shockSlider = document.getElementById("price-shock-slider");
+  var shockValue = document.getElementById("price-shock-value");
+  var errorBox = document.getElementById("scenario-error");
+  var resultCard = document.getElementById("scenario-result-card");
+
+  var compareLeft = document.getElementById("scenario-compare-left");
+  var compareRight = document.getElementById("scenario-compare-right");
+  var compareBtn = document.getElementById("scenario-compare-run");
+  var compareBody = document.getElementById("scenario-compare-body");
+  var compareError = document.getElementById("scenario-compare-error");
+
+  var recentBody = document.getElementById("scenario-recent-body");
+  var exportJsonBtn = document.getElementById("scenario-export-json");
+  var exportCsvBtn = document.getElementById("scenario-export-csv");
+
+  function showError(message) {
+    errorBox.hidden = !message;
+    errorBox.textContent = message || "";
+  }
+
+  function showCompareError(message) {
+    compareError.hidden = !message;
+    compareError.textContent = message || "";
+  }
+
+  function toNumber(value) {
+    var num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function formatMoney(value) {
+    var num = toNumber(value);
+    if (num === null) {
+      return "-";
+    }
+    return "\u00A3" + num.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function formatDeltaMoney(value) {
+    var num = toNumber(value);
+    if (num === null) {
+      return "-";
+    }
+    var prefix = num > 0 ? "+" : "";
+    return prefix + formatMoney(num);
+  }
+
+  function readShockPct() {
+    return Number(shockSlider.value || 0);
+  }
+
+  function updateShockLabel() {
+    var pct = readShockPct();
+    var label = (pct > 0 ? "+" : "") + pct + "%";
+    shockValue.textContent = label;
+    Array.prototype.forEach.call(legsBody.querySelectorAll("tr"), function (row) {
+      updateLegHint(row);
+    });
+  }
+
+  function securityOptionsHtml(selectedId) {
+    var lines = ['<option value="">-- select --</option>'];
+    securities.forEach(function (sec) {
+      var selected = sec.id === selectedId ? ' selected' : "";
+      lines.push(
+        '<option value="' + sec.id + '"' + selected + ">" +
+        sec.ticker + " - " + sec.name +
+        "</option>"
+      );
+    });
+    return lines.join("");
+  }
+
+  function buildSchemeOptions(rowData, selectedScheme) {
+    var options = ['<option value="">All schemes</option>'];
+    var byScheme = rowData && rowData.available_by_scheme ? rowData.available_by_scheme : {};
+    Object.keys(byScheme).sort().forEach(function (scheme) {
+      var selected = scheme === selectedScheme ? ' selected' : "";
+      options.push('<option value="' + scheme + '"' + selected + ">" + scheme + "</option>");
+    });
+    return options.join("");
+  }
+
+  function updateLegHint(row) {
+    var securitySelect = row.querySelector(".scenario-leg-security");
+    var schemeSelect = row.querySelector(".scenario-leg-scheme");
+    var priceInput = row.querySelector(".scenario-leg-price");
+    var hint = row.querySelector(".scenario-leg-hint");
+    var sec = securityMap[securitySelect.value];
+    if (!sec) {
+      hint.textContent = "Select a security.";
+      return;
+    }
+
+    var scheme = schemeSelect.value || "";
+    var available = scheme
+      ? (sec.available_by_scheme[scheme] || "0")
+      : sec.available_quantity;
+
+    var basePrice = sec.latest_price_gbp;
+    var shockPct = readShockPct();
+    var shockedPriceText = "n/a";
+    if (basePrice !== null && basePrice !== undefined) {
+      var shocked = Number(basePrice) * (1 + (shockPct / 100));
+      shockedPriceText = formatMoney(shocked);
+      if (!priceInput.value) {
+        priceInput.value = String(Number(basePrice).toFixed(2));
+      }
+    }
+
+    hint.textContent =
+      "Available: " + available +
+      " | Latest: " + (basePrice ? formatMoney(basePrice) : "n/a") +
+      " | Shocked: " + shockedPriceText;
+  }
+
+  function createLegRow(prefill) {
+    var tr = document.createElement("tr");
+    var selectedSecurity = prefill && prefill.security_id ? prefill.security_id : "";
+    var selectedScheme = prefill && prefill.scheme_type ? prefill.scheme_type : "";
+    var quantity = prefill && prefill.quantity ? String(prefill.quantity) : "";
+    var price = prefill && prefill.price_per_share_gbp ? String(prefill.price_per_share_gbp) : "";
+
+    tr.innerHTML = ""
+      + "<td>"
+      + '  <select class="scenario-leg-security">' + securityOptionsHtml(selectedSecurity) + "</select>"
+      + "</td>"
+      + "<td>"
+      + '  <select class="scenario-leg-scheme"></select>'
+      + "</td>"
+      + '<td class="num">'
+      + '  <input type="text" class="scenario-leg-quantity" inputmode="decimal" placeholder="e.g. 50" value="' + quantity + '">'
+      + "</td>"
+      + '<td class="num">'
+      + '  <input type="text" class="scenario-leg-price" inputmode="decimal" placeholder="latest" value="' + price + '">'
+      + "</td>"
+      + "<td>"
+      + '  <button type="button" class="btn btn-secondary btn-sm scenario-leg-remove">Remove</button>'
+      + '  <div class="form-hint scenario-leg-hint"></div>'
+      + "</td>";
+
+    var securitySelect = tr.querySelector(".scenario-leg-security");
+    var schemeSelect = tr.querySelector(".scenario-leg-scheme");
+    var removeBtn = tr.querySelector(".scenario-leg-remove");
+
+    function syncSchemeOptions() {
+      var sec = securityMap[securitySelect.value] || null;
+      schemeSelect.innerHTML = buildSchemeOptions(sec, selectedScheme);
+      if (selectedScheme && !schemeSelect.value) {
+        schemeSelect.value = "";
+      }
+      updateLegHint(tr);
+    }
+
+    securitySelect.addEventListener("change", function () {
+      selectedScheme = "";
+      syncSchemeOptions();
+    });
+    schemeSelect.addEventListener("change", function () {
+      updateLegHint(tr);
+    });
+    removeBtn.addEventListener("click", function () {
+      tr.remove();
+      if (!legsBody.querySelector("tr")) {
+        createLegRow();
+      }
+    });
+
+    legsBody.appendChild(tr);
+    syncSchemeOptions();
+  }
+
+  function clearLegRows() {
+    legsBody.innerHTML = "";
+  }
+
+  function gatherLegPayloads() {
+    var rows = Array.prototype.slice.call(legsBody.querySelectorAll("tr"));
+    var legs = [];
+
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      var securityId = row.querySelector(".scenario-leg-security").value;
+      var scheme = row.querySelector(".scenario-leg-scheme").value;
+      var quantityRaw = row.querySelector(".scenario-leg-quantity").value.trim();
+      var priceRaw = row.querySelector(".scenario-leg-price").value.trim();
+
+      if (!securityId) {
+        throw new Error("Each leg must have a selected security.");
+      }
+      var quantityNum = Number(quantityRaw);
+      if (!Number.isFinite(quantityNum) || quantityNum <= 0) {
+        throw new Error("Each leg quantity must be a positive number.");
+      }
+
+      var security = securityMap[securityId];
+      var payload = {
+        security_id: securityId,
+        quantity: quantityRaw,
+        scheme_type: scheme || null,
+        label: security ? (security.ticker + " leg " + String(i + 1)) : ("Leg " + String(i + 1))
+      };
+      if (priceRaw) {
+        var priceNum = Number(priceRaw);
+        if (!Number.isFinite(priceNum) || priceNum < 0) {
+          throw new Error("Leg price must be non-negative.");
+        }
+        payload.price_per_share_gbp = priceRaw;
+      }
+      legs.push(payload);
+    }
+
+    if (!legs.length) {
+      throw new Error("At least one leg is required.");
+    }
+    return legs;
+  }
+
+  function upsertSummaryFromScenario(payload) {
+    if (!payload || !payload.scenario_id) {
+      return;
+    }
+    var totals = payload.totals || {};
+    var summary = {
+      scenario_id: payload.scenario_id,
+      name: payload.name || payload.scenario_id,
+      as_of_date: payload.as_of_date,
+      created_at_utc: payload.created_at_utc,
+      price_shock_pct: payload.price_shock_pct || "0.00",
+      legs_count: Number(totals.legs_count || (Array.isArray(payload.legs) ? payload.legs.length : 0)),
+      has_shortfall: Boolean(totals.has_shortfall),
+      total_net_after_employment_tax_gbp: totals.total_net_after_employment_tax_gbp || "0.00",
+      total_realised_gain_economic_gbp: totals.total_realised_gain_economic_gbp || "0.00",
+      hide_values: Boolean(payload.hide_values)
+    };
+
+    recentSummaries = recentSummaries.filter(function (row) {
+      return row.scenario_id !== summary.scenario_id;
+    });
+    recentSummaries.unshift(summary);
+    if (recentSummaries.length > 20) {
+      recentSummaries = recentSummaries.slice(0, 20);
+    }
+  }
+
+  function renderRecentScenariosTable() {
+    if (!recentSummaries.length) {
+      recentBody.innerHTML = '<tr><td colspan="7" class="muted">No scenarios run yet.</td></tr>';
+      return;
+    }
+    var html = [];
+    recentSummaries.forEach(function (row) {
+      html.push(
+        "<tr>" +
+          "<td>" + row.name + "</td>" +
+          "<td>" + (row.as_of_date || "-") + "</td>" +
+          '<td class="num">' + String(row.legs_count || 0) + "</td>" +
+          '<td class="num">' + (row.price_shock_pct || "0.00") + "%</td>" +
+          '<td class="num">' + (row.hide_values ? "-" : formatMoney(row.total_net_after_employment_tax_gbp)) + "</td>" +
+          '<td class="num">' + (row.hide_values ? "-" : formatMoney(row.total_realised_gain_economic_gbp)) + "</td>" +
+          '<td class="num">' + (row.has_shortfall ? "Yes" : "No") + "</td>" +
+        "</tr>"
+      );
+    });
+    recentBody.innerHTML = html.join("");
+  }
+
+  function renderCompareSelects() {
+    function buildOptions(selectedId) {
+      var opts = ['<option value="">-- select --</option>'];
+      recentSummaries.forEach(function (row) {
+        var selected = row.scenario_id === selectedId ? ' selected' : "";
+        opts.push(
+          '<option value="' + row.scenario_id + '"' + selected + ">" +
+          row.name + " (" + row.as_of_date + ")" +
+          "</option>"
+        );
+      });
+      return opts.join("");
+    }
+
+    var leftValue = compareLeft.value;
+    var rightValue = compareRight.value;
+    compareLeft.innerHTML = buildOptions(leftValue);
+    compareRight.innerHTML = buildOptions(rightValue);
+
+    if (!compareLeft.value && recentSummaries[0]) {
+      compareLeft.value = recentSummaries[0].scenario_id;
+    }
+    if (!compareRight.value && recentSummaries[1]) {
+      compareRight.value = recentSummaries[1].scenario_id;
+    }
+  }
+
+  function renderScenarioResult(payload) {
+    if (!payload || payload.hide_values) {
+      showError(payload && payload.hidden_reason ? payload.hidden_reason : "Scenario output unavailable.");
+      return;
+    }
+
+    resultCard.hidden = false;
+    document.getElementById("scenario-result-title").textContent = "Scenario Result: " + payload.name;
+    var totals = payload.totals || {};
+
+    document.getElementById("scenario-total-net").textContent = formatMoney(totals.total_net_after_employment_tax_gbp);
+    document.getElementById("scenario-total-proceeds").textContent = formatMoney(totals.total_proceeds_gbp);
+    document.getElementById("scenario-total-economic-gain").textContent = formatMoney(totals.total_realised_gain_economic_gbp);
+    document.getElementById("scenario-total-tax").textContent = formatMoney(totals.total_employment_tax_gbp);
+    document.getElementById("scenario-total-forfeiture").textContent = formatMoney(totals.total_forfeiture_value_gbp);
+    document.getElementById("scenario-total-shortfall").textContent = String(totals.shortfall || "0");
+
+    var legsBodyResult = document.getElementById("scenario-leg-results-body");
+    var legRows = Array.isArray(payload.legs) ? payload.legs : [];
+    if (!legRows.length) {
+      legsBodyResult.innerHTML = '<tr><td colspan="11" class="muted">No leg rows returned.</td></tr>';
+    } else {
+      var rowsHtml = [];
+      legRows.forEach(function (leg) {
+        rowsHtml.push(
+          "<tr>" +
+            "<td>" + leg.label + "</td>" +
+            "<td>" + leg.ticker + "</td>" +
+            "<td>" + (leg.scheme_type || "All") + "</td>" +
+            '<td class="num">' + leg.quantity_requested + "</td>" +
+            '<td class="num">' + leg.quantity_sold + "</td>" +
+            '<td class="num">' + leg.shortfall + "</td>" +
+            '<td class="num">' + formatMoney(leg.price_after_shock_gbp) + "</td>" +
+            '<td class="num">' + formatMoney(leg.total_proceeds_gbp) + "</td>" +
+            '<td class="num">' + formatMoney(leg.total_realised_gain_economic_gbp) + "</td>" +
+            '<td class="num">' + formatMoney(leg.total_employment_tax_gbp) + "</td>" +
+            '<td class="num">' + formatMoney(leg.net_after_employment_tax_gbp) + "</td>" +
+          "</tr>"
+        );
+      });
+      legsBodyResult.innerHTML = rowsHtml.join("");
+    }
+
+    var notesWrap = document.getElementById("scenario-notes-wrap");
+    var notesBody = document.getElementById("scenario-notes-body");
+    var notes = Array.isArray(payload.notes) ? payload.notes : [];
+    if (!notes.length) {
+      notesWrap.hidden = true;
+      notesBody.innerHTML = "";
+    } else {
+      notesWrap.hidden = false;
+      notesBody.innerHTML = notes.map(function (note) {
+        return "<tr><td>" + note + "</td></tr>";
+      }).join("");
+    }
+  }
+
+  async function fetchScenarioById(scenarioId) {
+    if (!scenarioId) {
+      return null;
+    }
+    if (scenarioCache[scenarioId]) {
+      return scenarioCache[scenarioId];
+    }
+    var response = await fetch("/api/scenarios/" + encodeURIComponent(scenarioId), {
+      method: "GET"
+    });
+    if (!response.ok) {
+      throw new Error("Failed to load scenario " + scenarioId + ".");
+    }
+    var payload = await response.json();
+    scenarioCache[scenarioId] = payload;
+    return payload;
+  }
+
+  function renderComparisonRows(leftPayload, rightPayload) {
+    if (!leftPayload || !rightPayload || leftPayload.hide_values || rightPayload.hide_values) {
+      compareBody.innerHTML = '<tr><td colspan="4" class="muted">Comparison unavailable.</td></tr>';
+      return;
+    }
+    var leftTotals = leftPayload.totals || {};
+    var rightTotals = rightPayload.totals || {};
+    var metrics = [
+      ["Total Proceeds", "total_proceeds_gbp"],
+      ["Total Net After Tax", "total_net_after_employment_tax_gbp"],
+      ["Economic Gain", "total_realised_gain_economic_gbp"],
+      ["Employment Tax", "total_employment_tax_gbp"],
+      ["Forfeiture Value at Risk", "total_forfeiture_value_gbp"],
+      ["Shortfall", "shortfall"]
+    ];
+
+    var html = [];
+    metrics.forEach(function (metric) {
+      var label = metric[0];
+      var key = metric[1];
+      var leftValue = leftTotals[key];
+      var rightValue = rightTotals[key];
+      var delta = null;
+
+      if (key === "shortfall") {
+        var leftShort = toNumber(leftValue) || 0;
+        var rightShort = toNumber(rightValue) || 0;
+        delta = rightShort - leftShort;
+        html.push(
+          "<tr>" +
+            "<td>" + label + "</td>" +
+            '<td class="num">' + leftShort + "</td>" +
+            '<td class="num">' + rightShort + "</td>" +
+            '<td class="num">' + (delta > 0 ? "+" : "") + delta + "</td>" +
+          "</tr>"
+        );
+        return;
+      }
+
+      var leftNum = toNumber(leftValue);
+      var rightNum = toNumber(rightValue);
+      if (leftNum !== null && rightNum !== null) {
+        delta = rightNum - leftNum;
+      }
+
+      html.push(
+        "<tr>" +
+          "<td>" + label + "</td>" +
+          '<td class="num">' + formatMoney(leftValue) + "</td>" +
+          '<td class="num">' + formatMoney(rightValue) + "</td>" +
+          '<td class="num">' + formatDeltaMoney(delta) + "</td>" +
+        "</tr>"
+      );
+    });
+
+    compareBody.innerHTML = html.join("");
+  }
+
+  async function runComparison() {
+    showCompareError("");
+    try {
+      var leftId = compareLeft.value;
+      var rightId = compareRight.value;
+      if (!leftId || !rightId) {
+        throw new Error("Select two scenarios first.");
+      }
+      if (leftId === rightId) {
+        throw new Error("Choose two different scenarios.");
+      }
+
+      var leftPayload = await fetchScenarioById(leftId);
+      var rightPayload = await fetchScenarioById(rightId);
+      renderComparisonRows(leftPayload, rightPayload);
+    } catch (err) {
+      showCompareError(err && err.message ? err.message : "Comparison failed.");
+    }
+  }
+
+  function csvEscape(value) {
+    var text = value === null || value === undefined ? "" : String(value);
+    if (text.indexOf('"') >= 0 || text.indexOf(",") >= 0 || text.indexOf("\n") >= 0) {
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
+    return text;
+  }
+
+  function downloadFile(filename, content, contentType) {
+    var blob = new Blob([content], { type: contentType });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function exportCurrentScenarioJson() {
+    if (!currentScenarioId || !scenarioCache[currentScenarioId]) {
+      showError("Run a scenario before exporting.");
+      return;
+    }
+    var payload = scenarioCache[currentScenarioId];
+    downloadFile(
+      "scenario-" + payload.scenario_id + ".json",
+      JSON.stringify(payload, null, 2),
+      "application/json"
+    );
+  }
+
+  function exportCurrentScenarioCsv() {
+    if (!currentScenarioId || !scenarioCache[currentScenarioId]) {
+      showError("Run a scenario before exporting.");
+      return;
+    }
+    var payload = scenarioCache[currentScenarioId];
+    if (payload.hide_values) {
+      showError("Cannot export monetary CSV while values are hidden.");
+      return;
+    }
+
+    var lines = [];
+    lines.push(
+      [
+        "scenario_id",
+        "scenario_name",
+        "as_of_date",
+        "leg_id",
+        "label",
+        "ticker",
+        "scheme_type",
+        "quantity_requested",
+        "quantity_sold",
+        "shortfall",
+        "price_after_shock_gbp",
+        "total_proceeds_gbp",
+        "total_realised_gain_economic_gbp",
+        "total_employment_tax_gbp",
+        "net_after_employment_tax_gbp"
+      ].join(",")
+    );
+
+    (payload.legs || []).forEach(function (leg) {
+      lines.push(
+        [
+          csvEscape(payload.scenario_id),
+          csvEscape(payload.name),
+          csvEscape(payload.as_of_date),
+          csvEscape(leg.leg_id),
+          csvEscape(leg.label),
+          csvEscape(leg.ticker),
+          csvEscape(leg.scheme_type || "All"),
+          csvEscape(leg.quantity_requested),
+          csvEscape(leg.quantity_sold),
+          csvEscape(leg.shortfall),
+          csvEscape(leg.price_after_shock_gbp),
+          csvEscape(leg.total_proceeds_gbp),
+          csvEscape(leg.total_realised_gain_economic_gbp),
+          csvEscape(leg.total_employment_tax_gbp),
+          csvEscape(leg.net_after_employment_tax_gbp)
+        ].join(",")
+      );
+    });
+
+    downloadFile(
+      "scenario-" + payload.scenario_id + ".csv",
+      lines.join("\n"),
+      "text/csv;charset=utf-8"
+    );
+  }
+
+  async function runScenario(event) {
+    event.preventDefault();
+    showError("");
+
+    try {
+      var legs = gatherLegPayloads();
+      var payload = {
+        name: document.getElementById("scenario-name").value.trim() || null,
+        as_of_date: document.getElementById("scenario-as-of-date").value || null,
+        price_shock_pct: String(readShockPct()),
+        legs: legs
+      };
+
+      var response = await fetch("/api/scenarios/run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      var data = await response.json();
+
+      if (!response.ok) {
+        var detail = data && data.detail && data.detail.message ? data.detail.message : "Scenario run failed.";
+        throw new Error(detail);
+      }
+
+      scenarioCache[data.scenario_id] = data;
+      currentScenarioId = data.scenario_id;
+      upsertSummaryFromScenario(data);
+      renderRecentScenariosTable();
+      renderCompareSelects();
+      renderScenarioResult(data);
+    } catch (err) {
+      showError(err && err.message ? err.message : "Scenario run failed.");
+    }
+  }
+
+  addLegBtn.addEventListener("click", function () {
+    createLegRow();
+  });
+  clearBtn.addEventListener("click", function () {
+    showError("");
+    clearLegRows();
+    createLegRow();
+  });
+  runForm.addEventListener("submit", runScenario);
+  shockSlider.addEventListener("input", updateShockLabel);
+  compareBtn.addEventListener("click", runComparison);
+  exportJsonBtn.addEventListener("click", exportCurrentScenarioJson);
+  exportCsvBtn.addEventListener("click", exportCurrentScenarioCsv);
+
+  renderRecentScenariosTable();
+  renderCompareSelects();
+  clearLegRows();
+  createLegRow();
+  updateShockLabel();
+})();
+</script>
+{% endblock %}
