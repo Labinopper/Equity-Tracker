@@ -1,0 +1,104 @@
+/* Login page layout — isolated to login.html */
+
+.login-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem 2rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: var(--shadow);
+}
+
+.login-brand {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+
+.login-brand span {
+  color: var(--accent);
+}
+
+.login-subtitle {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin-bottom: 2rem;
+}
+
+.login-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.login-input {
+  width: 100%;
+  background: var(--bg-input, var(--bg));
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius);
+  color: var(--text-heading);
+  font-family: var(--font-mono, monospace);
+  font-size: 1.6rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  padding: 0.7rem 0.5rem;
+  margin-bottom: 1.25rem;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.login-input:focus {
+  border-color: var(--accent);
+}
+
+.login-btn {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.65rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.login-btn:hover {
+  background: var(--accent-hover, var(--accent));
+  filter: brightness(1.1);
+}
+
+.login-error {
+  background: rgba(240, 56, 79, 0.1);
+  border: 1px solid rgba(240, 56, 79, 0.3);
+  color: var(--error, #f0384f);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+}
+
+.login-hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+  margin-top: 1rem;
+}

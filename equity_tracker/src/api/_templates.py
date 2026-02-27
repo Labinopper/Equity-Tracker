@@ -30,8 +30,11 @@ def _is_hide_values_enabled() -> bool:
         return False
 
 
-def _global_template_context(_request) -> dict[str, bool]:
-    return {"hide_values": _is_hide_values_enabled()}
+def _global_template_context(_request) -> dict[str, bool | str]:
+    return {
+        "hide_values": _is_hide_values_enabled(),
+        "logout_url": "/auth/logout",
+    }
 
 
 templates = Jinja2Templates(

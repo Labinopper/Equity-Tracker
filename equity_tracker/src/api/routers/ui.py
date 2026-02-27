@@ -40,7 +40,7 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -69,8 +69,9 @@ from ...services.sheets_price_service import SheetsPriceService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
+from ..dependencies import session_required
 
-router = APIRouter(tags=["ui"])
+router = APIRouter(tags=["ui"], dependencies=[Depends(session_required)])
 
 ADD_LOT_SCHEME_TYPES = ("RSU", "ESPP", "ESPP_PLUS", "BROKERAGE", "ISA")
 SIMULATE_SCHEME_TYPES = ["", *ADD_LOT_SCHEME_TYPES]

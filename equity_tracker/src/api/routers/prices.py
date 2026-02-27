@@ -26,9 +26,9 @@ from ...app_context import AppContext
 from ...services.price_service import PriceService
 from ...services.sheets_price_service import SheetsPriceService
 from .. import _state
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 
-router = APIRouter(prefix="/prices", tags=["prices"])
+router = APIRouter(prefix="/prices", tags=["prices"], dependencies=[Depends(session_required)])
 
 
 # ---------------------------------------------------------------------------

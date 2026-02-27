@@ -12,9 +12,9 @@ from ...services.analytics_service import AnalyticsService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 
-router = APIRouter(tags=["analytics"])
+router = APIRouter(tags=["analytics"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 
 

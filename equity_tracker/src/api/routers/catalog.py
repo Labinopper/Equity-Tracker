@@ -17,14 +17,15 @@ Design notes
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
 from ...app_context import AppContext
 from ...db.repository import SecurityCatalogRepository
+from ..dependencies import session_required
 from ..schemas.catalog import CatalogEntrySchema
 
-router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+router = APIRouter(prefix="/api/catalog", tags=["catalog"], dependencies=[Depends(session_required)])
 
 
 @router.get(

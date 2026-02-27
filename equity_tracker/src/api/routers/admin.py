@@ -3,9 +3,10 @@ Admin router — database lifecycle management.
 
 Endpoints
 ─────────
-  GET  /admin/status   Lock state — no DB required, always safe to call
-  POST /admin/unlock   Open a database file and initialize AppContext
-  POST /admin/lock     Close the database and clear AppContext
+  GET  /admin/status          Lock state — no session required, always safe to call
+  POST /admin/unlock          Open a database file and initialize AppContext (rate-limited)
+  POST /admin/lock            Close the database (session required)
+  GET  /admin/validation_report  Debug report (session + db required)
 
 Design notes
 ────────────
@@ -16,8 +17,10 @@ Design notes
   immediately return ``locked=false``.
 - ``/admin/lock`` is a no-op if the DB is already locked (safe to call
   unconditionally on app shutdown or browser unload).
-- No authentication is applied here — this is a single-user LAN tool.
-  Callers are assumed to be the local user or a trusted LAN device.
+- ``/admin/unlock`` is rate-limited (5 attempts per 15 minutes per IP) but
+  does not require a session cookie — the DB unlock and TOTP login are
+  independent operations.
+- ``/admin/lock`` and ``/admin/validation_report`` require a valid session.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -34,7 +37,8 @@ from ...app_context import AppContext
 from ...db.engine import DatabaseEngine
 from ...services.validation_report_service import ValidationReportService
 from .. import _state
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
+from ..limiter import limiter
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -105,7 +109,8 @@ async def status() -> AdminStatusResponse:
     status_code=200,
     summary="Unlock (open) the database",
 )
-async def unlock(req: UnlockRequest) -> AdminActionResponse:
+@limiter.limit("5/15minutes")
+async def unlock(request: Request, req: UnlockRequest) -> AdminActionResponse:  # noqa: ARG001
     """
     Open a database file and initialize ``AppContext``.
 
@@ -161,6 +166,7 @@ async def unlock(req: UnlockRequest) -> AdminActionResponse:
     "/lock",
     response_model=AdminActionResponse,
     summary="Lock (close) the database",
+    dependencies=[Depends(session_required)],
 )
 async def lock() -> AdminActionResponse:
     """
@@ -183,6 +189,7 @@ async def lock() -> AdminActionResponse:
     summary="Deterministic validation output suite (text/json)",
     response_class=PlainTextResponse,
     response_model=None,
+    dependencies=[Depends(session_required)],
 )
 async def validation_report(
     format: Literal["text", "json"] = Query(

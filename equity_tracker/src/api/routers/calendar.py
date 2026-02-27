@@ -12,9 +12,9 @@ from ...services.calendar_service import CalendarService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 
-router = APIRouter(tags=["calendar"])
+router = APIRouter(tags=["calendar"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 _DEFAULT_DAYS = 400
 _MAX_DAYS = 1460

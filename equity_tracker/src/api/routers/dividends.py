@@ -17,9 +17,9 @@ from ...services.dividend_service import DividendService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 
-router = APIRouter(tags=["dividends"])
+router = APIRouter(tags=["dividends"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 _VALID_TREATMENTS = ("TAXABLE", "ISA_EXEMPT")
 

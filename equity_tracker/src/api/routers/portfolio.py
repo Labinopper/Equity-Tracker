@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ...services.portfolio_service import PortfolioService
 from ...settings import AppSettings
 from .. import _state
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 from ..schemas.portfolio import (
     AddLotRequest,
     AddSecurityRequest,
@@ -43,7 +43,7 @@ from ..schemas.portfolio import (
     TransferLotResponse,
 )
 
-router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+router = APIRouter(prefix="/portfolio", tags=["portfolio"], dependencies=[Depends(session_required)])
 
 
 # ---------------------------------------------------------------------------

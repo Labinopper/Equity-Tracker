@@ -1,0 +1,53 @@
+# Equity Tracker — .dockerignore
+# Files and directories excluded from the Docker build context.
+
+# Version control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Virtual environment (we build deps inside Docker)
+.venv
+venv
+
+# Secrets and credentials — NEVER include in image
+.env
+.env.*
+!.env.example
+secrets/
+
+# Database files — use a volume mount instead
+*.db
+*.db-wal
+*.db-shm
+*.salt
+*.zip
+
+# Tests (not needed at runtime)
+tests/
+
+# Documentation
+docs/
+
+# Windows-specific startup scripts
+start.ps1
+start_dev.ps1
+
+# Development utilities
+scripts/
+
+# CI/CD (if added later)
+.github/
+
+# Editor files
+.vscode/
+*.swp
+*.swo

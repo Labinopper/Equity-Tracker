@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Equity Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/login.css">
+</head>
+<body>
+
+<div class="login-shell">
+  <div class="login-card">
+
+    <div class="login-brand">EQUITY <span>TRACKER</span></div>
+    <div class="login-subtitle">Enter your authenticator code to continue</div>
+
+    {% if error %}
+    <div class="login-error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/login" autocomplete="off">
+      <input type="hidden" name="next" value="{{ next | e }}">
+
+      <label class="login-label" for="code">One-Time Code</label>
+      <input
+        class="login-input"
+        id="code"
+        name="code"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]{6}"
+        maxlength="6"
+        placeholder="000000"
+        autofocus
+        autocomplete="one-time-code"
+        required
+        aria-label="6-digit authenticator code"
+      >
+
+      <button class="login-btn" type="submit">Sign In</button>
+    </form>
+
+    <p class="login-hint">Open 1Password and enter the 6-digit code for Equity Tracker.</p>
+
+  </div>
+</div>
+
+</body>
+</html>

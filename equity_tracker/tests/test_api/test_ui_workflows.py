@@ -1864,6 +1864,12 @@ def test_add_lot_espp_plus_fmv_field_excluded_from_scheme():
     from src.db.models import Base
     import tempfile, pathlib
 
+    import os as _os
+    _os.environ.setdefault("EQUITY_SECRET_KEY", "test-secret-key-equity-tracker-testing-only-xx")
+    _os.environ.setdefault("EQUITY_TOTP_SECRET", "JBSWY3DPEHPK3PXP")
+    _os.environ.setdefault("EQUITY_DEV_MODE", "true")
+    from src.api.auth import SESSION_COOKIE_NAME as _COOKIE, make_session_token as _tok
+
     with tempfile.TemporaryDirectory() as tmp:
         db_file = pathlib.Path(tmp) / "t.db"
         engine = DatabaseEngine.open_unencrypted(f"sqlite:///{db_file}")
@@ -1871,7 +1877,7 @@ def test_add_lot_espp_plus_fmv_field_excluded_from_scheme():
         _AC.initialize(engine)
         _st.set_db_path(db_file)
         try:
-            tc = TestClient(_app, raise_server_exceptions=True)
+            tc = TestClient(_app, raise_server_exceptions=True, cookies={_COOKIE: _tok()})
             # Add a security so the form renders
             tc.post("/portfolio/securities", json={
                 "ticker": "FMVCHK", "name": "FMV Check", "currency": "GBP",

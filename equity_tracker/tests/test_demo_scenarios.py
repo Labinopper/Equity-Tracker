@@ -12,8 +12,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.app import app
+from src.api.auth import SESSION_COOKIE_NAME, make_session_token
 from src.settings import AppSettings
 from src.services.portfolio_service import PortfolioService
+
+# Auth env vars required for session token signing (module-level, not monkeypatched)
+_TEST_SECRET_KEY = "test-secret-key-equity-tracker-testing-only-xx"
+_TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXP"
 
 
 _Q2 = Decimal("0.01")
@@ -104,8 +109,17 @@ def demo_runtime():
     subprocess.run([sys.executable, str(seeder)], check=True, cwd=str(repo_root))
     assert demo_db.exists(), "Seeder did not create data/demo.db"
 
+    os.environ.setdefault("EQUITY_SECRET_KEY", _TEST_SECRET_KEY)
+    os.environ.setdefault("EQUITY_TOTP_SECRET", _TEST_TOTP_SECRET)
+    os.environ.setdefault("EQUITY_DEV_MODE", "true")
+
     with _demo_env(demo_db):
-        with TestClient(app, raise_server_exceptions=True) as client:
+        token = make_session_token()
+        with TestClient(
+            app,
+            raise_server_exceptions=True,
+            cookies={SESSION_COOKIE_NAME: token},
+        ) as client:
             status = client.get("/admin/status")
             assert status.status_code == 200
             assert status.json()["locked"] is False

@@ -12,10 +12,10 @@ from ...services.risk_service import RiskService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 from ..schemas.risk import RiskSummarySchema
 
-router = APIRouter(tags=["risk"])
+router = APIRouter(tags=["risk"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 
 

@@ -14,9 +14,9 @@ from ...services.tax_plan_service import TaxPlanService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 
-router = APIRouter(tags=["tax-plan"])
+router = APIRouter(tags=["tax-plan"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 _DEFAULT_SELL_AMOUNT = Decimal("5000")
 _DEFAULT_BONUS_AMOUNT = Decimal("0")

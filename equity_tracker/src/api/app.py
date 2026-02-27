@@ -34,6 +34,10 @@ Environment variables
   EQUITY_DB_PASSWORD      Database password (encrypted DB) or any value (plain)
   EQUITY_DB_ENCRYPTED     "true" (default) or "false" for plain-SQLite dev DB
   EQUITY_ALLOWED_ORIGINS  Comma-separated CORS origins, or "*" (default)
+  EQUITY_TOTP_SECRET      Base32 TOTP secret (generate: scripts/setup_totp.py)
+  EQUITY_SECRET_KEY       Session signing key (generate: secrets.token_hex(32))
+  EQUITY_DOCS_ENABLED     "true" to expose /docs and /openapi.json (default: false)
+  EQUITY_DEV_MODE         "true" to allow session cookie over plain HTTP (localhost)
 """
 
 from __future__ import annotations
@@ -46,17 +50,23 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError
 
 from ..app_context import AppContext
 from ..db.engine import DatabaseEngine
 from ..db.migration_manager import ensure_migrated
 from . import _state
+from .auth import SessionExpired
+from .limiter import limiter
+from .middleware import SecurityHeadersMiddleware
 from .routers import (
     admin,
     analytics,
+    auth_router,
     calendar,
     catalog,
     dividends,
@@ -180,6 +190,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
 # Application
 # ---------------------------------------------------------------------------
 
+_docs_enabled = os.environ.get("EQUITY_DOCS_ENABLED", "false").lower() == "true"
+
 app = FastAPI(
     title="Equity Tracker API",
     description=(
@@ -190,31 +202,70 @@ app = FastAPI(
     ),
     version="0.2.0",
     lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
+
+# ---------------------------------------------------------------------------
+# Rate limiter
+# ---------------------------------------------------------------------------
+# Shared limiter instance (key: remote IP).  Applied per-endpoint via
+# @limiter.limit("N/period") decorators in auth_router and admin routers.
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+# ---------------------------------------------------------------------------
+# Security headers
+# ---------------------------------------------------------------------------
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
-# Default: allow all origins — correct for a LAN-only, unauthenticated tool.
-# Override: set EQUITY_ALLOWED_ORIGINS="http://192.168.1.x:3000,http://..."
+# PRODUCTION: set EQUITY_ALLOWED_ORIGINS to your exact domain.
+#   EQUITY_ALLOWED_ORIGINS=https://equity.yourdomain.com
+#
+# DEVELOPMENT (LAN-only): "*" is acceptable, but credentials cannot be used
+# with wildcard origins (SameSite=Lax cookies still work for same-origin).
 
 _origins_env = os.environ.get("EQUITY_ALLOWED_ORIGINS", "*").strip()
 _allowed_origins: list[str] = (
     ["*"] if _origins_env == "*" else [o.strip() for o in _origins_env.split(",")]
 )
+_allow_credentials = _origins_env != "*"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=_allow_credentials,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 
 # ---------------------------------------------------------------------------
 # Exception handlers
 # ---------------------------------------------------------------------------
+
+@app.exception_handler(SessionExpired)
+async def session_expired_handler(request: Request, _exc: SessionExpired) -> JSONResponse | RedirectResponse:
+    """
+    Handle unauthenticated requests.
+
+    GET requests are redirected to the login page (browser-friendly).
+    All other methods (POST, etc.) get a 401 JSON response (API-friendly).
+    """
+    if request.method == "GET":
+        next_url = request.url.path
+        return RedirectResponse(url=f"/auth/login?next={next_url}", status_code=303)
+    return JSONResponse(
+        status_code=401,
+        content={"error": "session_expired", "message": "Login required."},
+    )
+
 
 @app.exception_handler(IntegrityError)
 async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSONResponse:
@@ -233,6 +284,7 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSO
 # Routers
 # ---------------------------------------------------------------------------
 
+app.include_router(auth_router.router)
 app.include_router(admin.router)
 app.include_router(analytics.router)
 app.include_router(calendar.router)

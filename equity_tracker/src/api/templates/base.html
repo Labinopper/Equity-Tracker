@@ -56,6 +56,9 @@
       {% if hide_values %}
       <span class="topbar__privacy">Values Hidden</span>
       {% endif %}
+      <form method="post" action="{{ logout_url }}" style="margin-left:auto;display:flex;align-items:center;">
+        <button type="submit" class="topbar__tab" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:0.82rem;">Sign Out</button>
+      </form>
     </div>
 
     {% set _active_subpages = _groups.get(active_group, []) %}

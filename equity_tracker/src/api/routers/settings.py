@@ -20,10 +20,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ...settings import AppSettings
 from .. import _state
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 from ..schemas.settings import SettingsSchema, UpdateSettingsRequest
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(session_required)])
 
 
 def _require_db_path():

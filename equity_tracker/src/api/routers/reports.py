@@ -29,7 +29,7 @@ from ...core.tax_engine import available_tax_years
 from ...core.tax_engine.context import TaxContext
 from ...services.report_service import ReportService
 from ...settings import AppSettings
-from ..dependencies import db_required
+from ..dependencies import db_required, session_required
 from .. import _state
 from ..schemas.reports import (
     AuditLogEntrySchema,
@@ -37,7 +37,7 @@ from ..schemas.reports import (
     EconomicGainSummarySchema,
 )
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(session_required)])
 
 
 @router.get(

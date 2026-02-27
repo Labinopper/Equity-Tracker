@@ -1,0 +1,25 @@
+# Equity Tracker — Caddyfile
+#
+# Replace equity.yourdomain.com with your actual domain.
+# Caddy automatically provisions and renews TLS certificates via Let's Encrypt.
+# HTTP is automatically redirected to HTTPS.
+#
+# Start Caddy: caddy run --config Caddyfile
+# Or as a service: caddy start --config Caddyfile
+
+equity.yourdomain.com {
+    # Forward all traffic to the FastAPI/uvicorn server
+    reverse_proxy localhost:8000 {
+        # Increase timeouts for longer analytics requests
+        transport http {
+            read_timeout 60s
+            write_timeout 60s
+        }
+    }
+
+    # Optional: structured access logs (remove for privacy)
+    log {
+        output file /var/log/caddy/equity-tracker.log
+        format json
+    }
+}
