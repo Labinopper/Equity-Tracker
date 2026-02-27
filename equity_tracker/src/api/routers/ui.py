@@ -224,6 +224,9 @@ class SecurityDailyChange:
     freshness_text: str | None = None
     freshness_level: str = "muted"
     freshness_title: str | None = None
+    # Native-currency daily value change (shown when security is not GBP-denominated)
+    native_currency: str | None = None
+    value_change_native: Decimal | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +363,17 @@ def _sum_optional(values: list[Decimal | None]) -> Decimal | None:
 def _price_row_gbp_value(price_row) -> Decimal | None:
     """Return a GBP Decimal value from a PriceHistory row."""
     raw = price_row.close_price_gbp or price_row.close_price_original_ccy
+    if raw is None:
+        return None
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, TypeError):
+        return None
+
+
+def _price_row_native_value(price_row) -> Decimal | None:
+    """Return the original-currency Decimal price from a PriceHistory row."""
+    raw = price_row.close_price_original_ccy or price_row.close_price_gbp
     if raw is None:
         return None
     try:
@@ -561,6 +575,20 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             value_change = _q2(delta_price * ss.total_quantity)
 
+            # Native-currency value change (uses original-CCY prices directly)
+            native_currency = ss.market_value_native_currency or None
+            latest_native = _price_row_native_value(latest_row)
+            previous_native = _price_row_native_value(previous_row)
+            if (
+                latest_native is not None
+                and previous_native is not None
+                and previous_native > Decimal("0")
+            ):
+                delta_native = latest_native - previous_native
+                value_change_native = _q2(delta_native * ss.total_quantity)
+            else:
+                value_change_native = None
+
             if delta_price > Decimal("0"):
                 direction = "up"
                 arrow = "▲"
@@ -583,6 +611,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 freshness_text=freshness_text,
                 freshness_level=freshness_level,
                 freshness_title=freshness_title,
+                native_currency=native_currency,
+                value_change_native=value_change_native,
             )
     return changes
 
@@ -1793,6 +1823,7 @@ async def net_value(request: Request) -> HTMLResponse:
             "request": request,
             "summary": summary,
             "settings": settings,
+            "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
         },
     )
 
@@ -3271,6 +3302,15 @@ async def settings_nuke_db(
         )
 
     return RedirectResponse("/settings?msg=Database+reset+complete.", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Glossary — GET /glossary
+# ---------------------------------------------------------------------------
+
+@router.get("/glossary", response_class=HTMLResponse, include_in_schema=False)
+async def glossary(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "glossary.html", {"request": request})
 
 
 # ---------------------------------------------------------------------------

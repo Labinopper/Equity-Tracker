@@ -75,7 +75,8 @@
       {% if sr.current.market_value_gbp is not none %}
       <div class="stat__value">&pound;{{ sr.current.market_value_gbp | money }}</div>
       {% else %}
-      <div class="stat__value muted">Unavailable</div>
+      <div class="stat__value muted">No price data</div>
+      <div class="stat-caption">No live price available.</div>
       {% endif %}
     </div>
     <div class="stat {% if sr.current.post_tax_economic_pnl_gbp is not none and sr.current.post_tax_economic_pnl_gbp > 0 %}stat--gain{% elif sr.current.post_tax_economic_pnl_gbp is not none and sr.current.post_tax_economic_pnl_gbp < 0 %}stat--loss{% else %}stat--accent{% endif %}">
@@ -128,7 +129,7 @@
           <td>Current Lots</td>
           <td class="num">{{ sr.current.lot_count }}</td>
           <td class="num">{{ "%.2f"|format(sr.current.quantity) }}</td>
-          <td class="num">{% if sr.current.market_value_gbp is not none %}&pound;{{ sr.current.market_value_gbp | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+          <td class="num">{% if sr.current.market_value_gbp is not none %}&pound;{{ sr.current.market_value_gbp | money }}{% else %}<span class="muted">No price data</span>{% endif %}</td>
           <td class="num">&pound;{{ sr.current.cost_basis_gbp | money }}</td>
           <td class="num">&pound;{{ sr.current.true_cost_gbp | money }}</td>
           <td class="num {% if sr.current.unrealised_tax_pnl_gbp is not none and sr.current.unrealised_tax_pnl_gbp > 0 %}gain{% elif sr.current.unrealised_tax_pnl_gbp is not none and sr.current.unrealised_tax_pnl_gbp < 0 %}loss{% endif %}">

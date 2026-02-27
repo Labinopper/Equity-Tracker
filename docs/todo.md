@@ -9,14 +9,14 @@
 - Duplicate user additions were mapped into the owning EPICs.
 
 ## Active Backlog (Outstanding Only)
-- [ ] Release-note/version sync for completed working-tree stages (`v2.1.2` through `v2.7.1`).
-- [ ] **BUG-A01 (v2.8.0)** Analytics page JS syntax error: `});` → `}` on line 1462 of `analytics.html` — breaks all charts and widget settings. One-character fix.
-- [ ] **v2.8.1** Label clarity: SF→SL (Student Loan), ANI expanded, forfeiture badge wording, Gain If Sold/Economic Gain label alignment, Unrealised prefix, CGT Allowable Cost.
-- [ ] **v2.8.2** Income-zero warning on Portfolio; FX staleness banner parity on Net Value; Blocked/Restricted Value hint.
-- [ ] **v2.8.3** Net Value stat rename; Per Scheme unavailable message; Economic Gain intro scope; Settings intro text.
-- [ ] **v2.8.4** Tax Plan delta direction hints; Simulate employment-tax dash disambiguation; cross-report links (CGT↔Economic Gain, Simulate→Calendar, Portfolio→Tax Plan).
-- [ ] **v2.8.5** Analytics chart init order (BUG-A02); "Why values differ" note; Glossary page; AEA threshold nudge.
-- [ ] **R09 router check** Verify `fx_stale_after_minutes` is passed in net-value route context (required for v2.8.2 FX banner).
+- [x] Release-note/version sync for completed working-tree stages (`v2.1.2` through `v2.7.1`).
+- [x] **BUG-A01 (v2.8.0)** Analytics page JS syntax error: `});` → `}` on line 1462 of `analytics.html` — breaks all charts and widget settings. One-character fix.
+- [x] **v2.8.1** Label clarity: SF→SL (Student Loan), ANI expanded, forfeiture badge wording, Gain If Sold/Economic Gain label alignment, Unrealised prefix, CGT Allowable Cost.
+- [x] **v2.8.2** Income-zero warning on Portfolio; FX staleness banner parity on Net Value; Blocked/Restricted Value hint.
+- [x] **v2.8.3** Net Value stat rename; Per Scheme unavailable message; Economic Gain intro scope; Settings intro text.
+- [x] **v2.8.4** Tax Plan delta direction hints; Simulate employment-tax dash disambiguation; cross-report links (CGT↔Economic Gain, Simulate→Calendar, Portfolio→Tax Plan).
+- [x] **v2.8.5** Analytics chart init order (BUG-A02); "Why values differ" note; Glossary page; AEA threshold nudge.
+- [x] **R09 router check** `fx_stale_after_minutes` confirmed added to net-value route context (v2.8.2).
 
 ## Completed in Working Tree (No Longer Outstanding)
 - [x] `ET20-EPIC-09` reporting QoL: CGT/economic-gain tax-year selector with previous/next navigation controls.

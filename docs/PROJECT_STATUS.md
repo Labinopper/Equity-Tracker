@@ -1,7 +1,7 @@
 # Equity Tracker - Project Status
 
-Last updated: 2026-02-25 (refinement pass audit)  
-Current released version: `v2.1.1`
+Last updated: 2026-02-25 (refinement pass v2.8.x complete)
+Current released version: `v2.8.5`
 
 ## Document Ownership (Single Responsibility)
 - `PROJECT_STATUS.md`: high-level source of truth (released version, current state, roadmap order).
@@ -25,6 +25,18 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 ## Release Snapshot (Recent)
 | Version | Date | Summary |
 |---|---|---|
+| `v2.8.5` | 2026-02-25 | Refinement pass complete: BUG-A01/A02 (analytics JS/chart-init), R01–R16 label/clarity across 10 templates, N01–N03 why-differ note/glossary/AEA nudge, E03–E07 cross-links, encoding fix in ui.py. |
+| `v2.7.1` | 2026-02-25 | ET20-EPIC-09 CGT/Economic-Gain tax-year selector QoL: selector + previous/next navigation controls replacing tabbed year list. |
+| `v2.7.0` | 2026-02-25 | ET20-EPIC-06 Phase B: provider-agnostic FX service (direct/inverse/multi-hop), configurable staleness thresholds, generalized broker/input currency workflow. |
+| `v2.6.3` | 2026-02-25 | ET20-EPIC-08 Groups C+D + UX follow-on: stress/forfeiture/timeline widgets, decision-focus controls, denser responsive analytics layout. |
+| `v2.6.0` | 2026-02-25 | ET20-EPIC-05 Scenario Lab (`/scenario-lab`): multi-lot decision builder, price-shock sensitivity, side-by-side compare and export. |
+| `v2.5.1` | 2026-02-25 | ET20-EPIC-01B timing refinement: sell-this-year vs sell-next-year IT/NI/SL/CGT delta comparison. |
+| `v2.5.0` | 2026-02-25 | ET20-EPIC-07 Portfolio+Per-Scheme QoL: quick filters, sort controls, formula expanders, persistent prefs, focus mode, scheme visibility toggles. |
+| `v2.4.1` | 2026-02-25 | ET20-EPIC-01B Compensation-Aware Tax Plan: salary/bonus what-if with IT/NI/SL and pension-sacrifice tradeoff. |
+| `v2.4.0` | 2026-02-24 | ET20-EPIC-02 Dividend net-return/tax-drag dashboard (`/dividends`) with `DividendEntry` persistence and dividend tax engine. |
+| `v2.3.0` | 2026-02-24 | ET20-EPIC-01 Tax-Year Realization Planner (`/tax-plan`): AEA usage, per-lot CGT projection, cross-year comparison. |
+| `v2.2.0` | 2026-02-24 | ET20-EPIC-08 Groups A+B analytics dashboard: portfolio-overview and tax-position chart widgets with table fallbacks. |
+| `v2.1.2` | 2026-02-24 | CF-06 UI encoding/inline style debt cleanup. |
 | `v2.1.1` | 2026-02-24 | ET20-EPIC-06 Phase A broker currency tracking: broker holding currency lifecycle (`USD`/`GBP`) across add/edit/transfer plus native+GBP visibility and explicit FX basis context. |
 | `v2.1.0` | 2026-02-24 | ET20-EPIC-04 calendar timeline delivery (`/calendar`, `/api/calendar/events`) for vest/forfeiture/tax event visibility. |
 | `v2.0.3` | 2026-02-24 | ET20-EPIC-08 Phase 1 analytics foundation (`/analytics`, summary/time-series APIs, chart theme). |
@@ -34,11 +46,9 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 
 ## Current Delivery Status
 - S1-S7 usability baseline is implemented.
-- v2 shipped through `v2.1.1`: Risk panel, Hide Values, TemplateResponse migration, Analytics Phase 1, Calendar timeline, and Broker Currency Phase A.
-- Working tree implementation has progressed through `v2.7.1` (ET20-EPIC-06 Phase B reliability + generalized multi-currency workflow and ET20-EPIC-09 tax-year selector QoL), pending release-note/version sync.
-- Latest released full regression: `487 passed, 3 skipped` (`python -m pytest -q`, 2026-02-24).
-- Latest working-tree full regression: `533 passed, 3 skipped` (`python -m pytest -q`, 2026-02-25).
-- Next planned stage: release-note/version sync for completed working-tree stages (`v2.1.2` through `v2.7.1`).
+- v2 shipped through `v2.8.5`: all planned EPICs (EPIC-01 through EPIC-09) delivered plus full refinement pass. See Release Snapshot for per-version details.
+- Latest released full regression: `533 passed, 3 skipped` (`python -m pytest -q`, 2026-02-25).
+- Next planned stage: next functional roadmap item to be promoted from backlog.
 
 ## In-Scope Capability Summary
 - Portfolio, per-lot, and per-scheme decision surfaces in GBP.
@@ -51,25 +61,10 @@ Deliver a reliable local decision-support app for equity holdings with clear vie
 - CGT and economic-gain reports expose a tax-year selector with previous/next navigation controls.
 
 ## Known Gaps (Open)
-
-### BUG-A01 — Analytics page non-functional (Critical)
-- **Symptom:** Charts not rendering, widget visibility toggles not working, focus buttons inert.
-- **Root cause:** JavaScript syntax error in `analytics.html` line 1462 — `});` instead of `}` closing the `wireControlActions` function's inner `if` block. Causes the entire IIFE to fail to parse.
-- **Fix:** Change `});` to `}` on that line. One-character fix.
-
-### BUG-A02 — Analytics chart init order (Minor, masked by BUG-A01)
-- After BUG-A01 is fixed, verify charts render at correct dimensions when `applyVisibilityAndFocus` hides widgets before Chart.js measures canvases.
-
-### Refinement pass (v2.8.x) — 16 label/clarity items identified
-- See `v2_implementation_plan.md` Refinement Pass section for full list.
-- Summary: SF/SL terminology inconsistency, ANI undefined, forfeiture badge wording, income-zero warning missing on Portfolio, Net Value stat scope confusion, Tax Plan delta labels lack directional context.
-- All items are template-only changes. No service or schema changes required.
+None outstanding. All v2.8.x items resolved.
 
 ## Roadmap (Ordered)
-1. Release-note/version sync for completed working-tree stages (`v2.1.2` through `v2.7.1`).
-2. BUG-A01 fix (`v2.8.0`) — analytics JS syntax error.
-3. Refinement pass (`v2.8.1`–`v2.8.5`) — labels, clarity, cross-screen consistency.
-4. Next functional roadmap item to be promoted from backlog after refinement pass.
+1. Next functional roadmap item to be promoted from backlog.
 
 ## Working Rules
 - Keep this file short and decision-focused.

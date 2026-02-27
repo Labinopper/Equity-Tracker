@@ -148,6 +148,13 @@ def test_api_scenario_run_respects_hide_values_mode(client):
 
 
 def test_scenario_lab_navigation_link_present_on_home(client):
+    # Scenario Lab is under the Simulate group tab in the two-tier nav.
+    # The home page shows the Simulate group tab (always visible in the topbar),
+    # and the scenario-lab subnav link is visible when on any Simulate-group page.
     page = client.get("/")
     assert page.status_code == 200
-    assert 'href="/scenario-lab"' in page.text
+    assert 'href="/simulate"' in page.text  # Simulate group tab always present
+
+    simulate_page = client.get("/simulate")
+    assert simulate_page.status_code == 200
+    assert 'href="/scenario-lab"' in simulate_page.text  # subnav visible within group

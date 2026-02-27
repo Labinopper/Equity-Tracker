@@ -12,28 +12,84 @@
 <body class="{{ 'values-hidden' if hide_values else '' }}">
 <div class="layout">
 
-  <header class="topbar">
-    <span class="topbar__brand">EQUITY <span class="topbar__brand-accent">TRACKER</span></span>
-    <span class="topbar__divider"></span>
-    <nav class="topbar__nav">
-      <a href="/"              class="{{ 'active' if request.url.path == '/' }}">Portfolio</a>
-      <a href="/per-scheme"    class="{{ 'active' if request.url.path == '/per-scheme' }}">Per Scheme</a>
-      <a href="/analytics"     class="{{ 'active' if request.url.path == '/analytics' }}">Analytics</a>
-      <a href="/risk"          class="{{ 'active' if request.url.path == '/risk' }}">Risk</a>
-      <a href="/calendar"      class="{{ 'active' if request.url.path == '/calendar' }}">Calendar</a>
-      <a href="/tax-plan"      class="{{ 'active' if request.url.path == '/tax-plan' }}">Tax Plan</a>
-      <a href="/scenario-lab"  class="{{ 'active' if request.url.path == '/scenario-lab' }}">Scenario Lab</a>
-      <a href="/dividends"     class="{{ 'active' if request.url.path == '/dividends' }}">Dividends</a>
-      <a href="/simulate"      class="{{ 'active' if request.url.path == '/simulate' }}">Simulate</a>
-      <a href="/cgt"           class="{{ 'active' if request.url.path == '/cgt' }}">CGT</a>
-      <a href="/economic-gain" class="{{ 'active' if request.url.path == '/economic-gain' }}">Economic Gain</a>
-      <a href="/net-value"     class="{{ 'active' if request.url.path == '/net-value' }}">Net Value</a>
-      <a href="/audit"         class="{{ 'active' if request.url.path == '/audit' }}">Audit</a>
-      <a href="/settings"      class="{{ 'active' if request.url.path == '/settings' }}">Settings</a>
+{% set _path = request.url.path %}
+{% set _groups = {
+  'decide':   ['/', '/net-value'],
+  'schemes':  ['/per-scheme'],
+  'risk':     ['/risk', '/analytics', '/calendar'],
+  'simulate': ['/simulate', '/scenario-lab', '/tax-plan'],
+  'reports':  ['/cgt', '/economic-gain', '/dividends', '/audit'],
+  'settings': ['/settings', '/glossary']
+} %}
+{% set _path_to_group = {
+  '/':              'decide',
+  '/net-value':     'decide',
+  '/per-scheme':    'schemes',
+  '/risk':          'risk',
+  '/analytics':     'risk',
+  '/calendar':      'risk',
+  '/simulate':      'simulate',
+  '/scenario-lab':  'simulate',
+  '/tax-plan':      'simulate',
+  '/cgt':           'reports',
+  '/economic-gain': 'reports',
+  '/dividends':     'reports',
+  '/audit':         'reports',
+  '/settings':      'settings',
+  '/glossary':      'settings'
+} %}
+{% set active_group = _path_to_group.get(_path, '') %}
+
+  <header class="nav-shell">
+
+    <div class="topbar">
+      <span class="topbar__brand">EQUITY <span class="topbar__brand-accent">TRACKER</span></span>
+      <span class="topbar__divider"></span>
+      <nav class="topbar__nav" aria-label="Primary navigation">
+        <a href="/"         class="topbar__tab{{ ' topbar__tab--active' if active_group == 'decide' }}">Decide</a>
+        <a href="/per-scheme" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'schemes' }}">Schemes</a>
+        <a href="/risk"     class="topbar__tab{{ ' topbar__tab--active' if active_group == 'risk' }}">Risk</a>
+        <a href="/simulate" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'simulate' }}">Simulate</a>
+        <a href="/cgt"      class="topbar__tab{{ ' topbar__tab--active' if active_group == 'reports' }}">Reports</a>
+        <a href="/settings" class="topbar__tab topbar__tab--settings{{ ' topbar__tab--active' if active_group == 'settings' }}">Settings</a>
+      </nav>
+      {% if hide_values %}
+      <span class="topbar__privacy">Values Hidden</span>
+      {% endif %}
+    </div>
+
+    {% set _active_subpages = _groups.get(active_group, []) %}
+    {% if _active_subpages | length > 1 %}
+    <nav class="subnav" aria-label="Section navigation">
+
+      {% if active_group == 'decide' %}
+        <a href="/"          class="subnav__link{{ ' subnav__link--active' if _path == '/' }}">Portfolio</a>
+        <a href="/net-value" class="subnav__link{{ ' subnav__link--active' if _path == '/net-value' }}">Net Value</a>
+
+      {% elif active_group == 'risk' %}
+        <a href="/risk"      class="subnav__link{{ ' subnav__link--active' if _path == '/risk' }}">Risk</a>
+        <a href="/analytics" class="subnav__link{{ ' subnav__link--active' if _path == '/analytics' }}">Analytics</a>
+        <a href="/calendar"  class="subnav__link{{ ' subnav__link--active' if _path == '/calendar' }}">Calendar</a>
+
+      {% elif active_group == 'simulate' %}
+        <a href="/simulate"     class="subnav__link{{ ' subnav__link--active' if _path == '/simulate' }}">Simulate</a>
+        <a href="/scenario-lab" class="subnav__link{{ ' subnav__link--active' if _path == '/scenario-lab' }}">Scenario Lab</a>
+        <a href="/tax-plan"     class="subnav__link{{ ' subnav__link--active' if _path == '/tax-plan' }}">Tax Plan</a>
+
+      {% elif active_group == 'reports' %}
+        <a href="/cgt"           class="subnav__link{{ ' subnav__link--active' if _path == '/cgt' }}">CGT</a>
+        <a href="/economic-gain" class="subnav__link{{ ' subnav__link--active' if _path == '/economic-gain' }}">Economic Gain</a>
+        <a href="/dividends"     class="subnav__link{{ ' subnav__link--active' if _path == '/dividends' }}">Dividends</a>
+        <a href="/audit"         class="subnav__link{{ ' subnav__link--active' if _path == '/audit' }}">Audit</a>
+
+      {% elif active_group == 'settings' %}
+        <a href="/settings" class="subnav__link{{ ' subnav__link--active' if _path == '/settings' }}">Settings</a>
+        <a href="/glossary" class="subnav__link{{ ' subnav__link--active' if _path == '/glossary' }}">Glossary</a>
+
+      {% endif %}
     </nav>
-    {% if hide_values %}
-    <span class="topbar__privacy">Values Hidden</span>
     {% endif %}
+
   </header>
 
   <main class="main">

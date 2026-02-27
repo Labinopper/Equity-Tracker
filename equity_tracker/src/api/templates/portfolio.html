@@ -76,6 +76,7 @@
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
+    <div class="stat-caption">Includes locked lots (e.g. pre-vest RSU) and ESPP+ matched shares at forfeiture risk. <a href="/net-value">Per-lot detail &rarr;</a></div>
   </div>
   <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label">Net Gain If Sold Today</div>
@@ -86,13 +87,31 @@
     {% endif %}
   </div>
 </div>
+
+{% if not settings or (settings.default_gross_income == 0 and settings.default_other_income == 0) %}
+<div class="alert alert-warning">
+  Income settings are zero. Employment-tax estimates may understate your actual position.
+  <a href="/settings">Configure in Settings</a>
+</div>
+{% endif %}
+
 <p class="muted panel-note">
   Employment-tax estimates cover IT + NIC + Student Loan where scheme rules apply.
   ISA lots are treated as tax-sheltered in this estimate.
   Est. Net Liquidity includes only shares sellable today and excludes locked/forfeiture-restricted value.
   All totals are shown in {{ summary.valuation_currency }}.
-  <a href="/net-value">Full breakdown</a>
+  <a href="/net-value">Full breakdown</a> &bull;
+  For cross-year tax-timing analysis and AEA (Annual Exempt Amount) usage, see <a href="/tax-plan">Tax Plan</a>.
 </p>
+
+<details class="security-lots-toggle">
+  <summary class="muted">Why may values differ between pages?</summary>
+  <ul class="muted" style="margin:0.5rem 0 0 1.25rem;font-size:0.85rem;">
+    <li><strong>Portfolio:</strong> Estimated from stored market price and approximate employment tax.</li>
+    <li><strong>Simulate:</strong> Uses the price you enter; employment tax requires income settings; includes broker fees.</li>
+    <li><strong>Net Value:</strong> Hypothetical full liquidation across all lots (including locked). No broker fees.</li>
+  </ul>
+</details>
 
 {% if summary.fx_as_of or summary.fx_conversion_basis %}
 <div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %} info-compact">
@@ -158,8 +177,13 @@
     </div>
     {% set daily = security_daily_changes.get(ss.security.id) %}
     <div class="security-header__actions">
+      {% if ss.current_price_native is not none and ss.market_value_native_currency %}
+      <span class="daily-change-meta daily-change-meta--muted" title="Current market price per share">
+        {{ ss.market_value_native_currency }} {{ ss.current_price_native | public_money }}{% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}&nbsp;/ &pound;{{ ss.current_price_gbp | public_money }}{% endif %}
+      </span>
+      {% endif %}
       {% if daily and daily.percent_change is not none and daily.value_change_gbp is not none %}
-      <span class="daily-change daily-change--{{ daily.direction }}" title="Previous close {{ daily.previous_as_of }} -> {{ daily.current_as_of }}">
+      <span class="daily-change daily-change--{{ daily.direction }}" title="Previous close {{ daily.previous_as_of }} → {{ daily.current_as_of }} | Daily move %: change in price. Δ amount: today's total portfolio value change for this holding.">
         <span class="daily-change__arrow">{{ daily.arrow }}</span>
         <span class="daily-change__text">
           {% if daily.direction == "up" %}
@@ -169,7 +193,7 @@
           {% else %}
           Flat
           {% endif %}
-          {{ "%.2f"|format(daily.percent_change | abs) }}% (&pound;{{ daily.value_change_gbp | abs | money }})
+          {{ "%.2f"|format(daily.percent_change | abs) }}% {% if daily.native_currency and daily.value_change_native is not none %}{% if daily.native_currency == "GBP" %}(Δ &pound;{{ daily.value_change_native | abs | money }}){% else %}(Δ {{ daily.native_currency }} {{ daily.value_change_native | abs | money }}){% endif %}{% else %}(Δ &pound;{{ daily.value_change_gbp | abs | money }}){% endif %}
         </span>
       </span>
       {% else %}
@@ -214,9 +238,9 @@
     <span>True cost <strong>&pound;{{ ss.total_true_cost_gbp | money }}</strong></span>
     {% if ss.current_price_native is not none and ss.market_value_native_currency %}
     <span>
-      Price <strong>{{ ss.market_value_native_currency }} {{ ss.current_price_native | money }}</strong>
+      Price <strong>{{ ss.market_value_native_currency }} {{ ss.current_price_native | public_money }}</strong>
       {% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}
-      / <strong>&pound;{{ ss.current_price_gbp | money }}</strong>
+      / <strong>&pound;{{ ss.current_price_gbp | public_money }}</strong>
       {% endif %}
     </span>
     {% endif %}
@@ -229,14 +253,14 @@
       <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
     </span>
     {% if ss.unrealised_gain_cgt_gbp is not none %}
-    <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
-      P&amp;L (Cost Basis)
+    <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}" title="Market value minus cost basis (pre-tax). Employment tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">
+      Unrealised P&amp;L (Cost Basis, pre-tax)
       <strong>{% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}</strong>
     </span>
     {% endif %}
     {% if ss.unrealised_gain_economic_gbp is not none %}
-    <span class="{% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">
-      P&amp;L (Econ)
+    <span class="{% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}" title="Market value minus true economic cost (pre-tax). True cost includes employment tax already paid at acquisition, but tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">
+      Unrealised P&amp;L (Econ, pre-tax)
       <strong>{% if ss.unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_economic_gbp | money }}</strong>
     </span>
     {% endif %}
@@ -275,7 +299,7 @@
         <span class="warning-text">Employment Tax: <strong>-&pound;{{ ss.est_cgt_gbp | money }}</strong></span>
         <span class="gain">Net: <strong>&pound;{{ ss.est_net_proceeds_gbp | money }}</strong></span>
         {% endif %}
-        {% if ss.has_forfeiture_risk %}<span class="badge badge-warning">Forfeiture Risk</span>{% endif %}
+        {% if ss.has_forfeiture_risk %}<span class="badge badge-warning">Forfeiture Window</span>{% endif %}
         {% if ss.has_sip_qualifying_risk %}<span class="badge badge-warning">Tax Window</span>{% endif %}
       </span>
     </summary>
@@ -304,7 +328,7 @@
         </div>
         {% if ss.unrealised_gain_cgt_gbp is not none %}
         <div class="net-value-item">
-          <div class="net-value-item__label">P&amp;L (Cost Basis)</div>
+          <div class="net-value-item__label" title="Market value minus cost basis. Employment tax on disposal not deducted — see Est. Net Proceeds for post-tax.">Unrealised P&amp;L (Cost Basis, pre-tax)</div>
           <div class="net-value-item__value {% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
             {% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}
           </div>
@@ -312,7 +336,7 @@
         {% endif %}
         {% if ss.unrealised_gain_economic_gbp is not none %}
         <div class="net-value-item">
-          <div class="net-value-item__label">P&amp;L (Economic)</div>
+          <div class="net-value-item__label" title="Market value minus true economic cost. Employment tax on disposal not deducted — see Est. Net Proceeds for post-tax.">Unrealised P&amp;L (Economic, pre-tax)</div>
           <div class="net-value-item__value {% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">
             {% if ss.unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_economic_gbp | money }}
           </div>
@@ -382,7 +406,7 @@
             <td>
               <span class="status-stack">
                 {% if has_forfeiture_risk %}
-                <span class="badge badge-warning">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d)</span>
+                <span class="badge badge-warning">Forfeiture Window ({{ row.forfeiture_risk_days_remaining }}d left)</span>
                 {% elif row.sellability_status == "LOCKED" %}
                 <span class="badge badge-neutral">Locked</span>
                 {% else %}
@@ -579,7 +603,7 @@
         <div class="position-card__label">Identity</div>
         <div class="position-card__value">
           {% if has_forfeiture_risk %}
-          <span class="badge badge-warning">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d)</span>
+          <span class="badge badge-warning">Forfeiture Window ({{ row.forfeiture_risk_days_remaining }}d left)</span>
           {% elif row.sellability_status == "LOCKED" %}
           <span class="badge badge-neutral">Locked</span>
           {% else %}

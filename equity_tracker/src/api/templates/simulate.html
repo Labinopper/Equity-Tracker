@@ -113,17 +113,20 @@
       </div>
     </div>
     <div class="stat">
-      <div class="stat__label">Economic Gain</div>
+      <div class="stat__label">Economic Gain (vs True Cost)</div>
       <div class="stat__value {{ 'gain' if result.total_realised_gain_economic_gbp >= 0 else 'loss' }}">
         &pound;{{ "%.2f" % result.total_realised_gain_economic_gbp }}
       </div>
+      <div class="stat-caption">Proceeds minus true cost at acquisition.</div>
     </div>
     <div class="stat">
       <div class="stat__label">Employment Tax (IT + NIC + SL)</div>
       {% if result.sip_tax_estimates %}
       <div class="stat__value warning-value">&pound;{{ "%.2f" % result.total_sip_employment_tax_gbp }}</div>
+      {% elif prev and prev.scheme_type in ('BROKERAGE', 'ISA') %}
+      <div class="stat__value muted">N/A (not applicable to this scheme type)</div>
       {% else %}
-      <div class="stat__value muted">&mdash;</div>
+      <div class="stat__value muted"><a href="/settings">Settings required &rarr;</a></div>
       {% endif %}
     </div>
     <div class="stat">
@@ -132,11 +135,22 @@
       <div class="stat__value gain">
         &pound;{{ "%.2f" % (result.total_proceeds_gbp - result.total_sip_employment_tax_gbp) }}
       </div>
+      {% elif prev and prev.scheme_type in ('BROKERAGE', 'ISA') %}
+      <div class="stat__value muted">N/A (not applicable to this scheme type)</div>
       {% else %}
       <div class="stat__value muted">&mdash;</div>
       {% endif %}
     </div>
   </div>
+
+  <details class="security-lots-toggle">
+    <summary class="muted">Why may values differ between pages?</summary>
+    <ul class="muted" style="margin:0.5rem 0 0 1.25rem;font-size:0.85rem;">
+      <li><strong>Portfolio:</strong> Estimated from stored market price and approximate employment tax.</li>
+      <li><strong>Simulate:</strong> Uses the price you enter; employment tax requires income settings; includes broker fees.</li>
+      <li><strong>Net Value:</strong> Hypothetical full liquidation across all lots (including locked). No broker fees.</li>
+    </ul>
+  </details>
 
   <h3 class="section-title-sm">FIFO Allocations</h3>
   <div class="table-wrap">
@@ -213,7 +227,7 @@
             <th class="num">Qty Forfeited</th>
             <th class="num">Value Lost</th>
             <th>Forfeiture Ends</th>
-            <th class="num">Days Remaining</th>
+            <th class="num">Days Until Safe to Sell</th>
           </tr>
         </thead>
         <tbody>
@@ -233,6 +247,7 @@
             <td class="num loss"><strong>&pound;{{ "%.2f" % result.total_forfeiture_value_gbp }}</strong></td>
             <td colspan="2" class="forfeiture-wait-note">
               Wait until <strong>{{ result.forfeiture_warnings | map(attribute='forfeiture_end_date') | max }}</strong> to avoid forfeiture.
+              <a href="/calendar">View in Calendar &rarr;</a>
             </td>
           </tr>
         </tfoot>

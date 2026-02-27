@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Glossary - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><h1>Glossary</h1></div>
+<p class="muted page-intro">
+  Plain-English definitions of key terms used across this app.
+</p>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Gains and Cost Terms</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th style="width:220px">True Cost</th>
+          <td>What you effectively paid after accounting for tax events at acquisition: income tax at vest for RSU; employer subsidy for ESPP+; purchase price for ESPP/BROKERAGE/ISA. Used in Economic Gain.</td>
+        </tr>
+        <tr>
+          <th>Cost Basis</th>
+          <td>The HMRC-recognised cost base for calculating capital gain on disposal (also called Allowable Cost). May differ from True Cost when acquisition-time tax creates a gap.</td>
+        </tr>
+        <tr>
+          <th>Allowable Cost</th>
+          <td>HMRC term for Cost Basis in CGT self-assessment filing context. Used in the CGT Report.</td>
+        </tr>
+        <tr>
+          <th>Economic Gain</th>
+          <td>Proceeds minus True Cost. Shows true investment return. May differ from CGT Gain because True Cost and Cost Basis can differ.</td>
+        </tr>
+        <tr>
+          <th>Unrealised P&amp;L</th>
+          <td>Paper gain or loss on shares you still hold. Becomes realised only when you sell.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Tax Terms</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th style="width:220px">Employment Tax</th>
+          <td>Income Tax (IT) + National Insurance (NI) + Student Loan (SL) on scheme-eligible disposals (RSU, ESPP+). Abbreviated "IT + NI + SL".</td>
+        </tr>
+        <tr>
+          <th>AEA</th>
+          <td>Annual Exempt Amount &mdash; the CGT tax-free threshold for the year (£3,000 for 2024&ndash;25 onwards). Gains below AEA in a tax year are not subject to CGT.</td>
+        </tr>
+        <tr>
+          <th>ANI (Adjusted Net Income)</th>
+          <td>Gross Employment Income minus Pension Sacrifice plus Other Income. Determines Personal Allowance taper above £100k. Used in the Tax Plan what-if analysis.</td>
+        </tr>
+        <tr>
+          <th>SL (Student Loan)</th>
+          <td>Student Loan repayment. Deducted alongside Income Tax and NI when employment tax is estimated on eligible scheme disposals.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Liquidity and Status Terms</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th style="width:220px">Est. Net Liquidity (Sellable)</th>
+          <td>Sum of Net If Sold Today for <strong>sellable rows only</strong>. Locked and forfeiture-restricted lots are excluded. Shown on the Portfolio page.</td>
+        </tr>
+        <tr>
+          <th>Hypothetical Full Liquidation</th>
+          <td>Gross market value minus estimated employment tax across <strong>all lots</strong> (including locked and forfeiture-restricted). Shown on the Net Value page. Not directly comparable to Est. Net Liquidity.</td>
+        </tr>
+        <tr>
+          <th>Blocked/Restricted Value</th>
+          <td>Market value of locked lots (e.g. pre-vest RSU) plus ESPP+ matched-share forfeiture-at-risk value. Cannot be realised until the lock or forfeiture window expires.</td>
+        </tr>
+        <tr>
+          <th>Forfeiture Window</th>
+          <td>The period after ESPP+ lot acquisition during which selling the paired employee shares forfeits the matched (employer) shares. Badge "(Xd left)" means X days remaining until the window closes and it is safe to sell.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

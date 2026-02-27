@@ -19,9 +19,13 @@
 
 {% if summary.fx_conversion_basis or summary.fx_as_of %}
 <div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
+  {% if summary.fx_is_stale %}Warning: {% endif %}
   {% if summary.fx_conversion_basis %}{{ summary.fx_conversion_basis }}{% endif %}
   {% if summary.fx_as_of %}
-  {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}.
+  {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}
+  {% endif %}
+  {% if summary.fx_is_stale and summary.fx_as_of %}
+  (stale &gt;{{ fx_stale_after_minutes }}m); refresh prices to update.
   {% endif %}
 </div>
 {% endif %}
@@ -45,10 +49,10 @@
     {% endif %}
   </div>
   <div class="stat stat--gain">
-    <div class="stat__label">Est. Net Liquidation</div>
+    <div class="stat__label">Hypothetical Full Liquidation (All Lots, incl. locked)</div>
     {% if summary.est_total_net_liquidation_gbp is not none %}
     <div class="stat__value gain">&pound;{{ summary.est_total_net_liquidation_gbp | money }}</div>
-    <div class="stat-caption">Gross minus estimated employment tax</div>
+    <div class="stat-caption">Gross value minus employment-tax estimate. Includes locked and forfeiture-restricted shares.</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
@@ -66,6 +70,15 @@
 </div>
 {% endif %}
 
+<details class="security-lots-toggle">
+  <summary class="muted">Why may values differ between pages?</summary>
+  <ul class="muted" style="margin:0.5rem 0 0 1.25rem;font-size:0.85rem;">
+    <li><strong>Portfolio:</strong> Estimated from stored market price and approximate employment tax.</li>
+    <li><strong>Simulate:</strong> Uses the price you enter; employment tax requires income settings; includes broker fees.</li>
+    <li><strong>Net Value:</strong> Hypothetical full liquidation across all lots (including locked). No broker fees.</li>
+  </ul>
+</details>
+
 {% if not summary.securities %}
 <div class="empty-state"><p>No securities with active lots.</p></div>
 {% else %}
@@ -76,7 +89,7 @@
     <div class="security-header__left">
       <span class="security-ticker">{{ ss.security.ticker }}</span>
       <span class="security-name">{{ ss.security.name }}</span>
-      {% if ss.has_forfeiture_risk %}<span class="badge badge-warning">Forfeiture Risk</span>{% endif %}
+      {% if ss.has_forfeiture_risk %}<span class="badge badge-warning">Forfeiture Window</span>{% endif %}
       {% if ss.has_sip_qualifying_risk %}<span class="badge badge-warning">Tax Window</span>{% endif %}
     </div>
     <div class="security-header__actions">
@@ -86,9 +99,9 @@
       {% endif %}
       {% if ss.current_price_native is not none and ss.market_value_native_currency %}
       <span class="muted mono-small">
-        Price {{ ss.market_value_native_currency }} {{ ss.current_price_native | money }}
+        Price {{ ss.market_value_native_currency }} {{ ss.current_price_native | public_money }}
         {% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}
-        / &pound;{{ ss.current_price_gbp | money }}
+        / &pound;{{ ss.current_price_gbp | public_money }}
         {% endif %}
       </span>
       {% endif %}

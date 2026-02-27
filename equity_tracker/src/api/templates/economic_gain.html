@@ -4,8 +4,7 @@
 {% block content %}
 <div class="page-title"><h1>Economic Gain Report</h1></div>
 <p class="muted page-intro">
-  Uses <em>true cost per share</em> instead of CGT cost basis.
-  Most relevant for SIP Partnership shares purchased from gross salary.
+  Uses <em>true cost per share</em> instead of CGT cost basis &mdash; most relevant when acquisition-time tax (e.g. income tax at vest, ESPP discounts) creates a gap between what you paid and the CGT cost basis.
 </p>
 
 <form method="get" action="/economic-gain" class="tax-year-selector">
@@ -105,6 +104,10 @@
   </div>
 </div>
 {% endif %}
+
+<p class="muted panel-note">
+  For CGT filing purposes, see the <a href="/cgt">CGT Report &rarr;</a> &mdash; figures will differ as CGT uses cost basis, not true cost.
+</p>
 
 {% endblock %}
 

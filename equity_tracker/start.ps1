@@ -6,4 +6,4 @@ $env:EQUITY_DB_PATH      = "C:\Users\labin\portfolio.db"
 $env:EQUITY_DB_ENCRYPTED = "false"
 
 Write-Host "Starting Equity Tracker  →  http://localhost:8000" -ForegroundColor Cyan
-python run_api.py
+& "$PSScriptRoot\.venv\Scripts\python.exe" run_api.py

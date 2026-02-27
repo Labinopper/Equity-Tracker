@@ -1459,7 +1459,7 @@
         persistVisibility(state.visibility);
         persistFocusId(state.focusId);
       });
-    });
+    }
   }
 
   function wireTableToggles() {
@@ -1476,6 +1476,17 @@
     });
   }
 
+  var state = {
+    visibility: loadVisibility(),
+    focusId: loadFocusId()
+  };
+
+  if (!focusById(state.focusId) && state.focusId !== "all") {
+    state.focusId = "all";
+  }
+
+  applyVisibilityAndFocus(state);
+
   renderPortfolioValueTime();
   renderSchemeConcentration();
   renderSecurityConcentration();
@@ -1488,16 +1499,6 @@
   renderForfeitureAtRisk();
   renderEventsTimeline();
 
-  var state = {
-    visibility: loadVisibility(),
-    focusId: loadFocusId()
-  };
-
-  if (!focusById(state.focusId) && state.focusId !== "all") {
-    state.focusId = "all";
-  }
-
-  applyVisibilityAndFocus(state);
   wireWidgetToggles(state);
   wireFocusControls(state);
   wireControlActions(state);

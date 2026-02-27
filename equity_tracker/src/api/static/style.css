@@ -83,6 +83,11 @@
   --radius-lg:  8px;
   --shadow:     0 4px 16px rgba(0,0,0,0.5);
   --shadow-sm:  0 2px 6px rgba(0,0,0,0.35);
+
+  /* Navigation heights (used for sticky table-header offsets) */
+  --nav-topbar-h: 52px;
+  --nav-subnav-h: 36px;
+  --nav-total-h:  calc(var(--nav-topbar-h) + var(--nav-subnav-h));
 }
 
 /* -- Reset & base --------------------------------------- */
@@ -126,6 +131,13 @@ code, pre {
   min-height: 100vh;
 }
 
+/* nav-shell owns the sticky for both tiers */
+.nav-shell {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
 .topbar {
   background: var(--bg-nav);
   border-bottom: 1px solid var(--border);
@@ -133,10 +145,7 @@ code, pre {
   display: flex;
   align-items: center;
   gap: 0;
-  height: 52px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  height: var(--nav-topbar-h);
 }
 
 .topbar__brand {
@@ -201,6 +210,79 @@ code, pre {
 }
 
 .topbar__nav a.active {
+  color: var(--text-heading);
+  border-bottom-color: var(--accent);
+}
+
+/* =========================================================
+   Two-tier nav — Tier 1 group tabs
+   ========================================================= */
+
+.topbar__tab {
+  color: var(--text-muted);
+  padding: 0 1rem;
+  height: var(--nav-topbar-h);
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topbar__tab:hover {
+  color: var(--text-heading);
+  text-decoration: none;
+}
+
+.topbar__tab--active {
+  color: var(--text-heading);
+  border-bottom-color: var(--accent);
+}
+
+/* Push Settings tab to far right */
+.topbar__tab--settings {
+  margin-left: auto;
+}
+
+/* =========================================================
+   Two-tier nav — Tier 2 subnav
+   ========================================================= */
+
+.subnav {
+  background: var(--bg-nav);
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: var(--nav-subnav-h);
+}
+
+.subnav__link {
+  color: var(--text-muted);
+  padding: 0 0.85rem;
+  height: var(--nav-subnav-h);
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.subnav__link:hover {
+  color: var(--text-heading);
+  text-decoration: none;
+}
+
+.subnav__link--active {
   color: var(--text-heading);
   border-bottom-color: var(--accent);
 }
@@ -1913,6 +1995,10 @@ tr:hover td.loss {
 @media (max-width: 768px) {
   .topbar { gap: 0; padding: 0 1rem; }
   .topbar__nav a { padding: 0 0.6rem; font-size: 0.78rem; }
+  .topbar__tab { padding: 0 0.6rem; font-size: 0.78rem; }
+  .subnav { padding: 0 1rem; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .subnav::-webkit-scrollbar { display: none; }
+  .subnav__link { padding: 0 0.65rem; font-size: 0.75rem; flex-shrink: 0; }
   .main { padding: 1rem; }
   .stats { gap: 0.5rem; }
   .stat { min-width: 130px; padding: 0.75rem 1rem; }
@@ -1946,12 +2032,15 @@ tr:hover td.loss {
   .topbar__divider { display: none; }
   .topbar__brand { font-size: 0.85rem; }
   .stats .stat { min-width: 100%; }
+  .topbar__tab { padding: 0 0.45rem; font-size: 0.73rem; }
+  .subnav__link { padding: 0 0.5rem; font-size: 0.72rem; }
 }
 
 /* -- Print styles (net-value page) --------------------- */
 
 @media print {
   .topbar,
+  .nav-shell,
   .btn,
   .page-title > div,
   #refresh-countdown { display: none !important; }

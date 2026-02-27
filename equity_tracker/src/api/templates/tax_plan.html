@@ -44,7 +44,7 @@
 {% set timing = comp.timing_comparison %}
 <div class="card">
   <div class="card__header">
-    <h2 class="card__title">Compensation What-If (IT / NI / SF + CGT)</h2>
+    <h2 class="card__title">Compensation What-If (IT / NI / SL + CGT)</h2>
   </div>
   <form method="get" action="/tax-plan" class="inline-form">
     <div class="form-grid">
@@ -77,6 +77,7 @@
           inputmode="decimal"
           value="{{ comp.inputs.sell_amount_gbp }}"
         >
+        <p class="form-hint">Sellable taxable pool: &pound;{{ comp.sale_assumption.sellable_market_value_pool_gbp|money }}</p>
       </div>
       <div class="form-field">
         <label for="additional_pension_sacrifice_gbp">Additional Pension Sacrifice (&pound;)</label>
@@ -98,27 +99,31 @@
     Existing pension sacrifice in settings: &pound;{{ comp.inputs.existing_pension_sacrifice_gbp|money }}.
     Student loan plan: {{ comp.inputs.student_loan_plan if comp.inputs.student_loan_plan is not none else 'None' }}.
   </p>
+  <p class="form-hint">
+    ANI (Adjusted Net Income) = Gross Income &minus; Pension Sacrifice + Other Income. Affects Personal Allowance taper above &pound;100k.
+    SL = Student Loan repayment.
+  </p>
 </div>
 
 <div class="stats">
   <div class="stat">
-    <span class="stat__label">Sell vs Hold Net Cash Delta</span>
+    <span class="stat__label">Sell vs Hold Net Cash Delta (+ = sell better)</span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_vs_hold_net_cash_delta_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Sell Next Year vs This Year</span>
+    <span class="stat__label">Sell Next Year vs This Year (+ = waiting saves net cash)</span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_next_vs_sell_delta_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Sell + Pension vs Sell Delta</span>
+    <span class="stat__label">Sell + Pension vs Sell Delta (+ = adding pension saves net cash)</span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_with_pension_vs_sell_delta_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Sell Next + Pension vs This + Pension</span>
+    <span class="stat__label">Sell Next + Pension vs This + Pension (+ = waiting saves net cash)</span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_next_with_pension_vs_sell_with_pension_delta_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">ANI Reduction from Extra Pension</span>
+    <span class="stat__label">ANI (Adj. Net Income) Reduction from Extra Pension</span>
     <span class="stat__value">&pound;{{ comp.comparison.ani_reduction_from_extra_pension_gbp|money }}</span>
   </div>
   <div class="stat">
@@ -169,12 +174,12 @@
         <tr>
           <th>Scenario</th>
           <th>Tax Year</th>
-          <th class="num">ANI After Bonus</th>
+          <th class="num">ANI (Adj. Net Income) After Bonus</th>
           <th class="num">PA After Bonus</th>
           <th class="num">Marginal IT</th>
           <th class="num">Marginal NI</th>
-          <th class="num">Marginal SF</th>
-          <th class="num">Bonus Tax (IT+NI+SF)</th>
+          <th class="num">Marginal SL (Student Loan)</th>
+          <th class="num">Bonus Tax (IT+NI+SL)</th>
           <th class="num">Incremental CGT (Sale Year)</th>
           <th class="num">Sale Net Cash</th>
           <th class="num">Pension Net Cash Cost</th>
@@ -220,7 +225,7 @@
           <th>Scenario Basis</th>
           <th class="num">IT Delta</th>
           <th class="num">NI Delta</th>
-          <th class="num">SF Delta</th>
+          <th class="num">SL Delta</th>
           <th class="num">Payroll Delta</th>
           <th class="num">CGT Delta</th>
           <th class="num">Combined Tax Delta</th>

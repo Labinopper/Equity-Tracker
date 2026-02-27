@@ -40,15 +40,8 @@ templates = Jinja2Templates(
 )
 
 
-@pass_context
-def _money(context, value: object) -> str:
-    """
-    Format a monetary value to 2 decimal places with thousands separators.
-
-    Accepts Decimal, str, int, or float.  Falls back to str(value) on error.
-    """
-    if bool(context.get("hide_values")):
-        return "••••"
+def _format_decimal(value: object) -> str:
+    """Core formatting: 2 decimal places, thousands separators."""
     try:
         d = value if isinstance(value, Decimal) else Decimal(str(value))
         return f"{d:,.2f}"
@@ -56,4 +49,29 @@ def _money(context, value: object) -> str:
         return str(value)
 
 
+@pass_context
+def _money(context, value: object) -> str:
+    """
+    Format a private monetary value.
+
+    Hides the value (shows ••••) when the hide_values setting is active.
+    Use for personal financial data: holdings, costs, gains, net proceeds.
+    Use `public_money` for publicly observable market prices.
+    """
+    if bool(context.get("hide_values")):
+        return "••••"
+    return _format_decimal(value)
+
+
+def _public_money(value: object) -> str:
+    """
+    Format a publicly observable market price (never hidden).
+
+    Use for per-share market prices, exchange rates, and other data that
+    is publicly available from market feeds. Never suppressed by hide_values.
+    """
+    return _format_decimal(value)
+
+
 templates.env.filters["money"] = _money
+templates.env.filters["public_money"] = _public_money

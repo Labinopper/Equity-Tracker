@@ -1,9 +1,9 @@
 # Equity Tracker - Project Reference
 
-Last updated: 2026-02-25 (refinement pass audit + terminology reference added)
+Last updated: 2026-02-25 (release-note/version sync v2.1.2–v2.7.1)
 
 This is the technical companion to `PROJECT_STATUS.md`.
-Current released version: `v2.1.1`.
+Current released version: `v2.7.1`.
 
 ## 1) File Role
 - Keep technical contracts, behavior rules, and architecture here.
@@ -78,9 +78,8 @@ Portfolio routes include refresh diagnostics and daily-change freshness context 
 
 ## 7) Current Technical Debt
 1. IA/navigation rollout is still partial.
-2. Post-`v2.1.1` working-tree deliveries require release-note/version sync.
-3. **BUG-A01:** `analytics.html` line 1462 — JS syntax error (`});` → `}`) breaks all analytics charts and widget controls. Fix in v2.8.0.
-4. Refinement pass (v2.8.1–v2.8.5): 16 label/clarity items across templates. See `v2_implementation_plan.md` Refinement Pass section. All template-only.
+2. **BUG-A01:** `analytics.html` line 1462 — JS syntax error (`});` → `}`) breaks all analytics charts and widget controls. Fix in v2.8.0.
+3. Refinement pass (v2.8.1–v2.8.5): 16 label/clarity items across templates. See `v2_implementation_plan.md` Refinement Pass section. All template-only.
 
 ## 10) Label and Terminology Reference (Canonical Meanings)
 
@@ -103,9 +102,9 @@ Definitions agreed during refinement audit (2026-02-25):
 | **Forfeiture Window** | The period after ESPP+ lot acquisition during which selling the paired employee shares forfeits the matched shares. Badge "(Xd left)" means X days remaining until the window closes (safe to sell). |
 
 ## 8) Test Baseline Snapshot
-- Latest release-synced full regression (`v2.1.1`): `python -m pytest -q` -> `487 passed, 3 skipped`.
-- Latest working-tree full regression: `python -m pytest -q` -> `533 passed, 3 skipped` (2026-02-25).
+- Latest release-synced full regression (`v2.7.1`): `python -m pytest -q` -> `533 passed, 3 skipped` (2026-02-25).
 
 ## 9) Technical Roadmap Dependencies (Next)
-1. Release-note/version sync for post-`v2.1.1` working-tree stages (`v2.1.2` through `v2.7.1`).
-2. Remaining IA/navigation expansion decisions to be promoted into the next scoped stage.
+1. BUG-A01 fix (`v2.8.0`): analytics JS syntax error.
+2. Refinement pass (v2.8.1–v2.8.5): 16 label/clarity items across templates.
+3. Remaining IA/navigation expansion decisions to be promoted into the next scoped stage.
