@@ -727,6 +727,7 @@ tr:hover td { background: var(--bg-hover); }
 /* Info button and tooltip */
 .info-button {
   display: inline;
+  position: relative;
   background: none;
   border: none;
   color: var(--accent);
@@ -741,6 +742,12 @@ tr:hover td { background: var(--bg-hover); }
 
 .info-button:hover {
   opacity: 1;
+}
+
+/* Parent containers for tooltips should also have relative positioning */
+.daily-change,
+.net-panel {
+  position: relative;
 }
 
 .tooltip {
