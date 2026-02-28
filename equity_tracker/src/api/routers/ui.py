@@ -1289,21 +1289,25 @@ def _portfolio_est_net_liquidity(
     rows_by_security: dict[str, list[PositionGroupRow]],
 ) -> Decimal | None:
     """
-    Aggregate sellable-only net cash across portfolio rows.
+    Sum of Net If Sold Today for all rows with available proceeds.
 
     Definition:
-      Est. Net Liquidity = sum(Net If Sold Today) for rows that are sellable now.
-      Locked rows are excluded.
-      Returns None when any sellable row lacks a net-cash estimate.
+      Est. Net Liquidity = sum(Net If Sold Today) for all rows where
+      net_cash_if_sold is calculable (not None).
+      This includes SELLABLE and AT_RISK rows that can be sold today.
+      For ESPP+ with mixed lock periods, only includes the sellable portion.
     """
     values: list[Decimal] = []
     for rows in rows_by_security.values():
         for row in rows:
-            if row.sellability_status == "LOCKED":
-                continue
-            if row.net_cash_if_sold is None:
-                return None
-            values.append(row.net_cash_if_sold)
+            # Include any row with a calculable net_cash_if_sold value
+            # This properly handles ESPP+ bundles where some shares are sellable
+            # even though other shares in the bundle are locked
+            if row.net_cash_if_sold is not None:
+                values.append(row.net_cash_if_sold)
+
+    if not values:
+        return None
     return _q2(sum(values, Decimal("0")))
 
 
