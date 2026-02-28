@@ -235,21 +235,30 @@
       {% endif %}
       <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
     </span>
-    {% if ss.unrealised_gain_cgt_gbp is not none %}
-    <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}" title="Market value minus cost basis (pre-tax). Employment tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">
-      Unrealised P&amp;L (Cost Basis, pre-tax)
-      <strong>{% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}</strong>
-    </span>
+    {% if ss.unrealised_gain_cgt_gbp is not none or ss.unrealised_gain_economic_gbp is not none %}
+    <details class="unrealised-gains-toggle">
+      <summary>
+        <span>Unrealised Gain</span>
+        {% if ss.unrealised_gain_cgt_gbp is not none %}
+        <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}</span>
+        {% endif %}
+      </summary>
+      <div class="unrealised-gains-body">
+        {% if ss.unrealised_gain_cgt_gbp is not none %}
+        <div class="unrealised-gain-item">
+          <span class="unrealised-gain-label" title="Market value minus cost basis (pre-tax). Employment tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">Cost Basis</span>
+          <span class="unrealised-gain-value {% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}</span>
+        </div>
+        {% endif %}
+        {% if ss.unrealised_gain_economic_gbp is not none %}
+        <div class="unrealised-gain-item">
+          <span class="unrealised-gain-label" title="Market value minus true economic cost (pre-tax). True cost includes employment tax already paid at acquisition, but tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">Economic</span>
+          <span class="unrealised-gain-value {% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_economic_gbp | money }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </details>
     {% endif %}
-    {% if ss.unrealised_gain_economic_gbp is not none %}
-    <span class="{% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}" title="Market value minus true economic cost (pre-tax). True cost includes employment tax already paid at acquisition, but tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">
-      Unrealised P&amp;L (Econ, pre-tax)
-      <strong>{% if ss.unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_economic_gbp | money }}</strong>
-    </span>
-    {% endif %}
-    <span class="muted mono-small {% if ss.price_is_stale %}stale-flag{% endif %}">
-      Price as of {{ ss.price_as_of }}{% if ss.price_is_stale %} (stale >{{ price_stale_after_days }}d){% endif %}
-    </span>
     {% if ss.fx_as_of %}
     <span class="muted mono-small {% if ss.fx_is_stale %}stale-flag{% endif %}">
       FX as of {{ ss.fx_as_of }}{% if ss.fx_is_stale %} (stale >{{ fx_stale_after_minutes }}m){% endif %}
@@ -412,6 +421,21 @@
               <button class="info-button" aria-label="Next milestone breakdown">ℹ</button>
               <div class="tooltip">
                 <div class="tooltip-content">
+                  {% if row.next_milestone_date %}
+                  <div class="position-detail-line">
+                    <span>Time until milestone</span>
+                    {% set days_remaining = (row.next_milestone_date - today).days %}
+                    {% set years = days_remaining // 365 %}
+                    {% set remaining_days = days_remaining % 365 %}
+                    <span>
+                      {%- if years > 0 %}{{ years }}y {{ remaining_days }}d{%- else %}{{ days_remaining }}d{%- endif %}
+                    </span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Milestone date</span>
+                    <span>{{ row.next_milestone_date }}</span>
+                  </div>
+                  {% endif %}
                   {% if row.total_mv is not none %}
                   <div class="position-detail-line">
                     <span>Market value (at milestone)</span>
@@ -461,6 +485,21 @@
               <button class="info-button" aria-label="Long-term breakdown">ℹ</button>
               <div class="tooltip">
                 <div class="tooltip-content">
+                  {% if row.long_term_date %}
+                  <div class="position-detail-line">
+                    <span>Time until long-term</span>
+                    {% set days_remaining = (row.long_term_date - today).days %}
+                    {% set years = days_remaining // 365 %}
+                    {% set remaining_days = days_remaining % 365 %}
+                    <span>
+                      {%- if years > 0 %}{{ years }}y {{ remaining_days }}d{%- else %}{{ days_remaining }}d{%- endif %}
+                    </span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Long-term date</span>
+                    <span>{{ row.long_term_date }}</span>
+                  </div>
+                  {% endif %}
                   {% if row.total_mv is not none %}
                   <div class="position-detail-line">
                     <span>Market value (long-term)</span>

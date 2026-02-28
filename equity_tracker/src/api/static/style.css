@@ -2153,6 +2153,52 @@ tr:hover td.loss {
   .net-panel { border: 1px solid #ccc; margin-bottom: 0.5rem; }
   .net-panel[open] { page-break-inside: avoid; }
 
+  /* Unrealised Gains collapsible section */
+  .unrealised-gains-toggle {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .unrealised-gains-toggle summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+    font-weight: 500;
+  }
+
+  .unrealised-gains-toggle summary span:first-child {
+    flex: 1;
+  }
+
+  .unrealised-gains-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.3rem;
+    padding-left: 1rem;
+    border-left: 1px solid var(--border);
+  }
+
+  .unrealised-gain-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
+  }
+
+  .unrealised-gain-label {
+    flex: 1;
+    color: var(--text-muted);
+    margin-right: 1rem;
+  }
+
+  .unrealised-gain-value {
+    font-weight: 600;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
   a[href]::after { content: ''; }
 }
 

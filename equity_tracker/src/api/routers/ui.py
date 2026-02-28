@@ -155,9 +155,11 @@ class PositionGroupRow:
     decision_title: str
     action_lot_id: str
     detail_lots: list[LotSummary]
+    next_milestone_date: date_type | None = None
     next_milestone_net: Decimal | None = None
     next_milestone_gain: Decimal | None = None
     next_milestone_reason: str | None = None
+    long_term_date: date_type | None = None
     long_term_net: Decimal | None = None
     long_term_gain: Decimal | None = None
     long_term_reason: str | None = None
@@ -947,7 +949,11 @@ def _attach_row_decision_scenarios(
     as_of: date_type,
 ) -> PositionGroupRow:
     next_milestone, next_kind = _row_next_milestone(row, as_of=as_of)
-    long_term_date = _row_long_term_date(row, as_of=as_of)
+    long_term_date_calc = _row_long_term_date(row, as_of=as_of)
+
+    # Store dates for template use (time-until calculations)
+    row.next_milestone_date = next_milestone if next_milestone and next_milestone > as_of else None
+    row.long_term_date = long_term_date_calc if long_term_date_calc > as_of else None
 
     if next_milestone is None or next_milestone <= as_of:
         row.next_milestone_net = row.net_cash_if_sold
@@ -963,14 +969,14 @@ def _attach_row_decision_scenarios(
         row.next_milestone_gain = next_gain
         row.next_milestone_reason = next_reason
 
-    if long_term_date <= as_of:
+    if long_term_date_calc <= as_of:
         row.long_term_net = row.net_cash_if_sold
         row.long_term_gain = row.sell_now_economic_result
         row.long_term_reason = row.reason_unavailable
     else:
         lt_net, lt_gain, lt_reason = _evaluate_row_outcome_on(
             row,
-            as_of=long_term_date,
+            as_of=long_term_date_calc,
             settings=settings,
         )
         row.long_term_net = lt_net
@@ -1849,6 +1855,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         position_rows_by_security
     )
     portfolio_net_gain_if_sold = _portfolio_net_gain_if_sold(position_rows_by_security)
+    today = _utc_now().date()
     return templates.TemplateResponse(
         request,
         "portfolio.html",
@@ -1864,6 +1871,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_blocked_restricted_value": portfolio_blocked_restricted_value,
             "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
             "refresh_diag": refresh_diag,
+            "today": today,
             **_flash(msg),
         },
     )
