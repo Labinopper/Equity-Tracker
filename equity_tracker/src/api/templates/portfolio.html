@@ -160,13 +160,13 @@
             {% endif %}
             {% if daily.percent_change is not none %}
             <div class="position-detail-line">
-              <span>Stock Movement (GBP)</span>
+              <span>Movement Currency</span>
               <span>{{ "%.2f"|format(daily.percent_change) }}%</span>
             </div>
             {% endif %}
             {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency %}
             <div class="position-detail-line">
-              <span>Stock Movement ({{ daily.native_currency }})</span>
+              <span>Movement Stock</span>
               <span>{{ "%.2f"|format(((daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100)) }}%</span>
             </div>
             {% endif %}
