@@ -24,9 +24,11 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from ...core.tax_engine import available_tax_years
 from ...core.tax_engine.context import TaxContext
+from ...services.audit_export_service import AuditExportService
 from ...services.report_service import ReportService
 from ...settings import AppSettings
 from ..dependencies import db_required, session_required
@@ -167,6 +169,50 @@ async def economic_gain_summary(
 
     report = ReportService.economic_gain_summary(tax_year)
     return EconomicGainSummarySchema.from_service(report)
+
+
+@router.get(
+    "/portfolio-audit-export",
+    summary="Portfolio audit export (JSON)",
+    description=(
+        "Lossless audit-grade export of all Portfolio calculations.  "
+        "Returns a single JSON object containing raw inputs (lots, prices, FX, "
+        "tax settings) and per-lot computed outputs (cost basis, true cost, "
+        "employment tax components, CGT estimate, net liquidation, forfeiture).  "
+        "Aggregates are computed as sums of per-lot values and reconcile to the "
+        "Portfolio page totals.\n\n"
+        "**Deterministic:** identical DB state + settings → identical output.\n\n"
+        "**Rounding:** all monetary values are 2dp ROUND\\_HALF\\_UP strings.  "
+        "No floats in the calculation path.\n\n"
+        "**No paid APIs required.**  Uses DB-stored prices and FX rates only."
+    ),
+)
+async def portfolio_audit_export(
+    _: None = Depends(db_required),
+) -> JSONResponse:
+    """
+    Audit-grade export of all Portfolio calculations.
+
+    Calls AuditExportService.get_portfolio_audit_export() which reuses
+    PortfolioService.get_portfolio_summary() internally, ensuring the export
+    reflects the exact same numbers shown on the Portfolio page.
+    """
+    db_path = _state.get_db_path()
+    db_encrypted = False
+    if db_path is not None:
+        import os
+        db_encrypted = os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
+
+    settings: AppSettings | None = None
+    if db_path is not None:
+        settings = AppSettings.load(db_path)
+
+    payload = AuditExportService.get_portfolio_audit_export(
+        settings=settings,
+        db_path=db_path,
+        db_encrypted=db_encrypted,
+    )
+    return JSONResponse(content=payload)
 
 
 @router.get(

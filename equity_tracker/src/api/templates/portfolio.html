@@ -13,6 +13,7 @@
     <form id="manual-refresh-form" method="post" action="/portfolio/refresh-prices" class="inline-form">
       <button type="submit" class="btn btn-secondary btn-sm">Refresh Prices</button>
     </form>
+    <button type="button" class="btn btn-secondary btn-sm" id="audit-json-btn">Download audit JSON</button>
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
     <a href="/portfolio/add-lot" class="btn btn-primary btn-sm">+ Lot</a>
   </div>
@@ -1097,6 +1098,52 @@
       doRefresh();
     }
   }, 1000);
+})();
+
+(function () {
+  var btn = document.getElementById("audit-json-btn");
+  if (!btn) { return; }
+
+  btn.addEventListener("click", function () {
+    btn.disabled = true;
+    btn.textContent = "Downloading\u2026";
+
+    fetch("/reports/portfolio-audit-export")
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (body) {
+            throw new Error(
+              (body && body.detail && body.detail.message) ||
+              ("HTTP " + res.status)
+            );
+          });
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        var json = JSON.stringify(data, null, 2);
+        var blob = new Blob([json], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        var ts = new Date()
+          .toISOString()
+          .replace(/:/g, "-")
+          .replace(/\.\d{3}Z$/, "Z");
+        a.href = url;
+        a.download = "equity-tracker_portfolio-audit_" + ts + ".json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        btn.disabled = false;
+        btn.textContent = "Download audit JSON";
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = "Download audit JSON";
+        alert("Audit export failed: " + err.message);
+      });
+  });
 })();
 </script>
 {% endblock %}
