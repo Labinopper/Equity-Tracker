@@ -235,10 +235,10 @@
       {% endif %}
       <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
     </span>
-    {% if ss.unrealised_gain_cgt_gbp is not none or ss.unrealised_gain_economic_gbp is not none %}
+    {% if ss.unrealised_gain_cgt_gbp is not none or ss.locked_unrealised_gain_cgt_gbp is not none or ss.forfeit_risk_unrealised_gain_cgt_gbp is not none %}
     <details class="unrealised-gains-toggle">
       <summary>
-        <span>Unrealised Gain</span>
+        <span>Unrealised Gain (Sellable)</span>
         {% if ss.unrealised_gain_cgt_gbp is not none %}
         <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}</span>
         {% endif %}
@@ -246,14 +246,40 @@
       <div class="unrealised-gains-body">
         {% if ss.unrealised_gain_cgt_gbp is not none %}
         <div class="unrealised-gain-item">
-          <span class="unrealised-gain-label" title="Market value minus cost basis (pre-tax). Employment tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">Cost Basis</span>
+          <span class="unrealised-gain-label" title="Market value minus cost basis for sellable shares (pre-tax). Items you can sell today. Employment tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">Sellable Cost Basis</span>
           <span class="unrealised-gain-value {% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}</span>
         </div>
         {% endif %}
         {% if ss.unrealised_gain_economic_gbp is not none %}
         <div class="unrealised-gain-item">
-          <span class="unrealised-gain-label" title="Market value minus true economic cost (pre-tax). True cost includes employment tax already paid at acquisition, but tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">Economic</span>
+          <span class="unrealised-gain-label" title="Market value minus true economic cost for sellable shares (pre-tax). Items you can sell today. True cost includes employment tax already paid at acquisition, but tax on disposal is not deducted here — see 'Gain If Sold Today' for the post-tax view.">Sellable Economic</span>
           <span class="unrealised-gain-value {% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_economic_gbp | money }}</span>
+        </div>
+        {% endif %}
+        {% if ss.locked_unrealised_gain_cgt_gbp is not none %}
+        <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
+        <div class="unrealised-gain-item">
+          <span class="unrealised-gain-label" title="Market value minus cost basis for locked shares (pre-tax). Shares still vesting; gain is realized when lock period ends.">Locked (Vesting) Cost Basis</span>
+          <span class="unrealised-gain-value {% if ss.locked_unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.locked_unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.locked_unrealised_gain_cgt_gbp | money }}</span>
+        </div>
+        {% endif %}
+        {% if ss.locked_unrealised_gain_economic_gbp is not none %}
+        <div class="unrealised-gain-item">
+          <span class="unrealised-gain-label" title="Market value minus true economic cost for locked shares (pre-tax). Shares still vesting; economic gain when lock period ends.">Locked (Vesting) Economic</span>
+          <span class="unrealised-gain-value {% if ss.locked_unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.locked_unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.locked_unrealised_gain_economic_gbp | money }}</span>
+        </div>
+        {% endif %}
+        {% if ss.forfeit_risk_unrealised_gain_cgt_gbp is not none %}
+        <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
+        <div class="unrealised-gain-item">
+          <span class="unrealised-gain-label" title="Market value minus cost basis for shares at forfeit risk (pre-tax). Matching shares subject to loss if forfeiture window passes without vesting.">Forfeit Risk Cost Basis</span>
+          <span class="unrealised-gain-value {% if ss.forfeit_risk_unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.forfeit_risk_unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.forfeit_risk_unrealised_gain_cgt_gbp | money }}</span>
+        </div>
+        {% endif %}
+        {% if ss.forfeit_risk_unrealised_gain_economic_gbp is not none %}
+        <div class="unrealised-gain-item">
+          <span class="unrealised-gain-label" title="Market value minus true economic cost for shares at forfeit risk (pre-tax). Value at risk if matching shares are forfeited.">Forfeit Risk Economic</span>
+          <span class="unrealised-gain-value {% if ss.forfeit_risk_unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.forfeit_risk_unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.forfeit_risk_unrealised_gain_economic_gbp | money }}</span>
         </div>
         {% endif %}
       </div>
