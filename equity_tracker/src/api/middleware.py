@@ -9,7 +9,8 @@ CSP notes
 - 'self' covers /static/style.css, /static/login.css, and all local scripts.
 - fonts.googleapis.com / fonts.gstatic.com are needed by base.html.
 - cdn.jsdelivr.net is needed by analytics.html for chart.js.
-- No 'unsafe-inline' — all templates use external scripts/styles only.
+- 'unsafe-inline' is required because all page JS/CSS is inline in Jinja2 templates.
+  Moving scripts to /static/ files would allow this to be removed.
 - img-src allows data: URIs for inline SVGs and chart data URIs.
 """
 
@@ -21,8 +22,8 @@ from starlette.responses import Response
 
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.jsdelivr.net; "
-    "style-src 'self' https://fonts.googleapis.com; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data:; "
     "connect-src 'self'; "

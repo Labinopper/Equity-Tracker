@@ -160,13 +160,13 @@
             {% endif %}
             {% if daily.percent_change is not none %}
             <div class="position-detail-line">
-              <span>Movement Currency</span>
+              <span>Currency Movement</span>
               <span>{{ "%.2f"|format(daily.percent_change) }}%</span>
             </div>
             {% endif %}
             {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency %}
             <div class="position-detail-line">
-              <span>Movement Stock</span>
+              <span>Stock Movement</span>
               <span>{{ "%.2f"|format(((daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100)) }}%</span>
             </div>
             {% endif %}
@@ -235,12 +235,12 @@
       {% endif %}
       <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
     </span>
-    {% if ss.unrealised_gain_cgt_gbp is not none or ss.locked_unrealised_gain_economic_gbp is not none or ss.forfeit_risk_market_value_gbp is not none %}
+    {% if ss.sellable_net_gain_gbp is not none or ss.locked_unrealised_gain_economic_gbp is not none or ss.forfeit_risk_market_value_gbp is not none %}
     <details class="unrealised-gains-toggle">
       <summary>
         <span>Unrealised Gain (Sellable)</span>
-        {% if ss.unrealised_gain_cgt_gbp is not none %}
-        <span class="{% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.unrealised_gain_cgt_gbp < 0 %}-{% elif ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | abs | money }}</span>
+        {% if ss.sellable_net_gain_gbp is not none %}
+        <span class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.sellable_net_gain_gbp < 0 %}-{% elif ss.sellable_net_gain_gbp > 0 %}+{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}</span>
         {% endif %}
       </summary>
       <div class="unrealised-gains-body">

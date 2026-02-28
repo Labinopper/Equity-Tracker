@@ -9,6 +9,10 @@
 - Push and Commit to Git with relevant messages once complete.
 - Update versioning in PROJECT_STATUS.md once complete.
 
+## Completed
+- ✓ Fix forfeiture risk categorization and display (ESPP+ matched shares now correctly categorized as forfeit risk vs locked RSUs)
+- ✓ Fix monetary value formatting across site (negative signs now show before £ symbol, e.g., -£35.48 instead of £-35.48)
+
 ## Backlog
 - Remove 'Why may values differ' on Portfolio page
 - Remove 'Portfolio View Controls' on Portfolio page

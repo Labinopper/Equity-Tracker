@@ -1275,18 +1275,20 @@ def _portfolio_net_gain_if_sold(
     rows_by_security: dict[str, list[PositionGroupRow]],
 ) -> Decimal | None:
     """
-    Aggregate "Gain If Sold Today" across sellable portfolio rows.
+    Aggregate "Gain If Sold Today" across all rows with a calculable sell-now value.
 
-    Locked rows are excluded because they are not currently realizable.
-    Returns None when any sellable row lacks a sell-now economic value.
+    Truly locked rows (no sell_now_economic_result) are skipped silently.
+    ESPP+ forfeiture-window rows are included: the paid shares can be sold today
+    even though the matched shares are locked, so they carry a non-None result.
+    Returns None when any non-locked row lacks a sell-now economic value.
     """
     values: list[Decimal] = []
     for rows in rows_by_security.values():
         for row in rows:
-            if row.sellability_status == "LOCKED":
-                continue
             if row.sell_now_economic_result is None:
-                return None
+                if row.sellability_status == "LOCKED":
+                    continue  # Truly locked (e.g. unvested RSU) — skip silently
+                return None  # Non-locked row missing value — can't compute total
             values.append(row.sell_now_economic_result)
     return _q2(sum(values, Decimal("0")))
 

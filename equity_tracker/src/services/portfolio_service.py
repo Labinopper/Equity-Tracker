@@ -199,6 +199,9 @@ class SecuritySummary:
     refresh_last_success_at: str | None = field(default=None)
     refresh_last_error: str | None = field(default=None)
     refresh_next_due_at: str | None = field(default=None)
+    # Post-tax economic gain on all lots that can be sold today (matching table totals).
+    # None when any non-locked lot lacks a tax estimate (e.g. no settings configured).
+    sellable_net_gain_gbp: Decimal | None = field(default=None)
 
 
 @dataclass
@@ -1133,6 +1136,25 @@ class PortfolioService:
                     sec_est_cgt = None
                     sec_est_net = None
 
+                # Post-tax sellable net gain: sum sell_now_economic_gbp for non-locked lots.
+                # Mirrors the table's "Gain If Sold Today" column total.
+                _sellable_gain_parts: list[Decimal] = []
+                _sellable_gain_incomplete = False
+                for ls in lot_summaries:
+                    if ls.sellability_status == SELLABILITY_LOCKED:
+                        continue
+                    if ls.sell_now_economic_gbp is None:
+                        _sellable_gain_incomplete = True
+                        break
+                    _sellable_gain_parts.append(ls.sell_now_economic_gbp)
+                sellable_net_gain: Decimal | None = (
+                    sum(_sellable_gain_parts, Decimal("0")).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                    if not _sellable_gain_incomplete and _sellable_gain_parts
+                    else None
+                )
+
                 # Phase V: security-level risk summary flags
                 has_forfeiture = any(
                     ls.forfeiture_risk is not None and ls.forfeiture_risk.in_window
@@ -1175,6 +1197,7 @@ class PortfolioService:
                     refresh_last_success_at=None,
                     refresh_last_error=None,
                     refresh_next_due_at=None,
+                    sellable_net_gain_gbp=sellable_net_gain,
                 ))
 
             total_cost = sum((ss.total_cost_basis_gbp for ss in security_summaries), Decimal("0"))
