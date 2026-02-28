@@ -18,7 +18,7 @@ The app uses **TOTP-only authentication** (RFC 6238 — the same standard as Goo
 ### Initial setup
 
 ```bash
-python scripts/setup_totp.py
+python equity_tracker/scripts/setup_totp.py
 ```
 
 This generates a TOTP secret and prints:
@@ -32,7 +32,7 @@ Add to 1Password:
 
 Verify it works:
 ```bash
-EQUITY_TOTP_SECRET=<your_value> python scripts/setup_totp.py --verify
+EQUITY_TOTP_SECRET=<your_value> python equity_tracker/scripts/setup_totp.py --verify
 ```
 
 ### Rotating the TOTP secret
@@ -40,7 +40,7 @@ EQUITY_TOTP_SECRET=<your_value> python scripts/setup_totp.py --verify
 If you lose access to your 1Password entry or need to reset:
 
 ```bash
-python scripts/setup_totp.py --reset
+python equity_tracker/scripts/setup_totp.py --reset
 ```
 
 This generates a **new** secret. Update your `.env` and 1Password entry, then restart the server. The old secret stops working immediately.
@@ -56,7 +56,7 @@ The TOTP secret is **stable across restarts** — it is stored in the `EQUITY_TO
 | `EQUITY_DB_PATH` | Yes | Absolute path to the `.db` file |
 | `EQUITY_DB_PASSWORD` | Yes (encrypted) | SQLCipher passphrase |
 | `EQUITY_DB_ENCRYPTED` | No (default: `true`) | Set `false` for plain SQLite dev mode |
-| `EQUITY_TOTP_SECRET` | Yes | Base32 TOTP secret (from `setup_totp.py`) |
+| `EQUITY_TOTP_SECRET` | Yes | Base32 TOTP secret (from `equity_tracker/scripts/setup_totp.py`) |
 | `EQUITY_SECRET_KEY` | Yes | Session signing key — generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `EQUITY_ALLOWED_ORIGINS` | Production | Your domain, e.g. `https://equity.yourdomain.com` |
 | `EQUITY_DOCS_ENABLED` | No (default: `false`) | Set `true` only in dev to enable `/docs` |

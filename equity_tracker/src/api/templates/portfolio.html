@@ -76,7 +76,6 @@
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
-    <div class="stat-caption">Includes locked lots (e.g. pre-vest RSU) and ESPP+ matched shares at forfeiture risk. <a href="/net-value">Per-lot detail &rarr;</a></div>
   </div>
   <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label">Net Gain If Sold Today</div>
@@ -95,23 +94,7 @@
 </div>
 {% endif %}
 
-<p class="muted panel-note">
-  Employment-tax estimates cover IT + NIC + Student Loan where scheme rules apply.
-  ISA lots are treated as tax-sheltered in this estimate.
-  Est. Net Liquidity includes only shares sellable today and excludes locked/forfeiture-restricted value.
-  All totals are shown in {{ summary.valuation_currency }}.
-  <a href="/net-value">Full breakdown</a> &bull;
-  For cross-year tax-timing analysis and AEA (Annual Exempt Amount) usage, see <a href="/tax-plan">Tax Plan</a>.
-</p>
 
-<details class="security-lots-toggle">
-  <summary class="muted">Why may values differ between pages?</summary>
-  <ul class="muted" style="margin:0.5rem 0 0 1.25rem;font-size:0.85rem;">
-    <li><strong>Portfolio:</strong> Estimated from stored market price and approximate employment tax.</li>
-    <li><strong>Simulate:</strong> Uses the price you enter; employment tax requires income settings; includes broker fees.</li>
-    <li><strong>Net Value:</strong> Hypothetical full liquidation across all lots (including locked). No broker fees.</li>
-  </ul>
-</details>
 
 {% if summary.fx_as_of or summary.fx_conversion_basis %}
 <div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %} info-compact">
@@ -126,37 +109,6 @@
 </div>
 {% endif %}
 
-<div id="portfolio-view-controls" class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Portfolio View Controls</h2>
-  </div>
-  <div class="form-grid">
-    <div class="form-field">
-      <label>Quick Filters</label>
-      <div class="inline-field-row">
-        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="all">All</button>
-        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="warnings">Warnings</button>
-        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="locked">Locked</button>
-        <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="forfeiture">Forfeiture Risk</button>
-      </div>
-    </div>
-    <div class="form-field">
-      <label for="portfolio-sort">Sort Decision Rows</label>
-      <select id="portfolio-sort">
-        <option value="default">Default (Acquisition Date)</option>
-        <option value="net_sell">Net If Sold Today</option>
-        <option value="net_hold">Net If Held (Next Milestone)</option>
-        <option value="net_long">Net If Long-Term (5+ Years)</option>
-        <option value="signal">Decision Signal</option>
-      </select>
-    </div>
-    <div class="form-field form-field-inline">
-      <label for="portfolio-focus-mode">Focus Mode (compact decision-first view)</label>
-      <input id="portfolio-focus-mode" type="checkbox">
-    </div>
-  </div>
-  <p class="form-hint">Filter/sort/focus preferences are stored in this browser.</p>
-</div>
 
 {% if not summary.securities %}
 <div class="empty-state">
@@ -179,7 +131,7 @@
     <div class="security-header__actions">
 
       {% if daily and daily.percent_change is not none and daily.value_change_gbp is not none %}
-      <span class="daily-change daily-change--{{ daily.direction }}" title="Previous close {{ daily.previous_as_of }} → {{ daily.current_as_of }} | Daily move %: change in price. Δ amount: today's total portfolio value change for this holding.">
+      <span class="daily-change daily-change--{{ daily.direction }}">
         <span class="daily-change__arrow">{{ daily.arrow }}</span>
         <span class="daily-change__text">
           {% if daily.direction == "up" %}
@@ -191,6 +143,39 @@
           {% endif %}
           {{ "%.2f"|format(daily.percent_change | abs) }}% {% if daily.native_currency and daily.value_change_native is not none %}{% if daily.native_currency == "GBP" %}(Δ &pound;{{ daily.value_change_native | abs | money }}){% else %}(Δ {{ daily.native_currency }} {{ daily.value_change_native | abs | money }}){% endif %}{% else %}(Δ &pound;{{ daily.value_change_gbp | abs | money }}){% endif %}
         </span>
+        <button class="info-button" aria-label="Daily change breakdown">ℹ</button>
+        <div class="tooltip">
+          <div class="tooltip-content">
+            {% if daily.previous_price_gbp is not none %}
+            <div class="position-detail-line">
+              <span>Prev Close (GBP)</span>
+              <span>&pound;{{ daily.previous_price_gbp | money }}</span>
+            </div>
+            {% endif %}
+            {% if daily.previous_price_native is not none and daily.native_currency %}
+            <div class="position-detail-line">
+              <span>Prev Close ({{ daily.native_currency }})</span>
+              <span>{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.previous_price_native | money }}</span>
+            </div>
+            {% endif %}
+            {% if daily.percent_change is not none %}
+            <div class="position-detail-line">
+              <span>GBP Price Change</span>
+              <span>{{ "%.2f"|format(daily.percent_change) }}%</span>
+            </div>
+            {% endif %}
+            {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency %}
+            <div class="position-detail-line">
+              <span>{{ daily.native_currency }} Price Change</span>
+              <span>{{ "%.2f"|format(((daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100)) }}%</span>
+            </div>
+            {% endif %}
+            <div class="position-detail-line position-detail-line--total">
+              <span><strong>Portfolio Impact</strong></span>
+              <span><strong>{% if daily.value_change_gbp > 0 %}+{% endif %}&pound;{{ daily.value_change_gbp | money }}{% if daily.value_change_native is not none and daily.native_currency %} / {% if daily.value_change_native > 0 %}+{% endif %}{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.value_change_native | money }}{% endif %}</strong></span>
+            </div>
+          </div>
+        </div>
       </span>
       {% else %}
       <span class="daily-change daily-change--muted" title="{{ daily.unavailable_reason if daily else 'No stored price yet.' }}">Daily change unavailable</span>
@@ -321,11 +306,33 @@
           <tr>
             <th>Date</th>
             <th>Scheme</th>
-            <th>Status</th>
+            <th>
+              Status
+              <button class="info-button" aria-label="Status types explained">ℹ</button>
+              <div class="tooltip">
+                <div class="tooltip-content">
+                  <div class="position-detail-line">
+                    <span>Includes locked lots (e.g. pre-vest RSU) and ESPP+ matched shares at forfeiture risk.</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <a href="/net-value">Per-lot detail →</a>
+                  </div>
+                </div>
+              </div>
+            </th>
             <th class="num">Qty</th>
             <th class="num">Market Value</th>
             <th class="num">True Cost</th>
-            <th class="decision-zone-head">Net If Sold Today</th>
+            <th class="decision-zone-head">
+              Net If Sold Today
+              <button class="info-button" aria-label="Portfolio methodology and assumptions">ℹ</button>
+              <div class="tooltip">
+                <div class="tooltip-content">
+                  <p>Employment-tax estimates cover IT + NIC + Student Loan where scheme rules apply. ISA lots are treated as tax-sheltered in this estimate. Est. Net Liquidity includes only shares sellable today and excludes locked/forfeiture-restricted value. All totals are shown in GBP.</p>
+                  <p><a href="/net-value">Full breakdown</a> • For cross-year tax-timing analysis and AEA (Annual Exempt Amount) usage, see <a href="/tax-plan">Tax Plan</a>.</p>
+                </div>
+              </div>
+            </th>
             <th class="num">Gain If Sold Today</th>
             <th class="decision-zone-head">Net If Held (Next Milestone)</th>
             <th class="num">Gain If Held</th>
@@ -789,6 +796,42 @@
     });
   }
 
+  function wireDetailsStatePersistence() {
+    // Persist open/closed state for other details elements (e.g., .net-panel)
+    var DETAILS_STATE_KEY = "portfolio.details_state.v1";
+    var detailsEls = document.querySelectorAll(".net-panel");
+    var state = {};
+
+    try {
+      var raw = localStorage.getItem(DETAILS_STATE_KEY);
+      if (raw) {
+        state = JSON.parse(raw);
+      }
+    } catch (err) {
+      // Ignore parse errors
+    }
+
+    detailsEls.forEach(function (detailsEl, index) {
+      var key = "net-panel-" + index;
+      if (state[key] !== undefined) {
+        if (state[key]) {
+          detailsEl.setAttribute("open", "");
+        } else {
+          detailsEl.removeAttribute("open");
+        }
+      }
+
+      detailsEl.addEventListener("toggle", function () {
+        state[key] = !!detailsEl.open;
+        try {
+          localStorage.setItem(DETAILS_STATE_KEY, JSON.stringify(state));
+        } catch (err) {
+          // Ignore storage write failures
+        }
+      });
+    });
+  }
+
   function defaultViewPrefs() {
     return {
       filter: "all",
@@ -1042,6 +1085,7 @@
   }
 
   wireSecurityVisibilityPersistence();
+  wireDetailsStatePersistence();
   wirePortfolioViewControls();
 
   if (manualForm) {
@@ -1059,11 +1103,10 @@
       return;
     }
     countdown -= 1;
+    setNextDueFromCountdown();
     if (countdown <= 0) {
       doRefresh();
-      return;
     }
-    setNextDueFromCountdown();
   }, 1000);
 })();
 </script>

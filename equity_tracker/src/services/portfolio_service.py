@@ -1130,9 +1130,7 @@ class PortfolioService:
                         "Totals are GBP-based; non-GBP values use latest stored FX conversion."
                     )
                 else:
-                    fx_conversion_basis = (
-                        "Totals are GBP-based; non-GBP values use stored GBP price conversions."
-                    )
+                    fx_conversion_basis = None
             else:
                 fx_conversion_basis = (
                     "All valued positions are GBP-denominated; no FX conversion applied."

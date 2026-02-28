@@ -797,8 +797,10 @@
 
   /* -- Event wiring --------------------------------------- */
 
-  schemeSel.addEventListener('change', applySchemeFields);
-    if (securitySel) {
+  if (schemeSel) {
+    schemeSel.addEventListener('change', applySchemeFields);
+  }
+  if (securitySel) {
       securitySel.addEventListener('change', function () {
         syncRsuFmv();
         updateCurrencyWorkflow();

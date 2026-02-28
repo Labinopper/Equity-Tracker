@@ -747,7 +747,8 @@ tr:hover td { background: var(--bg-hover); }
   display: none;
   position: absolute;
   top: 100%;
-  left: 0;
+  left: 50%;
+  transform: translateX(-50%);
   margin-top: 0.2rem;
   z-index: 1000;
   background: var(--bg-card-alt);

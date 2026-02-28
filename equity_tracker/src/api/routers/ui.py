@@ -233,6 +233,11 @@ class SecurityDailyChange:
     market_status: str | None = None
     # Time until market opens (e.g., "2d 3h"), only if status is "Closed"
     market_opens_in: str | None = None
+    # Current/previous prices in GBP and native currency for tooltip display
+    current_price_gbp: Decimal | None = None
+    previous_price_gbp: Decimal | None = None
+    current_price_native: Decimal | None = None
+    previous_price_native: Decimal | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -373,8 +378,20 @@ def _price_row_gbp_value(price_row) -> Decimal | None:
 
 
 def _price_row_native_value(price_row) -> Decimal | None:
-    """Return the original-currency Decimal price from a PriceHistory row."""
-    raw = price_row.close_price_original_ccy or price_row.close_price_gbp
+    """Return the original-currency Decimal price from a PriceHistory row.
+
+    In some older records the ``close_price_original_ccy`` column is
+    NULL.  Previous implementations fell back to the GBP price when this
+    happened, which made it look as though the security was trading in GBP
+    and caused the native‑currency delta to evaluate to zero (hence
+    ``$0.00`` in the tooltip even when there was a non‑zero GBP movement).
+
+    We now return ``None`` if the native price is missing so that callers
+    can suppress any native‑currency output rather than showing misleading
+    values.  Future migration work should attempt to backfill these rows
+    from historical FX rates once such data is available.
+    """
+    raw = price_row.close_price_original_ccy
     if raw is None:
         return None
     try:
@@ -624,8 +641,10 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 and previous_native is not None
                 and previous_native > Decimal("0")
             ):
-                delta_native = latest_native - previous_native
-                value_change_native = _q2(delta_native * ss.total_quantity)
+                # Calculate portfolio values at previous and current prices to preserve precision
+                native_current_value = latest_native * ss.total_quantity
+                native_previous_value = previous_native * ss.total_quantity
+                value_change_native = _q2(native_current_value - native_previous_value)
             else:
                 value_change_native = None
 
@@ -655,6 +674,10 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 value_change_native=value_change_native,
                 market_status=market_status,
                 market_opens_in=market_opens_in,
+                current_price_gbp=latest_price_gbp,
+                previous_price_gbp=previous_price_gbp,
+                current_price_native=latest_native,
+                previous_price_native=previous_native,
             )
     return changes
 
