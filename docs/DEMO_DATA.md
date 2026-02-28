@@ -20,12 +20,17 @@ This recreates:
 From `equity_tracker/` (PowerShell):
 
 ```powershell
-$env:EQUITY_DB_PATH = (Resolve-Path .\data\demo.db)
+$env:EQUITY_DB_PATH      = (Resolve-Path .\data\demo.db)
 $env:EQUITY_DB_ENCRYPTED = "false"
+$env:EQUITY_SECRET_KEY   = "demo-secret-key-not-for-production-use"
+$env:EQUITY_TOTP_SECRET  = "JBSWY3DPEHPK3PXP"   # demo only
+$env:EQUITY_DEV_MODE     = "true"
 python run_api.py
 ```
 
-Open:
+Open `http://localhost:8000/` — you will be redirected to the login page.
+Use the TOTP code generated from `EQUITY_TOTP_SECRET` (or skip auth entirely
+by running `python scripts/setup_totp.py --verify` to see the current code).
 
 - `http://localhost:8000/`
 - `http://localhost:8000/simulate`
@@ -45,12 +50,17 @@ import os
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-os.environ["EQUITY_DB_PATH"] = str(Path("data/demo.db").resolve())
+os.environ["EQUITY_DB_PATH"]      = str(Path("data/demo.db").resolve())
 os.environ["EQUITY_DB_ENCRYPTED"] = "false"
+os.environ["EQUITY_SECRET_KEY"]   = "demo-secret-not-production"
+os.environ["EQUITY_TOTP_SECRET"]  = "JBSWY3DPEHPK3PXP"
+os.environ["EQUITY_DEV_MODE"]     = "true"
 
 from src.api.app import app
+from src.api.auth import SESSION_COOKIE_NAME, make_session_token
 
-with TestClient(app) as client:
+token = make_session_token()
+with TestClient(app, cookies={SESSION_COOKIE_NAME: token}) as client:
     print(client.get("/admin/status").json())
     print(client.get("/").status_code)
     print(client.get("/simulate").status_code)
