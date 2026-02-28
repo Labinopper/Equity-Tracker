@@ -177,11 +177,7 @@
     </div>
     {% set daily = security_daily_changes.get(ss.security.id) %}
     <div class="security-header__actions">
-      {% if ss.current_price_native is not none and ss.market_value_native_currency %}
-      <span class="daily-change-meta daily-change-meta--muted" title="Current market price per share">
-        {{ ss.market_value_native_currency }} {{ ss.current_price_native | public_money }}{% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}&nbsp;/ &pound;{{ ss.current_price_gbp | public_money }}{% endif %}
-      </span>
-      {% endif %}
+
       {% if daily and daily.percent_change is not none and daily.value_change_gbp is not none %}
       <span class="daily-change daily-change--{{ daily.direction }}" title="Previous close {{ daily.previous_as_of }} → {{ daily.current_as_of }} | Daily move %: change in price. Δ amount: today's total portfolio value change for this holding.">
         <span class="daily-change__arrow">{{ daily.arrow }}</span>
@@ -199,11 +195,24 @@
       {% else %}
       <span class="daily-change daily-change--muted" title="{{ daily.unavailable_reason if daily else 'No stored price yet.' }}">Daily change unavailable</span>
       {% endif %}
+
       {% if daily and daily.freshness_text %}
       <span class="daily-change-meta daily-change-meta--{{ daily.freshness_level }}" title="{{ daily.freshness_title or daily.freshness_text }}">
         {{ daily.freshness_text }}
       </span>
       {% endif %}
+
+      {% if daily and daily.market_status %}
+      <span class="market-status market-status--{{ daily.market_status | lower }}"
+            title="{% if daily.market_opens_in %}Opens: {{ daily.market_opens_in }}{% else %}{{ daily.market_status }}{% endif %}">
+        {% if daily.market_status | lower == 'open' %}
+          Open
+        {% else %}
+          Closed
+        {% endif %}
+      </span>
+      {% endif %}
+
       <span class="muted security-currency">{{ ss.security.currency }}</span>
       <a href="/portfolio/add-lot?security_id={{ ss.security.id }}" class="btn btn-secondary btn-sm">+ Lot</a>
       <a href="/simulate?security_id={{ ss.security.id }}" class="btn btn-secondary btn-sm">Simulate</a>
@@ -217,17 +226,6 @@
       <span class="security-lots-toggle__line">
         {{ ss.active_lots | length }} active lot{% if ss.active_lots | length != 1 %}s{% endif %}
         in {{ position_rows | length }} position row{% if position_rows | length != 1 %}s{% endif %}
-        | Qty {{ "%.2f"|format(ss.total_quantity) }}
-        | Cost Basis &pound;{{ ss.total_cost_basis_gbp | money }}
-        | True Cost &pound;{{ ss.total_true_cost_gbp | money }}
-        {% if ss.market_value_gbp is not none %}
-        {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
-        | Market Value {{ ss.market_value_native_currency }} {{ ss.market_value_native | money }}
-        {% endif %}
-        | Market Value &pound;{{ ss.market_value_gbp | money }}
-        {% else %}
-        | Market Value unavailable
-        {% endif %}
       </span>
     </summary>
     <div class="security-lots-toggle__body">
@@ -286,15 +284,6 @@
     <summary>
       Est. Net Proceeds
       <span class="net-panel-summary">
-        <span>Cost Basis: <strong>&pound;{{ ss.total_cost_basis_gbp | money }}</strong></span>
-        <span>True Cost: <strong>&pound;{{ ss.total_true_cost_gbp | money }}</strong></span>
-        <span>
-          Mkt Value:
-          {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
-          <strong>{{ ss.market_value_native_currency }} {{ ss.market_value_native | money }}</strong> /
-          {% endif %}
-          <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
-        </span>
         {% if ss.est_cgt_gbp is not none %}
         <span class="warning-text">Employment Tax: <strong>-&pound;{{ ss.est_cgt_gbp | money }}</strong></span>
         <span class="gain">Net: <strong>&pound;{{ ss.est_net_proceeds_gbp | money }}</strong></span>
@@ -305,43 +294,6 @@
     </summary>
     <div class="net-panel__body">
       <div class="net-value-grid">
-        <div class="net-value-item">
-          <div class="net-value-item__label">Total Quantity</div>
-          <div class="net-value-item__value">{{ "%.2f"|format(ss.total_quantity) }}</div>
-        </div>
-        <div class="net-value-item">
-          <div class="net-value-item__label">Total Cost Basis</div>
-          <div class="net-value-item__value">&pound;{{ ss.total_cost_basis_gbp | money }}</div>
-        </div>
-        <div class="net-value-item">
-          <div class="net-value-item__label">Total True Cost</div>
-          <div class="net-value-item__value">&pound;{{ ss.total_true_cost_gbp | money }}</div>
-        </div>
-        <div class="net-value-item">
-          <div class="net-value-item__label">Gross Market Value</div>
-          <div class="net-value-item__value">
-            {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
-            {{ ss.market_value_native_currency }} {{ ss.market_value_native | money }} /
-            {% endif %}
-            &pound;{{ ss.market_value_gbp | money }}
-          </div>
-        </div>
-        {% if ss.unrealised_gain_cgt_gbp is not none %}
-        <div class="net-value-item">
-          <div class="net-value-item__label" title="Market value minus cost basis. Employment tax on disposal not deducted — see Est. Net Proceeds for post-tax.">Unrealised P&amp;L (Cost Basis, pre-tax)</div>
-          <div class="net-value-item__value {% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
-            {% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}
-          </div>
-        </div>
-        {% endif %}
-        {% if ss.unrealised_gain_economic_gbp is not none %}
-        <div class="net-value-item">
-          <div class="net-value-item__label" title="Market value minus true economic cost. Employment tax on disposal not deducted — see Est. Net Proceeds for post-tax.">Unrealised P&amp;L (Economic, pre-tax)</div>
-          <div class="net-value-item__value {% if ss.unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">
-            {% if ss.unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_economic_gbp | money }}
-          </div>
-        </div>
-        {% endif %}
         {% if ss.est_cgt_gbp is not none %}
         <div class="net-value-item">
           <div class="net-value-item__label">Estimated Employment Tax</div>
@@ -429,9 +381,9 @@
             <td class="decision-zone num">
               {% if row.net_cash_if_sold is not none %}
               &pound;{{ row.net_cash_if_sold | money }}
-              <details class="position-detail-toggle">
-                <summary>Formula</summary>
-                <div class="position-detail-content">
+              <button class="info-button" aria-label="Net if sold today calculation">ℹ</button>
+              <div class="tooltip">
+                <div class="tooltip-content">
                   {% if row.total_mv is not none %}
                   <div class="position-detail-line">
                     <span>Market value</span>
@@ -439,21 +391,21 @@
                   </div>
                   <div class="position-detail-line">
                     <span>Employment tax est.</span>
-                    <span>&pound;{{ (row.total_mv - row.net_cash_if_sold) | money }}</span>
-                  </div>
-                  {% endif %}
-                  <div class="position-detail-line">
-                    <span>True cost baseline</span>
-                    <span>&pound;{{ row.paid_true_cost | money }}</span>
+                    <span>&pound;{{ row.sell_now_employment_tax_est | money }}</span>
                   </div>
                   {% if row.sell_now_forfeited_match_value > 0 %}
                   <div class="position-detail-line">
-                    <span>Forfeited match (economic impact)</span>
+                    <span>Forfeited matches (not sold)</span>
                     <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
                   </div>
                   {% endif %}
+                  <div class="position-detail-line position-detail-line--total">
+                    <span><strong>Net if sold today</strong></span>
+                    <span><strong>&pound;{{ row.net_cash_if_sold | money }}</strong></span>
+                  </div>
+                  {% endif %}
                 </div>
-              </details>
+              </div>
               {% elif row.sellability_status == "LOCKED" %}
               <span class="badge badge-neutral">Locked</span>
               {% else %}
@@ -472,21 +424,41 @@
             <td class="decision-zone num">
               {% if row.next_milestone_net is not none %}
               &pound;{{ row.next_milestone_net | money }}
-              <details class="position-detail-toggle">
-                <summary>Breakdown</summary>
-                <div class="position-detail-content">
+              <button class="info-button" aria-label="Next milestone breakdown">ℹ</button>
+              <div class="tooltip">
+                <div class="tooltip-content">
+                  {% if row.total_mv is not none %}
                   <div class="position-detail-line">
-                    <span>Net if held</span>
-                    <span>&pound;{{ row.next_milestone_net | money }}</span>
+                    <span>Market value (at milestone)</span>
+                    <span>&pound;{{ row.total_mv | money }}</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Employment tax est.</span>
+                    <span>&pound;{{ (row.total_mv - row.next_milestone_net) | money }}</span>
+                  </div>
+                  {% if row.sell_now_forfeited_match_value > 0 %}
+                  <div class="position-detail-line">
+                    <span>Forfeited matches</span>
+                    <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
+                  </div>
+                  {% endif %}
+                  {% endif %}
+                  <div class="position-detail-line position-detail-line--total">
+                    <span><strong>Net if held to milestone</strong></span>
+                    <span><strong>&pound;{{ row.next_milestone_net | money }}</strong></span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>True cost baseline</span>
+                    <span>&pound;{{ row.paid_true_cost | money }}</span>
                   </div>
                   {% if row.next_milestone_gain is not none %}
-                  <div class="position-detail-line">
-                    <span>Gain if held</span>
-                    <span>{% if row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | money }}</span>
+                  <div class="position-detail-line position-detail-line--total">
+                    <span><strong>Gain if held</strong></span>
+                    <span><strong>{% if row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | money }}</strong></span>
                   </div>
                   {% endif %}
                 </div>
-              </details>
+              </div>
               {% else %}
               <span class="muted">{{ row.next_milestone_reason or "Unavailable" }}</span>
               {% endif %}
@@ -501,21 +473,41 @@
             <td class="decision-zone num">
               {% if row.long_term_net is not none %}
               &pound;{{ row.long_term_net | money }}
-              <details class="position-detail-toggle">
-                <summary>Breakdown</summary>
-                <div class="position-detail-content">
+              <button class="info-button" aria-label="Long-term breakdown">ℹ</button>
+              <div class="tooltip">
+                <div class="tooltip-content">
+                  {% if row.total_mv is not none %}
                   <div class="position-detail-line">
-                    <span>Net long-term</span>
-                    <span>&pound;{{ row.long_term_net | money }}</span>
+                    <span>Market value (long-term)</span>
+                    <span>&pound;{{ row.total_mv | money }}</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Employment tax est.</span>
+                    <span>&pound;{{ (row.total_mv - row.long_term_net) | money }}</span>
+                  </div>
+                  {% if row.sell_now_forfeited_match_value > 0 %}
+                  <div class="position-detail-line">
+                    <span>Forfeited matches</span>
+                    <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
+                  </div>
+                  {% endif %}
+                  {% endif %}
+                  <div class="position-detail-line position-detail-line--total">
+                    <span><strong>Net if held long-term</strong></span>
+                    <span><strong>&pound;{{ row.long_term_net | money }}</strong></span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>True cost baseline</span>
+                    <span>&pound;{{ row.paid_true_cost | money }}</span>
                   </div>
                   {% if row.long_term_gain is not none %}
-                  <div class="position-detail-line">
-                    <span>Gain long-term</span>
-                    <span>{% if row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | money }}</span>
+                  <div class="position-detail-line position-detail-line--total">
+                    <span><strong>Gain long-term</strong></span>
+                    <span><strong>{% if row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | money }}</strong></span>
                   </div>
                   {% endif %}
                 </div>
-              </details>
+              </div>
               {% else %}
               <span class="muted">{{ row.long_term_reason or "Unavailable" }}</span>
               {% endif %}
@@ -529,25 +521,56 @@
             </td>
             <td class="notes-cell">
               <div class="notes-cell__text">{{ row.notes }}</div>
-              <details class="position-detail-toggle">
-                <summary>Details</summary>
-                <div class="position-detail-content">
+              <button class="info-button" aria-label="Lot details">ℹ</button>
+              <div class="tooltip">
+                <div class="tooltip-content">
                   {% for dls in row.detail_lots %}
                   <div class="position-detail-line">
-                    <span>
+                    <span><strong>
                       {% if row.row_kind == "GROUPED_ESPP_PLUS" %}
-                      {% if dls.lot.matching_lot_id %}Match{% else %}Paid{% endif %}
+                      {% if dls.lot.matching_lot_id %}Matching Share{% else %}Paid Share{% endif %}
                       {% else %}
-                      Lot
+                      {{ row.scheme_display }}
                       {% endif %}
-                    </span>
-                    <span>Tax {{ dls.lot.tax_year }}</span>
-                    <span>Acq &pound;{{ dls.lot.acquisition_price_gbp | money }}</span>
-                    <span>True/sh &pound;{{ dls.true_cost_per_share_gbp | money }}</span>
+                    </strong></span>
+                    <span></span>
                   </div>
+                  <div class="position-detail-line">
+                    <span>Tax year</span>
+                    <span>{{ dls.lot.tax_year }}</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Acquisition date</span>
+                    <span>{{ dls.lot.acquisition_date }}</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Quantity</span>
+                    <span>{{ "%.2f"|format(dls.quantity_remaining) }} shares</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>Acq price per share</span>
+                    <span>&pound;{{ dls.lot.acquisition_price_gbp | money }}</span>
+                  </div>
+                  <div class="position-detail-line">
+                    <span>True cost per share</span>
+                    <span>&pound;{{ dls.true_cost_per_share_gbp | money }}</span>
+                  </div>
+                  {% if dls.market_value_gbp is not none %}
+                  <div class="position-detail-line">
+                    <span>Market value</span>
+                    <span>&pound;{{ dls.market_value_gbp | money }}</span>
+                  </div>
+                  {% endif %}
+                  <div class="position-detail-line">
+                    <span>Total true cost</span>
+                    <span>&pound;{{ dls.true_cost_total_gbp | money }}</span>
+                  </div>
+                  {% if not loop.last %}
+                  <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
+                  {% endif %}
                   {% endfor %}
                 </div>
-              </details>
+              </div>
             </td>
             <td class="actions-cell">
               <span class="lot-actions-menu">
@@ -641,25 +664,56 @@
       <div class="position-card__section">
         <div class="position-card__label">Notes</div>
         <div class="position-card__value">{{ row.notes }}</div>
-        <details class="position-detail-toggle">
-          <summary>Details</summary>
-          <div class="position-detail-content">
+        <button class="info-button" aria-label="Lot details">ℹ</button>
+        <div class="tooltip">
+          <div class="tooltip-content">
             {% for dls in row.detail_lots %}
             <div class="position-detail-line">
-              <span>
+              <span><strong>
                 {% if row.row_kind == "GROUPED_ESPP_PLUS" %}
-                {% if dls.lot.matching_lot_id %}Match{% else %}Paid{% endif %}
+                {% if dls.lot.matching_lot_id %}Matching Share{% else %}Paid Share{% endif %}
                 {% else %}
-                Lot
+                {{ row.scheme_display }}
                 {% endif %}
-              </span>
-              <span>Tax {{ dls.lot.tax_year }}</span>
-              <span>Acq &pound;{{ dls.lot.acquisition_price_gbp | money }}</span>
-              <span>True/sh &pound;{{ dls.true_cost_per_share_gbp | money }}</span>
+              </strong></span>
+              <span></span>
             </div>
+            <div class="position-detail-line">
+              <span>Tax year</span>
+              <span>{{ dls.lot.tax_year }}</span>
+            </div>
+            <div class="position-detail-line">
+              <span>Acquisition date</span>
+              <span>{{ dls.lot.acquisition_date }}</span>
+            </div>
+            <div class="position-detail-line">
+              <span>Quantity</span>
+              <span>{{ "%.2f"|format(dls.quantity_remaining) }} shares</span>
+            </div>
+            <div class="position-detail-line">
+              <span>Acq price per share</span>
+              <span>&pound;{{ dls.lot.acquisition_price_gbp | money }}</span>
+            </div>
+            <div class="position-detail-line">
+              <span>True cost per share</span>
+              <span>&pound;{{ dls.true_cost_per_share_gbp | money }}</span>
+            </div>
+            {% if dls.market_value_gbp is not none %}
+            <div class="position-detail-line">
+              <span>Market value</span>
+              <span>&pound;{{ dls.market_value_gbp | money }}</span>
+            </div>
+            {% endif %}
+            <div class="position-detail-line">
+              <span>Total true cost</span>
+              <span>&pound;{{ dls.true_cost_total_gbp | money }}</span>
+            </div>
+            {% if not loop.last %}
+            <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
+            {% endif %}
             {% endfor %}
           </div>
-        </details>
+        </div>
       </div>
     </article>
     {% endfor %}

@@ -5,13 +5,13 @@ Equity Tracker — TOTP secret setup and rotation utility.
 Usage
 ─────
 First-time setup (generates a new secret):
-    python scripts/setup_totp.py
+    python equity_tracker/scripts/setup_totp.py
 
 Reset (generates a new secret to replace an existing one):
-    python scripts/setup_totp.py --reset
+    python equity_tracker/scripts/setup_totp.py --reset
 
 Verify (shows the current code from an existing secret in env):
-    python scripts/setup_totp.py --verify
+    python equity_tracker/scripts/setup_totp.py --verify
 
 After running setup or reset
 ────────────────────────────
@@ -30,8 +30,26 @@ auto-rotate — only running this script with --reset changes it.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Load .env from the equity_tracker/ directory (stdlib only, no deps)."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            os.environ.setdefault(key, value)
 
 
 def _generate_secret() -> tuple[str, str]:
@@ -75,7 +93,7 @@ def cmd_generate(*, is_reset: bool = False) -> None:
     print(f"  {uri}")
     print()
     print("Step 3 — Verify the setup:")
-    print("  EQUITY_TOTP_SECRET=<value> python scripts/setup_totp.py --verify")
+    print("  EQUITY_TOTP_SECRET=<value> python equity_tracker/scripts/setup_totp.py --verify")
     print()
     print("Step 4 — Restart the server.")
     print()
@@ -86,7 +104,6 @@ def cmd_generate(*, is_reset: bool = False) -> None:
 
 def cmd_verify() -> None:
     """Verify an existing EQUITY_TOTP_SECRET from the environment."""
-    import os
     import pyotp
 
     secret = os.environ.get("EQUITY_TOTP_SECRET", "").strip()
@@ -138,6 +155,8 @@ def main() -> None:
         help="Verify an existing EQUITY_TOTP_SECRET from the environment.",
     )
     args = parser.parse_args()
+
+    _load_dotenv()
 
     if args.verify:
         cmd_verify()

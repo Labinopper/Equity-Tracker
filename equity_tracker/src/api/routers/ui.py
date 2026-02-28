@@ -142,6 +142,7 @@ class PositionGroupRow:
     sell_now_cash_paid: Decimal | None
     sell_now_match_effect: str
     sell_now_forfeited_match_value: Decimal
+    sell_now_employment_tax_est: Decimal | None
     sell_now_economic_result: Decimal | None
     # Additional view-only fields used by the template.
     row_kind: str
@@ -228,6 +229,10 @@ class SecurityDailyChange:
     # Native-currency daily value change (shown when security is not GBP-denominated)
     native_currency: str | None = None
     value_change_native: Decimal | None = None
+    # Market status: "Open" or "Closed"
+    market_status: str | None = None
+    # Time until market opens (e.g., "2d 3h"), only if status is "Closed"
+    market_opens_in: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -278,27 +283,22 @@ def _compute_exit_summary(
     true_cost_gbp: Decimal,
     employment_tax_due_gbp: Decimal,
     broker_fees_gbp: Decimal,
-    forfeited_match_value_gbp: Decimal,
 ) -> dict[str, Decimal]:
     """
     Compute cash and economic outcomes for disposal summary presentation.
 
-    Matching-share forfeiture is a non-cash opportunity loss and must not reduce
-    net cash received.
+    Invariant: Gain = Net – True Economic Cost.
+    Forfeiture is handled via quantity (forfeited shares excluded from
+    proceeds), never as an additional deduction.
     """
     net_cash_received = proceeds_cash_gbp - employment_tax_due_gbp - broker_fees_gbp
-    investment_pnl = net_cash_received - true_cost_gbp
-    matching_share_impact = Decimal("0") - forfeited_match_value_gbp
-    net_economic_result = investment_pnl + matching_share_impact
+    net_economic_result = net_cash_received - true_cost_gbp
     return {
         "proceeds_cash_gbp": proceeds_cash_gbp,
         "out_of_pocket_cost_gbp": true_cost_gbp,
         "employment_tax_due_gbp": employment_tax_due_gbp,
         "broker_fees_gbp": broker_fees_gbp,
-        "forfeited_match_value_gbp": forfeited_match_value_gbp,
         "net_cash_received_gbp": net_cash_received,
-        "investment_pnl_gbp": investment_pnl,
-        "matching_share_impact_gbp": matching_share_impact,
         "net_economic_result_gbp": net_economic_result,
     }
 
@@ -455,6 +455,39 @@ def _market_window_status(exchange: str | None, now_utc: datetime) -> MarketWind
     )
 
 
+def _market_status_label(exchange: str | None, now_utc: datetime) -> tuple[str | None, str | None]:
+    """
+    Extract market status label and opens-in duration.
+
+    Returns (status_label, opens_in_duration)
+    - status_label: "Open" or "Closed", or None if exchange unknown
+    - opens_in_duration: e.g., "2d 3h", only if status is "Closed"
+    """
+    market = _market_window_status(exchange, now_utc)
+    if market.is_open is None:
+        return None, None
+
+    if market.is_open:
+        return "Open", None
+
+    # Market is closed; calculate opens_in
+    ex = (exchange or "").strip().upper()
+    if ex in _US_MARKET_EXCHANGES:
+        tz = ZoneInfo("America/New_York")
+        open_time = time(9, 30)
+    elif ex in _UK_MARKET_EXCHANGES:
+        tz = ZoneInfo("Europe/London")
+        open_time = time(8, 0)
+    else:
+        return "Closed", None
+
+    local_now = now_utc.astimezone(tz)
+    next_open = _next_weekday_open(local_now, open_time)
+    opens_in = _format_compact_duration(next_open - local_now)
+
+    return "Closed", opens_in
+
+
 def _daily_freshness_note(
     *,
     exchange: str | None,
@@ -477,17 +510,12 @@ def _daily_freshness_note(
     age_txt = _format_compact_duration(age)
     title = f"Price last changed at {changed_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC"
 
-    if market.is_open is False and market.status_text is not None:
-        return f"{market.status_text}; last change {age_txt} ago", "muted", title
-
-    if market.is_open is True:
-        if age >= timedelta(minutes=_DAILY_STALE_WHILE_OPEN_MINUTES):
-            return f"No change {age_txt} (market open)", "warning", title
-        return f"Updated {age_txt} ago", "ok", title
-
+    # always show a simple updated timestamp, regardless of market state
     if age >= timedelta(minutes=_DAILY_STALE_WHILE_OPEN_MINUTES):
-        return f"Last change {age_txt} ago", "warning", title
-    return f"Last change {age_txt} ago", "muted", title
+        level = "warning"
+    else:
+        level = "ok"
+    return f"Updated {age_txt} ago", level, title
 
 
 def _security_daily_change_unavailable(
@@ -526,6 +554,11 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 now_utc=now_utc,
             )
 
+            market_status, market_opens_in = _market_status_label(
+                exchange=ss.security.exchange,
+                now_utc=now_utc,
+            )
+
             latest_row = price_repo.get_latest(security_id)
             if latest_row is None:
                 daily = _security_daily_change_unavailable(
@@ -536,6 +569,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 daily.freshness_text = freshness_text
                 daily.freshness_level = freshness_level
                 daily.freshness_title = freshness_title
+                daily.market_status = market_status
+                daily.market_opens_in = market_opens_in
                 changes[security_id] = daily
                 continue
 
@@ -549,6 +584,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 daily.freshness_text = freshness_text
                 daily.freshness_level = freshness_level
                 daily.freshness_title = freshness_title
+                daily.market_status = market_status
+                daily.market_opens_in = market_opens_in
                 changes[security_id] = daily
                 continue
 
@@ -567,6 +604,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 daily.freshness_text = freshness_text
                 daily.freshness_level = freshness_level
                 daily.freshness_title = freshness_title
+                daily.market_status = market_status
+                daily.market_opens_in = market_opens_in
                 changes[security_id] = daily
                 continue
 
@@ -614,6 +653,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 freshness_title=freshness_title,
                 native_currency=native_currency,
                 value_change_native=value_change_native,
+                market_status=market_status,
+                market_opens_in=market_opens_in,
             )
     return changes
 
@@ -782,8 +823,10 @@ def _evaluate_espp_plus_group_outcome_on(
     else:
         net = paid_cash
 
-    forfeited_value = match_mv if match_effect == "FORFEITED" else Decimal("0.00")
-    gain = _q2(net - row.paid_true_cost - forfeited_value)
+    # Invariant: Gain = Net – True Economic Cost.
+    # Forfeiture is handled via quantity (match shares excluded from net),
+    # never as an additional deduction.
+    gain = _q2(net - row.paid_true_cost)
     return net, gain, None
 
 
@@ -950,6 +993,12 @@ def _build_single_position_row(
         if ls.sellability_unlock_date is not None and forfeiture_days is None:
             reason = f"Locked until {ls.sellability_unlock_date.isoformat()}."
     signal, signal_title = _decision_signal(ls.sellability_status, economic)
+
+    # Employment tax estimate for single lots: only applies to sellable positions
+    sell_now_employment_tax_est: Decimal | None = None
+    if net_cash is not None and ls.market_value_gbp is not None:
+        sell_now_employment_tax_est = _q2(ls.market_value_gbp - ls.est_net_proceeds_gbp)
+
     return PositionGroupRow(
         group_id=f"{security_id}:{ls.lot.acquisition_date.isoformat()}:{row_index}",
         acquisition_date=ls.lot.acquisition_date,
@@ -968,6 +1017,7 @@ def _build_single_position_row(
         sell_now_cash_paid=ls.est_net_proceeds_gbp,
         sell_now_match_effect="NONE",
         sell_now_forfeited_match_value=Decimal("0.00"),
+        sell_now_employment_tax_est=sell_now_employment_tax_est,
         sell_now_economic_result=economic,
         row_kind="SINGLE_LOT",
         has_tax_window=_has_tax_window(ls),
@@ -1046,11 +1096,28 @@ def _build_espp_plus_group_row(
     else:
         net_cash_if_sold = paid_cash
 
+    # Invariant: Gain = Net – True Economic Cost.
+    # Forfeiture is handled via quantity (match shares excluded from net),
+    # never as an additional deduction.
     sell_now_economic = (
-        _q2(net_cash_if_sold - paid_true_cost - forfeited_match_value)
+        _q2(net_cash_if_sold - paid_true_cost)
         if net_cash_if_sold is not None
         else None
     )
+
+    # Employment tax is due only on shares actually being sold.
+    # If matches are forfeited, no tax on that portion.
+    sell_now_employment_tax_est: Decimal | None = None
+    if net_cash_if_sold is not None:
+        if match_effect == "INCLUDED":
+            # Tax on: (paid_mv + match_mv) - (paid_cash + match_cash)
+            sold_mv = _q2((paid_mv or Decimal("0")) + (match_mv or Decimal("0")))
+            sold_cash = _q2(paid_cash + (match_cash or Decimal("0")))
+            sell_now_employment_tax_est = _q2(sold_mv - sold_cash)
+        else:
+            # Tax on: paid_mv - paid_cash only (no match, or match forfeited/locked)
+            if paid_mv is not None:
+                sell_now_employment_tax_est = _q2(paid_mv - paid_cash)
 
     pnl_tax_basis = _q2(total_mv - paid_cost_basis) if total_mv is not None else None
     pnl_economic = _q2(total_mv - paid_true_cost) if total_mv is not None else None
@@ -1095,6 +1162,7 @@ def _build_espp_plus_group_row(
         sell_now_cash_paid=paid_cash,
         sell_now_match_effect=match_effect,
         sell_now_forfeited_match_value=_q2(forfeited_match_value),
+        sell_now_employment_tax_est=sell_now_employment_tax_est,
         sell_now_economic_result=sell_now_economic,
         row_kind="GROUPED_ESPP_PLUS",
         has_tax_window=has_tax_window,
@@ -2961,7 +3029,6 @@ async def simulate_submit(
                 true_cost_gbp=result.total_true_cost_gbp,
                 employment_tax_due_gbp=result.total_sip_employment_tax_gbp,
                 broker_fees_gbp=fees,
-                forfeited_match_value_gbp=result.total_forfeiture_value_gbp,
             ),
             "error": None,
             "prev": {

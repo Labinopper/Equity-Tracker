@@ -76,17 +76,17 @@ def _post_add_lot_ui(client, data: dict[str, str]):
 
 
 def test_exit_summary_cash_vs_economic_formula():
+    # Invariant: Gain = Net Cash Received – True Economic Cost.
+    # Forfeiture is handled via quantity (excluded from proceeds), not as
+    # a separate deduction.
     summary = _compute_exit_summary(
         proceeds_cash_gbp=Decimal("840"),
         true_cost_gbp=Decimal("487.20"),
         employment_tax_due_gbp=Decimal("352.80"),
         broker_fees_gbp=Decimal("0"),
-        forfeited_match_value_gbp=Decimal("132"),
     )
     assert summary["net_cash_received_gbp"] == Decimal("487.20")
-    assert summary["investment_pnl_gbp"] == Decimal("0.00")
-    assert summary["matching_share_impact_gbp"] == Decimal("-132")
-    assert summary["net_economic_result_gbp"] == Decimal("-132.00")
+    assert summary["net_economic_result_gbp"] == Decimal("0.00")
 
 
 def test_add_lot_form_defaults_acquisition_date_today(client):

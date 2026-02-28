@@ -293,59 +293,20 @@
         </p>
       </section>
 
-      <section class="exit-summary__section">
-        <h4 class="exit-summary__heading">2) Investment Performance (Paid Shares Only)</h4>
+      <section class="exit-summary__section exit-summary__section--wide">
+        <h4 class="exit-summary__heading">2) Economic Outcome</h4>
         <table class="exit-summary__table">
           <tbody>
-            <tr>
-              <td>Out-of-pocket cost (after tax at purchase)</td>
-              <td class="num loss">-&pound;{{ "%.2f" % exit_summary.out_of_pocket_cost_gbp }}</td>
-            </tr>
             <tr>
               <td>Net Cash Received</td>
               <td class="num">&pound;{{ "%.2f" % exit_summary.net_cash_received_gbp }}</td>
             </tr>
-            <tr class="exit-summary__row-total">
-              <td><strong>Investment P&amp;L</strong></td>
-              <td class="num {{ 'gain' if exit_summary.investment_pnl_gbp >= 0 else 'loss' }}">
-                <strong>&pound;{{ "%.2f" % exit_summary.investment_pnl_gbp }}</strong>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="exit-summary__section">
-        <h4 class="exit-summary__heading">3) Scheme Incentive Impact</h4>
-        <div class="alert alert-warning exit-summary__warning">
-          These shares were free but are forfeited due to early sale. This is not deducted from cash received.
-        </div>
-        <table class="exit-summary__table">
-          <tbody>
             <tr>
-              <td>Matching shares forfeited (non-cash opportunity loss)</td>
-              <td class="num loss">&pound;{{ "%.2f" % exit_summary.matching_share_impact_gbp }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="exit-summary__section exit-summary__section--wide">
-        <h4 class="exit-summary__heading">4) Total Economic Outcome</h4>
-        <table class="exit-summary__table">
-          <tbody>
-            <tr>
-              <td>Investment P&amp;L</td>
-              <td class="num {{ 'gain' if exit_summary.investment_pnl_gbp >= 0 else 'loss' }}">
-                &pound;{{ "%.2f" % exit_summary.investment_pnl_gbp }}
-              </td>
-            </tr>
-            <tr>
-              <td>Matching Share Impact</td>
-              <td class="num loss">&pound;{{ "%.2f" % exit_summary.matching_share_impact_gbp }}</td>
+              <td>True Economic Cost</td>
+              <td class="num loss">-&pound;{{ "%.2f" % exit_summary.out_of_pocket_cost_gbp }}</td>
             </tr>
             <tr class="exit-summary__row-total">
-              <td><strong>Net Economic Outcome</strong></td>
+              <td><strong>Gain</strong></td>
               <td class="num {{ 'gain' if exit_summary.net_economic_result_gbp >= 0 else 'loss' }}">
                 <strong>&pound;{{ "%.2f" % exit_summary.net_economic_result_gbp }}</strong>
               </td>

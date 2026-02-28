@@ -39,9 +39,30 @@ process lifetime).  Multiple workers would each maintain their own connection
 pool but share no state, breaking AppContext.  Do not change workers to > 1.
 """
 
+import os
+from pathlib import Path
+
 import uvicorn
 
+
+def _load_dotenv() -> None:
+    """Load .env from the same directory as this script (stdlib only, no deps)."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.is_file():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            os.environ.setdefault(key, value)
+
+
 if __name__ == "__main__":
+    _load_dotenv()
     uvicorn.run(
         "src.api.app:app",
         host="0.0.0.0",   # bind all interfaces — required for LAN access

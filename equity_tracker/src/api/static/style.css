@@ -456,6 +456,32 @@ code, pre {
   background: var(--bg-card-alt);
 }
 
+/* Market status badge — compact indicator for market open/closed */
+.market-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 0.16rem 0.5rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.market-status--open {
+  color: var(--accent);
+  border-color: rgba(61, 120, 240, 0.35);
+  background: rgba(61, 120, 240, 0.08);
+}
+
+.market-status--closed {
+  color: var(--warning);
+  border-color: rgba(240, 160, 48, 0.35);
+  background: rgba(240, 160, 48, 0.1);
+}
+
 .security-lots-toggle {
   border-top: 1px solid var(--border);
 }
@@ -626,6 +652,7 @@ tr:hover td { background: var(--bg-hover); }
 .decision-zone {
   border-left: 1px solid var(--border);
   background: rgba(61, 120, 240, 0.05);
+  position: relative;
 }
 
 .portfolio-position-table .decision-zone-head,
@@ -671,22 +698,83 @@ tr:hover td { background: var(--bg-hover); }
 }
 
 .position-detail-line {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   gap: 0.5rem;
-  align-items: center;
   font-size: 0.74rem;
   color: var(--text-muted);
   margin-bottom: 0.15rem;
+  align-items: start;
+  white-space: nowrap;
+}
+
+.position-detail-line span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .position-detail-line:last-child {
   margin-bottom: 0;
 }
 
+.position-detail-line--total {
+  padding-top: 0.15rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.15rem;
+}
+
+/* Info button and tooltip */
+.info-button {
+  display: inline;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0;
+  margin: 0 0 0 0.3rem;
+  vertical-align: super;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.info-button:hover {
+  opacity: 1;
+}
+
+.tooltip {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.2rem;
+  z-index: 1000;
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.45rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+  width: max-content;
+}
+
+/* Show tooltip on hover of button or tooltip itself */
+.info-button:hover ~ .tooltip,
+.tooltip:hover {
+  display: block;
+}
+
+.tooltip-content {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
 .notes-cell {
   min-width: 12rem;
   max-width: 16rem;
   white-space: normal !important;
+  position: relative;
 }
 
 .notes-cell__text {
@@ -741,6 +829,7 @@ body.portfolio-focus-mode .portfolio-position-mobile {
   border-top: 1px solid var(--border);
   padding-top: 0.35rem;
   margin-top: 0.35rem;
+  position: relative;
 }
 
 .position-card__label {
