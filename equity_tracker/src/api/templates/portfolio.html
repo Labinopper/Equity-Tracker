@@ -323,7 +323,7 @@
             <th class="num">Gain If Sold Today</th>
             <th class="decision-zone-head">Net If Held (Next Milestone)</th>
             <th class="num">Gain If Held</th>
-            <th class="decision-zone-head">Net If Long-Term (5+ Years)</th>
+            <th class="decision-zone-head">Net When Long-Term Status Met</th>
             <th class="num">Gain If Long-Term</th>
             <th>Notes</th>
             <th class="actions-head">Actions</th>
@@ -421,21 +421,6 @@
               <button class="info-button" aria-label="Next milestone breakdown">ℹ</button>
               <div class="tooltip">
                 <div class="tooltip-content">
-                  {% if row.next_milestone_date %}
-                  <div class="position-detail-line">
-                    <span>Time until milestone</span>
-                    {% set days_remaining = (row.next_milestone_date - today).days %}
-                    {% set years = days_remaining // 365 %}
-                    {% set remaining_days = days_remaining % 365 %}
-                    <span>
-                      {%- if years > 0 %}{{ years }}y {{ remaining_days }}d{%- else %}{{ days_remaining }}d{%- endif %}
-                    </span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Milestone date</span>
-                    <span>{{ row.next_milestone_date }}</span>
-                  </div>
-                  {% endif %}
                   {% if row.total_mv is not none %}
                   <div class="position-detail-line">
                     <span>Market value (at milestone)</span>
@@ -445,12 +430,6 @@
                     <span>Employment tax est.</span>
                     <span>&pound;{{ (row.total_mv - row.next_milestone_net) | money }}</span>
                   </div>
-                  {% if row.sell_now_forfeited_match_value > 0 %}
-                  <div class="position-detail-line">
-                    <span>Forfeited matches</span>
-                    <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
-                  </div>
-                  {% endif %}
                   {% endif %}
                   <div class="position-detail-line position-detail-line--total">
                     <span><strong>Net if held to milestone</strong></span>
@@ -464,6 +443,13 @@
                   <div class="position-detail-line position-detail-line--total">
                     <span><strong>Gain if held</strong></span>
                     <span><strong>{% if row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | money }}</strong></span>
+                  </div>
+                  {% endif %}
+                  {% if row.next_milestone_date %}
+                  <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
+                  <div class="position-detail-line">
+                    <span>Until</span>
+                    <span>{{ row.next_milestone_date }}</span>
                   </div>
                   {% endif %}
                 </div>
@@ -485,21 +471,6 @@
               <button class="info-button" aria-label="Long-term breakdown">ℹ</button>
               <div class="tooltip">
                 <div class="tooltip-content">
-                  {% if row.long_term_date %}
-                  <div class="position-detail-line">
-                    <span>Time until long-term</span>
-                    {% set days_remaining = (row.long_term_date - today).days %}
-                    {% set years = days_remaining // 365 %}
-                    {% set remaining_days = days_remaining % 365 %}
-                    <span>
-                      {%- if years > 0 %}{{ years }}y {{ remaining_days }}d{%- else %}{{ days_remaining }}d{%- endif %}
-                    </span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Long-term date</span>
-                    <span>{{ row.long_term_date }}</span>
-                  </div>
-                  {% endif %}
                   {% if row.total_mv is not none %}
                   <div class="position-detail-line">
                     <span>Market value (long-term)</span>
@@ -509,12 +480,6 @@
                     <span>Employment tax est.</span>
                     <span>&pound;{{ (row.total_mv - row.long_term_net) | money }}</span>
                   </div>
-                  {% if row.sell_now_forfeited_match_value > 0 %}
-                  <div class="position-detail-line">
-                    <span>Forfeited matches</span>
-                    <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
-                  </div>
-                  {% endif %}
                   {% endif %}
                   <div class="position-detail-line position-detail-line--total">
                     <span><strong>Net if held long-term</strong></span>
@@ -528,6 +493,13 @@
                   <div class="position-detail-line position-detail-line--total">
                     <span><strong>Gain long-term</strong></span>
                     <span><strong>{% if row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | money }}</strong></span>
+                  </div>
+                  {% endif %}
+                  {% if row.long_term_date %}
+                  <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
+                  <div class="position-detail-line">
+                    <span>Until</span>
+                    <span>{{ row.long_term_date }}</span>
                   </div>
                   {% endif %}
                 </div>
@@ -681,7 +653,7 @@
         <div class="position-card__value">Gain If Held {% if row.next_milestone_gain is not none %}{% if row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | money }}{% else %}{{ row.next_milestone_reason or "Unavailable" }}{% endif %}</div>
       </div>
       <div class="position-card__section">
-        <div class="position-card__label">Long-Term (5+ Years)</div>
+        <div class="position-card__label">When Long-Term Status Met</div>
         <div class="position-card__value">Net If Long-Term {% if row.long_term_net is not none %}&pound;{{ row.long_term_net | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
         <div class="position-card__value">Gain If Long-Term {% if row.long_term_gain is not none %}{% if row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
       </div>
