@@ -177,6 +177,7 @@ class SecuritySummarySchema(BaseModel):
     unrealised_gain_economic_gbp: str | None = None
     locked_unrealised_gain_cgt_gbp: str | None = None
     locked_unrealised_gain_economic_gbp: str | None = None
+    forfeit_risk_market_value_gbp: str | None = None
     forfeit_risk_unrealised_gain_cgt_gbp: str | None = None
     forfeit_risk_unrealised_gain_economic_gbp: str | None = None
     price_as_of: date | None = None
@@ -207,6 +208,7 @@ class SecuritySummarySchema(BaseModel):
             unrealised_gain_economic_gbp=str(ss.unrealised_gain_economic_gbp) if ss.unrealised_gain_economic_gbp is not None else None,
             locked_unrealised_gain_cgt_gbp=str(ss.locked_unrealised_gain_cgt_gbp) if ss.locked_unrealised_gain_cgt_gbp is not None else None,
             locked_unrealised_gain_economic_gbp=str(ss.locked_unrealised_gain_economic_gbp) if ss.locked_unrealised_gain_economic_gbp is not None else None,
+            forfeit_risk_market_value_gbp=str(ss.forfeit_risk_market_value_gbp) if ss.forfeit_risk_market_value_gbp is not None else None,
             forfeit_risk_unrealised_gain_cgt_gbp=str(ss.forfeit_risk_unrealised_gain_cgt_gbp) if ss.forfeit_risk_unrealised_gain_cgt_gbp is not None else None,
             forfeit_risk_unrealised_gain_economic_gbp=str(ss.forfeit_risk_unrealised_gain_economic_gbp) if ss.forfeit_risk_unrealised_gain_economic_gbp is not None else None,
             price_as_of=ss.price_as_of,

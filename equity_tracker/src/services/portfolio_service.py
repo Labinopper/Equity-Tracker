@@ -177,6 +177,7 @@ class SecuritySummary:
     unrealised_gain_economic_gbp: Decimal | None = field(default=None)
     locked_unrealised_gain_cgt_gbp: Decimal | None = field(default=None)
     locked_unrealised_gain_economic_gbp: Decimal | None = field(default=None)
+    forfeit_risk_market_value_gbp: Decimal | None = field(default=None)
     forfeit_risk_unrealised_gain_cgt_gbp: Decimal | None = field(default=None)
     forfeit_risk_unrealised_gain_economic_gbp: Decimal | None = field(default=None)
     price_as_of: date | None = field(default=None)
@@ -1035,14 +1036,15 @@ class PortfolioService:
                     for ls in lot_summaries:
                         if ls.market_value_gbp is None:
                             continue
-                        if ls.sellability_status == SELLABILITY_LOCKED:
-                            locked_market_value += ls.market_value_gbp
-                            locked_cost += ls.cost_basis_total_gbp
-                            locked_true += ls.true_cost_total_gbp
-                        elif ls.forfeiture_risk is not None and ls.forfeiture_risk.in_window:
+                        if ls.forfeiture_risk is not None and ls.forfeiture_risk.in_window and ls.lot.matching_lot_id is not None:
+                            # Only matched shares (not paid shares) are at forfeit risk
                             forfeit_market_value += ls.market_value_gbp
                             forfeit_cost += ls.cost_basis_total_gbp
                             forfeit_true += ls.true_cost_total_gbp
+                        elif ls.sellability_status == SELLABILITY_LOCKED:
+                            locked_market_value += ls.market_value_gbp
+                            locked_cost += ls.cost_basis_total_gbp
+                            locked_true += ls.true_cost_total_gbp
                         else:
                             # Sellable
                             sellable_market_value += ls.market_value_gbp
@@ -1079,6 +1081,11 @@ class PortfolioService:
                         if forfeit_market_value > 0
                         else None
                     )
+                    forfeit_risk_market_value = (
+                        -forfeit_market_value
+                        if forfeit_market_value > 0
+                        else None
+                    )
                     sec_est_cgt = _estimate_sell_all_employment_tax(
                         all_lots,
                         current_price,
@@ -1104,6 +1111,7 @@ class PortfolioService:
                     locked_unrealised_economic = None
                     forfeit_risk_unrealised_cgt = None
                     forfeit_risk_unrealised_economic = None
+                    forfeit_risk_market_value = None
                     price_as_of = None
                     price_is_stale = False
                     price_refreshed_at = None
@@ -1151,6 +1159,7 @@ class PortfolioService:
                     unrealised_gain_economic_gbp=unrealised_economic,
                     locked_unrealised_gain_cgt_gbp=locked_unrealised_cgt,
                     locked_unrealised_gain_economic_gbp=locked_unrealised_economic,
+                    forfeit_risk_market_value_gbp=forfeit_risk_market_value,
                     forfeit_risk_unrealised_gain_cgt_gbp=forfeit_risk_unrealised_cgt,
                     forfeit_risk_unrealised_gain_economic_gbp=forfeit_risk_unrealised_economic,
                     price_as_of=price_as_of,
