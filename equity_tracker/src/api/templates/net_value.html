@@ -39,10 +39,17 @@
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label">Estimated Employment Tax (All Lots)</div>
+    <div class="stat__label">
+      Estimated Employment Tax (All Lots)
+      <button class="info-button" aria-label="Estimated Employment Tax explanation">ℹ</button>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Income Tax, National Insurance, plus Student Loan where scheme rules apply. Estimate only.
+        </div>
+      </div>
+    </div>
     {% if sell_all_metrics.est_employment_tax_gbp is not none %}
     <div class="stat__value warning-text">&pound;{{ sell_all_metrics.est_employment_tax_gbp | money }}</div>
-    <div class="stat-caption">IT + NIC + Student Loan where scheme rules apply</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
@@ -151,11 +158,6 @@
         {% if daily.market_status | lower == 'open' %}Open{% else %}Closed{% endif %}
       </span>
       {% endif %}
-
-      <span class="muted security-currency">{{ ss.security.currency }}</span>
-      {% if ss.price_as_of %}
-      <span class="muted mono-small">Price as of {{ ss.price_as_of }}</span>
-      {% endif %}
     </div>
   </div>
 
@@ -169,7 +171,7 @@
       <div class="net-value-item__label">Gross Market Value</div>
       <div class="net-value-item__value">
         {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
-        {{ ss.market_value_native_currency }} {{ ss.market_value_native | money }} /
+        {% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}{{ ss.market_value_native | money }} /
         {% endif %}
         &pound;{{ ss.market_value_gbp | money }}
       </div>
@@ -195,14 +197,20 @@
       <div class="net-value-item__value warning-text">&pound;{{ ss.est_employment_tax_gbp | money }}</div>
     </div>
     <div class="net-value-item">
-      <div class="net-value-item__label">Hypothetical Net Proceeds (All Lots)</div>
+      <div class="net-value-item__label">Hypothetical Net Proceeds (All Lots)
+      <button class="info-button" aria-label="Next milestone breakdown">ℹ</button>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Gross market value minus estimated employment tax. Not actionable liquidity. Includes locked shares.
+        </div>
+      </div>
+      </div>
       {% set hnp = ss.est_net_proceeds_gbp %}
       {% if hnp < 0 %}
       <div class="net-value-item__value loss">-&pound;{{ hnp | abs | money }}</div>
       {% else %}
       <div class="net-value-item__value gain">&pound;{{ hnp | money }}</div>
       {% endif %}
-      <div class="net-value-item__note">Gross minus employment-tax estimate. Includes locked shares.</div>
     </div>
     {% endif %}
   </div>
@@ -271,7 +279,7 @@
               {% if has_forfeiture_risk %}
               <span class="badge badge-warning">Forfeiture Window ({{ row.forfeiture_risk_days_remaining }}d)</span>
               {% elif row.sellability_status == 'LOCKED' %}
-              <span class="badge badge-neutral">Locked{% if row.sellability_unlock_date and show_locked_until %} until {{ row.sellability_unlock_date }}{% endif %}</span>
+              <span class="badge badge-neutral">Locked</span>
               {% else %}
               <span class="badge badge-sellable">Sellable</span>
               {% endif %}
@@ -280,6 +288,9 @@
               {% endif %}
               {% if row.scheme_display == 'ISA' %}
               <span class="badge badge-sellable">Tax-sheltered</span>
+              {% endif %}
+              {% if show_locked_until and row.sellability_unlock_date %}
+              <span class="muted mono-small">Until {{ row.sellability_unlock_date }}</span>
               {% endif %}
             </span>
           </td>
