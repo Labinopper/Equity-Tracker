@@ -7,30 +7,13 @@
 - Group relevant items together
 - Remove these from this page once done.
 - Push and Commit to Git with relevant messages once complete.
-- Update versioning in PROJECT_STATUS.md once complete.
-
-## Completed
-- ✓ Fix forfeiture risk categorization and display (ESPP+ matched shares now correctly categorized as forfeit risk vs locked RSUs)
-- ✓ Fix monetary value formatting across site (negative signs now show before £ symbol, e.g., -£35.48 instead of £-35.48)
 
 ## Backlog
-- Remove 'Why may values differ' on Portfolio page
-- Remove 'Portfolio View Controls' on Portfolio page
-- Put "Employment-tax estimates cover IT + NIC + Student Loan where scheme rules apply. ISA lots are treated as tax-sheltered in this estimate. Est. Net Liquidity includes only shares sellable today and excludes locked/forfeiture-restricted value. All totals are shown in GBP. Full breakdown • For cross-year tax-timing analysis and AEA (Annual Exempt Amount) usage, see Tax Plan." inside relevant tooltips in-line with the table tooltips on Portfolio page.
-- Put "Includes locked lots (e.g. pre-vest RSU) and ESPP+ matched shares at forfeiture risk. Per-lot detail →" inside tooltip in line with table tooltips on Portfolio page
-- Correctly align daily price tracker tooltip (Currently sitting on the left of the page)
-- In daily price tracker tooltip include lines to reference what is stock price change, vs fx change
-- Portfolio page is currently not refreshing every 60s.  Fix this
-- When Portfolio page refreshes any minimised views expand once more
-- Refine the table display on Portfolio page.  Do not edit any values, but ensure it remains smooth and in-line with the display of the rest of the site
-- Fix 'Add Lot' page - Currently not changing when selecting ESPP+ etc..
 - Align 'Add Lot' page with our tooltip usage on Portfolio page where additional information is given.
-- Align 'Unrealised P&L (Cost basis, pre-tax)' and 'Unrealised P&L (Econ, pre-tax)' to align with wording used elsewhere on Portfolio page.  Remove colouring, and align with the rest of the tags in this section.  Both Monetary values can be green / red to reflect increase / decrease.
-- Remove "Price as of 2026-02-28" piece in the section described above.
-- Put section described above in an optional dropdown so it can be shown or hidden accordingly
-- Split above section into total / available (Ie Total Unrealised P&L £10k, Unlocked Unrealised P&L 1k).  Align wording of new sections to the table on Portfolio page
-- Align 'Sign out' with the rest of our colour schemes.
 - Split 'Settings' into what is actually settings, and move 'Tax values' into their own, or an existing page, depending on what makes sense.
-- In 'Next Milestone' on the table on Portfolio, include a 'Time until' section in the tooltip.  Format should be '2y 126d' or '23d' accordingly.  Include a date on a seperate line.
-- In 'Net if Long-term' tooltip, also include dates as above.
+- Remove 'Last success in', 'Last error' and 'Next refresh' badges from top of Portfolio page.  Put State: next to "Portfolio".
+- Remove 'Employment Tax', 'Net', 'Forfeiture Window', 'Tax Window' from just before the table per lot.  Replace with below
+- Three badges - "Sellable: {purely sellable only, no ESPP+ inclusion}", "ESPP+ Pending: {Both paid and matched shares still in the 5-years}", "RSUs Vesting: {Locked RSU values}".  Once Shares come out of their tax or vesting windows, they should be in the "Sellable" instead of the others.
+- See docs/todo/EPIC-01.md
+- See docs/todo/EPIC-02.md
 - Tidy up our Project docs structure.  Remove redundancy where it serves no purpose.  Priority is ensuring info is accessible in a minimal-token method so tokens are not spent understanding the project any more than necessary.
