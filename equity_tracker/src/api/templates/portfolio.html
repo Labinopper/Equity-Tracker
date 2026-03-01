@@ -5,9 +5,7 @@
 <div class="page-title portfolio-page-title">
   <div class="page-title__heading">
     <h1>Portfolio</h1>
-    <span id="refresh-countdown" class="refresh-countdown-chip" title="Auto-refresh in">
-      Next refresh in <strong>60s</strong>
-    </span>
+    <span class="refresh-pill">State: <strong id="refresh-state" class="refresh-state refresh-state-idle">Idle</strong></span>
   </div>
   <div class="page-actions">
     <form id="manual-refresh-form" method="post" action="/portfolio/refresh-prices" class="inline-form">
@@ -17,20 +15,6 @@
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
     <a href="/portfolio/add-lot" class="btn btn-primary btn-sm">+ Lot</a>
   </div>
-</div>
-<div id="refresh-diagnostics" class="refresh-diagnostics" data-next-seconds="60">
-  <span class="refresh-pill">
-    State: <strong id="refresh-state" class="refresh-state refresh-state-idle">Idle</strong>
-  </span>
-  <span class="refresh-pill">
-    Last success: <strong id="refresh-last-success">{{ refresh_diag.last_success_at or "Never" }}</strong>
-  </span>
-  <span class="refresh-pill">
-    Last error: <strong id="refresh-last-error">{{ refresh_diag.last_error or "None" }}</strong>
-  </span>
-  <span class="refresh-pill">
-    Next refresh: <strong id="refresh-next-due">{{ refresh_diag.next_due_at or "60s" }}</strong>
-  </span>
 </div>
 
 {% if error %}
@@ -210,8 +194,7 @@
     <summary>
       <span class="security-lots-toggle__title">Lots</span>
       <span class="security-lots-toggle__line">
-        {{ ss.active_lots | length }} active lot{% if ss.active_lots | length != 1 %}s{% endif %}
-        in {{ position_rows | length }} position row{% if position_rows | length != 1 %}s{% endif %}
+        {{ position_rows | length }} active lot{% if position_rows | length != 1 %}s{% endif %}
       </span>
     </summary>
     <div class="security-lots-toggle__body">
@@ -268,44 +251,18 @@
     {% endif %}
   </div>
 
-  {% if ss.market_value_gbp is none %}
-  <div class="security-meta">
-    <span class="muted">Est. Net Proceeds unavailable: no live price available.</span>
+  {% if ss.sellable_pure_market_value_gbp is not none or ss.espp_plus_pending_market_value_gbp is not none or ss.rsu_vesting_market_value_gbp is not none %}
+  <div class="lot-type-badges">
+    {% if ss.sellable_pure_market_value_gbp is not none %}
+    <span class="badge badge-gain">Sellable: &pound;{{ ss.sellable_pure_market_value_gbp | money }}</span>
+    {% endif %}
+    {% if ss.espp_plus_pending_market_value_gbp is not none %}
+    <span class="badge badge-warning">ESPP+ Pending: &pound;{{ ss.espp_plus_pending_market_value_gbp | money }}</span>
+    {% endif %}
+    {% if ss.rsu_vesting_market_value_gbp is not none %}
+    <span class="badge badge-neutral">RSUs Vesting: &pound;{{ ss.rsu_vesting_market_value_gbp | money }}</span>
+    {% endif %}
   </div>
-  {% endif %}
-
-  {% if ss.market_value_gbp is not none %}
-  <details class="net-panel">
-    <summary>
-      Est. Net Proceeds
-      <span class="net-panel-summary">
-        {% if ss.est_cgt_gbp is not none %}
-        <span class="warning-text">Employment Tax: <strong>-&pound;{{ ss.est_cgt_gbp | money }}</strong></span>
-        <span class="{% if ss.est_net_proceeds_gbp < 0 %}loss{% else %}gain{% endif %}">Net: <strong>{% if ss.est_net_proceeds_gbp < 0 %}-{% elif ss.est_net_proceeds_gbp > 0 %}+{% endif %}&pound;{{ ss.est_net_proceeds_gbp | abs | money }}</strong></span>
-        {% endif %}
-        {% if ss.has_forfeiture_risk %}<span class="badge badge-warning">Forfeiture Window</span>{% endif %}
-        {% if ss.has_sip_qualifying_risk %}<span class="badge badge-warning">Tax Window</span>{% endif %}
-      </span>
-    </summary>
-    <div class="net-panel__body">
-      <div class="net-value-grid">
-        {% if ss.est_cgt_gbp is not none %}
-        <div class="net-value-item">
-          <div class="net-value-item__label">Estimated Employment Tax</div>
-          <div class="net-value-item__value warning-text">{% if ss.est_cgt_gbp < 0 %}-{% elif ss.est_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.est_cgt_gbp | abs | money }}</div>
-        </div>
-        <div class="net-value-item">
-          <div class="net-value-item__label">Est. Net Proceeds</div>
-          <div class="net-value-item__value {% if ss.est_net_proceeds_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.est_net_proceeds_gbp < 0 %}-{% elif ss.est_net_proceeds_gbp > 0 %}+{% endif %}&pound;{{ ss.est_net_proceeds_gbp | abs | money }}</div>
-        </div>
-        {% endif %}
-      </div>
-      <p class="muted panel-subnote">
-        Employment-tax estimate includes IT + NIC + Student Loan on eligible scheme disposals.
-        <a href="/net-value">Full portfolio breakdown</a>
-      </p>
-    </div>
-  </details>
   {% endif %}
 
   {% if position_rows %}
@@ -731,12 +688,8 @@
   var inFlight = false;
   var SECURITY_VISIBILITY_KEY = "portfolio.security_visibility.v1";
   var VIEW_PREFS_KEY = "portfolio.view_prefs.v1";
-  var el = document.getElementById("refresh-countdown");
   var manualForm = document.getElementById("manual-refresh-form");
   var stateEl = document.getElementById("refresh-state");
-  var nextDueEl = document.getElementById("refresh-next-due");
-  var lastSuccessEl = document.getElementById("refresh-last-success");
-  var lastErrorEl = document.getElementById("refresh-last-error");
   var filterButtons = document.querySelectorAll(".portfolio-filter-btn[data-filter]");
   var sortSelect = document.getElementById("portfolio-sort");
   var focusToggle = document.getElementById("portfolio-focus-mode");
@@ -782,42 +735,6 @@
       detailsEl.addEventListener("toggle", function () {
         state[securityId] = !!detailsEl.open;
         saveSecurityVisibilityState(state);
-      });
-    });
-  }
-
-  function wireDetailsStatePersistence() {
-    // Persist open/closed state for other details elements (e.g., .net-panel)
-    var DETAILS_STATE_KEY = "portfolio.details_state.v1";
-    var detailsEls = document.querySelectorAll(".net-panel");
-    var state = {};
-
-    try {
-      var raw = localStorage.getItem(DETAILS_STATE_KEY);
-      if (raw) {
-        state = JSON.parse(raw);
-      }
-    } catch (err) {
-      // Ignore parse errors
-    }
-
-    detailsEls.forEach(function (detailsEl, index) {
-      var key = "net-panel-" + index;
-      if (state[key] !== undefined) {
-        if (state[key]) {
-          detailsEl.setAttribute("open", "");
-        } else {
-          detailsEl.removeAttribute("open");
-        }
-      }
-
-      detailsEl.addEventListener("toggle", function () {
-        state[key] = !!detailsEl.open;
-        try {
-          localStorage.setItem(DETAILS_STATE_KEY, JSON.stringify(state));
-        } catch (err) {
-          // Ignore storage write failures
-        }
       });
     });
   }
@@ -990,16 +907,6 @@
     });
   }
 
-  function utcNowLabel() {
-    var now = new Date();
-    return now.getUTCFullYear() + "-" +
-      String(now.getUTCMonth() + 1).padStart(2, "0") + "-" +
-      String(now.getUTCDate()).padStart(2, "0") + " " +
-      String(now.getUTCHours()).padStart(2, "0") + ":" +
-      String(now.getUTCMinutes()).padStart(2, "0") + ":" +
-      String(now.getUTCSeconds()).padStart(2, "0") + " UTC";
-  }
-
   function setState(name, cls) {
     if (!stateEl) {
       return;
@@ -1008,19 +915,8 @@
     stateEl.className = "refresh-state " + cls;
   }
 
-  function setNextDueFromCountdown() {
-    var txt = countdown + "s";
-    if (el) {
-      el.innerHTML = "Next refresh in <strong>" + txt + "</strong>";
-    }
-    if (nextDueEl) {
-      nextDueEl.textContent = txt;
-    }
-  }
-
   function resetCountdown() {
     countdown = INTERVAL;
-    setNextDueFromCountdown();
   }
 
   function doRefresh() {
@@ -1029,12 +925,6 @@
     }
     inFlight = true;
     setState("Updating", "refresh-state-updating");
-    if (el) {
-      el.innerHTML = "Next refresh in <strong>...</strong>";
-    }
-    if (nextDueEl) {
-      nextDueEl.textContent = "...";
-    }
 
     fetch("/prices/refresh", { method: "POST" })
       .then(function (resp) {
@@ -1044,28 +934,15 @@
         return resp.json();
       })
       .then(function (data) {
-        var ts = utcNowLabel();
-        if (lastSuccessEl) {
-          lastSuccessEl.textContent = ts;
-        }
         if (data.failed && data.failed > 0) {
-          if (lastErrorEl) {
-            lastErrorEl.textContent = data.failed + " failed";
-          }
           setState("Error", "refresh-state-error");
         } else {
-          if (lastErrorEl) {
-            lastErrorEl.textContent = "None";
-          }
           setState("Success", "refresh-state-success");
         }
         resetCountdown();
         location.reload();
       })
       .catch(function (err) {
-        if (lastErrorEl) {
-          lastErrorEl.textContent = String(err && err.message ? err.message : err);
-        }
         setState("Error", "refresh-state-error");
         resetCountdown();
       })
@@ -1075,7 +952,6 @@
   }
 
   wireSecurityVisibilityPersistence();
-  wireDetailsStatePersistence();
   wirePortfolioViewControls();
 
   if (manualForm) {
@@ -1086,14 +962,12 @@
   }
 
   setState("Idle", "refresh-state-idle");
-  setNextDueFromCountdown();
 
   setInterval(function () {
     if (inFlight) {
       return;
     }
     countdown -= 1;
-    setNextDueFromCountdown();
     if (countdown <= 0) {
       doRefresh();
     }

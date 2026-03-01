@@ -202,6 +202,10 @@ class SecuritySummary:
     # Post-tax economic gain on all lots that can be sold today (matching table totals).
     # None when any non-locked lot lacks a tax estimate (e.g. no settings configured).
     sellable_net_gain_gbp: Decimal | None = field(default=None)
+    # Market-value breakdown by constraint type — used for the three summary badges.
+    sellable_pure_market_value_gbp: Decimal | None = field(default=None)
+    espp_plus_pending_market_value_gbp: Decimal | None = field(default=None)
+    rsu_vesting_market_value_gbp: Decimal | None = field(default=None)
 
 
 @dataclass
@@ -1036,6 +1040,10 @@ class PortfolioService:
                     forfeit_market_value = Decimal("0")
                     forfeit_cost = Decimal("0")
                     forfeit_true = Decimal("0")
+                    # Badge sub-totals (market value only)
+                    at_risk_market_value = Decimal("0")     # AT_RISK paid ESPP+ in window
+                    sellable_strict_mv = Decimal("0")       # purely SELLABLE lots
+                    rsu_vesting_mv = Decimal("0")           # LOCKED RSU lots pre-vest
                     for ls in lot_summaries:
                         if ls.market_value_gbp is None:
                             continue
@@ -1045,11 +1053,16 @@ class PortfolioService:
                             forfeit_cost += ls.cost_basis_total_gbp
                             forfeit_true += ls.true_cost_total_gbp
                         elif ls.sellability_status == SELLABILITY_LOCKED:
+                            if ls.lot.scheme_type == "RSU":
+                                rsu_vesting_mv += ls.market_value_gbp
                             locked_market_value += ls.market_value_gbp
                             locked_cost += ls.cost_basis_total_gbp
                             locked_true += ls.true_cost_total_gbp
                         else:
-                            # Sellable
+                            if ls.sellability_status == SELLABILITY_AT_RISK:
+                                at_risk_market_value += ls.market_value_gbp
+                            else:
+                                sellable_strict_mv += ls.market_value_gbp
                             sellable_market_value += ls.market_value_gbp
                             sellable_cost += ls.cost_basis_total_gbp
                             sellable_true += ls.true_cost_total_gbp
@@ -1089,6 +1102,11 @@ class PortfolioService:
                         if forfeit_market_value > 0
                         else None
                     )
+                    _q2 = lambda v: v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    _espp_pending_total = forfeit_market_value + at_risk_market_value
+                    badge_sellable_mv = _q2(sellable_strict_mv) if sellable_strict_mv > 0 else None
+                    badge_espp_plus_pending_mv = _q2(_espp_pending_total) if _espp_pending_total > 0 else None
+                    badge_rsu_vesting_mv = _q2(rsu_vesting_mv) if rsu_vesting_mv > 0 else None
                     sec_est_cgt = _estimate_sell_all_employment_tax(
                         all_lots,
                         current_price,
@@ -1198,6 +1216,9 @@ class PortfolioService:
                     refresh_last_error=None,
                     refresh_next_due_at=None,
                     sellable_net_gain_gbp=sellable_net_gain,
+                    sellable_pure_market_value_gbp=badge_sellable_mv,
+                    espp_plus_pending_market_value_gbp=badge_espp_plus_pending_mv,
+                    rsu_vesting_market_value_gbp=badge_rsu_vesting_mv,
                 ))
 
             total_cost = sum((ss.total_cost_basis_gbp for ss in security_summaries), Decimal("0"))
