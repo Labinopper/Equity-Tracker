@@ -2007,6 +2007,7 @@ def _build_nv_row(row: PositionGroupRow) -> dict:
         ),
         "market_value_native": mv_native,
         "market_value_native_currency": mv_native_ccy,
+        "paid_true_cost": row.paid_true_cost,
     }
 
 
@@ -2067,6 +2068,9 @@ def _build_nv_securities(summary) -> list[dict]:
             "est_net_proceeds_gbp": ss.est_net_proceeds_gbp,
             "current_price_gbp": ss.current_price_gbp,
             "price_as_of": ss.price_as_of,
+            "sellable_pure_market_value_gbp": ss.sellable_pure_market_value_gbp,
+            "espp_plus_pending_market_value_gbp": ss.espp_plus_pending_market_value_gbp,
+            "rsu_vesting_market_value_gbp": ss.rsu_vesting_market_value_gbp,
         })
     return result
 

@@ -161,87 +161,89 @@
     </div>
   </div>
 
-  {% if ss.market_value_gbp is not none %}
-  <div class="net-value-grid net-summary-grid">
-    <div class="net-value-item">
-      <div class="net-value-item__label">Quantity</div>
-      <div class="net-value-item__value">{{ "%.2f"|format(ss.total_quantity) }}</div>
-    </div>
-    <div class="net-value-item">
-      <div class="net-value-item__label">Gross Market Value</div>
-      <div class="net-value-item__value">
-        {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
-        {% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}{{ ss.market_value_native | money }} /
-        {% endif %}
-        &pound;{{ ss.market_value_gbp | money }}
-      </div>
-    </div>
-    <div class="net-value-item">
-      <div class="net-value-item__label">Cost Basis</div>
-      <div class="net-value-item__value">&pound;{{ ss.total_cost_basis_gbp | money }}</div>
-    </div>
-    <div class="net-value-item">
-      <div class="net-value-item__label">Accounting P&amp;L</div>
-      {% if ss.accounting_pnl_cost_basis_gbp is not none %}
-      {% set apnl = ss.accounting_pnl_cost_basis_gbp %}
-      <div class="net-value-item__value {% if apnl < 0 %}loss{% else %}gain{% endif %}">
-        {% if apnl > 0 %}+{% elif apnl < 0 %}-{% endif %}&pound;{{ apnl | abs | money }}
-      </div>
-      {% else %}
-      <div class="net-value-item__value muted">-</div>
-      {% endif %}
-    </div>
-    {% if ss.est_employment_tax_gbp is not none %}
-    <div class="net-value-item">
-      <div class="net-value-item__label">Estimated Employment Tax (All Lots)</div>
-      <div class="net-value-item__value warning-text">&pound;{{ ss.est_employment_tax_gbp | money }}</div>
-    </div>
-    <div class="net-value-item">
-      <div class="net-value-item__label">Hypothetical Net Proceeds (All Lots)
-      <button class="info-button" aria-label="Next milestone breakdown">ℹ</button>
-      <div class="tooltip">
-        <div class="tooltip-content">
-          Gross market value minus estimated employment tax. Not actionable liquidity. Includes locked shares.
-        </div>
-      </div>
-      </div>
-      {% set hnp = ss.est_net_proceeds_gbp %}
-      {% if hnp < 0 %}
-      <div class="net-value-item__value loss">-&pound;{{ hnp | abs | money }}</div>
-      {% else %}
-      <div class="net-value-item__value gain">&pound;{{ hnp | money }}</div>
-      {% endif %}
-    </div>
-    {% endif %}
-  </div>
-  {% else %}
-  <div class="security-meta">
-    <span class="muted">No live price available. Hypothetical net value cannot be estimated.</span>
-  </div>
-  {% endif %}
-
-  {% if ss.current_price_gbp is not none and position_rows %}
-  <details class="security-lots-toggle" data-security-id="{{ ss.security.id }}" open>
+<details class="security-lots-toggle" data-security-id="{{ ss.security.id }}" open>
     <summary>
       <span class="security-lots-toggle__title">Lots</span>
       <span class="security-lots-toggle__line">
         {{ position_rows | length }} active lot{% if position_rows | length != 1 %}s{% endif %}
       </span>
+        {% if ss.sellable_pure_market_value_gbp is not none or ss.espp_plus_pending_market_value_gbp is not none or ss.rsu_vesting_market_value_gbp is not none %}
+        <div class="lot-type-badges">
+          {% if ss.sellable_pure_market_value_gbp is not none %}
+          <span class="badge badge-gain">Sellable: &pound;{{ ss.sellable_pure_market_value_gbp | money }}</span>
+          {% endif %}
+          {% if ss.espp_plus_pending_market_value_gbp is not none %}
+          <span class="badge badge-warning">ESPP+ Maturing: &pound;{{ ss.espp_plus_pending_market_value_gbp | money }}</span>
+          {% endif %}
+          {% if ss.rsu_vesting_market_value_gbp is not none %}
+          <span class="badge badge-neutral">RSUs Vesting: &pound;{{ ss.rsu_vesting_market_value_gbp | money }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
     </summary>
-    <div class="security-lots-toggle__body">
+
+  <div class="security-meta">
+  <span>Qty <strong>{{ "%.2f"|format(ss.total_quantity) }}</strong></span>
+
+  <span>
+    Mkt value
+    {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
+      <strong>
+        {% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}
+        {{ ss.market_value_native | money }}
+      </strong> /
+    {% endif %}
+    {% if ss.market_value_gbp is not none %}
+      <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
+    {% else %}
+      <strong class="muted">Unavailable</strong>
+    {% endif %}
+  </span>
+
+  <span>Cost basis <strong>&pound;{{ ss.total_cost_basis_gbp | money }}</strong></span>
+
+  <span>
+    Accounting P&amp;L
+    {% if ss.accounting_pnl_cost_basis_gbp is not none %}
+      {% set apnl = ss.accounting_pnl_cost_basis_gbp %}
+      <strong class="{% if apnl < 0 %}loss{% else %}gain{% endif %}">
+        {% if apnl > 0 %}+{% elif apnl < 0 %}-{% endif %}&pound;{{ apnl | abs | money }}
+      </strong>
+    {% else %}
+      <strong class="muted">-</strong>
+    {% endif %}
+  </span>
+
+  {% if ss.est_employment_tax_gbp is not none %}
+    <span>Est. employment tax <strong class="warning-text">&pound;{{ ss.est_employment_tax_gbp | money }}</strong></span>
+  {% endif %}
+
+  {% if ss.est_net_proceeds_gbp is not none %}
+    {% set hnp = ss.est_net_proceeds_gbp %}
+    <span>
+      Hypothetical net proceeds
+      <strong class="{% if hnp < 0 %}loss{% else %}gain{% endif %}">
+        {% if hnp < 0 %}-{% endif %}&pound;{{ hnp | abs | money }}
+      </strong>
+    </span>
+  {% endif %}
+</div>
+
+  {% if ss.current_price_gbp is not none and position_rows %}
+  
+  <div class="security-lots-toggle__body">
   <div class="table-wrap">
-    <table>
+    <table class="portfolio-position-table">
       <thead>
         <tr>
-          <th>Acquisition Date</th>
+          <th>Date</th>
           <th>Scheme</th>
-          <th>Sellability Status</th>
-          <th>Tax Year</th>
-          <th class="num">Qty Remaining</th>
-          <th class="num">Cost Basis</th>
+          <th>Status</th>
+          <th class="num">Qty</th>
           <th class="num">Market Value</th>
+          <th class="num">True Cost</th>
           <th class="num">
-            Accounting P&amp;L
+            P&amp;L
             <button class="info-button" aria-label="Accounting P&amp;L explanation">ℹ</button>
             <div class="tooltip">
               <div class="tooltip-content">
@@ -249,8 +251,8 @@
               </div>
             </div>
           </th>
-          <th class="num">Estimated Employment Tax</th>
-          <th class="num">Hypothetical Net Proceeds</th>
+          <th class="num">Est. Tax</th>
+          <th class="num">Net Proceeds</th>
           <th>Risk Flags</th>
         </tr>
       </thead>
@@ -258,22 +260,22 @@
         {% for row in position_rows %}
         {% set has_forfeiture_risk = row.forfeiture_risk_days_remaining is not none %}
         {% set show_locked_until = row.sellability_status == "LOCKED" and not has_forfeiture_risk %}
-        {% set scheme = row.scheme_display | lower | replace('+','') | replace('_','-') %}
-        <tr>
+        {% set warning_row = has_forfeiture_risk or row.has_tax_window or row.sellability_status == "LOCKED" %}
+        <tr
+          data-position-row="1"
+          data-order-index="{{ loop.index0 }}"
+          data-has-warning="{{ '1' if warning_row else '0' }}"
+          data-is-locked="{{ '1' if row.sellability_status == 'LOCKED' else '0' }}"
+          data-is-forfeiture="{{ '1' if has_forfeiture_risk else '0' }}"
+          data-net-sold="{{ row.net_cash_if_sold if row.net_cash_if_sold is not none else '' }}"
+          data-net-held="{{ row.next_milestone_net if row.next_milestone_net is not none else '' }}"
+          data-net-long="{{ row.long_term_net if row.long_term_net is not none else '' }}"
+          data-signal-rank="{% if row.decision_title == 'Profitable and sellable' %}2{% elif row.decision_title == 'Economic loss if sold' %}0{% else %}1{% endif %}"
+        >
           <td class="mono-small">{{ row.acquisition_date }}</td>
-          <td>
-            {% if 'rsu' in scheme %}
-            <span class="badge badge-rsu">{{ row.scheme_display }}</span>
-            {% elif 'espp' in scheme %}
-            <span class="badge badge-espp">{{ row.scheme_display }}</span>
-            {% elif 'sip' in scheme %}
-            <span class="badge badge-sip">{{ row.scheme_display }}</span>
-            {% elif row.scheme_display == 'ISA' %}
-            <span class="badge badge-isa">ISA</span>
-            {% else %}
-            <span class="badge badge-broker">{{ row.scheme_display }}</span>
-            {% endif %}
-          </td>
+            <td class="position-scheme-cell">
+              <span class="position-scheme">{{ row.scheme_display }}</span>
+            </td>
           <td>
             <span class="status-stack">
               {% if has_forfeiture_risk %}
@@ -294,12 +296,9 @@
               {% endif %}
             </span>
           </td>
-          <td class="mono-small">{{ row.tax_year }}</td>
           <td class="num">{{ "%.2f"|format(row.total_qty) }}</td>
-          <td class="num">&pound;{{ row.cost_basis_gbp | money }}</td>
-          <td class="num">
-            {% if row.total_mv is not none %}&pound;{{ row.total_mv | money }}{% else %}<span class="muted">-</span>{% endif %}
-          </td>
+          <td class="num">{% if row.total_mv is not none %}&pound;{{ row.total_mv | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+          <td class="num">&pound;{{ row.paid_true_cost | money }}</td>
           {% if row.accounting_pnl_gbp is not none %}
           {% set apnl = row.accounting_pnl_gbp %}
           <td class="num {% if apnl < 0 %}loss{% else %}gain{% endif %}">
@@ -321,29 +320,29 @@
             {% if hnp < 0 %}-{% endif %}&pound;{{ hnp | abs | money }}
           </td>
           {% elif row.sellability_status == 'LOCKED' %}
-          <td class="num"><span class="badge badge-neutral">Locked</span></td>
-          {% else %}
-          <td class="lot-reason">{{ row.reason_unavailable or "Unavailable" }}</td>
+          <td class="num muted">-</td>
           {% endif %}
 
           <td class="risk-cell">
-            {% if row.scheme_display == 'RSU' %}
-            {% if row.sellability_status == 'LOCKED' %}
-            <span class="badge badge-warning" title="RSU cannot be sold before vest date">Pre-Vest Lock</span>
-            {% endif %}
-            <span class="badge badge-warning" title="Income tax charged at vest date">IT at vest</span>
-            {% endif %}
-            {% if has_forfeiture_risk %}
-            <span class="badge badge-warning" title="In forfeiture window">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d)</span>
-            {% endif %}
-            {% if row.has_tax_window %}
-            <span class="badge badge-warning">Tax Window</span>
-            {% endif %}
-            {% if row.scheme_display == 'ISA' %}
-            <span class="badge badge-sellable">Tax-sheltered</span>
-            {% elif row.scheme_display != 'RSU' and not has_forfeiture_risk and not row.has_tax_window %}
-            <span class="muted">-</span>
-            {% endif %}
+            <span class="status-stack">
+              {% if row.scheme_display == 'RSU' %}
+              {% if row.sellability_status == 'LOCKED' %}
+              <span class="badge badge-warning" title="RSU cannot be sold before vest date">Pre-Vest Lock</span>
+              {% endif %}
+              <span class="badge badge-warning" title="Income tax charged at vest date">IT at vest</span>
+              {% endif %}
+              {% if has_forfeiture_risk %}
+              <span class="badge badge-warning" title="In forfeiture window">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d)</span>
+              {% endif %}
+              {% if row.has_tax_window %}
+              <span class="badge badge-warning">Tax Window</span>
+              {% endif %}
+              {% if row.scheme_display == 'ISA' %}
+              <span class="badge badge-sellable">Tax-sheltered</span>
+              {% elif row.scheme_display != 'RSU' and not has_forfeiture_risk and not row.has_tax_window %}
+              <span class="muted">-</span>
+              {% endif %}
+            </span>
           </td>
         </tr>
         {% endfor %}

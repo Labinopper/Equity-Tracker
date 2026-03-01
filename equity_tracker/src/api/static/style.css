@@ -2232,3 +2232,13 @@ details.unrealised-gains-toggle > summary > span:last-child{
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+
+/* Ensure gain/loss always wins inside security-meta */
+.security-meta .gain,
+.security-meta strong.gain { color: var(--gain); }
+
+.security-meta .loss,
+.security-meta strong.loss { color: var(--loss); }
+
+.security-meta .muted,
+.security-meta strong.muted { color: var(--text-muted); }
