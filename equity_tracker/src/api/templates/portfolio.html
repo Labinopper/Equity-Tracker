@@ -126,7 +126,7 @@
           {% else %}
           Flat
           {% endif %}
-          {{ "%.2f"|format(daily.percent_change | abs) }}% {% if daily.native_currency and daily.value_change_native is not none %}{% if daily.native_currency == "GBP" %}(Δ &pound;{{ daily.value_change_native | abs | money }}){% else %}(Δ {{ daily.native_currency }} {{ daily.value_change_native | abs | money }}){% endif %}{% else %}(Δ &pound;{{ daily.value_change_gbp | abs | money }}){% endif %}
+          {{ "%.2f"|format(daily.percent_change | abs) }}% 
         </span>
         <button class="info-button" aria-label="Daily change breakdown">ℹ</button>
         <div class="tooltip">
@@ -143,16 +143,23 @@
               <span>{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.previous_price_native | money }}</span>
             </div>
             {% endif %}
-            {% if daily.percent_change is not none %}
-            <div class="position-detail-line">
-              <span>Currency Movement</span>
-              <span>{{ "%.2f"|format(daily.percent_change) }}%</span>
-            </div>
-            {% endif %}
             {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency %}
+            {% set stock_pct = (daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100 %}
             <div class="position-detail-line">
               <span>Stock Movement</span>
-              <span>{{ "%.2f"|format(((daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100)) }}%</span>
+              <span>{{ "%.2f"|format(stock_pct) }}%</span>
+            </div>
+            {% if daily.percent_change is not none %}
+            {% set fx_pct = (1 + daily.percent_change / 100) / (1 + stock_pct / 100) * 100 - 100 %}
+            <div class="position-detail-line">
+              <span>FX Movement</span>
+              <span>{{ "%.2f"|format(fx_pct) }}%</span>
+            </div>
+            {% endif %}
+            {% elif daily.percent_change is not none %}
+            <div class="position-detail-line">
+              <span>Price Change</span>
+              <span>{{ "%.2f"|format(daily.percent_change) }}%</span>
             </div>
             {% endif %}
             <div class="position-detail-line position-detail-line--total">

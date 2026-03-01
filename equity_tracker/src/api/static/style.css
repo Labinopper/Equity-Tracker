@@ -2242,3 +2242,34 @@ details.unrealised-gains-toggle > summary > span:last-child{
 
 .security-meta .muted,
 .security-meta strong.muted { color: var(--text-muted); }
+
+/* Net Value: make tooltip positioning local (like Portfolio) */
+.stat__label,
+.net-value-item__label,
+.net-value-item__value,
+.net-summary-grid,
+.security-header__actions {
+  position: relative;
+}
+
+.page-title__heading{
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.title-help{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.title-help:hover .tooltip{
+  display: block;
+}
+
+/* optional: make title tooltips left-aligned instead of centered */
+.title-help .tooltip{
+  left: 0;
+  transform: none;
+}
