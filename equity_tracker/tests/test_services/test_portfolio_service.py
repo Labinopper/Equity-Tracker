@@ -212,8 +212,8 @@ class TestGetPortfolioSummary:
         )
 
         ss = summary.securities[0]
-        assert ss.est_cgt_gbp == simulated.total_sip_employment_tax_gbp
-        assert summary.est_total_cgt_liability_gbp == simulated.total_sip_employment_tax_gbp
+        assert ss.est_employment_tax_gbp == simulated.total_sip_employment_tax_gbp
+        assert summary.est_total_employment_tax_gbp == simulated.total_sip_employment_tax_gbp
         assert summary.est_total_net_liquidation_gbp == (
             summary.total_market_value_gbp - simulated.total_sip_employment_tax_gbp
         )
@@ -327,10 +327,10 @@ class TestGetPortfolioSummary:
         summary = PortfolioService.get_portfolio_summary(settings=None)
         ss = summary.securities[0]
         ls = ss.active_lots[0]
-        assert ls.est_cgt_on_lot_gbp == Decimal("0.00")
+        assert ls.est_employment_tax_on_lot_gbp == Decimal("0.00")
         assert ls.est_net_proceeds_gbp == Decimal("120.00")
         assert ls.est_net_proceeds_reason is None
-        assert ss.est_cgt_gbp == Decimal("0.00")
+        assert ss.est_employment_tax_gbp == Decimal("0.00")
         assert ss.est_net_proceeds_gbp == Decimal("120.00")
 
     def test_lot_est_net_proceeds_has_locked_reason_for_pre_vest_rsu(self, app_context):

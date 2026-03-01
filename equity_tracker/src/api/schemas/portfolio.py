@@ -110,7 +110,7 @@ class LotSummarySchema(BaseModel):
     market_value_native_currency: str | None = None
     unrealised_gain_cgt_gbp: str | None = None
     unrealised_gain_economic_gbp: str | None = None
-    est_cgt_on_lot_gbp: str | None = None
+    est_employment_tax_on_lot_gbp: str | None = None
     est_net_proceeds_gbp: str | None = None
     sell_now_economic_gbp: str | None = None
     est_net_proceeds_reason: str | None = None
@@ -142,8 +142,8 @@ class LotSummarySchema(BaseModel):
                 if ls.unrealised_gain_economic_gbp is not None
                 else None
             ),
-            est_cgt_on_lot_gbp=(
-                str(ls.est_cgt_on_lot_gbp) if ls.est_cgt_on_lot_gbp is not None else None
+            est_employment_tax_on_lot_gbp=(
+                str(ls.est_employment_tax_on_lot_gbp) if ls.est_employment_tax_on_lot_gbp is not None else None
             ),
             est_net_proceeds_gbp=(
                 str(ls.est_net_proceeds_gbp)
@@ -185,7 +185,7 @@ class SecuritySummarySchema(BaseModel):
     price_refreshed_at: str | None = None
     fx_as_of: str | None = None
     fx_is_stale: bool = False
-    est_cgt_gbp: str | None = None
+    est_employment_tax_gbp: str | None = None
     est_net_proceeds_gbp: str | None = None
     refresh_last_success_at: str | None = None
     refresh_last_error: str | None = None
@@ -216,7 +216,7 @@ class SecuritySummarySchema(BaseModel):
             price_refreshed_at=ss.price_refreshed_at,
             fx_as_of=ss.fx_as_of,
             fx_is_stale=ss.fx_is_stale,
-            est_cgt_gbp=str(ss.est_cgt_gbp) if ss.est_cgt_gbp is not None else None,
+            est_employment_tax_gbp=str(ss.est_employment_tax_gbp) if ss.est_employment_tax_gbp is not None else None,
             est_net_proceeds_gbp=(
                 str(ss.est_net_proceeds_gbp)
                 if ss.est_net_proceeds_gbp is not None
@@ -238,7 +238,7 @@ class PortfolioSummarySchema(BaseModel):
     fx_is_stale: bool = False
     valuation_currency: str = "GBP"
     fx_conversion_basis: str | None = None
-    est_total_cgt_liability_gbp: str | None = None
+    est_total_employment_tax_gbp: str | None = None
     est_total_net_liquidation_gbp: str | None = None
 
     @classmethod
@@ -254,9 +254,9 @@ class PortfolioSummarySchema(BaseModel):
             fx_is_stale=ps.fx_is_stale,
             valuation_currency=ps.valuation_currency,
             fx_conversion_basis=ps.fx_conversion_basis,
-            est_total_cgt_liability_gbp=(
-                str(ps.est_total_cgt_liability_gbp)
-                if ps.est_total_cgt_liability_gbp is not None
+            est_total_employment_tax_gbp=(
+                str(ps.est_total_employment_tax_gbp)
+                if ps.est_total_employment_tax_gbp is not None
                 else None
             ),
             est_total_net_liquidation_gbp=(

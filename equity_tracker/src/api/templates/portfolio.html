@@ -22,30 +22,6 @@
 {% endif %}
 
 <div class="stats">
-  <div class="stat">
-    <div class="stat__label">Total Cost Basis</div>
-    <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Total True Cost</div>
-    <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Gross Market Value</div>
-    {% if summary.total_market_value_gbp is not none %}
-    <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label">Estimated Employment Tax</div>
-    {% if summary.est_total_cgt_liability_gbp is not none %}
-    <div class="stat__value warning-text">&pound;{{ summary.est_total_cgt_liability_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
   <div class="stat stat--gain">
     <div class="stat__label">Est. Net Liquidity (Sellable)</div>
     {% if portfolio_est_net_liquidity is not none %}
@@ -54,18 +30,46 @@
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
+  <div class="stat">
+    <div class="stat__label">Sellable True Economic Cost</div>
+    <div class="stat__value">&pound;{{ portfolio_sellable_true_cost | money }}</div>
+  </div>
+  <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+    <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today</div>
+    {% if portfolio_net_gain_if_sold is not none %}
+    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% elif portfolio_net_gain_if_sold > 0 %}+{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
   <div class="stat stat--warning">
-    <div class="stat__label">Blocked/Restricted Value</div>
+    <div class="stat__label" title="Includes vesting locks and forfeiture windows.">Blocked / Restricted Market Value</div>
     {% if portfolio_blocked_restricted_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_blocked_restricted_value | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
-  <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
-    <div class="stat__label">Net Gain If Sold Today</div>
-    {% if portfolio_net_gain_if_sold is not none %}
-    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% elif portfolio_net_gain_if_sold > 0 %}+{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
+  <div class="stat">
+    <div class="stat__label">Total Gross Market Value</div>
+    {% if summary.total_market_value_gbp is not none %}
+    <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">Total True Economic Cost</div>
+    <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Total Cost Basis</div>
+    <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply.">Estimated Employment Tax (Sellable Only)</div>
+    {% if portfolio_sellable_employment_tax is not none %}
+    <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
@@ -222,7 +226,7 @@
     {% if ss.sellable_net_gain_gbp is not none or ss.locked_unrealised_gain_economic_gbp is not none or ss.forfeit_risk_market_value_gbp is not none %}
     <details class="unrealised-gains-toggle">
       <summary>
-        <span>Unrealised Gain (Sellable)</span>
+        <span>Economic Gain vs True Cost (Sellable Only)</span>
         {% if ss.sellable_net_gain_gbp is not none %}
         <span class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.sellable_net_gain_gbp < 0 %}-{% elif ss.sellable_net_gain_gbp > 0 %}+{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}</span>
         {% endif %}

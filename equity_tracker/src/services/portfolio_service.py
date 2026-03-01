@@ -133,8 +133,8 @@ class LotSummary:
     market_value_gbp             : quantity_remaining × current_price_gbp (None when no price)
     unrealised_gain_cgt_gbp      : market_value − cost_basis (None when no price)
     unrealised_gain_economic_gbp : market_value − true_cost  (None when no price)
-    est_cgt_on_lot_gbp           : marginal_rate × max(unrealised_gain_cgt, 0) (None when no price)
-    est_net_proceeds_gbp         : market_value − est_cgt_on_lot (None when no price)
+    est_employment_tax_on_lot_gbp: estimated employment tax (IT + NIC + SL) for this lot (None when no price)
+    est_net_proceeds_gbp         : market_value − est_employment_tax_on_lot (None when no price)
     forfeiture_risk              : Populated for ESPP_PLUS lots only
     sip_qualifying_status        : Populated for SIP_* lots only
     """
@@ -149,7 +149,7 @@ class LotSummary:
     unrealised_gain_cgt_gbp: Decimal | None = field(default=None)
     unrealised_gain_economic_gbp: Decimal | None = field(default=None)
     # Phase V
-    est_cgt_on_lot_gbp: Decimal | None = field(default=None)
+    est_employment_tax_on_lot_gbp: Decimal | None = field(default=None)
     est_net_proceeds_gbp: Decimal | None = field(default=None)
     sell_now_economic_gbp: Decimal | None = field(default=None)
     est_net_proceeds_reason: str | None = field(default=None)
@@ -189,9 +189,7 @@ class SecuritySummary:
     fx_as_of: str | None = field(default=None)
     fx_is_stale: bool = field(default=False)
     # Phase V: net liquidation estimates (None when no price)
-    # NOTE: field name kept for API compatibility; value now represents
-    # estimated employment tax (IT + NIC + Student Loan) only.
-    est_cgt_gbp: Decimal | None = field(default=None)
+    est_employment_tax_gbp: Decimal | None = field(default=None)
     est_net_proceeds_gbp: Decimal | None = field(default=None)
     marginal_cgt_rate_used: Decimal | None = field(default=None)
     has_forfeiture_risk: bool = field(default=False)
@@ -222,9 +220,7 @@ class PortfolioSummary:
     fx_is_stale: bool = field(default=False)
     valuation_currency: str = field(default="GBP")
     fx_conversion_basis: str | None = field(default=None)
-    # NOTE: field name kept for API compatibility; value now represents
-    # portfolio-level estimated employment tax only.
-    est_total_cgt_liability_gbp: Decimal | None = field(default=None)
+    est_total_employment_tax_gbp: Decimal | None = field(default=None)
     est_total_net_liquidation_gbp: Decimal | None = field(default=None)
 
 
@@ -998,7 +994,7 @@ class PortfolioService:
                             )
                             continue
                         if ls.lot.scheme_type == "ISA":
-                            ls.est_cgt_on_lot_gbp = Decimal("0.00")
+                            ls.est_employment_tax_on_lot_gbp = Decimal("0.00")
                             ls.est_net_proceeds_gbp = lot_mkt
                             ls.sell_now_economic_gbp = (
                                 lot_mkt - ls.true_cost_total_gbp
@@ -1019,7 +1015,7 @@ class PortfolioService:
                         if lot_est_tax is None:
                             ls.est_net_proceeds_reason = "Employment-tax estimate unavailable."
                             continue
-                        ls.est_cgt_on_lot_gbp = lot_est_tax
+                        ls.est_employment_tax_on_lot_gbp = lot_est_tax
                         ls.est_net_proceeds_gbp = (
                             lot_mkt - lot_est_tax
                         ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -1207,7 +1203,7 @@ class PortfolioService:
                     price_refreshed_at=price_refreshed_at,
                     fx_as_of=sec_fx_as_of,
                     fx_is_stale=sec_fx_is_stale,
-                    est_cgt_gbp=sec_est_cgt,
+                    est_employment_tax_gbp=sec_est_cgt,
                     est_net_proceeds_gbp=sec_est_net,
                     marginal_cgt_rate_used=None,
                     has_forfeiture_risk=has_forfeiture,
@@ -1267,7 +1263,7 @@ class PortfolioService:
             portfolio_est_net: Decimal | None = None
             if total_market is not None:
                 per_security_estimates = [
-                    ss.est_cgt_gbp
+                    ss.est_employment_tax_gbp
                     for ss in security_summaries
                     if ss.market_value_gbp is not None
                 ]
@@ -1289,7 +1285,7 @@ class PortfolioService:
                 fx_is_stale=fx_is_stale,
                 valuation_currency="GBP",
                 fx_conversion_basis=fx_conversion_basis,
-                est_total_cgt_liability_gbp=portfolio_est_cgt,
+                est_total_employment_tax_gbp=portfolio_est_cgt,
                 est_total_net_liquidation_gbp=portfolio_est_net,
             )
 

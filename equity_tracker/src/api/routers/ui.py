@@ -1341,6 +1341,40 @@ def _portfolio_blocked_restricted_value(
     return _q2(total)
 
 
+def _portfolio_sellable_employment_tax(
+    rows_by_security: dict[str, list[PositionGroupRow]],
+) -> Decimal | None:
+    """
+    Aggregate estimated employment tax for positions sellable today.
+
+    LOCKED rows are skipped silently. Returns None when any non-locked row
+    lacks a tax estimate (e.g. no income settings configured).
+    """
+    values: list[Decimal] = []
+    for rows in rows_by_security.values():
+        for row in rows:
+            if row.sellability_status == "LOCKED":
+                continue
+            if row.sell_now_employment_tax_est is None:
+                return None
+            values.append(row.sell_now_employment_tax_est)
+    if not values:
+        return None
+    return _q2(sum(values, Decimal("0")))
+
+
+def _portfolio_sellable_true_cost(
+    rows_by_security: dict[str, list[PositionGroupRow]],
+) -> Decimal:
+    """Sum of true economic cost for positions sellable today (excludes LOCKED rows)."""
+    total = Decimal("0")
+    for rows in rows_by_security.values():
+        for row in rows:
+            if row.sellability_status != "LOCKED":
+                total += row.paid_true_cost
+    return _q2(total)
+
+
 def _scheme_display_name(scheme_type: str) -> str:
     """Human-friendly scheme label for per-scheme reporting."""
     return SCHEME_DISPLAY_NAMES.get(scheme_type, scheme_type.replace("_", " ").title())
@@ -1857,6 +1891,8 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         position_rows_by_security
     )
     portfolio_net_gain_if_sold = _portfolio_net_gain_if_sold(position_rows_by_security)
+    portfolio_sellable_employment_tax = _portfolio_sellable_employment_tax(position_rows_by_security)
+    portfolio_sellable_true_cost = _portfolio_sellable_true_cost(position_rows_by_security)
     today = _utc_now().date()
     return templates.TemplateResponse(
         request,
@@ -1872,6 +1908,8 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_est_net_liquidity": portfolio_est_net_liquidity,
             "portfolio_blocked_restricted_value": portfolio_blocked_restricted_value,
             "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
+            "portfolio_sellable_employment_tax": portfolio_sellable_employment_tax,
+            "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
             "refresh_diag": refresh_diag,
             "today": today,
             **_flash(msg),
@@ -1922,6 +1960,11 @@ async def net_value(request: Request) -> HTMLResponse:
         settings=settings,
         use_live_true_cost=False,
     )
+    security_daily_changes = _build_security_daily_changes(summary)
+    position_rows_by_security = _build_portfolio_position_rows(
+        summary,
+        settings=settings,
+    )
     return templates.TemplateResponse(
         request,
         "net_value.html",
@@ -1930,6 +1973,8 @@ async def net_value(request: Request) -> HTMLResponse:
             "summary": summary,
             "settings": settings,
             "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
+            "security_daily_changes": security_daily_changes,
+            "position_rows_by_security": position_rows_by_security,
         },
     )
 
