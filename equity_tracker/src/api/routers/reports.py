@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse
 
 from ...core.tax_engine import available_tax_years
 from ...core.tax_engine.context import TaxContext
-from ...services.audit_export_service import AuditExportService
+from ...services.audit_export_service import AuditExportService, NetValueAuditExportService
 from ...services.report_service import ReportService
 from ...settings import AppSettings
 from ..dependencies import db_required, session_required
@@ -208,6 +208,56 @@ async def portfolio_audit_export(
         settings = AppSettings.load(db_path)
 
     payload = AuditExportService.get_portfolio_audit_export(
+        settings=settings,
+        db_path=db_path,
+        db_encrypted=db_encrypted,
+    )
+    return JSONResponse(content=payload)
+
+
+@router.get(
+    "/net-value-audit-export",
+    summary="Net Value audit export (JSON)",
+    description=(
+        "Lossless audit-grade export of all Net Value calculations.  "
+        "Returns a single JSON object containing raw inputs (lots, prices, FX, "
+        "tax settings) and per-lot computed outputs (cost basis, employment tax "
+        "components, net value contribution, forfeiture).  "
+        "Aggregates reconcile to the Net Value page totals.\n\n"
+        "**Scope:** ALL lots (locked and unlocked) contribute gross market value.  "
+        "Employment tax is estimated for SELLABLE lots only — locked lots cannot "
+        "be sold today so no tax is deducted for them.  "
+        "``net_value_contribution_gbp`` per lot is gross MV for locked lots and "
+        "net-of-employment-tax for sellable lots.  "
+        "The sum reconciles to ``PortfolioSummary.est_total_net_liquidation_gbp``."
+        "\n\n"
+        "**Deterministic:** identical DB state + settings → identical output.\n\n"
+        "**Rounding:** all monetary values are 2dp ROUND\\_HALF\\_UP strings.  "
+        "No floats in the calculation path.\n\n"
+        "**No paid APIs required.**  Uses DB-stored prices and FX rates only."
+    ),
+)
+async def net_value_audit_export(
+    _: None = Depends(db_required),
+) -> JSONResponse:
+    """
+    Audit-grade export of all Net Value calculations.
+
+    Calls NetValueAuditExportService.get_net_value_audit_export() which reuses
+    PortfolioService.get_portfolio_summary() internally, ensuring the export
+    reflects the exact same numbers shown on the Net Value page.
+    """
+    db_path = _state.get_db_path()
+    db_encrypted = False
+    if db_path is not None:
+        import os
+        db_encrypted = os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
+
+    settings: AppSettings | None = None
+    if db_path is not None:
+        settings = AppSettings.load(db_path)
+
+    payload = NetValueAuditExportService.get_net_value_audit_export(
         settings=settings,
         db_path=db_path,
         db_encrypted=db_encrypted,

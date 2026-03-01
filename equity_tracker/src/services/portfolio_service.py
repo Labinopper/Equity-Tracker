@@ -288,6 +288,26 @@ def _live_true_cost_per_share(
     return Decimal(lot.true_cost_per_share_gbp)
 
 
+def _rsu_live_true_cost_per_share(lot: Lot, settings: AppSettings) -> Decimal:
+    # RSU true economic cost per share: FMV * (1 - combined_marginal_rate).
+    # Represents the after-tax net value retained at vest.
+    # Result stored at 4dp; multiply by qty_remaining for lot total (2dp).
+    # RSU disposal employment tax remains zero by design (tax paid at vest).
+    fmv = Decimal(lot.fmv_at_acquisition_gbp)
+    ty = tax_year_for_date(lot.acquisition_date)
+    ctx = TaxContext(
+        tax_year=ty,
+        gross_employment_income=settings.default_gross_income,
+        pension_sacrifice=settings.default_pension_sacrifice,
+        other_income=settings.default_other_income,
+        student_loan_plan=settings.default_student_loan_plan,
+    )
+    rates = get_marginal_rates(ctx)
+    return (fmv * (Decimal("1") - rates.combined)).quantize(
+        Decimal("0.0001"), rounding=ROUND_HALF_UP
+    )
+
+
 def _lot_to_fifo(
     lot: Lot,
     *,
@@ -882,17 +902,25 @@ class PortfolioService:
 
                 for lot in lots:
                     qty = Decimal(lot.quantity_remaining)
-                    true_cost_per_share = (
-                        _live_true_cost_per_share(
+                    if (
+                        lot.scheme_type == "RSU"
+                        and lot.fmv_at_acquisition_gbp is not None
+                        and settings is not None
+                    ):
+                        # Always derive live from configured marginal rates.
+                        true_cost_per_share = _rsu_live_true_cost_per_share(lot, settings)
+                    elif use_live_true_cost:
+                        true_cost_per_share = _live_true_cost_per_share(
                             lot,
                             settings=settings,
                             espp_plus_employee_ids=espp_plus_employee_ids,
                         )
-                        if use_live_true_cost
-                        else Decimal(lot.true_cost_per_share_gbp)
-                    )
+                    else:
+                        true_cost_per_share = Decimal(lot.true_cost_per_share_gbp)
                     cost_basis = qty * Decimal(lot.acquisition_price_gbp)
-                    true_cost  = qty * true_cost_per_share
+                    true_cost = (qty * true_cost_per_share).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
                     sellability_status, sellability_unlock_date = _sellability_for_lot(
                         lot,
                         as_of=today,

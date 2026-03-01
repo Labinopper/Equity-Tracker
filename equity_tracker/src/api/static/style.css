@@ -2202,4 +2202,33 @@ tr:hover td.loss {
   a[href]::after { content: ''; }
 }
 
+/* Unrealised gains (Economic Gain vs True Cost) — match security-meta look */
+details.unrealised-gains-toggle > summary{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.65rem;
+  list-style: none;          /* kills list-item styling */
+  cursor: pointer;
+}
 
+/* Hide default disclosure marker (Chrome/Safari + Firefox/standard) */
+details.unrealised-gains-toggle > summary::-webkit-details-marker{ display: none; }
+details.unrealised-gains-toggle > summary::marker{ content: ""; }
+
+/* Label left, value right */
+details.unrealised-gains-toggle > summary > span:first-child{ flex: 1 1 auto; }
+
+/* Force the VALUE to use the same numeric styling as other meta numbers */
+details.unrealised-gains-toggle > summary > span:last-child{
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Match numeric styling in expanded unrealised gain rows */
+.unrealised-gain-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}

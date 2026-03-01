@@ -1,30 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Net Value - Equity Tracker{% endblock %}
+{% block title %}Sell-All Breakdown - Equity Tracker{% endblock %}
 
 {% block content %}
 <div class="page-title">
-  <h1>Net Value</h1>
+  <h1>Sell-All Breakdown</h1>
   <div class="page-actions">
     <button onclick="window.print()" class="btn btn-secondary btn-sm">Print</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="nv-audit-json-btn">Download audit JSON</button>
   </div>
 </div>
 
 <p class="muted net-intro">
-  Hypothetical sell-all breakdown. Employment tax is estimated and not a filing calculation.
-  Estimates cover IT + NIC + Student Loan where scheme rules apply.
-  ISA holdings are treated as tax-sheltered.
-  Totals are displayed in {{ summary.valuation_currency }}.
-  Consult a qualified tax adviser before acting on these figures.
+  This is a hypothetical full-liquidation estimate.
+  Includes locked and forfeiture-restricted shares.
+  Figures are not actionable liquidity.
 </p>
 
-{% if summary.fx_conversion_basis or summary.fx_as_of %}
-<div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
-  {% if summary.fx_is_stale %}Warning: {% endif %}
-  {% if summary.fx_conversion_basis %}{{ summary.fx_conversion_basis }}{% endif %}
-  {% if summary.fx_as_of %}
-  {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}
+{% if sell_all_metrics.fx_conversion_basis or sell_all_metrics.fx_as_of %}
+<div class="alert {% if sell_all_metrics.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
+  {% if sell_all_metrics.fx_is_stale %}Warning: {% endif %}
+  {% if sell_all_metrics.fx_conversion_basis %}{{ sell_all_metrics.fx_conversion_basis }}{% endif %}
+  {% if sell_all_metrics.fx_as_of %}
+  {% if sell_all_metrics.fx_conversion_basis %} {% endif %}FX as of {{ sell_all_metrics.fx_as_of }}
   {% endif %}
-  {% if summary.fx_is_stale and summary.fx_as_of %}
+  {% if sell_all_metrics.fx_is_stale and sell_all_metrics.fx_as_of %}
   (stale &gt;{{ fx_stale_after_minutes }}m); refresh prices to update.
   {% endif %}
 </div>
@@ -32,34 +31,46 @@
 
 <div class="stats">
   <div class="stat">
-    <div class="stat__label">Gross Market Value</div>
-    {% if summary.total_market_value_gbp is not none %}
-    <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
+    <div class="stat__label">Gross Market Value (All Lots)</div>
+    {% if sell_all_metrics.gross_market_value_gbp is not none %}
+    <div class="stat__value">&pound;{{ sell_all_metrics.gross_market_value_gbp | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label">Estimated Employment Tax</div>
-    {% if summary.est_total_employment_tax_gbp is not none %}
-    <div class="stat__value warning-text">&pound;{{ summary.est_total_employment_tax_gbp | money }}</div>
-    <div class="stat-caption">IT + NIC + Student Loan (eligible schemes)</div>
+    <div class="stat__label">Estimated Employment Tax (All Lots)</div>
+    {% if sell_all_metrics.est_employment_tax_gbp is not none %}
+    <div class="stat__value warning-text">&pound;{{ sell_all_metrics.est_employment_tax_gbp | money }}</div>
+    <div class="stat-caption">IT + NIC + Student Loan where scheme rules apply</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
   <div class="stat stat--gain">
-    <div class="stat__label">Hypothetical Full Liquidation (All Lots, incl. locked)</div>
-    {% if summary.est_total_net_liquidation_gbp is not none %}
-    <div class="stat__value gain">&pound;{{ summary.est_total_net_liquidation_gbp | money }}</div>
-    <div class="stat-caption">Gross value minus employment-tax estimate. Includes locked and forfeiture-restricted shares.</div>
+    <div class="stat__label">
+      Hypothetical Net Value (All Lots &ndash; Not Actionable)
+      <button class="info-button" aria-label="Hypothetical Net Value explanation">ℹ</button>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Gross market value minus estimated employment tax.
+          Includes locked and forfeiture-restricted shares.
+        </div>
+      </div>
+    </div>
+    {% if sell_all_metrics.net_value_gbp is not none %}
+    {% if sell_all_metrics.net_value_gbp < 0 %}
+    <div class="stat__value loss">-&pound;{{ sell_all_metrics.net_value_gbp | abs | money }}</div>
+    {% else %}
+    <div class="stat__value gain">&pound;{{ sell_all_metrics.net_value_gbp | money }}</div>
+    {% endif %}
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total Cost Basis</div>
-    <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
+    <div class="stat__label">Total Cost Basis (All Lots)</div>
+    <div class="stat__value">&pound;{{ sell_all_metrics.cost_basis_gbp | money }}</div>
   </div>
 </div>
 
@@ -70,12 +81,11 @@
 </div>
 {% endif %}
 
-{% if not summary.securities %}
+{% if not nv_securities %}
 <div class="empty-state"><p>No securities with active lots.</p></div>
 {% else %}
-{% for ss in summary.securities %}
-{% if ss.active_lots %}
-{% set position_rows = position_rows_by_security.get(ss.security.id, []) %}
+{% for ss in nv_securities %}
+{% set position_rows = nv_rows_by_security.get(ss.security.id, []) %}
 {% set daily = security_daily_changes.get(ss.security.id) %}
 <div class="card">
   <div class="security-header">
@@ -94,8 +104,8 @@
           {% if daily.direction == "up" %}Up{% elif daily.direction == "down" %}Down{% else %}Flat{% endif %}
           {{ "%.2f"|format(daily.percent_change | abs) }}%
           {% if daily.native_currency and daily.value_change_native is not none %}
-            {% if daily.native_currency == "GBP" %}(Δ &pound;{{ daily.value_change_native | abs | money }}){% else %}(Δ {{ daily.native_currency }} {{ daily.value_change_native | abs | money }}){% endif %}
-          {% else %}(Δ &pound;{{ daily.value_change_gbp | abs | money }}){% endif %}
+            {% if daily.native_currency == "GBP" %}(Δ {% if daily.value_change_native < 0 %}-{% endif %}&pound;{{ daily.value_change_native | abs | money }}){% else %}(Δ {{ daily.native_currency }} {% if daily.value_change_native < 0 %}-{% endif %}{{ daily.value_change_native | abs | money }}){% endif %}
+          {% else %}(Δ {% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }}){% endif %}
         </span>
         <button class="info-button" aria-label="Daily change breakdown">ℹ</button>
         <div class="tooltip">
@@ -170,9 +180,10 @@
     </div>
     <div class="net-value-item">
       <div class="net-value-item__label">Accounting P&amp;L</div>
-      {% if ss.unrealised_gain_cgt_gbp is not none %}
-      <div class="net-value-item__value {% if ss.unrealised_gain_cgt_gbp < 0 %}loss{% else %}gain{% endif %}">
-        {% if ss.unrealised_gain_cgt_gbp > 0 %}+{% endif %}&pound;{{ ss.unrealised_gain_cgt_gbp | money }}
+      {% if ss.accounting_pnl_cost_basis_gbp is not none %}
+      {% set apnl = ss.accounting_pnl_cost_basis_gbp %}
+      <div class="net-value-item__value {% if apnl < 0 %}loss{% else %}gain{% endif %}">
+        {% if apnl > 0 %}+{% elif apnl < 0 %}-{% endif %}&pound;{{ apnl | abs | money }}
       </div>
       {% else %}
       <div class="net-value-item__value muted">-</div>
@@ -180,19 +191,24 @@
     </div>
     {% if ss.est_employment_tax_gbp is not none %}
     <div class="net-value-item">
-      <div class="net-value-item__label">Estimated Employment Tax</div>
+      <div class="net-value-item__label">Estimated Employment Tax (All Lots)</div>
       <div class="net-value-item__value warning-text">&pound;{{ ss.est_employment_tax_gbp | money }}</div>
     </div>
     <div class="net-value-item">
-      <div class="net-value-item__label">Net If Sold Today</div>
-      <div class="net-value-item__value gain">&pound;{{ ss.est_net_proceeds_gbp | money }}</div>
-      <div class="net-value-item__note">Gross minus employment-tax estimate.</div>
+      <div class="net-value-item__label">Hypothetical Net Proceeds (All Lots)</div>
+      {% set hnp = ss.est_net_proceeds_gbp %}
+      {% if hnp < 0 %}
+      <div class="net-value-item__value loss">-&pound;{{ hnp | abs | money }}</div>
+      {% else %}
+      <div class="net-value-item__value gain">&pound;{{ hnp | money }}</div>
+      {% endif %}
+      <div class="net-value-item__note">Gross minus employment-tax estimate. Includes locked shares.</div>
     </div>
     {% endif %}
   </div>
   {% else %}
   <div class="security-meta">
-    <span class="muted">No live price available. Net value cannot be estimated.</span>
+    <span class="muted">No live price available. Hypothetical net value cannot be estimated.</span>
   </div>
   {% endif %}
 
@@ -209,15 +225,24 @@
     <table>
       <thead>
         <tr>
-          <th>Date</th>
+          <th>Acquisition Date</th>
           <th>Scheme</th>
-          <th>Status</th>
-          <th class="num">Qty</th>
+          <th>Sellability Status</th>
+          <th>Tax Year</th>
+          <th class="num">Qty Remaining</th>
           <th class="num">Cost Basis</th>
           <th class="num">Market Value</th>
-          <th class="num">Accounting P&amp;L</th>
+          <th class="num">
+            Accounting P&amp;L
+            <button class="info-button" aria-label="Accounting P&amp;L explanation">ℹ</button>
+            <div class="tooltip">
+              <div class="tooltip-content">
+                Market value minus cost basis. Accounting view only — not a CGT disposal figure.
+              </div>
+            </div>
+          </th>
           <th class="num">Estimated Employment Tax</th>
-          <th class="num">Net If Sold Today</th>
+          <th class="num">Hypothetical Net Proceeds</th>
           <th>Risk Flags</th>
         </tr>
       </thead>
@@ -226,20 +251,6 @@
         {% set has_forfeiture_risk = row.forfeiture_risk_days_remaining is not none %}
         {% set show_locked_until = row.sellability_status == "LOCKED" and not has_forfeiture_risk %}
         {% set scheme = row.scheme_display | lower | replace('+','') | replace('_','-') %}
-        {# Aggregate cost basis and accounting P&L from detail lots #}
-        {% set ns = namespace(cost_basis=0, acct_pnl=None, pnl_ok=true, mv_native=None, mv_native_ccy=None) %}
-        {% for dls in row.detail_lots %}
-          {% set ns.cost_basis = ns.cost_basis + dls.cost_basis_total_gbp %}
-          {% if dls.unrealised_gain_cgt_gbp is not none %}
-            {% if ns.acct_pnl is none %}{% set ns.acct_pnl = dls.unrealised_gain_cgt_gbp %}{% else %}{% set ns.acct_pnl = ns.acct_pnl + dls.unrealised_gain_cgt_gbp %}{% endif %}
-          {% else %}
-            {% set ns.pnl_ok = false %}
-          {% endif %}
-          {% if dls.market_value_native is not none and dls.market_value_native_currency and dls.market_value_native_currency != "GBP" %}
-            {% if ns.mv_native is none %}{% set ns.mv_native = dls.market_value_native %}{% else %}{% set ns.mv_native = ns.mv_native + dls.market_value_native %}{% endif %}
-            {% set ns.mv_native_ccy = dls.market_value_native_currency %}
-          {% endif %}
-        {% endfor %}
         <tr>
           <td class="mono-small">{{ row.acquisition_date }}</td>
           <td>
@@ -272,17 +283,16 @@
               {% endif %}
             </span>
           </td>
+          <td class="mono-small">{{ row.tax_year }}</td>
           <td class="num">{{ "%.2f"|format(row.total_qty) }}</td>
-          <td class="num">&pound;{{ ns.cost_basis | money }}</td>
+          <td class="num">&pound;{{ row.cost_basis_gbp | money }}</td>
           <td class="num">
-            {% if ns.mv_native is not none and ns.mv_native_ccy %}
-            {{ ns.mv_native_ccy }} {{ ns.mv_native | money }} /
-            {% endif %}
             {% if row.total_mv is not none %}&pound;{{ row.total_mv | money }}{% else %}<span class="muted">-</span>{% endif %}
           </td>
-          {% if ns.pnl_ok and ns.acct_pnl is not none %}
-          <td class="num {% if ns.acct_pnl < 0 %}loss{% else %}gain{% endif %}">
-            {% if ns.acct_pnl > 0 %}+{% endif %}&pound;{{ ns.acct_pnl | money }}
+          {% if row.accounting_pnl_gbp is not none %}
+          {% set apnl = row.accounting_pnl_gbp %}
+          <td class="num {% if apnl < 0 %}loss{% else %}gain{% endif %}">
+            {% if apnl > 0 %}+{% elif apnl < 0 %}-{% endif %}&pound;{{ apnl | abs | money }}
           </td>
           {% else %}
           <td class="num muted">-</td>
@@ -295,8 +305,9 @@
           {% endif %}
 
           {% if row.net_cash_if_sold is not none %}
-          <td class="num {% if row.net_cash_if_sold < 0 %}loss{% else %}gain{% endif %}">
-            &pound;{{ row.net_cash_if_sold | money }}
+          {% set hnp = row.net_cash_if_sold %}
+          <td class="num {% if hnp < 0 %}loss{% else %}gain{% endif %}">
+            {% if hnp < 0 %}-{% endif %}&pound;{{ hnp | abs | money }}
           </td>
           {% elif row.sellability_status == 'LOCKED' %}
           <td class="num"><span class="badge badge-neutral">Locked</span></td>
@@ -332,17 +343,62 @@
   </details>
   {% endif %}
 </div>
-{% endif %}
 {% endfor %}
 
 <div class="alert alert-info disclaimer-box">
   <strong>Disclaimer:</strong>
-  This is an estimate only; not a filing calculation.
+  Figures shown are estimates only and are not filing calculations.
   Employment tax rules are scheme-dependent.
-  ESPP+ forfeiture windows are estimated from acquisition dates.
-  RSU income tax is generally assessed at vest and is not part of disposal proceeds.
-  ISA disposals are shown as tax-sheltered.
-  Consult a qualified tax adviser before acting on these figures.
+  Locked and forfeiture-restricted shares are included in totals.
+  Consult a qualified tax adviser before acting.
 </div>
 {% endif %}
+
+<script>
+(function () {
+  var btn = document.getElementById("nv-audit-json-btn");
+  if (!btn) { return; }
+
+  btn.addEventListener("click", function () {
+    btn.disabled = true;
+    btn.textContent = "Downloading\u2026";
+
+    fetch("/reports/net-value-audit-export")
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (body) {
+            throw new Error(
+              (body && body.detail && body.detail.message) ||
+              ("HTTP " + res.status)
+            );
+          });
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        var json = JSON.stringify(data, null, 2);
+        var blob = new Blob([json], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        var ts = new Date()
+          .toISOString()
+          .replace(/:/g, "-")
+          .replace(/\.\d{3}Z$/, "Z");
+        a.href = url;
+        a.download = "equity-tracker_sell-all-breakdown-audit_" + ts + ".json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        btn.disabled = false;
+        btn.textContent = "Download audit JSON";
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = "Download audit JSON";
+        alert("Sell-All Breakdown audit export failed: " + err.message);
+      });
+  });
+})();
+</script>
 {% endblock %}

@@ -1947,8 +1947,127 @@ async def per_scheme(request: Request) -> HTMLResponse:
 
 
 # ---------------------------------------------------------------------------
-# Net Value page â€” GET /net-value
+# Net Value page - GET /net-value
 # ---------------------------------------------------------------------------
+
+def _uk_tax_year(d: date_type) -> str:
+    # Return YYYY-YY UK tax year string for a given date.
+    year = d.year
+    if d < date_type(year, 4, 6):
+        return str(year - 1) + "-" + str(year)[-2:]
+    return str(year) + "-" + str(year + 1)[-2:]
+
+
+def _build_nv_row(row: PositionGroupRow) -> dict:
+    # Flatten a PositionGroupRow into a plain dict with all per-lot aggregations
+    # precomputed. This removes all accumulation logic from the template.
+    cost_basis = Decimal("0")
+    acct_pnl: Decimal | None = Decimal("0")
+    mv_native: Decimal | None = None
+    mv_native_ccy: str | None = None
+
+    for dls in row.detail_lots:
+        cost_basis += dls.cost_basis_total_gbp
+        if acct_pnl is not None:
+            if dls.unrealised_gain_cgt_gbp is not None:
+                acct_pnl += dls.unrealised_gain_cgt_gbp
+            else:
+                acct_pnl = None
+        if (
+            dls.market_value_native is not None
+            and dls.market_value_native_currency
+            and dls.market_value_native_currency != "GBP"
+        ):
+            mv_native = (mv_native or Decimal("0")) + dls.market_value_native
+            mv_native_ccy = dls.market_value_native_currency
+
+    return {
+        "group_id": row.group_id,
+        "acquisition_date": row.acquisition_date,
+        "tax_year": _uk_tax_year(row.acquisition_date),
+        "scheme_display": row.scheme_display,
+        "total_qty": row.total_qty,
+        "total_mv": row.total_mv,
+        "sellability_status": row.sellability_status,
+        "sellability_unlock_date": row.sellability_unlock_date,
+        "forfeiture_risk_days_remaining": row.forfeiture_risk_days_remaining,
+        "has_tax_window": row.has_tax_window,
+        "sell_now_employment_tax_est": row.sell_now_employment_tax_est,
+        "net_cash_if_sold": row.net_cash_if_sold,
+        "reason_unavailable": row.reason_unavailable,
+        # Precomputed aggregations - no template iteration needed
+        "cost_basis_gbp": _q2(cost_basis),
+        # Locked pre-vest RSUs have no real economic P&L (notional cost basis only).
+        "accounting_pnl_gbp": (
+            None
+            if row.sellability_status == "LOCKED" and row.scheme_display == "RSU"
+            else (_q2(acct_pnl) if acct_pnl is not None else None)
+        ),
+        "market_value_native": mv_native,
+        "market_value_native_currency": mv_native_ccy,
+    }
+
+
+def _build_sell_all_metrics(summary) -> dict:
+    # Build the sell_all_metrics view object for the Net Value page top cards.
+    # All values sourced exclusively from PortfolioSummary - no template math.
+    return {
+        "gross_market_value_gbp": summary.total_market_value_gbp,
+        "est_employment_tax_gbp": summary.est_total_employment_tax_gbp,
+        "net_value_gbp": summary.est_total_net_liquidation_gbp,
+        "cost_basis_gbp": summary.total_cost_basis_gbp,
+        "valuation_currency": summary.valuation_currency,
+        "fx_conversion_basis": summary.fx_conversion_basis,
+        "fx_as_of": summary.fx_as_of,
+        "fx_is_stale": summary.fx_is_stale,
+    }
+
+
+def _build_nv_securities(summary) -> list[dict]:
+    # Wrap SecuritySummary objects into view dicts with renamed fields.
+    # Renames unrealised_gain_cgt_gbp -> accounting_pnl_cost_basis_gbp
+    # so the template contains no _cgt_ variable references.
+    #
+    # accounting_pnl_cost_basis_gbp is summed across ALL active lots
+    # (locked + sellable) to reconcile with the per-lot table rows.
+    # SecuritySummary.unrealised_gain_cgt_gbp is SELLABLE-only and must
+    # NOT be used here.
+    result = []
+    for ss in summary.securities:
+        if not ss.active_lots:
+            continue
+        # Sum accounting P&L across every active lot regardless of sellability,
+        # but skip locked (pre-vest) RSU lots -- their cost basis is notional.
+        all_lots_pnl: Decimal | None = Decimal("0")
+        for ls in ss.active_lots:
+            if all_lots_pnl is not None:
+                if ls.sellability_status == "LOCKED" and ls.lot.scheme_type == "RSU":
+                    continue  # no meaningful P&L pre-vest
+                if ls.unrealised_gain_cgt_gbp is not None:
+                    all_lots_pnl += ls.unrealised_gain_cgt_gbp
+                else:
+                    all_lots_pnl = None  # any lot missing a price voids the total
+        result.append({
+            "security": ss.security,
+            "active_lots": ss.active_lots,
+            "has_forfeiture_risk": ss.has_forfeiture_risk,
+            "has_sip_qualifying_risk": ss.has_sip_qualifying_risk,
+            "total_quantity": ss.total_quantity,
+            "market_value_gbp": ss.market_value_gbp,
+            "market_value_native": ss.market_value_native,
+            "market_value_native_currency": ss.market_value_native_currency,
+            "total_cost_basis_gbp": ss.total_cost_basis_gbp,
+            # All-lots accounting P&L (not a CGT figure; not sellable-only)
+            "accounting_pnl_cost_basis_gbp": (
+                _q2(all_lots_pnl) if all_lots_pnl is not None else None
+            ),
+            "est_employment_tax_gbp": ss.est_employment_tax_gbp,
+            "est_net_proceeds_gbp": ss.est_net_proceeds_gbp,
+            "current_price_gbp": ss.current_price_gbp,
+            "price_as_of": ss.price_as_of,
+        })
+    return result
+
 
 @router.get("/net-value", response_class=HTMLResponse, include_in_schema=False)
 async def net_value(request: Request) -> HTMLResponse:
@@ -1965,18 +2084,27 @@ async def net_value(request: Request) -> HTMLResponse:
         summary,
         settings=settings,
     )
+    sell_all_metrics = _build_sell_all_metrics(summary)
+    nv_securities = _build_nv_securities(summary)
+    nv_rows_by_security = {
+        sec_id: [_build_nv_row(row) for row in rows]
+        for sec_id, rows in position_rows_by_security.items()
+    }
     return templates.TemplateResponse(
         request,
         "net_value.html",
         {
             "request": request,
-            "summary": summary,
+            "sell_all_metrics": sell_all_metrics,
+            "nv_securities": nv_securities,
+            "nv_rows_by_security": nv_rows_by_security,
             "settings": settings,
             "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
             "security_daily_changes": security_daily_changes,
-            "position_rows_by_security": position_rows_by_security,
         },
     )
+
+
 
 
 # ---------------------------------------------------------------------------

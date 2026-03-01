@@ -1326,7 +1326,302 @@ def _build_diagnostics(
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Net Value aggregates
+# ---------------------------------------------------------------------------
+
+def _build_net_value_aggregates(
+    portfolio: PortfolioSummary,
+    per_lot_calcs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Build the net_value_aggregates section.
+
+    Scope: ALL lots (locked + sellable) contribute gross market value.
+    Employment tax is estimated for SELLABLE lots only (locked lots cannot be sold).
+    Net Value total = sum(net_value_contribution_gbp):
+      - LOCKED lot  → gross_market_value_gbp  (no tax deducted)
+      - SELLABLE lot → net_liquidation_value_today_gbp  (after employment tax)
+    This matches summary.est_total_net_liquidation_gbp = total_market - employment_tax_sellable.
+    """
+    total_cost_basis = _ZERO
+    total_gross_mv = _ZERO
+    total_emp_tax_sellable = _ZERO
+    total_nv = _ZERO
+    has_mv_data = False
+    has_nv_data = False
+    locked_lot_ids: list[str] = []
+    locked_mv_total = _ZERO
+    gross_mv_by_security: dict[str, Decimal] = {}
+    emp_tax_by_security: dict[str, Decimal] = {}
+    nv_by_security: dict[str, Decimal] = {}
+
+    for plc in per_lot_calcs:
+        total_cost_basis += Decimal(plc["cost_basis_gbp"])
+
+        mv_str = plc["gross_market_value_gbp"]
+        if mv_str is not None:
+            mv = Decimal(mv_str)
+            total_gross_mv += mv
+            has_mv_data = True
+            sid = plc["security_id"]
+            gross_mv_by_security[sid] = gross_mv_by_security.get(sid, _ZERO) + mv
+            if not plc["is_sellable_today"]:
+                locked_lot_ids.append(plc["lot_id"])
+                locked_mv_total += mv
+
+        if plc["is_sellable_today"] and plc["employment_tax_if_sold_today_gbp"] is not None:
+            et = Decimal(plc["employment_tax_if_sold_today_gbp"])
+            total_emp_tax_sellable += et
+            sid = plc["security_id"]
+            emp_tax_by_security[sid] = emp_tax_by_security.get(sid, _ZERO) + et
+
+        nvc_str = plc.get("net_value_contribution_gbp")
+        if nvc_str is not None:
+            nvc = Decimal(nvc_str)
+            total_nv += nvc
+            has_nv_data = True
+            sid = plc["security_id"]
+            nv_by_security[sid] = nv_by_security.get(sid, _ZERO) + nvc
+
+    # Reconciliation checks against portfolio summary
+    reconciliation: dict[str, Any] = {}
+
+    diff_cb = _q2(total_cost_basis - portfolio.total_cost_basis_gbp)
+    reconciliation["cost_basis"] = {
+        "per_lot_sum_gbp": _fmt(total_cost_basis),
+        "summary_value_gbp": _fmt(portfolio.total_cost_basis_gbp),
+        "difference": _fmt(diff_cb),
+        "pass": diff_cb == _ZERO,
+    }
+
+    if portfolio.total_market_value_gbp is not None and has_mv_data:
+        diff_mv = _q2(total_gross_mv - portfolio.total_market_value_gbp)
+        reconciliation["gross_market_value"] = {
+            "per_lot_sum_gbp": _fmt(total_gross_mv),
+            "summary_value_gbp": _fmt(portfolio.total_market_value_gbp),
+            "difference": _fmt(diff_mv),
+            "pass": diff_mv == _ZERO,
+        }
+
+    if portfolio.est_total_employment_tax_gbp is not None:
+        diff_et = _q2(total_emp_tax_sellable - portfolio.est_total_employment_tax_gbp)
+        reconciliation["employment_tax_sellable"] = {
+            "per_lot_sum_gbp": _fmt(total_emp_tax_sellable),
+            "summary_value_gbp": _fmt(portfolio.est_total_employment_tax_gbp),
+            "difference": _fmt(diff_et),
+            "pass": diff_et == _ZERO,
+        }
+
+    if portfolio.est_total_net_liquidation_gbp is not None and has_nv_data:
+        diff_nv = _q2(total_nv - portfolio.est_total_net_liquidation_gbp)
+        reconciliation["net_value_total"] = {
+            "per_lot_sum_gbp": _fmt(total_nv),
+            "summary_value_gbp": _fmt(portfolio.est_total_net_liquidation_gbp),
+            "difference": _fmt(diff_nv),
+            "pass": diff_nv == _ZERO,
+        }
+
+    ticker_by_id = {ss.security.id: ss.security.ticker for ss in portfolio.securities}
+    per_security_breakdown = [
+        {
+            "security_id": ss.security.id,
+            "ticker": ticker_by_id.get(ss.security.id, "?"),
+            "total_quantity": str(ss.total_quantity),
+            "gross_market_value_gbp": _fmt(
+                gross_mv_by_security.get(ss.security.id)
+            ),
+            "cost_basis_gbp": _fmt(ss.total_cost_basis_gbp),
+            "unrealised_gain_cgt_gbp": (
+                _fmt(ss.unrealised_gain_cgt_gbp)
+                if ss.unrealised_gain_cgt_gbp is not None
+                else None
+            ),
+            "est_employment_tax_sellable_gbp": _fmt(
+                emp_tax_by_security.get(ss.security.id, _ZERO)
+            ),
+            "net_value_contribution_gbp": _fmt(
+                nv_by_security.get(ss.security.id)
+            ),
+        }
+        for ss in portfolio.securities
+        if ss.active_lots
+    ]
+
+    return {
+        "scope": (
+            "ALL lots (locked and unlocked) contribute gross market value to the total. "
+            "Employment tax is estimated for SELLABLE lots only. "
+            "Net Value total = gross market value (all lots) minus employment tax (sellable lots only). "
+            "LOCKED lots contribute their full gross market value with no tax deduction."
+        ),
+        "total_cost_basis_gbp": _fmt(total_cost_basis),
+        "total_gross_market_value_gbp": (
+            _fmt(total_gross_mv) if has_mv_data else None
+        ),
+        "locked_lots_count": len(locked_lot_ids),
+        "locked_lot_ids": locked_lot_ids,
+        "locked_market_value_gbp": _fmt(locked_mv_total),
+        "est_employment_tax_sellable_lots_gbp": _fmt(total_emp_tax_sellable),
+        "est_total_net_liquidation_gbp": (
+            _fmt(total_nv) if has_nv_data else None
+        ),
+        "per_security_breakdown": per_security_breakdown,
+        "reconciliation_checks": reconciliation,
+    }
+
+
+def _build_net_value_diagnostics(
+    portfolio: PortfolioSummary,
+    per_lot_calcs: list[dict[str, Any]],
+    aggregates: dict[str, Any],
+) -> dict[str, Any] | None:
+    diags: dict[str, Any] = {}
+
+    # 1. Net Value total reconciliation
+    recon = aggregates.get("reconciliation_checks", {})
+    nv_recon = recon.get("net_value_total")
+    if nv_recon is not None:
+        diags["net_value_reconciliation"] = {
+            "name": "net_value_total_reconciliation",
+            "why_it_matters": (
+                "Confirms sum of per-lot net_value_contribution_gbp matches "
+                "PortfolioSummary.est_total_net_liquidation_gbp to the penny."
+            ),
+            "how_computed": (
+                "abs(sum(per_lot.net_value_contribution_gbp) - "
+                "summary.est_total_net_liquidation_gbp)"
+            ),
+            "values": nv_recon,
+        }
+
+    # 2. Cost basis reconciliation
+    cb_recon = recon.get("cost_basis")
+    if cb_recon is not None:
+        diags["cost_basis_reconciliation"] = {
+            "name": "cost_basis_reconciliation",
+            "why_it_matters": (
+                "Confirms per-lot cost basis sums match portfolio service total."
+            ),
+            "how_computed": (
+                "abs(sum(per_lot.cost_basis_gbp) - summary.total_cost_basis_gbp)"
+            ),
+            "values": cb_recon,
+        }
+
+    # 3. Locked lot summary
+    locked_ids = aggregates.get("locked_lot_ids", [])
+    if locked_ids:
+        diags["locked_lots_summary"] = {
+            "name": "locked_lots_summary",
+            "why_it_matters": (
+                "Locked lots (unvested RSUs, etc.) are included in the gross market value "
+                "and net value total at their full gross MV. No employment tax is deducted "
+                "for locked lots as they cannot be sold today."
+            ),
+            "how_computed": "Lots where is_sellable_today=False.",
+            "values": {
+                "lot_ids": locked_ids,
+                "locked_market_value_gbp": aggregates.get("locked_market_value_gbp"),
+            },
+        }
+
+    # 4. Missing price warnings
+    missing_prices = [
+        ss.security.ticker
+        for ss in portfolio.securities
+        if ss.current_price_gbp is None
+    ]
+    if missing_prices:
+        diags["missing_price_warnings"] = {
+            "name": "missing_price_warnings",
+            "why_it_matters": (
+                "Lots without a current price have no market value contribution "
+                "to the Net Value total."
+            ),
+            "how_computed": "Securities where current_price_gbp is None.",
+            "values": {"tickers_without_price": missing_prices},
+        }
+
+    # 5. Stale price warnings
+    stale_prices = [
+        ss.security.ticker
+        for ss in portfolio.securities
+        if ss.price_is_stale
+    ]
+    if stale_prices:
+        diags["stale_price_warnings"] = {
+            "name": "stale_price_warnings",
+            "why_it_matters": "Stale prices reduce accuracy of net value estimates.",
+            "how_computed": "Securities where price_is_stale=True.",
+            "values": {"tickers_with_stale_price": stale_prices},
+        }
+
+    # 6. Stale FX warning
+    if portfolio.fx_is_stale:
+        diags["stale_fx_warning"] = {
+            "name": "stale_fx_warning",
+            "why_it_matters": (
+                "Stale FX rates reduce accuracy of GBP conversions for non-GBP securities."
+            ),
+            "how_computed": "portfolio_summary.fx_is_stale == True.",
+            "values": {"fx_as_of": portfolio.fx_as_of, "is_stale": True},
+        }
+
+    # 7. Lots missing tax estimate (sellable, have price, but no tax)
+    lots_missing_tax = [
+        plc["lot_id"]
+        for plc in per_lot_calcs
+        if (
+            plc["is_sellable_today"]
+            and plc["gross_market_value_gbp"] is not None
+            and plc["employment_tax_if_sold_today_gbp"] is None
+        )
+    ]
+    if lots_missing_tax:
+        diags["lots_missing_tax_estimate"] = {
+            "name": "lots_missing_tax_estimate",
+            "why_it_matters": (
+                "These sellable lots have no employment tax estimate. "
+                "Their net_value_contribution_gbp is None and they are excluded "
+                "from the Net Value total."
+            ),
+            "how_computed": (
+                "Sellable lots where employment_tax_if_sold_today_gbp is null "
+                "and gross_market_value_gbp is not null."
+            ),
+            "values": {"lot_ids": lots_missing_tax},
+        }
+
+    # 8. Forfeiture risk summary
+    at_risk_lot_ids = [
+        plc["lot_id"]
+        for plc in per_lot_calcs
+        if Decimal(plc["forfeitable_value_gbp"]) > _ZERO
+    ]
+    if at_risk_lot_ids:
+        total_forfeiture = sum(
+            Decimal(plc["forfeitable_value_gbp"]) for plc in per_lot_calcs
+        )
+        diags["forfeiture_risk_summary"] = {
+            "name": "forfeiture_risk_summary",
+            "why_it_matters": (
+                "ESPP_PLUS matched shares currently inside 6-month forfeiture window. "
+                "Selling the linked employee lot would forfeit these shares."
+            ),
+            "how_computed": (
+                "Lots where forfeiture_risk.in_window=True and gross_market_value > 0."
+            ),
+            "values": {
+                "lot_ids_at_risk": at_risk_lot_ids,
+                "total_forfeiture_risk_gbp": _fmt(total_forfeiture),
+            },
+        }
+
+    return diags if diags else None
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
 # ---------------------------------------------------------------------------
 
 class AuditExportService:
@@ -1395,6 +1690,140 @@ class AuditExportService:
             "lots": lots_section,
             "per_lot_calculations": per_lot_calcs,
             "portfolio_aggregates": aggregates_section,
+            "tax_brackets_used": tax_brackets,
+            "additional_diagnostics": diagnostics,
+        }
+
+
+class NetValueAuditExportService:
+    """
+    Assembles the Net Value page audit export JSON payload.
+
+    Reuses PortfolioService.get_portfolio_summary() internally so every
+    calculated value matches exactly what the Net Value page displays.
+
+    Key difference from AuditExportService:
+      Net Value includes ALL lots (locked + sellable) in the gross market value
+      total. Employment tax is estimated for SELLABLE lots only. The
+      net_value_contribution_gbp field per lot is:
+        - LOCKED  → gross_market_value_gbp   (no tax deducted)
+        - SELLABLE → net_liquidation_value_today_gbp  (after employment tax)
+      sum(net_value_contribution_gbp) reconciles to
+      PortfolioSummary.est_total_net_liquidation_gbp.
+    """
+
+    @staticmethod
+    def get_net_value_audit_export(
+        settings: AppSettings | None = None,
+        db_path: object = None,
+        db_encrypted: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Return the full Net Value audit export dict.
+
+        Schema top-level keys:
+          metadata, tax_settings, fx_rates, securities, lots,
+          per_lot_calculations, net_value_aggregates, tax_brackets_used,
+          additional_diagnostics
+
+        All monetary values are 2dp ROUND_HALF_UP strings.
+        """
+        now_utc = datetime.now(timezone.utc)
+        today = now_utc.date()
+        tax_year = tax_year_for_date(today)
+
+        # 1. Get portfolio summary — same call path as the Net Value page
+        portfolio = PortfolioService.get_portfolio_summary(settings=settings)
+
+        # 2. Collect all active lot ORM objects for employment-tax context
+        all_lots_by_id: dict[str, Lot] = {
+            ls.lot.id: ls.lot
+            for ss in portfolio.securities
+            for ls in ss.active_lots
+        }
+
+        # 3. Query raw DB data inside a single read session
+        with AppContext.read_session() as sess:
+            fx_rates_section = _build_fx_rates(sess, portfolio)
+
+        # 4. Assemble shared sections (identical to portfolio export)
+        metadata = _build_metadata(
+            now_utc, today, db_path, db_encrypted, settings, tax_year
+        )
+        # Override page-specific metadata fields
+        metadata["page"] = "NET_VALUE"
+        metadata["page_description"] = (
+            "Hypothetical sell-all breakdown. "
+            "All lots (including locked/unvested) are included in the gross total. "
+            "Employment tax is estimated for SELLABLE lots only — locked lots "
+            "cannot be sold today so no tax is deducted for them. "
+            "Net Value total = gross market value (all lots) minus employment tax "
+            "(sellable lots only)."
+        )
+        metadata["scope_notes"] = [
+            "LOCKED lots: net_value_contribution_gbp = gross_market_value_gbp "
+            "(full gross MV; no employment tax deducted).",
+            "SELLABLE lots: net_value_contribution_gbp = net_liquidation_value_today_gbp "
+            "(gross MV minus employment tax estimate).",
+            "sum(net_value_contribution_gbp) reconciles to "
+            "PortfolioSummary.est_total_net_liquidation_gbp.",
+            "employment_tax field in net_value_aggregates covers SELLABLE lots only.",
+        ]
+
+        tax_settings_section = _build_tax_settings(settings, tax_year)
+        securities_section = _build_securities(portfolio)
+        lots_section = _build_lots(portfolio)
+
+        # 5. Per-lot calculations — same as portfolio, then enriched with
+        #    net_value_contribution_gbp
+        per_lot_calcs, tax_brackets = _build_per_lot_calculations(
+            portfolio, settings, today, tax_year, all_lots_by_id
+        )
+
+        # Enrich each lot entry with Net Value specific contribution field
+        for entry in per_lot_calcs:
+            if (
+                not entry["is_sellable_today"]
+                and entry["gross_market_value_gbp"] is not None
+            ):
+                # Locked lot: contributes full gross MV; no tax deducted
+                entry["net_value_contribution_gbp"] = entry["gross_market_value_gbp"]
+                entry["net_value_contribution_basis"] = (
+                    "LOCKED: full gross market value included "
+                    "(no employment tax deducted for locked lots)"
+                )
+            elif entry["net_liquidation_value_today_gbp"] is not None:
+                # Sellable lot: net after employment tax
+                entry["net_value_contribution_gbp"] = (
+                    entry["net_liquidation_value_today_gbp"]
+                )
+                entry["net_value_contribution_basis"] = (
+                    "SELLABLE: net liquidation value after employment tax"
+                )
+            else:
+                entry["net_value_contribution_gbp"] = None
+                entry["net_value_contribution_basis"] = (
+                    "No price available"
+                    if entry["gross_market_value_gbp"] is None
+                    else "Employment-tax estimate unavailable; excluded from total"
+                )
+
+        # 6. Net Value specific aggregates
+        net_value_aggregates = _build_net_value_aggregates(portfolio, per_lot_calcs)
+
+        # 7. Net Value diagnostics
+        diagnostics = _build_net_value_diagnostics(
+            portfolio, per_lot_calcs, net_value_aggregates
+        )
+
+        return {
+            "metadata": metadata,
+            "tax_settings": tax_settings_section,
+            "fx_rates": fx_rates_section,
+            "securities": securities_section,
+            "lots": lots_section,
+            "per_lot_calculations": per_lot_calcs,
+            "net_value_aggregates": net_value_aggregates,
             "tax_brackets_used": tax_brackets,
             "additional_diagnostics": diagnostics,
         }
