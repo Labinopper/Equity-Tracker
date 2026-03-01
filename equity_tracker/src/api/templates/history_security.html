@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}{{ history_data.ticker }} History - Equity Tracker{% endblock %}
+
+{% block content %}
+{% set stats = history_data.summary_stats or {} %}
+{% set price_series = history_data.price_series or [] %}
+{% set lot_events = history_data.lot_events or [] %}
+{% set currency = history_data.currency or 'GBP' %}
+
+{# ── Breadcrumb / header ──────────────────────────────────────────────────── #}
+<div class="page-title">
+  <div>
+    <a href="/history" class="muted" style="font-size:0.82rem;">&larr; All Securities</a>
+    <h1>{{ history_data.ticker }} <span class="muted" style="font-weight:400;font-size:1rem;">{{ history_data.name }}</span></h1>
+    <p class="muted">
+      {{ currency }}
+      {% if history_data.exchange %}&nbsp;&middot;&nbsp;{{ history_data.exchange }}{% endif %}
+    </p>
+  </div>
+  <div class="history-range-btns">
+    <button type="button" class="btn btn-secondary btn-sm history-range-btn history-range-btn--active" data-range="all">All</button>
+    <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="365d">1Y</button>
+    <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="90d">90D</button>
+    <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="30d">30D</button>
+  </div>
+</div>
+
+{% if not history_data.has_data %}
+<div class="card">
+  <p class="muted">No price history available for this security. Refresh prices from the Portfolio page to populate historical data.</p>
+</div>
+{% else %}
+
+{# ── Summary stats ────────────────────────────────────────────────────────── #}
+<div class="stats-grid">
+  {% if stats.current_price_gbp %}
+  <div class="stat">
+    <div class="stat__label">Current Price (GBP)</div>
+    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.current_price_gbp }}{% endif %}</div>
+    {% if stats.current_date %}<div class="stat__meta muted">{{ stats.current_date }}</div>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if stats.current_price_native and currency != 'GBP' %}
+  <div class="stat">
+    <div class="stat__label">Current Price ({{ currency }})</div>
+    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}{{ stats.current_price_native }}{% endif %}</div>
+  </div>
+  {% endif %}
+
+  {% for key, label in [('30d', '30 Days'), ('90d', '90 Days'), ('365d', '1 Year')] %}
+  {% set chg_gbp = stats.get('change_' + key + '_gbp') %}
+  {% set chg_pct = stats.get('change_' + key + '_pct') %}
+  {% if chg_gbp is not none %}
+  {% set is_gain = chg_gbp | float >= 0 %}
+  <div class="stat {{ 'stat--gain' if is_gain else 'stat--loss' }}">
+    <div class="stat__label">{{ label }}</div>
+    <div class="stat__value {{ 'gain' if is_gain else 'loss' }}">
+      {% if hide_values %}&bull;&bull;&bull;{% else %}
+      {{ '+' if is_gain else '' }}&pound;{{ chg_gbp | float | abs | round(4) | string }}
+      {% endif %}
+    </div>
+    {% if chg_pct is not none %}
+    <div class="stat__meta muted">{{ '+' if is_gain else '' }}{{ chg_pct }}%</div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% if stats.weighted_avg_cost_gbp %}
+  <div class="stat">
+    <div class="stat__label">Wtd. Avg. Cost Basis</div>
+    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.weighted_avg_cost_gbp }}{% endif %}</div>
+  </div>
+  {% endif %}
+
+  {% if stats.weighted_avg_true_cost_gbp %}
+  <div class="stat">
+    <div class="stat__label">Wtd. Avg. True Cost</div>
+    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.weighted_avg_true_cost_gbp }}{% endif %}</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Price chart ──────────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="card__header" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <h2 class="card__title" style="margin:0;">Price History</h2>
+    <div style="display:flex;gap:0.4rem;margin-left:auto;">
+      <button type="button" class="btn btn-secondary btn-sm overlay-btn overlay-btn--active" data-overlay="cost_basis">Cost Basis</button>
+      <button type="button" class="btn btn-secondary btn-sm overlay-btn" data-overlay="true_cost">True Cost</button>
+      <button type="button" class="btn btn-secondary btn-sm overlay-btn" data-overlay="none">Price Only</button>
+    </div>
+  </div>
+  <p class="muted">
+    Solid line: daily close price (GBP).
+    Dashed line: weighted-average cost basis at each point in time.
+    Filled circles indicate lot acquisition dates.
+  </p>
+  {% if price_series | length == 0 %}
+  <p class="muted">No price data available.</p>
+  {% else %}
+  <canvas id="chart-security-history" aria-label="{{ history_data.ticker }} price history chart"></canvas>
+  {% endif %}
+</div>
+
+{# ── Acquisitions table ───────────────────────────────────────────────────── #}
+{% if lot_events %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Acquisitions</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Tax Year</th>
+          <th>Scheme</th>
+          <th class="num">Quantity</th>
+          <th class="num">Qty Remaining</th>
+          <th class="num">Cost Basis / Share</th>
+          <th class="num">True Cost / Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in lot_events %}
+        <tr>
+          <td>{{ ev.date }}</td>
+          <td class="muted">{{ ev.tax_year or '—' }}</td>
+          <td>{{ ev.scheme_type }}</td>
+          <td class="num">{{ ev.quantity }}</td>
+          <td class="num {% if ev.quantity_remaining | float == 0 %}muted{% endif %}">
+            {{ ev.quantity_remaining }}
+            {% if ev.quantity_remaining | float == 0 %}<span class="muted">(fully disposed)</span>{% endif %}
+          </td>
+          <td class="num">
+            {% if hide_values %}&bull;&bull;&bull;
+            {% elif ev.acquisition_price_gbp is not none %}&pound;{{ ev.acquisition_price_gbp }}
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td class="num">
+            {% if hide_values %}&bull;&bull;&bull;
+            {% elif ev.true_cost_per_share_gbp is not none %}&pound;{{ ev.true_cost_per_share_gbp }}
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if history_data.notes %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Notes</h2></div>
+  <ul class="muted">
+    {% for note in history_data.notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% endif %}{# has_data #}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% include "partials/chart_theme.html" %}
+<script>
+(function () {
+  var historyData = {{ history_data | tojson }};
+  var hideValues  = {{ 'true' if hide_values else 'false' }};
+  var priceSeries = Array.isArray(historyData.price_series) ? historyData.price_series : [];
+  var theme = window.analyticsChartTheme || {
+    accent: "#3d78f0", gain: "#00d18c", loss: "#f0384f", warning: "#f0a030"
+  };
+
+  var secChart = null;
+  var activeRange   = "all";
+  var activeOverlay = "cost_basis";  // "cost_basis" | "true_cost" | "none"
+  var filteredRef   = [];  // Module-level ref so tooltip callbacks always see current data.
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function toNum(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatPrice(v) {
+    return "\u00A3" + Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: 2, maximumFractionDigits: 4
+    });
+  }
+
+  function parseDateStr(s) { return new Date(s + "T00:00:00"); }
+
+  // ── Range + overlay filtering ─────────────────────────────────────────────
+
+  function filterByRange(series, range) {
+    if (range === "all" || !series.length) return series;
+    var days = {"30d": 30, "90d": 90, "365d": 365}[range] || null;
+    if (!days) return series;
+    var cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return series.filter(function (p) { return parseDateStr(p.date) >= cutoff; });
+  }
+
+  // ── Chart ─────────────────────────────────────────────────────────────────
+
+  function buildDatasets(filtered, overlay) {
+    var prices = filtered.map(function (p) {
+      return hideValues ? null : toNum(p.price_gbp);
+    });
+    var labels = filtered.map(function (p) { return p.date; });
+    var pointRadii = filtered.map(function (p) { return p.has_lot_event ? 5 : 0; });
+    var pointColors = filtered.map(function (p) {
+      return p.has_lot_event ? theme.gain : theme.accent;
+    });
+    var pointBorders = filtered.map(function (p) {
+      return p.has_lot_event ? theme.gain : theme.accent;
+    });
+
+    var datasets = [{
+      label: "Price (GBP)",
+      data: prices,
+      borderColor: theme.accent,
+      backgroundColor: "rgba(61, 120, 240, 0.08)",
+      fill: true,
+      pointRadius: pointRadii,
+      pointBackgroundColor: pointColors,
+      pointBorderColor: pointBorders,
+      pointHoverRadius: 5,
+      tension: 0,
+      spanGaps: true,
+      order: 1
+    }];
+
+    if (overlay !== "none") {
+      var costKey = overlay === "true_cost" ? "true_cost_gbp" : "cost_basis_gbp";
+      var costValues = filtered.map(function (p) {
+        return hideValues ? null : toNum(p[costKey]);
+      });
+      var costLabel = overlay === "true_cost" ? "True Cost (GBP)" : "Cost Basis (GBP)";
+      var costColor = overlay === "true_cost" ? theme.warning : theme.loss;
+      datasets.push({
+        label: costLabel,
+        data: costValues,
+        borderColor: costColor,
+        backgroundColor: "transparent",
+        borderDash: [6, 3],
+        pointRadius: 0,
+        pointHoverRadius: 3,
+        fill: false,
+        tension: 0,
+        spanGaps: true,
+        order: 2
+      });
+    }
+
+    return { labels: labels, datasets: datasets };
+  }
+
+  function renderChart() {
+    var filtered = filterByRange(priceSeries, activeRange);
+    filteredRef = filtered;  // Keep module-level ref in sync for tooltip callbacks.
+    if (!filtered.length) return;
+
+    var built = buildDatasets(filtered, activeOverlay);
+    var labels = built.labels;
+    var datasets = built.datasets;
+    var canvas = document.getElementById("chart-security-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (secChart) {
+      secChart.data.labels = labels;
+      secChart.data.datasets = datasets;
+      secChart.update();
+      return;
+    }
+
+    secChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          y: {
+            ticks: { callback: function (v) { return formatPrice(v); } }
+          }
+        },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                return " " + ctx.dataset.label + ": " +
+                  (hideValues ? "—" : formatPrice(ctx.parsed.y));
+              },
+              afterBody: function (ctxArr) {
+                // Show lot acquisition note if the hovered point is a lot event.
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                var point = filteredRef[idx];
+                return point && point.has_lot_event
+                  ? ["\u25CF Lot acquired on this date"]
+                  : [];
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // ── Range buttons ─────────────────────────────────────────────────────────
+
+  document.querySelectorAll(".history-range-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".history-range-btn").forEach(function (b) {
+        b.classList.remove("history-range-btn--active");
+      });
+      btn.classList.add("history-range-btn--active");
+      activeRange = btn.dataset.range;
+      renderChart();
+    });
+  });
+
+  // ── Overlay buttons ───────────────────────────────────────────────────────
+
+  document.querySelectorAll(".overlay-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".overlay-btn").forEach(function (b) {
+        b.classList.remove("overlay-btn--active");
+      });
+      btn.classList.add("overlay-btn--active");
+      activeOverlay = btn.dataset.overlay;
+      renderChart();
+    });
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+
+  if (priceSeries.length) {
+    renderChart();
+  }
+
+})();
+</script>
+<style>
+.history-range-btns {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+.history-range-btn--active,
+.overlay-btn--active {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
+</style>
+{% endblock %}

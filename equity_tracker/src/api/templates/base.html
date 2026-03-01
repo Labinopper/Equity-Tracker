@@ -39,6 +39,7 @@
   '/glossary':      'settings'
 } %}
 {% set active_group = _path_to_group.get(_path, '') %}
+{% set _is_history = _path == '/history' or _path.startswith('/history/') %}
 
   <header class="nav-shell">
 
@@ -51,6 +52,7 @@
         <a href="/risk"     class="topbar__tab{{ ' topbar__tab--active' if active_group == 'risk' }}">Risk</a>
         <a href="/simulate" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'simulate' }}">Simulate</a>
         <a href="/cgt"      class="topbar__tab{{ ' topbar__tab--active' if active_group == 'reports' }}">Reports</a>
+        <a href="/history"  class="topbar__tab{{ ' topbar__tab--active' if _is_history }}">History</a>
         <a href="/settings" class="topbar__tab topbar__tab--settings{{ ' topbar__tab--active' if active_group == 'settings' }}">Settings</a>
       </nav>
       {% if hide_values %}

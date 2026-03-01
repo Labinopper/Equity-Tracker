@@ -57,6 +57,7 @@ from ...core.tax_engine.context import TaxContext
 from ...db.models import Lot, LotDisposal, Transaction
 from ...db.repository import LotRepository, PriceRepository, SecurityRepository
 from ...services.fx_service import FxService
+from ...services.ibkr_price_service import IbkrPriceService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -1877,6 +1878,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
     if refresh_diag["next_due_at"] is None:
         _state.set_refresh_next_due(60)
         refresh_diag = _state.get_refresh_diagnostics()
+    IbkrPriceService.ingest_all()
     summary = PortfolioService.get_portfolio_summary(
         settings=settings,
         use_live_true_cost=False,
@@ -2075,6 +2077,7 @@ async def net_value(request: Request) -> HTMLResponse:
         return _locked_response(request)
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
+    IbkrPriceService.ingest_all()
     summary = PortfolioService.get_portfolio_summary(
         settings=settings,
         use_live_true_cost=False,

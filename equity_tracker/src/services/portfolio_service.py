@@ -969,6 +969,7 @@ class PortfolioService:
                     # Source formats:
                     #   GBP: "google_sheets:{price_ts}"
                     #   USD: "google_sheets:{price_ts}|fx:{fx_ts}"
+                    #   IB:  "ibkr"  (timestamp carried via PriceTickerSnapshot)
                     _src = price_row.source or ""
                     _prefix = "google_sheets:"
                     _fx_sep = "|fx:"
@@ -981,6 +982,11 @@ class PortfolioService:
                         else:
                             price_refreshed_at = _after or None
                             sec_fx_as_of = None
+                    elif _src == "ibkr":
+                        # Timestamp is stored in PriceTickerSnapshot.observed_at
+                        # and surfaced via freshness_text — no separate display needed.
+                        price_refreshed_at = None
+                        sec_fx_as_of = None
                     else:
                         price_refreshed_at = None
                         sec_fx_as_of = None

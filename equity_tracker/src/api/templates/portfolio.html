@@ -196,6 +196,19 @@
       <span class="security-lots-toggle__line">
         {{ position_rows | length }} active lot{% if position_rows | length != 1 %}s{% endif %}
       </span>
+        {% if ss.sellable_pure_market_value_gbp is not none or ss.espp_plus_pending_market_value_gbp is not none or ss.rsu_vesting_market_value_gbp is not none %}
+        <div class="lot-type-badges">
+          {% if ss.sellable_pure_market_value_gbp is not none %}
+          <span class="badge badge-gain">Sellable: &pound;{{ ss.sellable_pure_market_value_gbp | money }}</span>
+          {% endif %}
+          {% if ss.espp_plus_pending_market_value_gbp is not none %}
+          <span class="badge badge-warning">ESPP+ Maturing: &pound;{{ ss.espp_plus_pending_market_value_gbp | money }}</span>
+          {% endif %}
+          {% if ss.rsu_vesting_market_value_gbp is not none %}
+          <span class="badge badge-neutral">RSUs Vesting: &pound;{{ ss.rsu_vesting_market_value_gbp | money }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
     </summary>
     <div class="security-lots-toggle__body">
 
@@ -250,20 +263,6 @@
     {% endif %}
     {% endif %}
   </div>
-
-  {% if ss.sellable_pure_market_value_gbp is not none or ss.espp_plus_pending_market_value_gbp is not none or ss.rsu_vesting_market_value_gbp is not none %}
-  <div class="lot-type-badges">
-    {% if ss.sellable_pure_market_value_gbp is not none %}
-    <span class="badge badge-gain">Sellable: &pound;{{ ss.sellable_pure_market_value_gbp | money }}</span>
-    {% endif %}
-    {% if ss.espp_plus_pending_market_value_gbp is not none %}
-    <span class="badge badge-warning">ESPP+ Pending: &pound;{{ ss.espp_plus_pending_market_value_gbp | money }}</span>
-    {% endif %}
-    {% if ss.rsu_vesting_market_value_gbp is not none %}
-    <span class="badge badge-neutral">RSUs Vesting: &pound;{{ ss.rsu_vesting_market_value_gbp | money }}</span>
-    {% endif %}
-  </div>
-  {% endif %}
 
   {% if position_rows %}
   <div class="portfolio-position-desktop">

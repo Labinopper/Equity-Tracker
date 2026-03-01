@@ -70,6 +70,7 @@ from .routers import (
     calendar,
     catalog,
     dividends,
+    history,
     portfolio,
     prices,
     reports,
@@ -290,6 +291,7 @@ app.include_router(analytics.router)
 app.include_router(calendar.router)
 app.include_router(catalog.router)
 app.include_router(dividends.router)
+app.include_router(history.router)
 app.include_router(portfolio.router)
 app.include_router(prices.router)
 app.include_router(reports.router)

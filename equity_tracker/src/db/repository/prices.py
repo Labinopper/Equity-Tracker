@@ -175,6 +175,33 @@ class PriceRepository:
         run_start = self._s.scalar(run_start_stmt)
         return run_start or latest.observed_at
 
+    def get_history_range(
+        self,
+        security_id: str,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> list[PriceHistory]:
+        """
+        Return all PriceHistory rows for a security in [from_date, to_date],
+        ordered by price_date ASC then fetched_at ASC.
+
+        If from_date is None, all rows from the earliest stored date are returned.
+        If to_date is None, all rows up to today are returned.
+
+        Multiple rows per date may be returned (different sources). Use
+        HistoryService._dedup_daily_rows() to select one GBP price per date.
+        """
+        stmt = (
+            select(PriceHistory)
+            .where(PriceHistory.security_id == security_id)
+            .order_by(PriceHistory.price_date.asc(), PriceHistory.fetched_at.asc())
+        )
+        if from_date is not None:
+            stmt = stmt.where(PriceHistory.price_date >= from_date)
+        if to_date is not None:
+            stmt = stmt.where(PriceHistory.price_date <= to_date)
+        return list(self._s.scalars(stmt).all())
+
     def list_latest_all(self) -> list[PriceHistory]:
         """
         Return the latest price-history row per security.
