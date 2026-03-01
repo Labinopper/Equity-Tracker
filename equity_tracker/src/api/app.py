@@ -42,11 +42,14 @@ Environment variables
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import AsyncGenerator
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -140,6 +143,74 @@ def _open_engine_from_env() -> DatabaseEngine | None:
 
 
 # ---------------------------------------------------------------------------
+# Nightly history backfill scheduler
+# ---------------------------------------------------------------------------
+
+_UK_TZ = ZoneInfo("Europe/London")
+
+
+def _seconds_until_11pm_uk() -> float:
+    """Return seconds until the next 23:00 Europe/London wall-clock time."""
+    now = datetime.now(_UK_TZ)
+    target = now.replace(hour=23, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+async def _nightly_history_task() -> None:
+    """
+    Background task: maintain 366 days of pre-acquisition price history.
+
+    On startup, runs immediately if the DB is ready and any security is missing
+    extended history (handles the "not yet 366 days" cold-start case).
+
+    Thereafter sleeps until 23:00 UK time each night and runs again so that
+    yesterday's close is incorporated and any gaps added by new acquisitions
+    are filled.
+    """
+    from ..services.price_service import PriceService
+
+    # Cold-start check: run immediately if the DB is already open.
+    if AppContext.is_initialized():
+        try:
+            result = PriceService.backfill_extended_history_all()
+            _log_backfill_result("Startup", result)
+        except Exception:
+            logger.exception("Startup extended history backfill failed.")
+
+    while True:
+        sleep_secs = _seconds_until_11pm_uk()
+        logger.debug("Next extended history backfill in %.0f s (23:00 UK).", sleep_secs)
+        await asyncio.sleep(sleep_secs)
+
+        if not AppContext.is_initialized():
+            logger.info("DB not initialised; skipping nightly history backfill.")
+            continue
+
+        try:
+            result = PriceService.backfill_extended_history_all()
+            _log_backfill_result("Nightly", result)
+        except Exception:
+            logger.exception("Nightly extended history backfill failed.")
+
+
+def _log_backfill_result(label: str, result: dict) -> None:
+    days = result.get("backfilled_days", 0)
+    rate_limited = result.get("rate_limited", [])
+    errors = result.get("errors", [])
+    if days or rate_limited or errors:
+        logger.info(
+            "%s history backfill: %d days written, rate-limited=%s, errors=%d.",
+            label, days, rate_limited or "none", len(errors),
+        )
+        for err in errors:
+            logger.warning("  backfill error — %s: %s", err.get("ticker"), err.get("error"))
+    else:
+        logger.debug("%s history backfill: nothing to do (all securities up to date).", label)
+
+
+# ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
 
@@ -180,7 +251,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
             "API started in locked state. POST /admin/unlock to initialize."
         )
 
+    history_task = asyncio.create_task(_nightly_history_task())
+
     yield
+
+    history_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await history_task
 
     _state.set_db_path(None)
     AppContext.lock()

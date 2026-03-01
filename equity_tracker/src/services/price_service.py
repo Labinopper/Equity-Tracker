@@ -48,6 +48,13 @@ _FX_SEPARATOR = "|fx:"
 _HISTORY_SOURCE = "yfinance_history"
 _GBP_DECIMAL_QUANT = Decimal("0.0001")
 
+# Days of pre-acquisition price history to maintain per security.
+_PRE_ACQUISITION_DAYS = 365
+
+
+class _HistoryRateLimitError(Exception):
+    """Raised when yfinance signals a rate-limit (HTTP 429) response."""
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -133,6 +140,24 @@ def _history_symbol_for_security(ticker: str, exchange: str | None) -> str:
     return symbol
 
 
+def _raise_if_rate_limited(exc: Exception) -> None:
+    """
+    Re-raise exc as _HistoryRateLimitError if it looks like a rate-limit response.
+
+    Detects HTTP 429 / "Too Many Requests" from both the yfinance-native
+    YFRateLimitError (added in v0.2.54) and the underlying requests layer.
+    """
+    msg = str(exc).lower()
+    if "429" in msg or "rate limit" in msg or "too many requests" in msg:
+        raise _HistoryRateLimitError(str(exc)) from exc
+    try:
+        from yfinance.exceptions import YFRateLimitError  # noqa: PLC0415
+        if isinstance(exc, YFRateLimitError):
+            raise _HistoryRateLimitError(str(exc)) from exc
+    except ImportError:
+        pass
+
+
 def _read_history_closes(
     *,
     symbol: str,
@@ -141,6 +166,8 @@ def _read_history_closes(
 ) -> dict[date, Decimal]:
     """
     Read daily close prices from yfinance for [start_date, end_date].
+
+    Raises _HistoryRateLimitError if yfinance returns a 429 / rate-limit response.
     """
     if start_date > end_date:
         return {}
@@ -151,13 +178,17 @@ def _read_history_closes(
         raise RuntimeError("yfinance is unavailable.") from exc
 
     # yfinance end is exclusive, so add one day.
-    hist = yf.Ticker(symbol).history(
-        start=start_date.isoformat(),
-        end=(end_date + timedelta(days=1)).isoformat(),
-        interval="1d",
-        auto_adjust=False,
-        actions=False,
-    )
+    try:
+        hist = yf.Ticker(symbol).history(
+            start=start_date.isoformat(),
+            end=(end_date + timedelta(days=1)).isoformat(),
+            interval="1d",
+            auto_adjust=False,
+            actions=False,
+        )
+    except Exception as exc:
+        _raise_if_rate_limited(exc)
+        raise
     if hist is None or hist.empty:
         return {}
     if "Close" not in hist.columns:
@@ -247,32 +278,40 @@ class PriceService:
         native_to_gbp_rate: Decimal | None = None,
     ) -> int:
         """
-        Backfill pre-existing daily closes to acquisition-date coverage.
+        Backfill daily closes covering _PRE_ACQUISITION_DAYS before first acquisition.
 
         Behavior:
-          - Only backfills missing history before the earliest stored price_date.
+          - Targets [acquisition_date - 366d, yesterday] for full pre/post coverage.
+          - Only fetches dates not already stored (fills gaps before earliest row).
           - Never backfills today's row (latest live price remains Sheets-driven).
           - Uses yfinance daily closes and stores rows in price_history.
+          - Raises _HistoryRateLimitError if yfinance returns a 429 response so
+            callers can back off and retry later.
         """
         acquisition_start = PriceService._earliest_lot_date(security_id)
         if acquisition_start is None:
             return 0
 
+        extended_start = acquisition_start - timedelta(days=_PRE_ACQUISITION_DAYS)
         backfill_end = datetime.now(tz=timezone.utc).date() - timedelta(days=1)
-        if acquisition_start > backfill_end:
+        if extended_start > backfill_end:
             return 0
 
         with AppContext.read_session() as sess:
             earliest_price_date = PriceRepository(sess).get_earliest_price_date(security_id)
 
-        if earliest_price_date is not None and earliest_price_date <= acquisition_start:
+        # Allow a 5-calendar-day boundary buffer: if our earliest stored price is within
+        # one trading week of the target start, consider the range complete.  This
+        # prevents endless single-day retry loops when extended_start lands on a
+        # weekend, public holiday, or a day a specific ticker was not traded.
+        if earliest_price_date is not None and earliest_price_date <= extended_start + timedelta(days=5):
             return 0
 
         if earliest_price_date is None:
-            start_date = acquisition_start
+            start_date = extended_start
             end_date = backfill_end
         else:
-            start_date = acquisition_start
+            start_date = extended_start
             end_date = min(backfill_end, earliest_price_date - timedelta(days=1))
 
         if start_date > end_date:
@@ -296,6 +335,8 @@ class PriceService:
                 start_date=start_date,
                 end_date=end_date,
             )
+        except _HistoryRateLimitError:
+            raise  # Propagate so callers can handle back-off distinctly.
         except Exception as exc:
             logger.warning(
                 "Historical backfill failed for %s (%s): %s",
@@ -341,6 +382,93 @@ class PriceService:
                 end_date.isoformat(),
             )
         return rows_written
+
+    @staticmethod
+    def backfill_extended_history_all() -> dict:
+        """
+        Ensure every security has _PRE_ACQUISITION_DAYS of pre-acquisition price
+        history stored.  Securities whose earliest stored price is already on or
+        before (acquisition_date - 366d) are skipped immediately.
+
+        Called on app startup (if history is incomplete) and nightly at 23:00 UK.
+
+        FX rates are fetched from Google Sheets once for non-GBP securities; if
+        the sheet is unavailable those securities are skipped for this run.
+
+        Returns a summary dict::
+
+            {
+                "backfilled_days":  <int>,
+                "skipped":          <int>,   # already complete
+                "rate_limited":     [<ticker>, ...],  # stopped early; retry next run
+                "errors":           [{"ticker": ..., "error": ...}, ...],
+            }
+        """
+        with AppContext.read_session() as sess:
+            securities = SecurityRepository(sess).list_all()
+            sec_items = [
+                (s.id, s.ticker, s.currency or "GBP", s.exchange)
+                for s in securities
+            ]
+
+        try:
+            fx_rates = SheetsFxService.read_fx_rates()
+        except Exception as exc:
+            logger.warning(
+                "Extended backfill: FX rates unavailable (%s); non-GBP securities skipped.",
+                exc,
+            )
+            fx_rates = {}
+
+        total_rows = 0
+        skipped = 0
+        rate_limited: list[str] = []
+        errors: list[dict] = []
+
+        for security_id, ticker, currency, exchange in sec_items:
+            ccy = currency.strip().upper()
+            native_to_gbp_rate: Decimal | None = None
+            if ccy != "GBP" and fx_rates:
+                try:
+                    quote = FxService.get_rate(ccy, "GBP", rates=fx_rates)
+                    native_to_gbp_rate = quote.rate
+                except Exception as exc:
+                    logger.info(
+                        "Extended backfill: no %s->GBP rate for %s (%s).",
+                        ccy, ticker, exc,
+                    )
+
+            try:
+                rows = PriceService._backfill_history_for_security(
+                    security_id=security_id,
+                    ticker=ticker,
+                    currency=currency,
+                    exchange=exchange,
+                    native_to_gbp_rate=native_to_gbp_rate,
+                )
+                total_rows += rows
+                if rows == 0:
+                    skipped += 1
+            except _HistoryRateLimitError as exc:
+                logger.warning(
+                    "Extended backfill rate-limited on %s; stopping for this run: %s",
+                    ticker, exc,
+                )
+                rate_limited.append(ticker)
+                break  # Respect the rate limit; remaining securities retry next night.
+            except Exception as exc:
+                logger.warning(
+                    "Extended backfill error for %s (%s): %s",
+                    ticker, security_id, exc,
+                )
+                errors.append({"ticker": ticker, "error": str(exc)})
+
+        return {
+            "backfilled_days": total_rows,
+            "skipped": skipped,
+            "rate_limited": rate_limited,
+            "errors": errors,
+        }
 
     @staticmethod
     def fetch_and_store(security_id: str) -> PriceSnapshot:
@@ -426,13 +554,19 @@ class PriceService:
             ticker, security_id, price_gbp, row.last_refresh or "no timestamp",
         )
 
-        PriceService._backfill_history_for_security(
-            security_id=security_id,
-            ticker=ticker,
-            currency=currency,
-            exchange=exchange,
-            native_to_gbp_rate=native_to_gbp_rate_for_backfill,
-        )
+        try:
+            PriceService._backfill_history_for_security(
+                security_id=security_id,
+                ticker=ticker,
+                currency=currency,
+                exchange=exchange,
+                native_to_gbp_rate=native_to_gbp_rate_for_backfill,
+            )
+        except _HistoryRateLimitError as exc:
+            logger.warning(
+                "Rate limited during history backfill for %s; will retry at next run: %s",
+                ticker, exc,
+            )
 
         return PriceSnapshot(
             security_id=security_id,
@@ -577,13 +711,19 @@ class PriceService:
                     ticker, price_gbp, row.last_refresh or "no timestamp",
                 )
                 fetched += 1
-                backfilled_days += PriceService._backfill_history_for_security(
-                    security_id=security_id,
-                    ticker=ticker,
-                    currency=currency,
-                    exchange=exchange,
-                    native_to_gbp_rate=native_to_gbp_rate,
-                )
+                try:
+                    backfilled_days += PriceService._backfill_history_for_security(
+                        security_id=security_id,
+                        ticker=ticker,
+                        currency=currency,
+                        exchange=exchange,
+                        native_to_gbp_rate=native_to_gbp_rate,
+                    )
+                except _HistoryRateLimitError as exc:
+                    logger.warning(
+                        "Rate limited during history backfill for %s; will retry at next run: %s",
+                        ticker, exc,
+                    )
             except Exception as exc:
                 logger.warning(
                     "Failed to store price for %s (%s): %s", ticker, security_id, exc

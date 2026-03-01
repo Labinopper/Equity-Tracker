@@ -139,6 +139,17 @@ def _dedup_native(rows: list[PriceHistory]) -> dict[date, str | None]:
     return {d: v[1] for d, v in best.items()}
 
 
+def _is_lot_locked_on(lot, d: date) -> bool:
+    """True if the lot cannot be sold on date d (still within its lock window).
+
+    Only ESPP+ matched (free) shares have a time-based lock — 183 days from
+    acquisition.
+    """
+    if lot.scheme_type == "ESPP_PLUS" and lot.matching_lot_id is not None:
+        return d < lot.acquisition_date + timedelta(days=183)
+    return False
+
+
 def _pct_change_str(current: Decimal, past: Decimal) -> str | None:
     if past == 0:
         return None
@@ -412,6 +423,17 @@ class HistoryService:
                 lots_by_security[sec.id] = lots
                 all_lot_ids.extend(l.id for l in lots)
 
+            # Clamp to portfolio inception: pre-acquisition price data is stored
+            # for per-security chart context but should not appear on the overview.
+            all_acquisition_dates = [
+                lot.acquisition_date
+                for lots in lots_by_security.values()
+                for lot in lots
+            ]
+            if all_acquisition_dates:
+                inception_date = min(all_acquisition_dates)
+                sorted_dates = [d for d in sorted_dates if d >= inception_date]
+
             # Load LotDisposals with transaction dates for every lot in one query.
             # {lot_id: [(transaction_date, quantity_allocated), ...]}
             lot_disposal_evts: dict[str, list[tuple[date, Decimal]]] = {}
@@ -474,26 +496,54 @@ class HistoryService:
 
             for d in sorted_dates:
                 total = Decimal("0")
+                sellable_gain = Decimal("0")
+                sellable_gain_has_price = False
                 priced_count = 0
                 held_count = 0
                 for sec in securities:
                     qty = qty_held_on(sec.id, d)
+                    actual_price = sec_date_price.get(sec.id, {}).get(d)
+                    price_str = str(actual_price.quantize(_QUANT4, rounding=ROUND_HALF_UP)) if actual_price is not None else None
                     if qty <= 0:
-                        per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None})
+                        per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None, "price_gbp": price_str})
                         continue
                     held_count += 1
                     price = price_on_or_before(sec.id, d)
                     if price is not None:
                         value = (qty * price).quantize(_QUANT2, rounding=ROUND_HALF_UP)
-                        per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": str(value)})
+                        per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": str(value), "price_gbp": price_str})
                         total += value
                         priced_count += 1
+
+                        # Gain If Sold Today: market value minus true cost for each
+                        # sellable lot. Includes regular lots and ESPP+ paid (employee)
+                        # shares. Excludes RSUs always; excludes ESPP+ matched (free)
+                        # shares only during their 183-day lock window.
+                        sec_lots = lots_by_security.get(sec.id, [])
+                        for lot in sec_lots:
+                            if lot.acquisition_date > d:
+                                continue
+                            if lot.scheme_type == "RSU":
+                                continue
+                            if _is_lot_locked_on(lot, d):
+                                continue
+                            lot_remaining = _safe_decimal(lot.quantity_remaining) or Decimal("0")
+                            lot_future = sum(
+                                q for tx_d, q in lot_disposal_evts.get(lot.id, []) if tx_d > d
+                            )
+                            lot_qty = max(Decimal("0"), lot_remaining + lot_future)
+                            if lot_qty <= 0:
+                                continue
+                            true_cost = _safe_decimal(lot.true_cost_per_share_gbp) or _safe_decimal(lot.acquisition_price_gbp) or Decimal("0")
+                            sellable_gain += (lot_qty * (price - true_cost)).quantize(_QUANT2, rounding=ROUND_HALF_UP)
+                            sellable_gain_has_price = True
                     else:
-                        per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None})
+                        per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None, "price_gbp": price_str})
 
                 total_series.append({
                     "date": d.isoformat(),
                     "total_value_gbp": str(total.quantize(_QUANT2)) if held_count > 0 else None,
+                    "sellable_gain_gbp": str(sellable_gain.quantize(_QUANT2)) if sellable_gain_has_price else None,
                     "priced_count": priced_count,
                     "total_count": held_count,
                 })

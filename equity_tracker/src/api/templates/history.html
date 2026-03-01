@@ -57,19 +57,6 @@
   {% endfor %}
 </div>
 
-{# ── Portfolio chart ────────────────────────────────────────────────────── #}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Portfolio Value</h2>
-  </div>
-  <p class="muted">Total GBP value — accurate method (lots × forward-filled daily closes).</p>
-  {% if total_series | length == 0 %}
-  <p class="muted" id="portfolio-chart-empty">No price history available.</p>
-  {% else %}
-  <canvas id="chart-portfolio-history" aria-label="Portfolio value over time"></canvas>
-  {% endif %}
-</div>
-
 {# ── Per-security sparklines ────────────────────────────────────────────── #}
 {% if per_security %}
 <div class="card">
@@ -93,6 +80,32 @@
 </div>
 {% endif %}
 
+{# ── Portfolio chart ────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Portfolio Value</h2>
+  </div>
+  <p class="muted">Total GBP value — accurate method (lots × forward-filled daily closes).</p>
+  {% if total_series | length == 0 %}
+  <p class="muted" id="portfolio-chart-empty">No price history available.</p>
+  {% else %}
+  <canvas id="chart-portfolio-history" aria-label="Portfolio value over time"></canvas>
+  {% endif %}
+</div>
+
+{# ── Gain If Sold Today chart ─────────────────────────────────────────────── #}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Gain If Sold Today</h2>
+  </div>
+  <p class="muted">Sellable market value minus true cost basis. Excludes locked and at-risk shares.</p>
+  {% if total_series | length == 0 %}
+  <p class="muted">No price history available.</p>
+  {% else %}
+  <canvas id="chart-gain-history" aria-label="Gain if sold today over time"></canvas>
+  {% endif %}
+</div>
+
 {# ── Portfolio table (show/hide) ────────────────────────────────────────── #}
 <div class="card">
   <div class="card__header">
@@ -105,16 +118,24 @@
         <tr>
           <th>Date</th>
           <th class="num">Total Value</th>
+          <th class="num">Gain If Sold</th>
           <th class="num">Coverage</th>
         </tr>
       </thead>
       <tbody>
         {% for row in total_series %}
+        {% set gain = row.sellable_gain_gbp %}
+        {% set is_gain = gain is not none and gain | float >= 0 %}
         <tr>
           <td>{{ row.date }}</td>
           <td class="num">
             {% if hide_values %}&bull;&bull;&bull;
-            {% elif row.total_value_gbp is not none %}&pound;{{ row.total_value_gbp }}
+            {% elif row.total_value_gbp is not none %}&pound;{{ row.total_value_gbp | float | round(2) }}
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td class="num {{ 'gain' if is_gain else 'loss' }}">
+            {% if hide_values %}&bull;&bull;&bull;
+            {% elif gain is not none %}{{ '+' if is_gain else '' }}&pound;{{ gain | float | round(2) }}
             {% else %}<span class="muted">—</span>{% endif %}
           </td>
           <td class="num muted">{{ row.priced_count }}/{{ row.total_count }}</td>
@@ -151,6 +172,7 @@
   };
 
   var portfolioChart = null;
+  var gainChart = null;
   var sparklineCharts = {};
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -239,6 +261,72 @@
     });
   }
 
+  // ── Gain If Sold Today chart ───────────────────────────────────────────────
+
+  function buildGainChart(range) {
+    var filtered = filterByRange(totalSeries, range);
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = filtered.map(function (p) {
+      return hideValues ? null : toNum(p.sellable_gain_gbp);
+    });
+
+    var canvas = document.getElementById("chart-gain-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (gainChart) {
+      gainChart.data.labels = labels;
+      gainChart.data.datasets[0].data = values;
+      gainChart.update();
+      return;
+    }
+
+    gainChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Gain If Sold (GBP)",
+          data: values,
+          borderColor: theme.gain,
+          backgroundColor: "rgba(0, 209, 140, 0.10)",
+          fill: true,
+          pointRadius: labels.length > 180 ? 0 : 1.6,
+          pointHoverRadius: 3,
+          spanGaps: true,
+          segment: {
+            borderColor: function (ctx) {
+              return ctx.p1.parsed.y < 0 ? theme.loss : theme.gain;
+            },
+            backgroundColor: function (ctx) {
+              return ctx.p1.parsed.y < 0
+                ? "rgba(240, 56, 79, 0.10)"
+                : "rgba(0, 209, 140, 0.10)";
+            }
+          }
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            ticks: { callback: function (v) { return formatMoney(v); } }
+          }
+        },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                if (hideValues) return " —";
+                var v = ctx.parsed.y;
+                return " " + (v >= 0 ? "+" : "") + formatMoney(v);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
   // ── Sparklines ────────────────────────────────────────────────────────────
 
   var SPARKLINE_COLORS = [
@@ -252,7 +340,7 @@
 
     var filtered = filterByRange(sec.series, activeRange);
     var values = filtered.map(function (p) {
-      return hideValues ? null : toNum(p.value_gbp);
+      return toNum(p.price_gbp);
     });
     var labels = filtered.map(function (p) { return p.date; });
     var color = SPARKLINE_COLORS[colorIndex % SPARKLINE_COLORS.length];
@@ -300,6 +388,7 @@
       btn.classList.add("history-range-btn--active");
       activeRange = btn.dataset.range;
       buildPortfolioChart(activeRange);
+      buildGainChart(activeRange);
       buildAllSparklines();
     });
   });
@@ -320,6 +409,7 @@
 
   if (totalSeries.length) {
     buildPortfolioChart("all");
+    buildGainChart("all");
   }
   buildAllSparklines();
 
