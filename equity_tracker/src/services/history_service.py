@@ -150,6 +150,20 @@ def _is_lot_locked_on(lot, d: date) -> bool:
     return False
 
 
+def _is_lot_sellable_on(lot, d: date) -> bool:
+    """
+    True if the lot is sellable on date d.
+
+    Rule of thumb:
+      - RSU: sellable once the vest/acquisition date is reached.
+      - Other schemes: sellable unless explicitly lock-constrained
+        (e.g. ESPP+ matched lots inside forfeiture window).
+    """
+    if lot.scheme_type == "RSU":
+        return d >= lot.acquisition_date
+    return not _is_lot_locked_on(lot, d)
+
+
 def _pct_change_str(current: Decimal, past: Decimal) -> str | None:
     if past == 0:
         return None
@@ -230,10 +244,29 @@ class HistoryService:
             # All lots including exhausted ones — needed for full cost basis history.
             lots = lot_repo.get_all_lots_for_security(security_id)
             lots_sorted = sorted(lots, key=lambda l: (l.acquisition_date, l.id))
+            acquisition_qty_by_date: dict[date, Decimal] = {}
+            for lot in lots_sorted:
+                # Exclude non-disposal transfer shadow lots from "purchased on day"
+                # quantities, otherwise internal ESPP -> BROKERAGE moves appear as
+                # extra acquisitions.
+                is_transfer_shadow = (
+                    lot.import_source == "ui_transfer_to_brokerage"
+                    or (
+                        lot.external_id is not None
+                        and lot.external_id.startswith("transfer-origin-lot:")
+                    )
+                )
+                if is_transfer_shadow:
+                    continue
+                qty = _safe_decimal(lot.quantity) or Decimal("0")
+                acquisition_qty_by_date[lot.acquisition_date] = (
+                    acquisition_qty_by_date.get(lot.acquisition_date, Decimal("0")) + qty
+                )
 
             # Load LotDisposals with transaction dates for cost-basis reconstruction.
             # {lot_id: [(transaction_date, quantity_allocated), ...]}
             lot_disposal_evts: dict[str, list[tuple[date, Decimal]]] = {}
+            sold_qty_by_date: dict[date, Decimal] = {}
             all_lot_ids = [lot.id for lot in lots_sorted]
             if all_lot_ids:
                 disp_rows = sess.execute(
@@ -250,25 +283,37 @@ class HistoryService:
                     lot_disposal_evts.setdefault(row.lot_id, []).append(
                         (row.transaction_date, qty)
                     )
+                    sold_qty_by_date[row.transaction_date] = (
+                        sold_qty_by_date.get(row.transaction_date, Decimal("0")) + qty
+                    )
 
-            def cost_at_date(d: date) -> tuple[Decimal | None, Decimal | None]:
+            def snapshot_at_date(d: date) -> tuple[
+                Decimal, Decimal, Decimal, Decimal, Decimal, Decimal
+            ]:
                 """
-                Weighted-average cost basis and true cost of remaining holdings on D.
+                Historical holdings/economic snapshot for date D.
 
-                Uses the "add-back future disposals" method: for each lot acquired on
-                or before D, remaining_qty = lot.quantity_remaining + disposals after D.
-                Returns (None, None) when no shares were held on D.
+                Returns:
+                  total_qty, total_cost, total_true,
+                  sellable_qty, sellable_true, nonsellable_qty
                 """
                 total_qty = Decimal("0")
                 total_cost = Decimal("0")
                 total_true = Decimal("0")
+                sellable_qty = Decimal("0")
+                sellable_true = Decimal("0")
+                nonsellable_qty = Decimal("0")
+
                 for lot in lots_sorted:
                     if lot.acquisition_date > d:
+                        # Lots are not counted before their acquisition date.
                         continue
+
                     acq_cost = _safe_decimal(lot.acquisition_price_gbp) or Decimal("0")
                     true_c = _safe_decimal(lot.true_cost_per_share_gbp)
                     if true_c is None:
                         true_c = acq_cost
+
                     current_qty = _safe_decimal(lot.quantity_remaining) or Decimal("0")
                     future_disposed = sum(
                         qty
@@ -276,26 +321,89 @@ class HistoryService:
                         if tx_date > d
                     )
                     remaining = max(Decimal("0"), current_qty + future_disposed)
+                    if remaining <= 0:
+                        continue
+
                     total_qty += remaining
                     total_cost += remaining * acq_cost
                     total_true += remaining * true_c
-                if total_qty == 0:
-                    return None, None
-                return total_cost / total_qty, total_true / total_qty
+
+                    if _is_lot_sellable_on(lot, d):
+                        sellable_qty += remaining
+                        sellable_true += remaining * true_c
+                    else:
+                        nonsellable_qty += remaining
+
+                return (
+                    total_qty,
+                    total_cost,
+                    total_true,
+                    sellable_qty,
+                    sellable_true,
+                    nonsellable_qty,
+                )
 
             # Build price_series with aligned cost overlays.
-            lot_event_dates = {lot.acquisition_date for lot in lots_sorted}
+            lot_event_dates = set(acquisition_qty_by_date.keys())
             price_series = []
             for d in sorted_dates:
                 price_gbp = date_price[d]
-                cb_gbp, tc_gbp = cost_at_date(d)
+                (
+                    total_qty,
+                    total_cost,
+                    total_true,
+                    sellable_qty,
+                    sellable_true,
+                    nonsellable_qty,
+                ) = snapshot_at_date(d)
+                cb_gbp = (total_cost / total_qty) if total_qty > 0 else None
+                tc_gbp = (total_true / total_qty) if total_qty > 0 else None
+                purchased_qty = acquisition_qty_by_date.get(d)
+                sold_qty = sold_qty_by_date.get(d)
+                position_value = (
+                    (total_qty * price_gbp).quantize(_QUANT2, rounding=ROUND_HALF_UP)
+                    if total_qty > 0
+                    else None
+                )
+                sellable_value = (
+                    (sellable_qty * price_gbp).quantize(_QUANT2, rounding=ROUND_HALF_UP)
+                    if total_qty > 0
+                    else None
+                )
+                nonsellable_value = (
+                    (nonsellable_qty * price_gbp).quantize(_QUANT2, rounding=ROUND_HALF_UP)
+                    if total_qty > 0
+                    else None
+                )
+                sellable_gain = (
+                    (sellable_value - sellable_true).quantize(_QUANT2, rounding=ROUND_HALF_UP)
+                    if sellable_value is not None
+                    else None
+                )
                 price_series.append({
                     "date": d.isoformat(),
                     "price_gbp": str(price_gbp.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
                     "price_native": native_lookup.get(d),
                     "cost_basis_gbp": str(cb_gbp.quantize(_QUANT4, rounding=ROUND_HALF_UP)) if cb_gbp is not None else None,
                     "true_cost_gbp": str(tc_gbp.quantize(_QUANT4, rounding=ROUND_HALF_UP)) if tc_gbp is not None else None,
+                    "held_qty": str(total_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
+                    "position_value_gbp": str(position_value) if position_value is not None else None,
+                    "sellable_qty": str(sellable_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
+                    "nonsellable_qty": str(nonsellable_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
+                    "sellable_value_gbp": str(sellable_value) if sellable_value is not None else None,
+                    "nonsellable_value_gbp": str(nonsellable_value) if nonsellable_value is not None else None,
+                    "sellable_gain_gbp": str(sellable_gain) if sellable_gain is not None else None,
                     "has_lot_event": d in lot_event_dates,
+                    "purchased_qty": (
+                        str(purchased_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP))
+                        if purchased_qty is not None
+                        else None
+                    ),
+                    "sold_qty": (
+                        str(sold_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP))
+                        if sold_qty is not None
+                        else None
+                    ),
                 })
 
             # Lot events for the acquisitions table.
@@ -418,10 +526,31 @@ class HistoryService:
             # Load all lots per security: {security_id: [Lot, ...]}
             lots_by_security: dict[str, list] = {}
             all_lot_ids: list[str] = []
+            lot_security_id: dict[str, str] = {}
+            acquired_qty_by_date_security: dict[date, dict[str, Decimal]] = {}
             for sec in securities:
                 lots = lot_repo.get_all_lots_for_security(sec.id)
                 lots_by_security[sec.id] = lots
-                all_lot_ids.extend(l.id for l in lots)
+                for lot in lots:
+                    all_lot_ids.append(lot.id)
+                    lot_security_id[lot.id] = sec.id
+                    is_transfer_shadow = (
+                        lot.import_source == "ui_transfer_to_brokerage"
+                        or (
+                            lot.external_id is not None
+                            and lot.external_id.startswith("transfer-origin-lot:")
+                        )
+                    )
+                    if is_transfer_shadow:
+                        continue
+                    qty = _safe_decimal(lot.quantity) or Decimal("0")
+                    sec_qty_by_date = acquired_qty_by_date_security.setdefault(
+                        lot.acquisition_date,
+                        {},
+                    )
+                    sec_qty_by_date[sec.id] = (
+                        sec_qty_by_date.get(sec.id, Decimal("0")) + qty
+                    )
 
             # Clamp to portfolio inception: pre-acquisition price data is stored
             # for per-security chart context but should not appear on the overview.
@@ -437,6 +566,7 @@ class HistoryService:
             # Load LotDisposals with transaction dates for every lot in one query.
             # {lot_id: [(transaction_date, quantity_allocated), ...]}
             lot_disposal_evts: dict[str, list[tuple[date, Decimal]]] = {}
+            sold_qty_by_date_security: dict[date, dict[str, Decimal]] = {}
             if all_lot_ids:
                 disp_rows = sess.execute(
                     select(
@@ -452,6 +582,15 @@ class HistoryService:
                     lot_disposal_evts.setdefault(row.lot_id, []).append(
                         (row.transaction_date, qty)
                     )
+                    sec_id = lot_security_id.get(row.lot_id)
+                    if sec_id is not None:
+                        sec_qty_by_date = sold_qty_by_date_security.setdefault(
+                            row.transaction_date,
+                            {},
+                        )
+                        sec_qty_by_date[sec_id] = (
+                            sec_qty_by_date.get(sec_id, Decimal("0")) + qty
+                        )
 
             # Sorted date lists per security for efficient binary search.
             sec_sorted_dates: dict[str, list[date]] = {
@@ -493,6 +632,7 @@ class HistoryService:
             # Build total series and per-security series.
             per_sec_series: dict[str, list[dict]] = {s.id: [] for s in securities}
             total_series: list[dict] = []
+            ticker_by_security_id: dict[str, str] = {s.id: s.ticker for s in securities}
 
             for d in sorted_dates:
                 total = Decimal("0")
@@ -540,12 +680,40 @@ class HistoryService:
                     else:
                         per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None, "price_gbp": price_str})
 
+                purchase_map = acquired_qty_by_date_security.get(d, {})
+                sold_map = sold_qty_by_date_security.get(d, {})
+                event_sec_ids = sorted(
+                    set(purchase_map.keys()) | set(sold_map.keys()),
+                    key=lambda sid: ticker_by_security_id.get(sid, sid),
+                )
+                share_events: list[dict] = []
+                for sec_id in event_sec_ids:
+                    purchased_qty = purchase_map.get(sec_id, Decimal("0"))
+                    sold_qty = sold_map.get(sec_id, Decimal("0"))
+                    if purchased_qty <= 0 and sold_qty <= 0:
+                        continue
+                    share_events.append({
+                        "security_id": sec_id,
+                        "ticker": ticker_by_security_id.get(sec_id, sec_id),
+                        "purchased_qty": (
+                            str(purchased_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP))
+                            if purchased_qty > 0
+                            else None
+                        ),
+                        "sold_qty": (
+                            str(sold_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP))
+                            if sold_qty > 0
+                            else None
+                        ),
+                    })
+
                 total_series.append({
                     "date": d.isoformat(),
                     "total_value_gbp": str(total.quantize(_QUANT2)) if held_count > 0 else None,
                     "sellable_gain_gbp": str(sellable_gain.quantize(_QUANT2)) if sellable_gain_has_price else None,
                     "priced_count": priced_count,
                     "total_count": held_count,
+                    "share_events": share_events,
                 })
 
             # Portfolio-level summary stats (30d / 90d / 365d).

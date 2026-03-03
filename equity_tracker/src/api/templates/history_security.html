@@ -7,7 +7,6 @@
 {% set lot_events = history_data.lot_events or [] %}
 {% set currency = history_data.currency or 'GBP' %}
 
-{# ── Breadcrumb / header ──────────────────────────────────────────────────── #}
 <div class="page-title">
   <div>
     <a href="/history" class="muted" style="font-size:0.82rem;">&larr; All Securities</a>
@@ -31,7 +30,6 @@
 </div>
 {% else %}
 
-{# ── Summary stats ────────────────────────────────────────────────────────── #}
 <div class="stats">
   {% if stats.current_price_gbp %}
   <div class="stat">
@@ -67,13 +65,6 @@
   {% endif %}
   {% endfor %}
 
-  {% if stats.weighted_avg_cost_gbp %}
-  <div class="stat">
-    <div class="stat__label">Wtd. Avg. Cost Basis</div>
-    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.weighted_avg_cost_gbp }}{% endif %}</div>
-  </div>
-  {% endif %}
-
   {% if stats.weighted_avg_true_cost_gbp %}
   <div class="stat">
     <div class="stat__label">Wtd. Avg. True Cost</div>
@@ -82,35 +73,79 @@
   {% endif %}
 </div>
 
-{# ── Price chart ──────────────────────────────────────────────────────────── #}
-<div class="card">
-  <div class="card__header" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-    <h2 class="card__title" style="margin:0;">Price History</h2>
-    <div style="display:flex;gap:0.4rem;margin-left:auto;">
-      <button type="button" class="btn btn-secondary btn-sm overlay-btn overlay-btn--active" data-overlay="cost_basis">Cost Basis</button>
-      <button type="button" class="btn btn-secondary btn-sm overlay-btn" data-overlay="true_cost">True Cost</button>
-      <button type="button" class="btn btn-secondary btn-sm overlay-btn" data-overlay="none">Price Only</button>
+<div class="security-history-grid">
+  <div class="card security-history-card security-history-card--wide">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Price vs True Cost</h2>
+      <div class="security-history-overlay-btns">
+        <button type="button" class="btn btn-secondary btn-sm overlay-btn overlay-btn--active" data-overlay="true_cost">True Cost</button>
+        <button type="button" class="btn btn-secondary btn-sm overlay-btn" data-overlay="none">Price Only</button>
+      </div>
+    </div>
+    <p class="muted">
+      Solid line: daily close price (GBP). Dashed line: weighted-average true cost of holdings over time.
+    </p>
+    <div class="security-history-chart-wrap security-history-chart-wrap--main">
+      <canvas id="chart-security-price" aria-label="{{ history_data.ticker }} price and true cost history"></canvas>
     </div>
   </div>
-  <p class="muted">
-    Solid line: daily close price (GBP).
-    Dashed line: weighted-average cost basis at each point in time.
-    Filled circles indicate lot acquisition dates.
-  </p>
-  {% if price_series | length == 0 %}
-  <p class="muted">No price data available.</p>
-  {% else %}
-  <canvas id="chart-security-history" aria-label="{{ history_data.ticker }} price history chart"></canvas>
-  {% endif %}
+
+  <div class="card security-history-card">
+    <div class="card__header"><h2 class="card__title">Gain If Sold Today</h2></div>
+    <p class="muted">Sellable market value minus true cost. Locked value excluded.</p>
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-security-gain" aria-label="{{ history_data.ticker }} gain if sold today"></canvas>
+    </div>
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header"><h2 class="card__title">Position Value</h2></div>
+    <p class="muted">Total value of held shares in GBP.</p>
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-security-value" aria-label="{{ history_data.ticker }} position value over time"></canvas>
+    </div>
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header"><h2 class="card__title">Shares Held</h2></div>
+    <p class="muted">Total quantity held through time.</p>
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-security-qty" aria-label="{{ history_data.ticker }} shares held over time"></canvas>
+    </div>
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header"><h2 class="card__title">Buy/Sell Activity</h2></div>
+    <p class="muted">Purchased and sold shares by day.</p>
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-security-activity" aria-label="{{ history_data.ticker }} buy and sell activity"></canvas>
+    </div>
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header"><h2 class="card__title">Sellable vs Non-sellable Value</h2></div>
+    <p class="muted">Actionable value split. Non-sellable includes locked shares.</p>
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-security-liquidity" aria-label="{{ history_data.ticker }} sellable and non-sellable value"></canvas>
+    </div>
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header"><h2 class="card__title">Drawdown From Peak</h2></div>
+    <p class="muted">Percentage decline from prior peak position value.</p>
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-security-drawdown" aria-label="{{ history_data.ticker }} drawdown from peak"></canvas>
+    </div>
+  </div>
 </div>
 
-{# ── Acquisitions table ───────────────────────────────────────────────────── #}
 {% if lot_events %}
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Acquisitions</h2>
   </div>
-  <div class="table-wrap">
+  <button type="button" class="btn btn-secondary btn-sm" id="history-security-table-toggle">Show table</button>
+  <div id="history-security-table-wrap" class="table-wrap" hidden>
     <table>
       <thead>
         <tr>
@@ -127,7 +162,7 @@
         {% for ev in lot_events %}
         <tr>
           <td>{{ ev.date }}</td>
-          <td class="muted">{{ ev.tax_year or '—' }}</td>
+          <td class="muted">{% if ev.tax_year %}{{ ev.tax_year }}{% else %}&mdash;{% endif %}</td>
           <td>{{ ev.scheme_type }}</td>
           <td class="num">{{ ev.quantity }}</td>
           <td class="num {% if ev.quantity_remaining | float == 0 %}muted{% endif %}">
@@ -137,12 +172,12 @@
           <td class="num">
             {% if hide_values %}&bull;&bull;&bull;
             {% elif ev.acquisition_price_gbp is not none %}&pound;{{ ev.acquisition_price_gbp }}
-            {% else %}<span class="muted">—</span>{% endif %}
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
           </td>
           <td class="num">
             {% if hide_values %}&bull;&bull;&bull;
             {% elif ev.true_cost_per_share_gbp is not none %}&pound;{{ ev.true_cost_per_share_gbp }}
-            {% else %}<span class="muted">—</span>{% endif %}
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -161,7 +196,7 @@
 </div>
 {% endif %}
 
-{% endif %}{# has_data #}
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
@@ -170,36 +205,105 @@
 <script>
 (function () {
   var historyData = {{ history_data | tojson }};
-  var hideValues  = {{ 'true' if hide_values else 'false' }};
+  var hideValues = {{ 'true' if hide_values else 'false' }};
   var priceSeries = Array.isArray(historyData.price_series) ? historyData.price_series : [];
+  var lotEvents = Array.isArray(historyData.lot_events) ? historyData.lot_events : [];
   var theme = window.analyticsChartTheme || {
     accent: "#3d78f0", gain: "#00d18c", loss: "#f0384f", warning: "#f0a030"
   };
 
-  var secChart = null;
-  var activeRange   = "all";
-  var activeOverlay = "cost_basis";  // "cost_basis" | "true_cost" | "none"
-  var filteredRef   = [];  // Module-level ref so tooltip callbacks always see current data.
+  var charts = {
+    price: null,
+    gain: null,
+    value: null,
+    qty: null,
+    activity: null,
+    liquidity: null,
+    drawdown: null
+  };
+  var activeRange = "all";
+  var activeOverlay = "true_cost";
+  var filteredRef = [];
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  var firstPurchaseDate = null;
+  lotEvents.forEach(function (ev) {
+    if (!ev || typeof ev.date !== "string") return;
+    if (firstPurchaseDate === null || ev.date < firstPurchaseDate) {
+      firstPurchaseDate = ev.date;
+    }
+  });
 
   function toNum(v) {
     var n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
 
+  function parseDateStr(s) {
+    return new Date(String(s) + "T00:00:00");
+  }
+
   function formatPrice(v) {
     return "\u00A3" + Number(v).toLocaleString(undefined, {
-      minimumFractionDigits: 2, maximumFractionDigits: 4
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4
     });
   }
 
-  function parseDateStr(s) { return new Date(s + "T00:00:00"); }
+  function formatMoney(v) {
+    return "\u00A3" + Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
 
-  // ── Range + overlay filtering ─────────────────────────────────────────────
+  function formatShares(v) {
+    return Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function formatPct(v) {
+    return Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }) + "%";
+  }
+
+  function maxDateTicks(pointCount) {
+    if (window.innerWidth <= 768) {
+      return pointCount <= 60 ? 4 : 5;
+    }
+    if (pointCount <= 60) return 6;
+    if (pointCount <= 365) return 7;
+    return 8;
+  }
+
+  function formatDateTickLabel(isoDate, totalPoints) {
+    if (!isoDate) return "";
+    var d = parseDateStr(isoDate);
+    if (Number.isNaN(d.getTime())) return String(isoDate);
+    if (totalPoints > 370) {
+      return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    }
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function dateTickCallback(value) {
+    var label = this.getLabelForValue(value);
+    var labels = (this.chart && Array.isArray(this.chart.data.labels))
+      ? this.chart.data.labels
+      : [];
+    return formatDateTickLabel(label, labels.length);
+  }
 
   function filterByRange(series, range) {
-    if (range === "all" || !series.length) return series;
+    if (!series.length) return series;
+    if (range === "all") {
+      if (!firstPurchaseDate) return series;
+      var purchaseCutoff = parseDateStr(firstPurchaseDate);
+      return series.filter(function (p) { return parseDateStr(p.date) >= purchaseCutoff; });
+    }
     var days = {"30d": 30, "90d": 90, "365d": 365}[range] || null;
     if (!days) return series;
     var cutoff = new Date();
@@ -207,114 +311,441 @@
     return series.filter(function (p) { return parseDateStr(p.date) >= cutoff; });
   }
 
-  // ── Chart ─────────────────────────────────────────────────────────────────
+  function buildShareEventLines(point) {
+    if (hideValues || !point) return [];
+    var lines = [];
+    var purchasedQty = toNum(point.purchased_qty) || 0;
+    var soldQty = toNum(point.sold_qty) || 0;
+    if (purchasedQty > 0) {
+      lines.push("\u25CF " + formatShares(purchasedQty) + " shares purchased on this day");
+    }
+    if (soldQty > 0) {
+      lines.push("\u25CF " + formatShares(soldQty) + " shares sold on this day");
+    }
+    return lines;
+  }
 
-  function buildDatasets(filtered, overlay) {
-    var prices = filtered.map(function (p) {
-      return hideValues ? null : toNum(p.price_gbp);
+  function hasShareEvent(point) {
+    return (toNum(point.purchased_qty) || 0) > 0 || (toNum(point.sold_qty) || 0) > 0;
+  }
+
+  function eventPointRadii(filtered, radius) {
+    return filtered.map(function (p) { return hasShareEvent(p) ? radius : 0; });
+  }
+
+  function eventPointColors(filtered, baseColor, eventColor) {
+    return filtered.map(function (p) { return hasShareEvent(p) ? eventColor : baseColor; });
+  }
+
+  function upsertChart(name, canvasId, type, data, options) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (charts[name]) {
+      charts[name].data = data;
+      charts[name].options = options;
+      charts[name].update();
+      return;
+    }
+
+    charts[name] = new Chart(canvas.getContext("2d"), {
+      type: type,
+      data: data,
+      options: options
     });
+  }
+
+  function drawdownSeries(filtered) {
+    var peak = null;
+    return filtered.map(function (p) {
+      if (hideValues) return null;
+      var v = toNum(p.position_value_gbp);
+      if (v === null) return null;
+      if (peak === null || v > peak) {
+        peak = v;
+      }
+      if (peak === null || peak <= 0) {
+        return 0;
+      }
+      return ((v - peak) / peak) * 100;
+    });
+  }
+
+  function baseLineOptions(labels, yTickCb, tooltipLabelCb, afterBodyCb, stackedY) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: maxDateTicks(labels.length),
+            maxRotation: 0,
+            callback: dateTickCallback
+          }
+        },
+        y: {
+          stacked: !!stackedY,
+          ticks: { callback: yTickCb }
+        }
+      },
+      plugins: {
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            label: tooltipLabelCb,
+            afterBody: afterBodyCb
+          }
+        }
+      }
+    };
+  }
+
+  function renderPriceChart(filtered) {
     var labels = filtered.map(function (p) { return p.date; });
-    var pointRadii = filtered.map(function (p) { return p.has_lot_event ? 5 : 0; });
-    var pointColors = filtered.map(function (p) {
-      return p.has_lot_event ? theme.gain : theme.accent;
-    });
-    var pointBorders = filtered.map(function (p) {
-      return p.has_lot_event ? theme.gain : theme.accent;
-    });
+    var priceValues = filtered.map(function (p) { return hideValues ? null : toNum(p.price_gbp); });
+    var pointR = eventPointRadii(filtered, 4);
+    var pointC = eventPointColors(filtered, theme.accent, theme.gain);
 
     var datasets = [{
       label: "Price (GBP)",
-      data: prices,
+      data: priceValues,
       borderColor: theme.accent,
-      backgroundColor: "rgba(61, 120, 240, 0.08)",
+      backgroundColor: "rgba(61, 120, 240, 0.10)",
       fill: true,
-      pointRadius: pointRadii,
-      pointBackgroundColor: pointColors,
-      pointBorderColor: pointBorders,
+      pointRadius: pointR,
+      pointBackgroundColor: pointC,
+      pointBorderColor: pointC,
       pointHoverRadius: 5,
+      pointHitRadius: 10,
       tension: 0,
       spanGaps: true,
       order: 1
     }];
 
-    if (overlay !== "none") {
-      var costKey = overlay === "true_cost" ? "true_cost_gbp" : "cost_basis_gbp";
-      var costValues = filtered.map(function (p) {
-        return hideValues ? null : toNum(p[costKey]);
-      });
-      var costLabel = overlay === "true_cost" ? "True Cost (GBP)" : "Cost Basis (GBP)";
-      var costColor = overlay === "true_cost" ? theme.warning : theme.loss;
+    if (activeOverlay === "true_cost") {
       datasets.push({
-        label: costLabel,
-        data: costValues,
-        borderColor: costColor,
+        label: "True Cost (GBP)",
+        data: filtered.map(function (p) { return hideValues ? null : toNum(p.true_cost_gbp); }),
+        borderColor: theme.warning,
         backgroundColor: "transparent",
         borderDash: [6, 3],
         pointRadius: 0,
         pointHoverRadius: 3,
-        fill: false,
         tension: 0,
+        fill: false,
         spanGaps: true,
         order: 2
       });
     }
 
-    return { labels: labels, datasets: datasets };
+    var options = baseLineOptions(
+      labels,
+      function (v) { return formatPrice(v); },
+      function (ctx) {
+        return " " + ctx.dataset.label + ": " + (hideValues ? "-" : formatPrice(ctx.parsed.y));
+      },
+      function (ctxArr) {
+        var idx = ctxArr[0] && ctxArr[0].dataIndex;
+        if (idx === undefined) return [];
+        return buildShareEventLines(filtered[idx]);
+      },
+      false
+    );
+
+    upsertChart("price", "chart-security-price", "line", { labels: labels, datasets: datasets }, options);
   }
 
-  function renderChart() {
-    var filtered = filterByRange(priceSeries, activeRange);
-    filteredRef = filtered;  // Keep module-level ref in sync for tooltip callbacks.
-    if (!filtered.length) return;
+  function renderGainChart(filtered) {
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = filtered.map(function (p) { return hideValues ? null : toNum(p.sellable_gain_gbp); });
+    var pointR = eventPointRadii(filtered, 4);
 
-    var built = buildDatasets(filtered, activeOverlay);
-    var labels = built.labels;
-    var datasets = built.datasets;
-    var canvas = document.getElementById("chart-security-history");
-    if (!canvas || typeof Chart === "undefined") return;
+    var options = baseLineOptions(
+      labels,
+      function (v) { return formatMoney(v); },
+      function (ctx) {
+        if (hideValues) return " -";
+        var v = ctx.parsed.y;
+        return " " + (v >= 0 ? "+" : "") + formatMoney(v);
+      },
+      function (ctxArr) {
+        var idx = ctxArr[0] && ctxArr[0].dataIndex;
+        if (idx === undefined) return [];
+        return buildShareEventLines(filtered[idx]);
+      },
+      false
+    );
 
-    if (secChart) {
-      secChart.data.labels = labels;
-      secChart.data.datasets = datasets;
-      secChart.update();
-      return;
-    }
+    upsertChart("gain", "chart-security-gain", "line", {
+      labels: labels,
+      datasets: [{
+        label: "Gain If Sold (GBP)",
+        data: values,
+        borderColor: theme.gain,
+        backgroundColor: "rgba(0, 209, 140, 0.10)",
+        fill: true,
+        pointRadius: pointR,
+        pointBackgroundColor: theme.gain,
+        pointBorderColor: theme.gain,
+        pointHoverRadius: 4,
+        pointHitRadius: 10,
+        spanGaps: true,
+        tension: 0,
+        segment: {
+          borderColor: function (ctx) {
+            return ctx.p1.parsed.y < 0 ? theme.loss : theme.gain;
+          },
+          backgroundColor: function (ctx) {
+            return ctx.p1.parsed.y < 0 ? "rgba(240, 56, 79, 0.10)" : "rgba(0, 209, 140, 0.10)";
+          }
+        }
+      }]
+    }, options);
+  }
 
-    secChart = new Chart(canvas.getContext("2d"), {
-      type: "line",
-      data: { labels: labels, datasets: datasets },
-      options: {
-        responsive: true,
-        interaction: { mode: "index", intersect: false },
-        scales: {
-          y: {
-            ticks: { callback: function (v) { return formatPrice(v); } }
+  function renderValueChart(filtered) {
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = filtered.map(function (p) { return hideValues ? null : toNum(p.position_value_gbp); });
+    var pointR = eventPointRadii(filtered, 4);
+
+    var options = baseLineOptions(
+      labels,
+      function (v) { return formatMoney(v); },
+      function (ctx) {
+        return " Position Value: " + (hideValues ? "-" : formatMoney(ctx.parsed.y));
+      },
+      function (ctxArr) {
+        var idx = ctxArr[0] && ctxArr[0].dataIndex;
+        if (idx === undefined) return [];
+        return buildShareEventLines(filtered[idx]);
+      },
+      false
+    );
+
+    upsertChart("value", "chart-security-value", "line", {
+      labels: labels,
+      datasets: [{
+        label: "Position Value (GBP)",
+        data: values,
+        borderColor: theme.accent,
+        backgroundColor: "rgba(61, 120, 240, 0.12)",
+        fill: true,
+        pointRadius: pointR,
+        pointBackgroundColor: theme.accent,
+        pointBorderColor: theme.accent,
+        pointHoverRadius: 4,
+        pointHitRadius: 10,
+        tension: 0,
+        spanGaps: true
+      }]
+    }, options);
+  }
+
+  function renderQtyChart(filtered) {
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = filtered.map(function (p) { return hideValues ? null : toNum(p.held_qty); });
+    var pointR = eventPointRadii(filtered, 4);
+
+    var options = baseLineOptions(
+      labels,
+      function (v) { return formatShares(v); },
+      function (ctx) {
+        return " Shares Held: " + (hideValues ? "-" : formatShares(ctx.parsed.y));
+      },
+      function (ctxArr) {
+        var idx = ctxArr[0] && ctxArr[0].dataIndex;
+        if (idx === undefined) return [];
+        return buildShareEventLines(filtered[idx]);
+      },
+      false
+    );
+
+    upsertChart("qty", "chart-security-qty", "line", {
+      labels: labels,
+      datasets: [{
+        label: "Shares Held",
+        data: values,
+        borderColor: theme.warning,
+        backgroundColor: "rgba(240, 160, 48, 0.12)",
+        fill: true,
+        pointRadius: pointR,
+        pointBackgroundColor: theme.warning,
+        pointBorderColor: theme.warning,
+        pointHoverRadius: 4,
+        pointHitRadius: 10,
+        tension: 0,
+        spanGaps: true
+      }]
+    }, options);
+  }
+
+  function renderActivityChart(filtered) {
+    var labels = filtered.map(function (p) { return p.date; });
+    var purchased = filtered.map(function (p) {
+      if (hideValues) return null;
+      return toNum(p.purchased_qty) || 0;
+    });
+    var sold = filtered.map(function (p) {
+      if (hideValues) return null;
+      var v = toNum(p.sold_qty) || 0;
+      return v === 0 ? 0 : -v;
+    });
+
+    var options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: maxDateTicks(labels.length),
+            maxRotation: 0,
+            callback: dateTickCallback
           }
         },
-        plugins: {
-          tooltip: {
-            callbacks: {
-              label: function (ctx) {
-                return " " + ctx.dataset.label + ": " +
-                  (hideValues ? "—" : formatPrice(ctx.parsed.y));
-              },
-              afterBody: function (ctxArr) {
-                // Show lot acquisition note if the hovered point is a lot event.
-                var idx = ctxArr[0] && ctxArr[0].dataIndex;
-                if (idx === undefined) return [];
-                var point = filteredRef[idx];
-                return point && point.has_lot_event
-                  ? ["\u25CF Lot acquired on this date"]
-                  : [];
-              }
+        y: {
+          ticks: {
+            callback: function (v) { return formatShares(Math.abs(v)); }
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            label: function (ctx) {
+              if (hideValues) return " -";
+              return " " + ctx.dataset.label + ": " + formatShares(Math.abs(ctx.parsed.y));
             }
           }
         }
       }
-    });
+    };
+
+    upsertChart("activity", "chart-security-activity", "bar", {
+      labels: labels,
+      datasets: [
+        {
+          label: "Purchased",
+          data: purchased,
+          backgroundColor: "rgba(0, 209, 140, 0.45)",
+          borderColor: theme.gain,
+          borderWidth: 1,
+          barPercentage: 0.85,
+          categoryPercentage: 0.9
+        },
+        {
+          label: "Sold",
+          data: sold,
+          backgroundColor: "rgba(240, 56, 79, 0.45)",
+          borderColor: theme.loss,
+          borderWidth: 1,
+          barPercentage: 0.85,
+          categoryPercentage: 0.9
+        }
+      ]
+    }, options);
   }
 
-  // ── Range buttons ─────────────────────────────────────────────────────────
+  function renderLiquidityChart(filtered) {
+    var labels = filtered.map(function (p) { return p.date; });
+    var sellable = filtered.map(function (p) { return hideValues ? null : toNum(p.sellable_value_gbp); });
+    var nonsellable = filtered.map(function (p) { return hideValues ? null : toNum(p.nonsellable_value_gbp); });
+
+    var options = baseLineOptions(
+      labels,
+      function (v) { return formatMoney(v); },
+      function (ctx) {
+        return " " + ctx.dataset.label + ": " + (hideValues ? "-" : formatMoney(ctx.parsed.y));
+      },
+      function (ctxArr) {
+        var idx = ctxArr[0] && ctxArr[0].dataIndex;
+        if (idx === undefined) return [];
+        return buildShareEventLines(filtered[idx]);
+      },
+      true
+    );
+
+    upsertChart("liquidity", "chart-security-liquidity", "line", {
+      labels: labels,
+      datasets: [
+        {
+          label: "Sellable Value (GBP)",
+          data: sellable,
+          borderColor: theme.gain,
+          backgroundColor: "rgba(0, 209, 140, 0.16)",
+          fill: true,
+          pointRadius: 0,
+          tension: 0,
+          spanGaps: true
+        },
+        {
+          label: "Non-sellable Value (GBP)",
+          data: nonsellable,
+          borderColor: theme.warning,
+          backgroundColor: "rgba(240, 160, 48, 0.20)",
+          fill: "-1",
+          pointRadius: 0,
+          tension: 0,
+          spanGaps: true
+        }
+      ]
+    }, options);
+  }
+
+  function renderDrawdownChart(filtered) {
+    var labels = filtered.map(function (p) { return p.date; });
+    var ddValues = drawdownSeries(filtered);
+    var pointR = eventPointRadii(filtered, 3);
+
+    var options = baseLineOptions(
+      labels,
+      function (v) { return formatPct(v); },
+      function (ctx) {
+        return " Drawdown: " + (hideValues ? "-" : formatPct(ctx.parsed.y));
+      },
+      function (ctxArr) {
+        var idx = ctxArr[0] && ctxArr[0].dataIndex;
+        if (idx === undefined) return [];
+        return buildShareEventLines(filtered[idx]);
+      },
+      false
+    );
+
+    upsertChart("drawdown", "chart-security-drawdown", "line", {
+      labels: labels,
+      datasets: [{
+        label: "Drawdown %",
+        data: ddValues,
+        borderColor: theme.loss,
+        backgroundColor: "rgba(240, 56, 79, 0.12)",
+        fill: true,
+        pointRadius: pointR,
+        pointBackgroundColor: theme.loss,
+        pointBorderColor: theme.loss,
+        pointHoverRadius: 4,
+        pointHitRadius: 10,
+        tension: 0,
+        spanGaps: true
+      }]
+    }, options);
+  }
+
+  function renderAllCharts() {
+    filteredRef = filterByRange(priceSeries, activeRange);
+    if (!filteredRef.length) return;
+
+    renderPriceChart(filteredRef);
+    renderGainChart(filteredRef);
+    renderValueChart(filteredRef);
+    renderQtyChart(filteredRef);
+    renderActivityChart(filteredRef);
+    renderLiquidityChart(filteredRef);
+    renderDrawdownChart(filteredRef);
+  }
 
   document.querySelectorAll(".history-range-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -323,11 +754,9 @@
       });
       btn.classList.add("history-range-btn--active");
       activeRange = btn.dataset.range;
-      renderChart();
+      renderAllCharts();
     });
   });
-
-  // ── Overlay buttons ───────────────────────────────────────────────────────
 
   document.querySelectorAll(".overlay-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -336,16 +765,23 @@
       });
       btn.classList.add("overlay-btn--active");
       activeOverlay = btn.dataset.overlay;
-      renderChart();
+      renderAllCharts();
     });
   });
 
-  // ── Init ──────────────────────────────────────────────────────────────────
-
-  if (priceSeries.length) {
-    renderChart();
+  var tableToggle = document.getElementById("history-security-table-toggle");
+  var tableWrap = document.getElementById("history-security-table-wrap");
+  if (tableToggle && tableWrap) {
+    tableToggle.addEventListener("click", function () {
+      var hidden = tableWrap.hidden;
+      tableWrap.hidden = !hidden;
+      tableToggle.textContent = hidden ? "Hide table" : "Show table";
+    });
   }
 
+  if (priceSeries.length) {
+    renderAllCharts();
+  }
 })();
 </script>
 <style>
@@ -359,6 +795,54 @@
   background: var(--accent) !important;
   color: #fff !important;
   border-color: var(--accent) !important;
+}
+.security-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+.security-history-card {
+  margin-bottom: 0;
+}
+.security-history-card--wide {
+  grid-column: 1 / -1;
+}
+.security-history-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.security-history-overlay-btns {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+.security-history-chart-wrap {
+  height: 250px;
+}
+.security-history-chart-wrap--main {
+  height: 320px;
+}
+.security-history-chart-wrap > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 768px) {
+  .security-history-grid {
+    grid-template-columns: 1fr;
+  }
+  .security-history-card--wide {
+    grid-column: auto;
+  }
+  .security-history-chart-wrap {
+    height: 220px;
+  }
+  .security-history-chart-wrap--main {
+    height: 260px;
+  }
 }
 </style>
 {% endblock %}

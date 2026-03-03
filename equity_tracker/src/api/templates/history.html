@@ -80,32 +80,91 @@
 </div>
 {% endif %}
 
-{# ── Portfolio chart ────────────────────────────────────────────────────── #}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Portfolio Value</h2>
+<div class="security-history-grid">
+  <div class="card security-history-card security-history-card--wide">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Portfolio Value</h2>
+    </div>
+    <p class="muted">Total GBP value over time.</p>
+    {% if total_series | length == 0 %}
+    <p class="muted" id="portfolio-chart-empty">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap security-history-chart-wrap--main">
+      <canvas id="chart-portfolio-history" aria-label="Portfolio value over time"></canvas>
+    </div>
+    {% endif %}
   </div>
-  <p class="muted">Total GBP value — accurate method (lots × forward-filled daily closes).</p>
-  {% if total_series | length == 0 %}
-  <p class="muted" id="portfolio-chart-empty">No price history available.</p>
-  {% else %}
-  <canvas id="chart-portfolio-history" aria-label="Portfolio value over time"></canvas>
-  {% endif %}
-</div>
 
-{# ── Gain If Sold Today chart ─────────────────────────────────────────────── #}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Gain If Sold Today</h2>
+  <div class="card security-history-card">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Gain If Sold Today</h2>
+    </div>
+    <p class="muted">Sellable market value minus true cost basis.</p>
+    {% if total_series | length == 0 %}
+    <p class="muted">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-gain-history" aria-label="Gain if sold today over time"></canvas>
+    </div>
+    {% endif %}
   </div>
-  <p class="muted">Sellable market value minus true cost basis. Excludes locked and at-risk shares.</p>
-  {% if total_series | length == 0 %}
-  <p class="muted">No price history available.</p>
-  {% else %}
-  <canvas id="chart-gain-history" aria-label="Gain if sold today over time"></canvas>
-  {% endif %}
-</div>
 
+  <div class="card security-history-card">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Daily Value Change</h2>
+    </div>
+    <p class="muted">Day-over-day change in total portfolio value.</p>
+    {% if total_series | length == 0 %}
+    <p class="muted">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-value-change-history" aria-label="Daily portfolio value change"></canvas>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Drawdown From Peak</h2>
+    </div>
+    <p class="muted">Percentage decline from prior portfolio high.</p>
+    {% if total_series | length == 0 %}
+    <p class="muted">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-drawdown-history" aria-label="Portfolio drawdown from peak"></canvas>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Buy/Sell Activity</h2>
+    </div>
+    <p class="muted">Purchased and sold share quantities by day (raw units).</p>
+    {% if total_series | length == 0 %}
+    <p class="muted">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-activity-history" aria-label="Portfolio buy and sell activity by day"></canvas>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Pricing Coverage</h2>
+    </div>
+    <p class="muted">Percentage of held securities with valid pricing each day.</p>
+    {% if total_series | length == 0 %}
+    <p class="muted">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-coverage-history" aria-label="Portfolio pricing coverage"></canvas>
+    </div>
+    {% endif %}
+  </div>
+</div>
 {# ── Portfolio table (show/hide) ────────────────────────────────────────── #}
 <div class="card">
   <div class="card__header">
@@ -173,7 +232,17 @@
 
   var portfolioChart = null;
   var gainChart = null;
+  var valueChangeChart = null;
+  var drawdownChart = null;
+  var activityChart = null;
+  var coverageChart = null;
   var sparklineCharts = {};
+  var portfolioFilteredRef = [];
+  var gainFilteredRef = [];
+  var valueChangeFilteredRef = [];
+  var drawdownFilteredRef = [];
+  var activityFilteredRef = [];
+  var coverageFilteredRef = [];
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -188,8 +257,123 @@
     });
   }
 
+  function formatShares(v) {
+    return Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: 2, maximumFractionDigits: 2
+    });
+  }
+
+  function formatPct(v) {
+    return Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: 2, maximumFractionDigits: 2
+    }) + "%";
+  }
+
+  function hasShareEvent(point) {
+    return Array.isArray(point && point.share_events) && point.share_events.length > 0;
+  }
+
+  function eventPointRadii(filtered, size) {
+    return filtered.map(function (p) {
+      return hasShareEvent(p) ? size : 0;
+    });
+  }
+
+  function aggregateActivity(point) {
+    if (!point || !Array.isArray(point.share_events)) {
+      return { purchased: 0, sold: 0, affected: 0 };
+    }
+    var purchased = 0;
+    var sold = 0;
+    var affected = 0;
+    point.share_events.forEach(function (ev) {
+      if (!ev) return;
+      var p = toNum(ev.purchased_qty) || 0;
+      var s = toNum(ev.sold_qty) || 0;
+      if (p > 0 || s > 0) {
+        affected += 1;
+      }
+      purchased += p;
+      sold += s;
+    });
+    return { purchased: purchased, sold: sold, affected: affected };
+  }
+
+  function buildDailyChangeSeries(filtered) {
+    var prev = null;
+    return filtered.map(function (p) {
+      var cur = hideValues ? null : toNum(p.total_value_gbp);
+      if (cur === null) return null;
+      if (prev === null) {
+        prev = cur;
+        return null;
+      }
+      var delta = cur - prev;
+      prev = cur;
+      return delta;
+    });
+  }
+
+  function buildDrawdownSeries(filtered) {
+    var peak = null;
+    return filtered.map(function (p) {
+      var v = hideValues ? null : toNum(p.total_value_gbp);
+      if (v === null) return null;
+      if (peak === null || v > peak) {
+        peak = v;
+      }
+      if (peak <= 0) return 0;
+      return ((v - peak) / peak) * 100;
+    });
+  }
+
   function parseDateStr(s) {
     return new Date(s + "T00:00:00");
+  }
+
+  function maxDateTicks(pointCount) {
+    if (window.innerWidth <= 768) {
+      return pointCount <= 60 ? 4 : 5;
+    }
+    if (pointCount <= 60) return 6;
+    if (pointCount <= 365) return 7;
+    return 8;
+  }
+
+  function formatDateTickLabel(isoDate, totalPoints) {
+    if (!isoDate) return "";
+    var d = parseDateStr(String(isoDate));
+    if (Number.isNaN(d.getTime())) return String(isoDate);
+    if (totalPoints > 370) {
+      return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    }
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function dateTickCallback(value) {
+    var label = this.getLabelForValue(value);
+    var labels = (this.chart && Array.isArray(this.chart.data.labels))
+      ? this.chart.data.labels
+      : [];
+    return formatDateTickLabel(label, labels.length);
+  }
+
+  function buildShareEventLines(point) {
+    if (!point || !Array.isArray(point.share_events)) return [];
+    var lines = [];
+    point.share_events.forEach(function (ev) {
+      if (!ev) return;
+      var ticker = ev.ticker || ev.security_id || "Security";
+      var purchasedQty = toNum(ev.purchased_qty) || 0;
+      var soldQty = toNum(ev.sold_qty) || 0;
+      if (purchasedQty > 0) {
+        lines.push("\u25CF " + formatShares(purchasedQty) + " shares of " + ticker + " purchased on this day");
+      }
+      if (soldQty > 0) {
+        lines.push("\u25CF " + formatShares(soldQty) + " shares of " + ticker + " sold on this day");
+      }
+    });
+    return lines;
   }
 
   // ── Range filtering ───────────────────────────────────────────────────────
@@ -211,9 +395,14 @@
 
   function buildPortfolioChart(range) {
     var filtered = filterByRange(totalSeries, range);
+    portfolioFilteredRef = filtered;
     var labels = filtered.map(function (p) { return p.date; });
     var values = filtered.map(function (p) {
       return hideValues ? null : toNum(p.total_value_gbp);
+    });
+    var pointRadii = eventPointRadii(filtered, 4);
+    var pointColors = filtered.map(function (p) {
+      return hasShareEvent(p) ? theme.gain : theme.accent;
     });
 
     var canvas = document.getElementById("chart-portfolio-history");
@@ -222,6 +411,10 @@
     if (portfolioChart) {
       portfolioChart.data.labels = labels;
       portfolioChart.data.datasets[0].data = values;
+      portfolioChart.data.datasets[0].pointRadius = pointRadii;
+      portfolioChart.data.datasets[0].pointBackgroundColor = pointColors;
+      portfolioChart.data.datasets[0].pointBorderColor = pointColors;
+      portfolioChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
       portfolioChart.update();
       return;
     }
@@ -236,23 +429,42 @@
           borderColor: theme.accent,
           backgroundColor: "rgba(61, 120, 240, 0.12)",
           fill: true,
-          pointRadius: labels.length > 180 ? 0 : 1.6,
+          pointRadius: pointRadii,
+          pointBackgroundColor: pointColors,
+          pointBorderColor: pointColors,
+          pointHitRadius: 12,
           pointHoverRadius: 3,
           spanGaps: true
         }]
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
         scales: {
+          x: {
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
           y: {
             ticks: { callback: function (v) { return formatMoney(v); } }
           }
         },
         plugins: {
           tooltip: {
+            enabled: true,
             callbacks: {
               label: function (ctx) {
                 return " " + (hideValues ? "—" : formatMoney(ctx.parsed.y));
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                return buildShareEventLines(portfolioFilteredRef[idx]);
               }
             }
           }
@@ -265,10 +477,13 @@
 
   function buildGainChart(range) {
     var filtered = filterByRange(totalSeries, range);
+    gainFilteredRef = filtered;
     var labels = filtered.map(function (p) { return p.date; });
     var values = filtered.map(function (p) {
       return hideValues ? null : toNum(p.sellable_gain_gbp);
     });
+    var pointRadii = eventPointRadii(filtered, 4);
+    var pointColors = filtered.map(function () { return theme.gain; });
 
     var canvas = document.getElementById("chart-gain-history");
     if (!canvas || typeof Chart === "undefined") return;
@@ -276,6 +491,10 @@
     if (gainChart) {
       gainChart.data.labels = labels;
       gainChart.data.datasets[0].data = values;
+      gainChart.data.datasets[0].pointRadius = pointRadii;
+      gainChart.data.datasets[0].pointBackgroundColor = pointColors;
+      gainChart.data.datasets[0].pointBorderColor = pointColors;
+      gainChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
       gainChart.update();
       return;
     }
@@ -290,7 +509,10 @@
           borderColor: theme.gain,
           backgroundColor: "rgba(0, 209, 140, 0.10)",
           fill: true,
-          pointRadius: labels.length > 180 ? 0 : 1.6,
+          pointRadius: pointRadii,
+          pointBackgroundColor: pointColors,
+          pointBorderColor: pointColors,
+          pointHitRadius: 12,
           pointHoverRadius: 3,
           spanGaps: true,
           segment: {
@@ -307,18 +529,34 @@
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
         scales: {
+          x: {
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
           y: {
             ticks: { callback: function (v) { return formatMoney(v); } }
           }
         },
         plugins: {
           tooltip: {
+            enabled: true,
             callbacks: {
               label: function (ctx) {
                 if (hideValues) return " —";
                 var v = ctx.parsed.y;
                 return " " + (v >= 0 ? "+" : "") + formatMoney(v);
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                return buildShareEventLines(gainFilteredRef[idx]);
               }
             }
           }
@@ -328,6 +566,356 @@
   }
 
   // ── Sparklines ────────────────────────────────────────────────────────────
+
+  function buildValueChangeChart(range) {
+    var filtered = filterByRange(totalSeries, range);
+    valueChangeFilteredRef = filtered;
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = buildDailyChangeSeries(filtered);
+    var bgColors = values.map(function (v) {
+      if (v === null) return "rgba(61, 120, 240, 0.20)";
+      return v >= 0 ? "rgba(0, 209, 140, 0.45)" : "rgba(240, 56, 79, 0.45)";
+    });
+    var borderColors = values.map(function (v) {
+      if (v === null) return theme.accent;
+      return v >= 0 ? theme.gain : theme.loss;
+    });
+
+    var canvas = document.getElementById("chart-value-change-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (valueChangeChart) {
+      valueChangeChart.data.labels = labels;
+      valueChangeChart.data.datasets[0].data = values;
+      valueChangeChart.data.datasets[0].backgroundColor = bgColors;
+      valueChangeChart.data.datasets[0].borderColor = borderColors;
+      valueChangeChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      valueChangeChart.update();
+      return;
+    }
+
+    valueChangeChart = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Daily Change (GBP)",
+          data: values,
+          backgroundColor: bgColors,
+          borderColor: borderColors,
+          borderWidth: 1,
+          barPercentage: 0.85,
+          categoryPercentage: 0.9
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
+          y: {
+            ticks: {
+              callback: function (v) {
+                return formatMoney(Math.abs(v));
+              }
+            }
+          }
+        },
+        plugins: {
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: function (ctx) {
+                if (hideValues) return " -";
+                var v = ctx.parsed.y;
+                if (v === null || v === undefined) return " -";
+                return " " + (v >= 0 ? "+" : "") + formatMoney(v);
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                return buildShareEventLines(valueChangeFilteredRef[idx]);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function buildDrawdownChart(range) {
+    var filtered = filterByRange(totalSeries, range);
+    drawdownFilteredRef = filtered;
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = buildDrawdownSeries(filtered);
+    var pointRadii = eventPointRadii(filtered, 4);
+
+    var canvas = document.getElementById("chart-drawdown-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (drawdownChart) {
+      drawdownChart.data.labels = labels;
+      drawdownChart.data.datasets[0].data = values;
+      drawdownChart.data.datasets[0].pointRadius = pointRadii;
+      drawdownChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      drawdownChart.update();
+      return;
+    }
+
+    drawdownChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Drawdown %",
+          data: values,
+          borderColor: theme.loss,
+          backgroundColor: "rgba(240, 56, 79, 0.12)",
+          fill: true,
+          pointRadius: pointRadii,
+          pointBackgroundColor: theme.loss,
+          pointBorderColor: theme.loss,
+          pointHitRadius: 12,
+          pointHoverRadius: 3,
+          spanGaps: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
+          y: {
+            ticks: {
+              callback: function (v) { return formatPct(v); }
+            }
+          }
+        },
+        plugins: {
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: function (ctx) {
+                if (hideValues) return " -";
+                return " Drawdown: " + formatPct(ctx.parsed.y);
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                return buildShareEventLines(drawdownFilteredRef[idx]);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function buildActivityChart(range) {
+    var filtered = filterByRange(totalSeries, range);
+    activityFilteredRef = filtered;
+    var labels = filtered.map(function (p) { return p.date; });
+    var totals = filtered.map(function (p) { return aggregateActivity(p); });
+    var purchased = totals.map(function (t) { return hideValues ? null : t.purchased; });
+    var sold = totals.map(function (t) {
+      if (hideValues) return null;
+      return t.sold === 0 ? 0 : -t.sold;
+    });
+
+    var canvas = document.getElementById("chart-activity-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (activityChart) {
+      activityChart.data.labels = labels;
+      activityChart.data.datasets[0].data = purchased;
+      activityChart.data.datasets[1].data = sold;
+      activityChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      activityChart.update();
+      return;
+    }
+
+    activityChart = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Purchased",
+            data: purchased,
+            backgroundColor: "rgba(0, 209, 140, 0.45)",
+            borderColor: theme.gain,
+            borderWidth: 1,
+            barPercentage: 0.85,
+            categoryPercentage: 0.9
+          },
+          {
+            label: "Sold",
+            data: sold,
+            backgroundColor: "rgba(240, 56, 79, 0.45)",
+            borderColor: theme.loss,
+            borderWidth: 1,
+            barPercentage: 0.85,
+            categoryPercentage: 0.9
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
+          y: {
+            ticks: {
+              callback: function (v) { return formatShares(Math.abs(v)); }
+            }
+          }
+        },
+        plugins: {
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: function (ctx) {
+                if (hideValues) return " -";
+                return " " + ctx.dataset.label + ": " + formatShares(Math.abs(ctx.parsed.y));
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                var row = activityFilteredRef[idx] || {};
+                var totalsRow = aggregateActivity(row);
+                var lines = [
+                  "Securities affected: " + totalsRow.affected
+                ];
+                return lines.concat(buildShareEventLines(row));
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function buildCoverageChart(range) {
+    var filtered = filterByRange(totalSeries, range);
+    coverageFilteredRef = filtered;
+    var labels = filtered.map(function (p) { return p.date; });
+    var values = filtered.map(function (p) {
+      var total = toNum(p.total_count);
+      var priced = toNum(p.priced_count);
+      if (total === null || total <= 0 || priced === null) return null;
+      return (priced / total) * 100;
+    });
+    var pointRadii = eventPointRadii(filtered, 4);
+
+    var canvas = document.getElementById("chart-coverage-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (coverageChart) {
+      coverageChart.data.labels = labels;
+      coverageChart.data.datasets[0].data = values;
+      coverageChart.data.datasets[0].pointRadius = pointRadii;
+      coverageChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      coverageChart.update();
+      return;
+    }
+
+    coverageChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Coverage %",
+          data: values,
+          borderColor: theme.warning,
+          backgroundColor: "rgba(240, 160, 48, 0.14)",
+          fill: true,
+          pointRadius: pointRadii,
+          pointBackgroundColor: theme.warning,
+          pointBorderColor: theme.warning,
+          pointHitRadius: 12,
+          pointHoverRadius: 3,
+          spanGaps: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
+          y: {
+            min: 0,
+            max: 100,
+            ticks: {
+              callback: function (v) { return formatPct(v); }
+            }
+          }
+        },
+        plugins: {
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: function (ctx) {
+                return " Coverage: " + formatPct(ctx.parsed.y);
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                var row = coverageFilteredRef[idx] || {};
+                var priced = toNum(row.priced_count);
+                var total = toNum(row.total_count);
+                var lines = [];
+                if (priced !== null && total !== null) {
+                  lines.push("Priced holdings: " + priced + " / " + total);
+                }
+                return lines.concat(buildShareEventLines(row));
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderAllPortfolioCharts(range) {
+    buildPortfolioChart(range);
+    buildGainChart(range);
+    buildValueChangeChart(range);
+    buildDrawdownChart(range);
+    buildActivityChart(range);
+    buildCoverageChart(range);
+  }
 
   var SPARKLINE_COLORS = [
     theme.accent, theme.gain, theme.warning,
@@ -387,8 +975,7 @@
       });
       btn.classList.add("history-range-btn--active");
       activeRange = btn.dataset.range;
-      buildPortfolioChart(activeRange);
-      buildGainChart(activeRange);
+      renderAllPortfolioCharts(activeRange);
       buildAllSparklines();
     });
   });
@@ -408,8 +995,7 @@
   // ── Init ──────────────────────────────────────────────────────────────────
 
   if (totalSeries.length) {
-    buildPortfolioChart("all");
-    buildGainChart("all");
+    renderAllPortfolioCharts("all");
   }
   buildAllSparklines();
 
@@ -425,6 +1011,35 @@
   background: var(--accent) !important;
   color: #fff !important;
   border-color: var(--accent) !important;
+}
+.security-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+.security-history-card {
+  margin-bottom: 0;
+}
+.security-history-card--wide {
+  grid-column: 1 / -1;
+}
+.security-history-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.security-history-chart-wrap {
+  height: 250px;
+}
+.security-history-chart-wrap--main {
+  height: 320px;
+}
+.security-history-chart-wrap > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .history-sparkline-grid {
   display: grid;
@@ -466,5 +1081,20 @@
   width: 100% !important;
   height: 60px !important;
 }
+@media (max-width: 768px) {
+  .security-history-grid {
+    grid-template-columns: 1fr;
+  }
+  .security-history-card--wide {
+    grid-column: auto;
+  }
+  .security-history-chart-wrap {
+    height: 220px;
+  }
+  .security-history-chart-wrap--main {
+    height: 260px;
+  }
+}
 </style>
 {% endblock %}
+
