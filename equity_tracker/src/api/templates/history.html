@@ -220,10 +220,14 @@
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 {% include "partials/chart_theme.html" %}
+<script id="history-data-json" type="application/json">{{ history_data | tojson }}</script>
+<script id="history-hide-values-json" type="application/json">{{ hide_values | tojson }}</script>
 <script>
 (function () {
-  var historyData = {{ history_data | tojson }};
-  var hideValues  = {{ 'true' if hide_values else 'false' }};
+  var historyDataNode = document.getElementById("history-data-json");
+  var hideValuesNode = document.getElementById("history-hide-values-json");
+  var historyData = historyDataNode ? JSON.parse(historyDataNode.textContent || "{}") : {};
+  var hideValues = hideValuesNode ? Boolean(JSON.parse(hideValuesNode.textContent || "false")) : false;
   var totalSeries = Array.isArray(historyData.total_series) ? historyData.total_series : [];
   var perSecurity = Array.isArray(historyData.per_security) ? historyData.per_security : [];
   var theme = window.analyticsChartTheme || {

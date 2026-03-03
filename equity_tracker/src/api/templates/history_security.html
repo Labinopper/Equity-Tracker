@@ -202,10 +202,14 @@
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 {% include "partials/chart_theme.html" %}
+<script id="history-security-data-json" type="application/json">{{ history_data | tojson }}</script>
+<script id="history-security-hide-values-json" type="application/json">{{ hide_values | tojson }}</script>
 <script>
 (function () {
-  var historyData = {{ history_data | tojson }};
-  var hideValues = {{ 'true' if hide_values else 'false' }};
+  var historyDataNode = document.getElementById("history-security-data-json");
+  var hideValuesNode = document.getElementById("history-security-hide-values-json");
+  var historyData = historyDataNode ? JSON.parse(historyDataNode.textContent || "{}") : {};
+  var hideValues = hideValuesNode ? Boolean(JSON.parse(hideValuesNode.textContent || "false")) : false;
   var priceSeries = Array.isArray(historyData.price_series) ? historyData.price_series : [];
   var lotEvents = Array.isArray(historyData.lot_events) ? historyData.lot_events : [];
   var theme = window.analyticsChartTheme || {
