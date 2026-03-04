@@ -16,6 +16,10 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
+<div class="alert alert-info">
+  Recommended flow: run <a href="/simulate">Simulate Disposal</a> first, then create or refine a sell plan.
+</div>
+
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Create Plan ({{ method_label }})</h2>
@@ -97,6 +101,10 @@
           {{ plan.ticker }} | {{ plan.method | replace('_', ' ') | title }}
           <span class="badge badge-neutral">{{ plan.status }}</span>
         </h3>
+        <form method="post" action="/sell-plan/delete" class="inline-form" onsubmit="return confirm('Delete sell plan {{ plan.plan_id[:8] }}? This cannot be undone.');">
+          <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+          <button type="submit" class="btn btn-secondary btn-sm">Delete Plan</button>
+        </form>
       </div>
       <p class="muted">
         Plan ID <code>{{ plan.plan_id }}</code> |

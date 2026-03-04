@@ -423,6 +423,27 @@ class SellPlanService:
         return plans
 
     @staticmethod
+    def delete_plan(
+        *,
+        db_path: Path | None,
+        plan_id: str,
+    ) -> bool:
+        if db_path is None:
+            raise ValueError("Database path is required.")
+        target = (plan_id or "").strip()
+        if not target:
+            raise ValueError("Plan ID is required.")
+
+        plans = SellPlanService.load_plans(db_path)
+        remaining = [plan for plan in plans if str(plan.get("plan_id") or "") != target]
+        removed = len(remaining) != len(plans)
+        if not removed:
+            return False
+
+        SellPlanService.save_plans(db_path, remaining)
+        return True
+
+    @staticmethod
     def update_tranche_status(
         *,
         db_path: Path | None,

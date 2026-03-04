@@ -50,11 +50,24 @@ def _locked_response(request: Request) -> HTMLResponse:
 
 def _sellable_securities(summary) -> list[dict]:
     rows: list[dict] = []
+    today = date_type.today()
     for security_summary in summary.securities:
         sellable_qty = Decimal("0")
         for lot_summary in security_summary.active_lots:
-            # SELLABLE only: excludes locked RSU and forfeiture-risk matched lots.
-            if str(lot_summary.sellability_status).upper() != "SELLABLE":
+            # Align with Simulate:
+            # - include ESPP+ paid shares (even if at-risk),
+            # - include matched shares once forfeiture window has passed,
+            # - exclude currently locked matched lots and pre-vest RSUs.
+            if (
+                lot_summary.forfeiture_risk is not None
+                and lot_summary.forfeiture_risk.in_window
+                and lot_summary.lot.matching_lot_id is not None
+            ):
+                continue
+            if (
+                lot_summary.lot.scheme_type == "RSU"
+                and lot_summary.lot.acquisition_date > today
+            ):
                 continue
             sellable_qty += lot_summary.quantity_remaining
         sellable_whole = int(_floor_whole(sellable_qty))
@@ -199,16 +212,34 @@ def _render_sell_plan_page(
 async def sell_plan_page(
     request: Request,
     plan_id: str | None = None,
+    security_id: str | None = None,
+    total_quantity: str | None = None,
+    reference_price_gbp: str | None = None,
     msg: str | None = None,
 ) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
     settings = _load_settings()
+    prefill_form: dict | None = None
+    if security_id or total_quantity or reference_price_gbp:
+        prefill_form = {
+            "security_id": (security_id or "").strip(),
+            "total_quantity": (total_quantity or "").strip(),
+            "tranche_count": "4",
+            "start_date": date_type.today().isoformat(),
+            "cadence_days": "14",
+            "max_daily_quantity": "",
+            "max_daily_notional_gbp": "",
+            "min_spacing_days": "7",
+            "reference_price_gbp": (reference_price_gbp or "").strip(),
+            "fee_per_tranche_gbp": "0.00",
+        }
     return _render_sell_plan_page(
         request=request,
         settings=settings,
         msg=msg,
         selected_plan_id=plan_id,
+        previous_form=prefill_form,
     )
 
 
@@ -438,5 +469,31 @@ async def sell_plan_set_tranche_status(
         msg = "Tranche status updated."
     return RedirectResponse(
         f"/sell-plan?plan_id={plan_id}&msg={quote_plus(msg)}",
+        status_code=303,
+    )
+
+
+@router.post("/sell-plan/delete", response_class=HTMLResponse, include_in_schema=False)
+async def sell_plan_delete(
+    request: Request,
+    plan_id: str = Form(...),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+    db_path = _state.get_db_path()
+    try:
+        removed = SellPlanService.delete_plan(
+            db_path=db_path,
+            plan_id=plan_id,
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/sell-plan?msg={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+    msg = "Sell plan deleted." if removed else "Sell plan not found."
+    return RedirectResponse(
+        f"/sell-plan?msg={quote_plus(msg)}",
         status_code=303,
     )

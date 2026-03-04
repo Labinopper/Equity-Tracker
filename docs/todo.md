@@ -16,6 +16,25 @@ Scope guardrails:
 - Stage 2 core extended: sell-plan constraint engine now enforces sellable-only quantity, lock/forfeiture exclusion, minimum spacing, and daily quantity/notional caps with explicit breach reasons.
 - Stage 2 impact preview shipped: per-tranche deterministic projections now include `gross proceeds`, `employment tax estimate`, `CGT estimate`, `fees`, `net cash`, and cumulative totals.
 - Sell-plan to simulate bridge shipped: tranche rows now open `/simulate` with security/quantity/price prefilled and backlink context to the originating plan.
+- Simulate-first handoff shipped: simulation results now link directly to prefilled sell-plan creation (`security`, `quantity`, `reference price`), with guidance to simulate before planning.
+- Sell-plan lifecycle control added: plans can now be deleted directly from `/sell-plan` with explicit confirmation.
+- Sellability alignment shipped: Sell Plan now follows Simulate sellability semantics for ESPP+ (paid shares included; matched shares included once past forfeiture window).
+- Whole-share MAX behavior shipped in Simulate and Sell Plan (`MAX` floors to full shares, and fractional simulation quantities are blocked in UI flow).
+
+## Execution Status (Source of Truth)
+
+| Stage | Scope | Status | Notes |
+|---|---|---|---|
+| 1 | `T01`, `T02`, `T05` | Complete | Label/semantics/tax-warning baseline is live. |
+| 2 | `T45`, `T46`, `T47`, `T53` | Complete | Sell-plan core + constraints + impact preview + calendar linkage are live. Includes simulate-first handoff, plan delete, whole-share controls, and ESPP+ sellability alignment. |
+| 3 | `T48`, `T49`, `T50` | Next | Execution method modes, order staging export, and default profile. |
+| 4 | `T36`, `T37` | Pending | Multi-currency cash + GBP-only ISA conversion workflow. |
+| 5 | `T38`, `T33` | Pending | Capital stack + dividend-adjusted capital policy. |
+| 6 | `T03`, `T04`, `T39`, `T40` | Pending | Concentration and deployable-capital realism. |
+| 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Pending | Decision-surface hardening and execution governance. |
+| 8 | `T10`, `T11`, `T12` | Pending | Cross-surface clarity and regression lock-in. |
+| 9 | `T34`, `T35`, `T41`, `T42`, `T44` | Pending | Dividend attribution and optionality extensions. |
+| 10 | `T13`-`T32` | Pending | Remaining strategic expansion pages/features. |
 
 ## Core v1 (Critical)
 
@@ -108,18 +127,18 @@ Method basis used for scoping (non-advisory):
 - Prioritize T33, T36, T37, and T38 first (dividend economics + currency cash + deployable-capital reality).
 - Sell execution additions (`T45`-`T53`) are execution-policy tooling, not return forecasting or trade recommendation logic.
 
-## Execution Order (Recommended)
+## Execution Order (Source of Truth)
 
-1. T01, T02, T05 (labeling and semantics stabilization).
-2. T45, T46, T47, T53 (sell-plan core, constraints, tranche impact preview, calendar linkage).
-3. T48, T49, T50 (execution method modes + order staging + default profile).
-4. T36, T37 (multi-currency cash + GBP-only ISA transfer workflow).
-5. T38, T33 (capital stack + dividend-adjusted capital policy).
-6. T03, T04, T39, T40 (concentration and deployable-capital realism).
-7. T06, T07, T08, T09, T43, T51, T52 (decision-surface hardening + guardrails + execution governance).
-8. T10, T11, T12 (cross-surface clarity + regression lock-in).
-9. T34, T35, T41, T42, T44 (dividend attribution and optionality extensions).
-10. T13-T32 (remaining strategic expansions).
+1. `T01`, `T02`, `T05` (Completed).
+2. `T45`, `T46`, `T47`, `T53` (Completed).
+3. `T48`, `T49`, `T50` (Next active stage).
+4. `T36`, `T37`.
+5. `T38`, `T33`.
+6. `T03`, `T04`, `T39`, `T40`.
+7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52`.
+8. `T10`, `T11`, `T12`.
+9. `T34`, `T35`, `T41`, `T42`, `T44`.
+10. `T13`-`T32`.
 
 ## Definition of Done (Next Step)
 

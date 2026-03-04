@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
 from src.api import _state
+from src.services.portfolio_service import PortfolioService
 from src.services.sell_plan_service import SellPlanService
 
 
@@ -34,6 +36,26 @@ def _add_brokerage_lot(client, security_id: str, quantity: str = "20") -> None:
         },
     )
     assert resp.status_code == 201, resp.text
+
+
+def _add_espp_plus_pair(
+    *,
+    security_id: str,
+    acquisition_date: date,
+    employee_qty: str,
+    matched_qty: str,
+    forfeiture_period_end: date | None = None,
+) -> None:
+    PortfolioService.add_espp_plus_lot_pair(
+        security_id=security_id,
+        acquisition_date=acquisition_date,
+        employee_quantity=Decimal(employee_qty),
+        employee_acquisition_price_gbp=Decimal("10.00"),
+        employee_true_cost_per_share_gbp=Decimal("10.00"),
+        employee_fmv_at_acquisition_gbp=Decimal("10.00"),
+        matched_quantity=Decimal(matched_qty),
+        forfeiture_period_end=forfeiture_period_end,
+    )
 
 
 def test_sell_plan_page_renders(client):
@@ -297,3 +319,130 @@ def test_simulate_page_accepts_sell_plan_prefill_params(client):
     assert "Prefilled from Sell Plan" in resp.text
     assert 'value="4"' in resp.text
     assert 'value="123.45"' in resp.text
+
+
+def test_sell_plan_can_be_deleted(client):
+    sec_id = _add_security(client, "SPLNDEL")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "6",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "reference_price_gbp": "10",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    page_before = client.get(f"/sell-plan?plan_id={plan_id}")
+    assert page_before.status_code == 200
+    assert plan_id in page_before.text
+
+    delete_resp = client.post(
+        "/sell-plan/delete",
+        data={"plan_id": plan_id},
+        follow_redirects=False,
+    )
+    assert delete_resp.status_code == 303
+
+    page_after = client.get("/sell-plan")
+    assert page_after.status_code == 200
+    assert plan_id not in page_after.text
+
+
+def test_simulate_result_includes_sell_plan_handoff_link(client):
+    sec_id = _add_security(client, "SPLNTOHAND")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+
+    sim = client.post(
+        "/simulate",
+        data={
+            "security_id": sec_id,
+            "quantity": "4",
+            "price_per_share_gbp": "12.50",
+            "broker_fees_gbp": "0",
+            "scheme_type": "",
+        },
+    )
+    assert sim.status_code == 200
+    assert "Create Sell Plan From This Simulation" in sim.text
+    assert f"/sell-plan?security_id={sec_id}" in sim.text
+    assert "total_quantity=4" in sim.text
+    assert "reference_price_gbp=12.50" in sim.text
+
+
+def test_sell_plan_prefill_via_query_from_simulate(client):
+    sec_id = _add_security(client, "SPLNPRE")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+
+    resp = client.get(f"/sell-plan?security_id={sec_id}&total_quantity=4&reference_price_gbp=15.20")
+    assert resp.status_code == 200
+    assert f'value="{sec_id}"' in resp.text
+    assert 'id="total_quantity"' in resp.text
+    assert 'value="4"' in resp.text
+    assert 'id="reference_price_gbp"' in resp.text
+    assert 'value="15.20"' in resp.text
+
+
+def test_simulate_max_uses_whole_share_floor(client):
+    sec_id = _add_security(client, "SIMWHOLE")
+    _add_brokerage_lot(client, sec_id, quantity="5.6")
+
+    page = client.get("/simulate")
+    assert page.status_code == 200
+    assert f'value=\"{sec_id}\"' in page.text
+    assert 'data-max-qty="5"' in page.text
+
+
+def test_simulate_rejects_fractional_quantity(client):
+    sec_id = _add_security(client, "SIMFRAC")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+
+    sim = client.post(
+        "/simulate",
+        data={
+            "security_id": sec_id,
+            "quantity": "5.6",
+            "price_per_share_gbp": "12.00",
+            "scheme_type": "",
+        },
+    )
+    assert sim.status_code == 422
+    assert "whole number of shares" in sim.text
+
+
+def test_sell_plan_includes_espp_plus_paid_and_matured_matched(client):
+    sec_id = _add_security(client, "SPLNESPP")
+    today = date.today()
+
+    # Pair 1: matched shares still in forfeiture window -> matched excluded, paid included.
+    _add_espp_plus_pair(
+        security_id=sec_id,
+        acquisition_date=today - timedelta(days=30),
+        employee_qty="5",
+        matched_qty="2",
+        forfeiture_period_end=today + timedelta(days=20),
+    )
+    # Pair 2: matched shares past forfeiture window -> both paid and matched included.
+    _add_espp_plus_pair(
+        security_id=sec_id,
+        acquisition_date=today - timedelta(days=220),
+        employee_qty="3",
+        matched_qty="2",
+        forfeiture_period_end=today - timedelta(days=10),
+    )
+
+    page = client.get("/sell-plan")
+    assert page.status_code == 200
+    # Expected whole-share sellable = 5 (paid at risk) + 3 (paid matured pair) + 2 (matured matched) = 10
+    assert "Sellable: 10" in page.text
+    assert 'id="total_quantity"' in page.text
+    assert 'value="10"' in page.text

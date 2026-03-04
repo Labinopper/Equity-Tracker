@@ -110,6 +110,17 @@
     {% endif %}
   </div>
 
+  {% if prev and prev.security_id and prev.quantity %}
+  <div class="form-actions" style="margin-bottom: 0.75rem;">
+    <a
+      href="/sell-plan?security_id={{ prev.security_id }}&total_quantity={{ prev.quantity }}&reference_price_gbp={{ prev.price_per_share_gbp }}"
+      class="btn btn-secondary btn-sm"
+    >
+      Create Sell Plan From This Simulation
+    </a>
+  </div>
+  {% endif %}
+
   <div class="stats">
     <div class="stat">
       <div class="stat__label">Qty Sold</div>
@@ -420,6 +431,12 @@
     return Number.isFinite(n) ? n : 0;
   }
 
+  function floorWholeString(v) {
+    var n = decimalOrZero(v);
+    if (n <= 0) return "0";
+    return String(Math.floor(n));
+  }
+
   function selectedMeta() {
     if (!securitySel || !securitySel.value) return null;
     return meta[securitySel.value] || null;
@@ -429,9 +446,9 @@
     var s = selectedMeta();
     if (!s) return "";
     if (schemeSel && schemeSel.value) {
-      return s.available_by_scheme[schemeSel.value] || "0";
+      return floorWholeString(s.available_by_scheme[schemeSel.value] || "0");
     }
-    return s.available_quantity || "0";
+    return floorWholeString(s.available_quantity || "0");
   }
 
   function updateHintsAndDefaults() {
@@ -442,7 +459,7 @@
     }
 
     var maxQty = availableQtyForSelection();
-    if (qtyHint) qtyHint.textContent = "Available for this selection: " + maxQty;
+    if (qtyHint) qtyHint.textContent = "Available whole shares for this selection: " + maxQty;
 
     if (priceInput && (!priceInput.value || priceInput.dataset.autoFilled === "true")) {
       if (s.latest_price_gbp) {

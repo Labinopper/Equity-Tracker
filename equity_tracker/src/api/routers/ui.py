@@ -348,18 +348,26 @@ def _simulate_security_context(summary) -> list[dict]:
             current = Decimal(by_scheme.get(ls.lot.scheme_type, "0"))
             by_scheme[ls.lot.scheme_type] = str(current + qty)
 
+        sellable_whole = sellable_total.to_integral_value(rounding=ROUND_FLOOR)
+        by_scheme_whole: dict[str, str] = {}
+        for scheme, qty_raw in by_scheme.items():
+            qty_dec = Decimal(qty_raw)
+            whole = qty_dec.to_integral_value(rounding=ROUND_FLOOR)
+            if whole > Decimal("0"):
+                by_scheme_whole[scheme] = str(int(whole))
+
         rows.append(
             {
                 "id": ss.security.id,
                 "ticker": ss.security.ticker,
                 "name": ss.security.name,
-                "available_quantity": str(sellable_total),
+                "available_quantity": str(int(sellable_whole)),
                 "latest_price_gbp": (
                     f"{ss.current_price_gbp:.2f}"
                     if ss.current_price_gbp is not None
                     else ""
                 ),
-                "available_by_scheme": by_scheme,
+                "available_by_scheme": by_scheme_whole,
             }
         )
     return rows
@@ -3046,7 +3054,17 @@ async def simulate_form(
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
     prefill_price = ""
-    prefill_qty = (quantity or "").strip()
+    prefill_qty = ""
+    raw_prefill_qty = (quantity or "").strip()
+    if raw_prefill_qty:
+        try:
+            prefill_dec = Decimal(raw_prefill_qty)
+            if prefill_dec > Decimal("0"):
+                prefill_qty = str(
+                    int(prefill_dec.to_integral_value(rounding=ROUND_FLOOR))
+                )
+        except InvalidOperation:
+            prefill_qty = ""
     if security_id:
         selected = next((s for s in securities if s["id"] == security_id), None)
         if selected:
@@ -3146,6 +3164,22 @@ async def simulate_submit(
             },
             status_code=422,
         )
+    if qty != qty.to_integral_value(rounding=ROUND_FLOOR):
+        return _render_simulate(
+            {
+                "result": None,
+                "error": "Quantity must be a whole number of shares.",
+                "prev": {
+                    "security_id": security_id,
+                    "quantity": quantity,
+                    "price_per_share_gbp": price_per_share_gbp,
+                    "broker_fees_gbp": broker_fees_gbp,
+                    "scheme_type": scheme_type,
+                },
+            },
+            status_code=422,
+        )
+    qty = qty.to_integral_value(rounding=ROUND_FLOOR)
 
     by_scheme = selected.get("available_by_scheme", {})
     available_qty = (
