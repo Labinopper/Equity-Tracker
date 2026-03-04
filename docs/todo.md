@@ -11,6 +11,8 @@ Scope guardrails:
 - Completed implementation: `T01`, `T02`, `T05`.
 - `T02` semantic fix applied: Net Value employment-tax wording now matches implementation (sellable-lot estimate in sell-all context).
 - Tax-input health warning now appears consistently on Portfolio, Net Value, Simulate, and Tax Plan.
+- Stage 2 baseline started: `/sell-plan` UI shipped with deterministic calendar-tranche plan creation and tranche status updates (`planned`/`due`/`executed`/`cancelled`).
+- Calendar linkage shipped: sell-plan tranche events now appear in `/calendar` with deep links and sell-plan filters (`sell_plan_id`, `method`, `status`).
 
 ## Core v1 (Critical)
 

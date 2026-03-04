@@ -6,7 +6,7 @@
 <div class="page-title">
   <div>
     <h1>Calendar</h1>
-    <p class="muted">Upcoming vest, forfeiture, and tax-year events with value-at-stake context.</p>
+    <p class="muted">Upcoming vest, forfeiture, sell-plan tranche, and tax-year events with value-at-stake context.</p>
   </div>
   <div class="page-actions">
     <form method="get" action="/calendar" class="filter-bar inline-form">
@@ -17,6 +17,21 @@
         <option value="400" {{ 'selected' if calendar.horizon_days == 400 }}>400 days</option>
         <option value="730" {{ 'selected' if calendar.horizon_days == 730 }}>2 years</option>
         <option value="1460" {{ 'selected' if calendar.horizon_days == 1460 }}>4 years</option>
+      </select>
+      <label for="sell_plan_id">Sell Plan ID</label>
+      <input id="sell_plan_id" name="sell_plan_id" type="text" value="{{ calendar_filters.sell_plan_id }}" placeholder="optional">
+      <label for="sell_method">Method</label>
+      <select id="sell_method" name="sell_method">
+        <option value="" {{ 'selected' if not calendar_filters.sell_method }}>All</option>
+        <option value="CALENDAR_TRANCHES" {{ 'selected' if calendar_filters.sell_method == 'CALENDAR_TRANCHES' }}>Calendar Tranches</option>
+      </select>
+      <label for="sell_status">Status</label>
+      <select id="sell_status" name="sell_status">
+        <option value="" {{ 'selected' if not calendar_filters.sell_status }}>Active (Planned + Due)</option>
+        <option value="PLANNED" {{ 'selected' if calendar_filters.sell_status == 'PLANNED' }}>Planned</option>
+        <option value="DUE" {{ 'selected' if calendar_filters.sell_status == 'DUE' }}>Due</option>
+        <option value="EXECUTED" {{ 'selected' if calendar_filters.sell_status == 'EXECUTED' }}>Executed</option>
+        <option value="CANCELLED" {{ 'selected' if calendar_filters.sell_status == 'CANCELLED' }}>Cancelled</option>
       </select>
       <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
     </form>
@@ -47,6 +62,16 @@
     {% endif %}
   </div>
   <div class="stat">
+    <span class="stat__label">{{ countdowns.next_sell_tranche.label }}</span>
+    {% if countdowns.next_sell_tranche.days_until is not none %}
+    <span class="stat__value">{{ countdowns.next_sell_tranche.days_until }}d</span>
+    <span class="stat-caption">{{ countdowns.next_sell_tranche.event_date }}</span>
+    {% else %}
+    <span class="stat__value muted">-</span>
+    <span class="stat-caption">No upcoming sell tranches</span>
+    {% endif %}
+  </div>
+  <div class="stat">
     <span class="stat__label">{{ countdowns.next_tax_year_end.label }}</span>
     <span class="stat__value">{{ countdowns.next_tax_year_end.days_until }}d</span>
     <span class="stat-caption">{{ countdowns.next_tax_year_end.event_date }}</span>
@@ -73,6 +98,7 @@
           <th>Scheme</th>
           <th class="num">Qty</th>
           <th class="num">Value at Stake</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
@@ -105,11 +131,18 @@
               <span class="muted">-</span>
               {% endif %}
             </td>
+            <td>
+              {% if event.event_type == 'SELL_TRANCHE' and event.deep_link %}
+              <a href="{{ event.deep_link }}">Open Sell Plan</a>
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="7" class="muted">No upcoming events in this horizon.</td>
+            <td colspan="8" class="muted">No upcoming events in this horizon.</td>
           </tr>
         {% endif %}
       </tbody>

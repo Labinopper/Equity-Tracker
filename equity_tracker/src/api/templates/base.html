@@ -17,7 +17,7 @@
   'decide':   ['/', '/net-value'],
   'schemes':  ['/per-scheme'],
   'risk':     ['/risk', '/analytics', '/calendar'],
-  'simulate': ['/simulate', '/scenario-lab', '/tax-plan'],
+  'simulate': ['/simulate', '/scenario-lab', '/tax-plan', '/sell-plan'],
   'reports':  ['/cgt', '/economic-gain', '/dividends', '/audit'],
   'settings': ['/settings', '/glossary']
 } %}
@@ -31,6 +31,7 @@
   '/simulate':      'simulate',
   '/scenario-lab':  'simulate',
   '/tax-plan':      'simulate',
+  '/sell-plan':     'simulate',
   '/cgt':           'reports',
   '/economic-gain': 'reports',
   '/dividends':     'reports',
@@ -80,6 +81,7 @@
         <a href="/simulate"     class="subnav__link{{ ' subnav__link--active' if _path == '/simulate' }}">Simulate</a>
         <a href="/scenario-lab" class="subnav__link{{ ' subnav__link--active' if _path == '/scenario-lab' }}">Scenario Lab</a>
         <a href="/tax-plan"     class="subnav__link{{ ' subnav__link--active' if _path == '/tax-plan' }}">Tax Plan</a>
+        <a href="/sell-plan"    class="subnav__link{{ ' subnav__link--active' if _path == '/sell-plan' }}">Sell Plan</a>
 
       {% elif active_group == 'reports' %}
         <a href="/cgt"           class="subnav__link{{ ' subnav__link--active' if _path == '/cgt' }}">CGT</a>

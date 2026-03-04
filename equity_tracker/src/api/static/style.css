@@ -307,6 +307,11 @@ code, pre {
   box-shadow: var(--shadow-sm);
 }
 
+.card--highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-subtle);
+}
+
 .card__header {
   display: flex;
   align-items: center;

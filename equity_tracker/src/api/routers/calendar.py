@@ -4,11 +4,14 @@ Calendar routes (UI + JSON API).
 
 from __future__ import annotations
 
+from datetime import date as date_type
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 
 from ...app_context import AppContext
 from ...services.calendar_service import CalendarService
+from ...services.sell_plan_service import SellPlanService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
@@ -38,22 +41,54 @@ def _locked_response(request: Request) -> HTMLResponse:
 @router.get("/api/calendar/events")
 async def api_calendar_events(
     days: int = Query(_DEFAULT_DAYS, ge=1, le=_MAX_DAYS),
+    sell_plan_id: str | None = Query(None),
+    sell_method: str | None = Query(None),
+    sell_status: str | None = Query(None),
     _: None = Depends(db_required),
 ) -> dict:
     settings = _load_settings()
-    return CalendarService.get_events_payload(settings=settings, horizon_days=days)
+    db_path = _state.get_db_path()
+    sell_events = SellPlanService.calendar_events(
+        db_path=db_path,
+        as_of=date_type.today(),
+        horizon_days=days,
+        sell_plan_id=sell_plan_id,
+        sell_method=sell_method,
+        sell_status=sell_status,
+    )
+    return CalendarService.get_events_payload(
+        settings=settings,
+        horizon_days=days,
+        sell_plan_events=sell_events,
+    )
 
 
 @router.get("/calendar", response_class=HTMLResponse, include_in_schema=False)
 async def calendar_page(
     request: Request,
     days: int = Query(_DEFAULT_DAYS, ge=1, le=_MAX_DAYS),
+    sell_plan_id: str | None = Query(None),
+    sell_method: str | None = Query(None),
+    sell_status: str | None = Query(None),
 ) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
 
     settings = _load_settings()
-    payload = CalendarService.get_events_payload(settings=settings, horizon_days=days)
+    db_path = _state.get_db_path()
+    sell_events = SellPlanService.calendar_events(
+        db_path=db_path,
+        as_of=date_type.today(),
+        horizon_days=days,
+        sell_plan_id=sell_plan_id,
+        sell_method=sell_method,
+        sell_status=sell_status,
+    )
+    payload = CalendarService.get_events_payload(
+        settings=settings,
+        horizon_days=days,
+        sell_plan_events=sell_events,
+    )
     return templates.TemplateResponse(
         request,
         "calendar.html",
@@ -61,6 +96,11 @@ async def calendar_page(
             "request": request,
             "calendar": payload,
             "settings": settings,
+            "calendar_filters": {
+                "sell_plan_id": sell_plan_id or "",
+                "sell_method": sell_method or "",
+                "sell_status": sell_status or "",
+            },
         },
         media_type=_HTML_UTF8_MEDIA_TYPE,
     )

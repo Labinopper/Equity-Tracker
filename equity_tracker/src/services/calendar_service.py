@@ -4,6 +4,7 @@ CalendarService - additive timeline payloads for /calendar.
 Scope:
 - Upcoming RSU vest events
 - Upcoming ESPP+ forfeiture-window end events
+- Optional sell-plan tranche events supplied by caller
 - UK tax-year boundary countdown markers
 
 No writes are performed.
@@ -24,14 +25,16 @@ _MAX_HORIZON_DAYS = 1460
 
 _EVENT_VEST_DATE = "VEST_DATE"
 _EVENT_FORFEITURE_END = "FORFEITURE_END"
+_EVENT_SELL_TRANCHE = "SELL_TRANCHE"
 _EVENT_TAX_YEAR_END = "TAX_YEAR_END"
 _EVENT_TAX_YEAR_START = "TAX_YEAR_START"
 
 _EVENT_PRIORITY: dict[str, int] = {
     _EVENT_FORFEITURE_END: 0,
     _EVENT_VEST_DATE: 1,
-    _EVENT_TAX_YEAR_END: 2,
-    _EVENT_TAX_YEAR_START: 3,
+    _EVENT_SELL_TRANCHE: 2,
+    _EVENT_TAX_YEAR_END: 3,
+    _EVENT_TAX_YEAR_START: 4,
 }
 
 
@@ -79,6 +82,7 @@ def _countdown_from_event(*, label: str, event: dict[str, Any] | None) -> dict[s
 def _event_type_counts(events: list[dict[str, Any]]) -> dict[str, int]:
     vest = 0
     forfeiture = 0
+    sell_tranches = 0
     tax = 0
     for event in events:
         event_type = event["event_type"]
@@ -86,12 +90,15 @@ def _event_type_counts(events: list[dict[str, Any]]) -> dict[str, int]:
             vest += 1
         elif event_type == _EVENT_FORFEITURE_END:
             forfeiture += 1
+        elif event_type == _EVENT_SELL_TRANCHE:
+            sell_tranches += 1
         elif event_type in (_EVENT_TAX_YEAR_END, _EVENT_TAX_YEAR_START):
             tax += 1
     return {
         "total": len(events),
         "vest_dates": vest,
         "forfeiture_windows": forfeiture,
+        "sell_tranches": sell_tranches,
         "tax_markers": tax,
     }
 
@@ -107,6 +114,7 @@ class CalendarService:
         settings: AppSettings | None = None,
         horizon_days: int = _DEFAULT_HORIZON_DAYS,
         as_of: date | None = None,
+        sell_plan_events: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if horizon_days < 1:
             raise ValueError("horizon_days must be >= 1.")
@@ -223,6 +231,9 @@ class CalendarService:
                 }
             )
 
+        if sell_plan_events:
+            events.extend(sell_plan_events)
+
         events.sort(
             key=lambda event: (
                 event["event_date"],
@@ -240,12 +251,20 @@ class CalendarService:
             (event for event in events if event["event_type"] == _EVENT_FORFEITURE_END),
             None,
         )
+        next_sell_tranche = next(
+            (event for event in events if event["event_type"] == _EVENT_SELL_TRANCHE),
+            None,
+        )
 
         countdowns = {
             "next_vest": _countdown_from_event(label="Vest Date", event=next_vest),
             "next_forfeiture_end": _countdown_from_event(
                 label="Forfeiture Window End",
                 event=next_forfeiture,
+            ),
+            "next_sell_tranche": _countdown_from_event(
+                label="Sell Tranche",
+                event=next_sell_tranche,
             ),
             "next_tax_year_end": {
                 "label": "UK Tax-Year End",

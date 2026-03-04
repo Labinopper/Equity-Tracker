@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Sell Plan - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Sell Plan</h1>
+    <p class="muted">Deterministic staged-disposal planner (calendar tranches, no price forecasting).</p>
+  </div>
+  <div class="page-actions">
+    <a href="/calendar?sell_method=CALENDAR_TRANCHES" class="btn btn-secondary btn-sm">View in Calendar</a>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Create Plan ({{ method_label }})</h2>
+  </div>
+  <form method="post" action="/sell-plan">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="security_id">Security *</label>
+        <select id="security_id" name="security_id" required>
+          <option value="">-- select --</option>
+          {% for sec in securities %}
+          <option value="{{ sec.security_id }}" {{ 'selected' if form_defaults.security_id == sec.security_id }}>
+            {{ sec.ticker }} — {{ sec.name }} (Sellable: {{ sec.sellable_quantity }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="total_quantity">Total Quantity *</label>
+        <input id="total_quantity" name="total_quantity" type="text" value="{{ form_defaults.total_quantity }}" required>
+      </div>
+      <div class="form-field">
+        <label for="tranche_count">Tranche Count *</label>
+        <input id="tranche_count" name="tranche_count" type="number" min="1" max="120" value="{{ form_defaults.tranche_count }}" required>
+      </div>
+      <div class="form-field">
+        <label for="start_date">Start Date *</label>
+        <input id="start_date" name="start_date" type="date" value="{{ form_defaults.start_date or today_iso }}" required>
+      </div>
+      <div class="form-field">
+        <label for="cadence_days">Cadence (days) *</label>
+        <input id="cadence_days" name="cadence_days" type="number" min="1" max="365" value="{{ form_defaults.cadence_days }}" required>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Create Sell Plan</button>
+      <a href="/sell-plan" class="btn btn-secondary">Reset</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Existing Plans</h2>
+  </div>
+  {% if plans %}
+    {% for plan in plans %}
+    <div id="plan-{{ plan.plan_id }}" class="card{% if selected_plan_id and selected_plan_id == plan.plan_id %} card--highlight{% endif %}">
+      <div class="card__header">
+        <h3 class="card__title">
+          {{ plan.ticker }} | {{ plan.method | replace('_', ' ') | title }}
+          <span class="badge badge-neutral">{{ plan.status }}</span>
+        </h3>
+      </div>
+      <p class="muted">
+        Plan ID <code>{{ plan.plan_id }}</code> |
+        Total Qty {{ plan.total_quantity }} |
+        Tranches {{ plan.tranche_count }} |
+        Cadence {{ plan.cadence_days }} day(s) |
+        <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}">Open in Calendar</a>
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Date</th>
+              <th class="num">Qty</th>
+              <th>Status</th>
+              <th>Calendar</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for tranche in plan.tranches %}
+            <tr>
+              <td>{{ tranche.sequence }}</td>
+              <td>{{ tranche.event_date }}</td>
+              <td class="num">{{ tranche.quantity }}</td>
+              <td>
+                <span class="badge {% if tranche.effective_status in ['DUE', 'CANCELLED'] %}badge-warning{% elif tranche.effective_status == 'EXECUTED' %}badge-sellable{% else %}badge-neutral{% endif %}">
+                  {{ tranche.effective_status }}
+                </span>
+              </td>
+              <td>
+                <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}&sell_status={{ tranche.effective_status | upper }}">
+                  Filter
+                </a>
+              </td>
+              <td>
+                {% if tranche.is_actionable %}
+                <form method="post" action="/sell-plan/tranche-status" class="inline-form">
+                  <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+                  <input type="hidden" name="tranche_id" value="{{ tranche.tranche_id }}">
+                  <input type="hidden" name="status" value="EXECUTED">
+                  <button type="submit" class="btn btn-secondary btn-sm">Mark Executed</button>
+                </form>
+                <form method="post" action="/sell-plan/tranche-status" class="inline-form">
+                  <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+                  <input type="hidden" name="tranche_id" value="{{ tranche.tranche_id }}">
+                  <input type="hidden" name="status" value="CANCELLED">
+                  <button type="submit" class="btn btn-secondary btn-sm">Cancel</button>
+                </form>
+                {% else %}
+                <span class="muted">No action</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No sell plans yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
