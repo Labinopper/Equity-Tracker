@@ -14,7 +14,7 @@ import json
 from collections import defaultdict
 from datetime import date as date_type
 from datetime import datetime, timedelta, timezone
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -65,6 +65,20 @@ def _q_money(value: Decimal) -> Decimal:
     return value.quantize(_MONEY_Q, rounding=ROUND_HALF_UP)
 
 
+def _floor_whole(value: Decimal) -> Decimal:
+    return value.to_integral_value(rounding=ROUND_FLOOR)
+
+
+def _is_whole_quantity(value: Decimal) -> bool:
+    return value == _floor_whole(value)
+
+
+def _qty_str(value: Decimal) -> str:
+    if _is_whole_quantity(value):
+        return str(int(value))
+    return str(_q_qty(value))
+
+
 def _safe_decimal(value: object) -> Decimal:
     try:
         return Decimal(str(value))
@@ -106,22 +120,27 @@ def _save_payload(path: Path, payload: dict) -> None:
 
 
 def _split_quantity(total_quantity: Decimal, tranche_count: int) -> list[Decimal]:
-    total_q = _q_qty(total_quantity)
+    total_q = _floor_whole(total_quantity)
     if total_q <= Decimal("0"):
         raise ValueError("Total quantity must be greater than zero.")
+    if not _is_whole_quantity(total_q):
+        raise ValueError("Total quantity must be a whole number of shares.")
     if tranche_count < 1:
         raise ValueError("Tranche count must be at least 1.")
+    if Decimal(tranche_count) > total_q:
+        raise ValueError(
+            "Tranche count cannot exceed total quantity when selling whole shares only."
+        )
 
-    base = (total_q / Decimal(tranche_count)).quantize(_QTY_Q, rounding=ROUND_DOWN)
-    remainder = total_q - (base * tranche_count)
-    units = int((remainder / _QTY_Q).to_integral_value(rounding=ROUND_HALF_UP))
+    total_int = int(total_q)
+    base = total_int // tranche_count
+    remainder = total_int % tranche_count
 
-    parts = [base for _ in range(tranche_count)]
-    for idx in range(units):
-        parts[idx] += _QTY_Q
-
-    if _q_qty(sum(parts, Decimal("0"))) != total_q:
+    parts = [Decimal(base + (1 if idx < remainder else 0)) for idx in range(tranche_count)]
+    if sum(parts, Decimal("0")) != total_q:
         raise ValueError("Could not split total quantity deterministically.")
+    if any(part <= Decimal("0") for part in parts):
+        raise ValueError("Each tranche must include at least one whole share.")
     return parts
 
 
@@ -283,22 +302,45 @@ class SellPlanService:
         if min_spacing_days < 1 or min_spacing_days > 365:
             raise ValueError("Minimum spacing must be between 1 and 365 days.")
 
-        total_q = _q_qty(total_quantity)
-        max_q = _q_qty(max_sellable_quantity)
+        total_q = _safe_decimal(total_quantity)
         if total_q <= Decimal("0"):
             raise ValueError("Total quantity must be greater than zero.")
-        if total_q > max_q:
+        if not _is_whole_quantity(total_q):
+            raise ValueError("Total quantity must be a whole number of shares.")
+        total_q = _floor_whole(total_q)
+
+        max_q = _safe_decimal(max_sellable_quantity)
+        max_whole_sellable = _floor_whole(max_q)
+        if max_whole_sellable <= Decimal("0"):
+            raise ValueError("No whole sellable shares are available for this security.")
+
+        if total_q <= Decimal("0"):
+            raise ValueError("Total quantity must be greater than zero.")
+        if total_q > max_whole_sellable:
             raise ValueError(
-                f"Requested quantity ({total_q}) exceeds sellable quantity ({max_q}) for this security."
+                "Requested quantity "
+                f"({int(total_q)}) exceeds whole-share sellable quantity "
+                f"({int(max_whole_sellable)}) for this security."
             )
-        if max_daily_quantity is not None and max_daily_quantity <= Decimal("0"):
-            raise ValueError("Max daily quantity must be greater than zero when provided.")
+
+        max_daily_qty_cap: Decimal | None = None
+        if max_daily_quantity is not None:
+            if max_daily_quantity <= Decimal("0"):
+                raise ValueError("Max daily quantity must be greater than zero when provided.")
+            if not _is_whole_quantity(max_daily_quantity):
+                raise ValueError("Max daily quantity must be a whole number of shares.")
+            max_daily_qty_cap = _floor_whole(max_daily_quantity)
+
         if max_daily_notional_gbp is not None and max_daily_notional_gbp <= Decimal("0"):
             raise ValueError("Max daily notional (GBP) must be greater than zero when provided.")
         if reference_price_gbp is not None and reference_price_gbp <= Decimal("0"):
             raise ValueError("Reference price (GBP) must be greater than zero when provided.")
         if fee_per_tranche_gbp is not None and fee_per_tranche_gbp < Decimal("0"):
             raise ValueError("Fee per tranche (GBP) cannot be negative.")
+        if Decimal(tranche_count) > total_q:
+            raise ValueError(
+                "Tranche count cannot exceed total quantity when selling whole shares only."
+            )
 
         tranche_quantities = _split_quantity(total_q, tranche_count)
         tranche_dates = [
@@ -310,7 +352,7 @@ class SellPlanService:
             tranche_dates=tranche_dates,
             tranche_quantities=tranche_quantities,
             min_spacing_days=min_spacing_days,
-            max_daily_quantity=max_daily_quantity,
+            max_daily_quantity=max_daily_qty_cap,
             max_daily_notional_gbp=max_daily_notional_gbp,
             reference_price_gbp=reference_price_gbp,
         )
@@ -327,7 +369,7 @@ class SellPlanService:
                     "tranche_id": uuid4().hex,
                     "sequence": idx + 1,
                     "event_date": event_date.isoformat(),
-                    "quantity": str(_q_qty(qty)),
+                    "quantity": _qty_str(qty),
                     "status": TRANCHE_STATUS_PLANNED,
                     "updated_at_utc": created_at,
                 }
@@ -341,14 +383,14 @@ class SellPlanService:
             "status": _PLAN_STATUS_ACTIVE,
             "security_id": security_id,
             "ticker": ticker,
-            "total_quantity": str(total_q),
-            "max_sellable_quantity_at_create": str(max_q),
+            "total_quantity": _qty_str(total_q),
+            "max_sellable_quantity_at_create": _qty_str(max_whole_sellable),
             "cadence_days": cadence_days,
             "tranche_count": tranche_count,
             "constraints": {
                 "max_daily_quantity": (
-                    str(_q_qty(max_daily_quantity))
-                    if max_daily_quantity is not None
+                    _qty_str(max_daily_qty_cap)
+                    if max_daily_qty_cap is not None
                     else None
                 ),
                 "max_daily_notional_gbp": (
@@ -503,7 +545,7 @@ class SellPlanService:
                         "ticker": ticker,
                         "scheme_type": "SELL_PLAN",
                         "lot_id": None,
-                        "quantity": str(_q_qty(qty)),
+                        "quantity": _qty_str(qty),
                         "value_at_stake_gbp": None,
                         "has_live_value": False,
                         "plan_id": plan_id,

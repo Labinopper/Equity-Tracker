@@ -11,6 +11,16 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
+{% if linked_sell_plan and linked_sell_plan.plan_id %}
+<div class="alert alert-info">
+  Prefilled from Sell Plan <code>{{ linked_sell_plan.plan_id }}</code>
+  {% if linked_sell_plan.tranche_id %}
+  (tranche <code>{{ linked_sell_plan.tranche_id[:8] }}</code>)
+  {% endif %}.
+  <a href="/sell-plan?plan_id={{ linked_sell_plan.plan_id }}#plan-{{ linked_sell_plan.plan_id }}">Back to Sell Plan</a>
+</div>
+{% endif %}
+
 {% if tax_inputs_incomplete %}
 <div class="alert alert-warning">
   Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.

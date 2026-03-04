@@ -3031,7 +3031,13 @@ async def transfer_lot_submit(
 
 @router.get("/simulate", response_class=HTMLResponse, include_in_schema=False)
 async def simulate_form(
-    request: Request, security_id: str | None = None, error: str | None = None
+    request: Request,
+    security_id: str | None = None,
+    quantity: str | None = None,
+    price_per_share_gbp: str | None = None,
+    sell_plan_id: str | None = None,
+    tranche_id: str | None = None,
+    error: str | None = None,
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
@@ -3040,10 +3046,18 @@ async def simulate_form(
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
     prefill_price = ""
+    prefill_qty = (quantity or "").strip()
     if security_id:
         selected = next((s for s in securities if s["id"] == security_id), None)
         if selected:
-            prefill_price = selected["latest_price_gbp"]
+            prefill_price = (price_per_share_gbp or "").strip() or selected["latest_price_gbp"]
+    linked_sell_plan = None
+    if sell_plan_id or tranche_id:
+        linked_sell_plan = {
+            "plan_id": (sell_plan_id or "").strip(),
+            "tranche_id": (tranche_id or "").strip(),
+        }
+
     return _html_template_response(
         "simulate.html",
         {
@@ -3056,13 +3070,14 @@ async def simulate_form(
                 "security_id": security_id or "",
                 "price_per_share_gbp": prefill_price,
                 "broker_fees_gbp": "",
-                "quantity": "",
+                "quantity": prefill_qty,
                 "scheme_type": "",
             },
             "simulate_meta": {s["id"]: s for s in securities},
             "exit_summary": None,
             "settings": settings,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
+            "linked_sell_plan": linked_sell_plan,
         },
     )
 

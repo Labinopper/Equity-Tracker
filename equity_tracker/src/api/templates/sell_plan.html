@@ -27,7 +27,11 @@
         <select id="security_id" name="security_id" required>
           <option value="">-- select --</option>
           {% for sec in securities %}
-          <option value="{{ sec.security_id }}" {{ 'selected' if form_defaults.security_id == sec.security_id }}>
+          <option
+            value="{{ sec.security_id }}"
+            data-max-qty="{{ sec.sellable_quantity }}"
+            data-price="{{ '%.2f' % sec.reference_price_gbp if sec.reference_price_gbp is not none else '' }}"
+            {{ 'selected' if form_defaults.security_id == sec.security_id }}>
             {{ sec.ticker }} - {{ sec.name }} (Sellable: {{ sec.sellable_quantity }})
           </option>
           {% endfor %}
@@ -35,7 +39,11 @@
       </div>
       <div class="form-field">
         <label for="total_quantity">Total Quantity *</label>
-        <input id="total_quantity" name="total_quantity" type="text" value="{{ form_defaults.total_quantity }}" required>
+        <div class="inline-flex-gap-sm">
+          <input id="total_quantity" name="total_quantity" type="number" min="1" step="1" value="{{ form_defaults.total_quantity }}" required>
+          <button type="button" id="btn-max" class="btn btn-secondary btn-sm">MAX</button>
+        </div>
+        <span id="qty-available" class="form-hint">Whole shares only.</span>
       </div>
       <div class="form-field">
         <label for="tranche_count">Tranche Count *</label>
@@ -55,7 +63,7 @@
       </div>
       <div class="form-field">
         <label for="max_daily_quantity">Max Daily Quantity</label>
-        <input id="max_daily_quantity" name="max_daily_quantity" type="text" placeholder="optional" value="{{ form_defaults.max_daily_quantity }}">
+        <input id="max_daily_quantity" name="max_daily_quantity" type="number" min="1" step="1" placeholder="optional" value="{{ form_defaults.max_daily_quantity }}">
       </div>
       <div class="form-field">
         <label for="max_daily_notional_gbp">Max Daily Notional (GBP)</label>
@@ -136,6 +144,7 @@
               <th class="num">Net Cash</th>
               <th class="num">Cum Net Cash</th>
               <th>Calendar</th>
+              <th>Simulate</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -198,6 +207,11 @@
                 </a>
               </td>
               <td>
+                <a href="/simulate?security_id={{ plan.security_id }}&quantity={{ tranche.quantity }}{% if plan.impact_reference_price_gbp %}&price_per_share_gbp={{ plan.impact_reference_price_gbp }}{% endif %}&sell_plan_id={{ plan.plan_id }}&tranche_id={{ tranche.tranche_id }}">
+                  Open
+                </a>
+              </td>
+              <td>
                 {% if tranche.is_actionable %}
                 <form method="post" action="/sell-plan/tranche-status" class="inline-form">
                   <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
@@ -218,7 +232,7 @@
             </tr>
             {% if tranche.impact_note %}
             <tr>
-              <td colspan="12" class="muted">{{ tranche.impact_note }}</td>
+              <td colspan="13" class="muted">{{ tranche.impact_note }}</td>
             </tr>
             {% endif %}
             {% endfor %}
@@ -231,4 +245,68 @@
     <p class="muted">No sell plans yet.</p>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  var securitySel = document.getElementById('security_id');
+  var qtyInput = document.getElementById('total_quantity');
+  var maxBtn = document.getElementById('btn-max');
+  var qtyHint = document.getElementById('qty-available');
+  var refPriceInput = document.getElementById('reference_price_gbp');
+
+  function selectedOption() {
+    if (!securitySel) return null;
+    var idx = securitySel.selectedIndex;
+    if (idx < 0) return null;
+    return securitySel.options[idx] || null;
+  }
+
+  function updateDefaultsFromSelection() {
+    var opt = selectedOption();
+    if (!opt) return;
+    var maxQty = opt.dataset.maxQty || '';
+    var price = opt.dataset.price || '';
+
+    if (qtyHint) {
+      qtyHint.textContent = maxQty
+        ? ('Whole shares only. Max sellable now: ' + maxQty)
+        : 'Whole shares only.';
+    }
+
+    if (qtyInput && (!qtyInput.value || qtyInput.dataset.autoFilled === 'true')) {
+      qtyInput.value = maxQty;
+      qtyInput.dataset.autoFilled = 'true';
+    }
+
+    if (refPriceInput && (!refPriceInput.value || refPriceInput.dataset.autoFilled === 'true')) {
+      refPriceInput.value = price;
+      refPriceInput.dataset.autoFilled = 'true';
+    }
+  }
+
+  if (qtyInput) {
+    qtyInput.addEventListener('input', function () {
+      qtyInput.dataset.autoFilled = 'false';
+    });
+  }
+  if (refPriceInput) {
+    refPriceInput.addEventListener('input', function () {
+      refPriceInput.dataset.autoFilled = 'false';
+    });
+  }
+  if (securitySel) {
+    securitySel.addEventListener('change', updateDefaultsFromSelection);
+  }
+  if (maxBtn) {
+    maxBtn.addEventListener('click', function () {
+      var opt = selectedOption();
+      if (!opt || !qtyInput) return;
+      qtyInput.value = opt.dataset.maxQty || '';
+      qtyInput.dataset.autoFilled = 'true';
+    });
+  }
+
+  updateDefaultsFromSelection();
+})();
+</script>
 {% endblock %}

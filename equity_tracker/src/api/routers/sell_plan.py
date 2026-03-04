@@ -5,7 +5,7 @@ Sell Plan routes (UI-only staged-disposal planning).
 from __future__ import annotations
 
 from datetime import date as date_type
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -27,6 +27,10 @@ from ..dependencies import session_required
 
 router = APIRouter(tags=["sell-plan"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
+
+
+def _floor_whole(value: Decimal) -> Decimal:
+    return value.to_integral_value(rounding=ROUND_FLOOR)
 
 
 def _load_settings() -> AppSettings | None:
@@ -53,14 +57,15 @@ def _sellable_securities(summary) -> list[dict]:
             if str(lot_summary.sellability_status).upper() != "SELLABLE":
                 continue
             sellable_qty += lot_summary.quantity_remaining
-        if sellable_qty <= Decimal("0"):
+        sellable_whole = int(_floor_whole(sellable_qty))
+        if sellable_whole <= 0:
             continue
         rows.append(
             {
                 "security_id": security_summary.security.id,
                 "ticker": security_summary.security.ticker,
                 "name": security_summary.security.name,
-                "sellable_quantity": sellable_qty,
+                "sellable_quantity": sellable_whole,
                 "reference_price_gbp": security_summary.current_price_gbp,
             }
         )
@@ -136,16 +141,37 @@ def _render_sell_plan_page(
         for plan in SellPlanService.list_plans(db_path)
     ]
 
+    selected_security = None
+    if previous_form:
+        selected_security = next(
+            (
+                sec
+                for sec in securities
+                if sec["security_id"] == previous_form.get("security_id")
+            ),
+            None,
+        )
+    elif securities:
+        selected_security = securities[0]
+
+    default_security_id = selected_security["security_id"] if selected_security else ""
+    default_total_qty = str(selected_security["sellable_quantity"]) if selected_security else ""
+    default_ref_price = (
+        f"{selected_security['reference_price_gbp']:.2f}"
+        if selected_security and selected_security.get("reference_price_gbp") is not None
+        else ""
+    )
+
     form_defaults = previous_form or {
-        "security_id": "",
-        "total_quantity": "",
+        "security_id": default_security_id,
+        "total_quantity": default_total_qty,
         "tranche_count": "4",
         "start_date": today.isoformat(),
         "cadence_days": "14",
         "max_daily_quantity": "",
         "max_daily_notional_gbp": "",
         "min_spacing_days": "7",
-        "reference_price_gbp": "",
+        "reference_price_gbp": default_ref_price,
         "fee_per_tranche_gbp": "0.00",
     }
 

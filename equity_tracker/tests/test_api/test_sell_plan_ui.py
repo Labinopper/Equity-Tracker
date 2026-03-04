@@ -89,7 +89,7 @@ def test_sell_plan_rejects_quantity_above_sellable(client):
         },
     )
     assert create.status_code == 422
-    assert "exceeds sellable quantity" in create.text
+    assert "whole-share sellable quantity" in create.text
 
 
 def test_sell_plan_tranche_status_filter_executed(client):
@@ -167,7 +167,7 @@ def test_sell_plan_rejects_daily_quantity_cap_breach(client):
             "start_date": start_date,
             "cadence_days": "14",
             "min_spacing_days": "1",
-            "max_daily_quantity": "3.5",
+            "max_daily_quantity": "3",
         },
     )
     assert create.status_code == 422
@@ -225,3 +225,75 @@ def test_sell_plan_shows_impact_preview_when_reference_price_set(client):
     assert "Impact totals (planned model)" in page.text
     assert "Gross (GBP)" in page.text
     assert "&pound;60.00" in page.text
+
+
+def test_sell_plan_defaults_total_quantity_to_whole_sellable_max(client):
+    sec_id = _add_security(client, "SPLNDEF")
+    _add_brokerage_lot(client, sec_id, quantity="20")
+
+    page = client.get("/sell-plan")
+    assert page.status_code == 200
+    assert 'id="total_quantity"' in page.text
+    assert 'value="20"' in page.text
+    assert 'data-max-qty="20"' in page.text
+
+
+def test_sell_plan_rejects_fractional_quantity(client):
+    sec_id = _add_security(client, "SPLNFRAC")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "6.5",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+        },
+    )
+    assert create.status_code == 422
+    assert "whole number of shares" in create.text
+
+
+def test_sell_plan_includes_link_to_simulate(client):
+    sec_id = _add_security(client, "SPLNSIM")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "6",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "reference_price_gbp": "10",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    page = client.get(f"/sell-plan?plan_id={plan_id}")
+    assert page.status_code == 200
+    assert "/simulate?security_id=" in page.text
+    assert f"sell_plan_id={plan_id}" in page.text
+
+
+def test_simulate_page_accepts_sell_plan_prefill_params(client):
+    sec_id = _add_security(client, "SPLNPREF")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+
+    resp = client.get(
+        f"/simulate?security_id={sec_id}&quantity=4&price_per_share_gbp=123.45"
+        "&sell_plan_id=test-plan-1&tranche_id=test-tranche-1"
+    )
+    assert resp.status_code == 200
+    assert "Prefilled from Sell Plan" in resp.text
+    assert 'value="4"' in resp.text
+    assert 'value="123.45"' in resp.text
