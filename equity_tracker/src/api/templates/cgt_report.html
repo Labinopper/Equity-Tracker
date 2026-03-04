@@ -47,23 +47,23 @@
 <!-- Summary stats -->
 <div class="stats">
   <div class="stat">
-    <div class="stat__label">Taxable Disposals</div>
+    <div class="stat__label">Taxable Disposals <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">{{ report.disposal_lines | length }}</div>
   </div>
   <div class="stat">
-    <div class="stat__label">Taxable Proceeds</div>
+    <div class="stat__label">Taxable Proceeds <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ report.total_proceeds_gbp | money }}</div>
   </div>
   <div class="stat">
-    <div class="stat__label">Total Gains</div>
+    <div class="stat__label">Total Gains <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value gain">&pound;{{ report.total_gains_gbp | money }}</div>
   </div>
   <div class="stat">
-    <div class="stat__label">Total Losses</div>
+    <div class="stat__label">Total Losses <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value loss">&pound;{{ report.total_losses_gbp | money }}</div>
   </div>
   <div class="stat">
-    <div class="stat__label">Net Gain</div>
+    <div class="stat__label">Net Gain <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value {{ 'gain' if report.net_gain_gbp >= 0 else 'loss' }}">
       &pound;{{ report.net_gain_gbp | money }}
     </div>
@@ -173,6 +173,5 @@
 </p>
 
 {% endblock %}
-
 
 

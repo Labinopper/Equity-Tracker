@@ -285,6 +285,16 @@ def _flash(msg: str | None) -> dict:
     return {"flash": msg} if msg else {}
 
 
+def _tax_inputs_incomplete(settings: AppSettings | None) -> bool:
+    """Return True when income inputs are missing/zero for tax estimates."""
+    if settings is None:
+        return True
+    return (
+        settings.default_gross_income <= Decimal("0")
+        and settings.default_other_income <= Decimal("0")
+    )
+
+
 def _compute_exit_summary(
     *,
     proceeds_cash_gbp: Decimal,
@@ -1912,6 +1922,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
             "portfolio_sellable_employment_tax": portfolio_sellable_employment_tax,
             "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
+            "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
             "refresh_diag": refresh_diag,
             "today": today,
             **_flash(msg),
@@ -2108,6 +2119,7 @@ async def net_value(request: Request) -> HTMLResponse:
             "settings": settings,
             "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
             "security_daily_changes": security_daily_changes,
+            "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
         },
     )
 
@@ -3025,6 +3037,8 @@ async def simulate_form(
         return _locked_response(request)
     summary = PortfolioService.get_portfolio_summary()
     securities = _simulate_security_context(summary)
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
     prefill_price = ""
     if security_id:
         selected = next((s for s in securities if s["id"] == security_id), None)
@@ -3047,6 +3061,8 @@ async def simulate_form(
             },
             "simulate_meta": {s["id"]: s for s in securities},
             "exit_summary": None,
+            "settings": settings,
+            "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
         },
     )
 
@@ -3065,17 +3081,33 @@ async def simulate_submit(
     summary = PortfolioService.get_portfolio_summary()
     securities = _simulate_security_context(summary)
     simulate_meta = {s["id"]: s for s in securities}
-    selected = simulate_meta.get(security_id)
-    if selected is None:
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
+    tax_inputs_incomplete = _tax_inputs_incomplete(settings)
+
+    def _render_simulate(context: dict, *, status_code: int = 200) -> HTMLResponse:
+        base_context = {
+            "request": request,
+            "securities": securities,
+            "scheme_types": SIMULATE_SCHEME_TYPES,
+            "simulate_meta": simulate_meta,
+            "settings": settings,
+            "tax_inputs_incomplete": tax_inputs_incomplete,
+            "exit_summary": None,
+        }
+        base_context.update(context)
         return _html_template_response(
             "simulate.html",
+            base_context,
+            status_code=status_code,
+        )
+
+    selected = simulate_meta.get(security_id)
+    if selected is None:
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": "Unknown security selected.",
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
@@ -3083,29 +3115,19 @@ async def simulate_submit(
     try:
         qty = Decimal(quantity)
     except InvalidOperation as exc:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": f"Invalid number: {exc}",
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
 
     if qty <= 0:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": "Quantity must be greater than zero.",
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
@@ -3117,12 +3139,8 @@ async def simulate_submit(
         else Decimal(selected.get("available_quantity", "0"))
     )
     if qty > available_qty:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": (
                     f"Requested quantity ({qty}) cannot exceed available quantity "
@@ -3135,7 +3153,6 @@ async def simulate_submit(
                     "broker_fees_gbp": broker_fees_gbp,
                     "scheme_type": scheme_type,
                 },
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
@@ -3144,12 +3161,8 @@ async def simulate_submit(
     try:
         price = Decimal(resolved_price)
     except InvalidOperation as exc:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": f"Invalid disposal price: {exc}",
                 "prev": {
@@ -3159,19 +3172,14 @@ async def simulate_submit(
                     "broker_fees_gbp": broker_fees_gbp,
                     "scheme_type": scheme_type,
                 },
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
     try:
         fees = Decimal(broker_fees_gbp.strip() or "0")
     except InvalidOperation as exc:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": f"Invalid broker fees value: {exc}",
                 "prev": {
@@ -3181,17 +3189,12 @@ async def simulate_submit(
                     "broker_fees_gbp": broker_fees_gbp,
                     "scheme_type": scheme_type,
                 },
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
     if fees < 0:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": "Broker fees cannot be negative.",
                 "prev": {
@@ -3201,14 +3204,10 @@ async def simulate_submit(
                     "broker_fees_gbp": broker_fees_gbp,
                     "scheme_type": scheme_type,
                 },
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
     fees_str = f"{fees:.2f}" if fees != 0 else ""
-
-    db_path = _state.get_db_path()
-    settings = AppSettings.load(db_path) if db_path else None
 
     try:
         result = PortfolioService.simulate_disposal(
@@ -3221,25 +3220,16 @@ async def simulate_submit(
             use_live_true_cost=False,
         )
     except ValueError as exc:
-        return _html_template_response(
-            "simulate.html",
+        return _render_simulate(
             {
-                "request": request,
-                "securities": securities,
-                "scheme_types": SIMULATE_SCHEME_TYPES,
                 "result": None,
                 "error": str(exc),
-                "simulate_meta": simulate_meta,
             },
             status_code=422,
         )
 
-    return _html_template_response(
-        "simulate.html",
+    return _render_simulate(
         {
-            "request": request,
-            "securities": securities,
-            "scheme_types": SIMULATE_SCHEME_TYPES,
             "result": result,
             "exit_summary": _compute_exit_summary(
                 proceeds_cash_gbp=result.total_proceeds_gbp,
@@ -3255,7 +3245,6 @@ async def simulate_submit(
                 "broker_fees_gbp": fees_str,
                 "scheme_type": scheme_type,
             },
-            "simulate_meta": simulate_meta,
         },
     )
 
@@ -3620,5 +3609,3 @@ async def refresh_prices_ui(request: Request) -> RedirectResponse:  # noqa: ARG0
     else:
         msg = f"Prices+refreshed+({fetched}+updated,+{failed}+failed)."
     return RedirectResponse(f"/?msg={msg}", status_code=303)
-
-

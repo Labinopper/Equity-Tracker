@@ -28,6 +28,15 @@ def _load_settings() -> AppSettings | None:
     return AppSettings.load(db_path) if db_path else None
 
 
+def _tax_inputs_incomplete(settings: AppSettings | None) -> bool:
+    if settings is None:
+        return True
+    return (
+        settings.default_gross_income <= Decimal("0")
+        and settings.default_other_income <= Decimal("0")
+    )
+
+
 def _locked_response(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
@@ -82,6 +91,7 @@ async def tax_plan_page(
             "request": request,
             "tax_plan": payload,
             "settings": settings,
+            "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
         },
         media_type=_HTML_UTF8_MEDIA_TYPE,
     )

@@ -11,6 +11,13 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
+{% if tax_inputs_incomplete %}
+<div class="alert alert-warning">
+  Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
+  <a href="/settings">Configure in Settings</a>
+</div>
+{% endif %}
+
 <div class="card">
   <form method="post" action="/simulate">
     <div class="form-grid">

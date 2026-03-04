@@ -11,6 +11,13 @@
 
 <p class="muted">As of {{ tax_plan.as_of_date }}. Generated {{ tax_plan.generated_at_utc }}.</p>
 
+{% if tax_inputs_incomplete %}
+<div class="alert alert-warning">
+  Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
+  <a href="/settings">Configure in Settings</a>
+</div>
+{% endif %}
+
 {% if tax_plan.hide_values %}
 <div class="card">
   <div class="card__header">
@@ -27,15 +34,15 @@
     <span class="stat__value">{{ tax_plan.active_tax_year }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Net Gain to Date</span>
+    <span class="stat__label">Net Gain to Date <span class="metric-tag metric-tag--realised">Realised</span></span>
     <span class="stat__value">&pound;{{ realised.net_gain_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Remaining AEA</span>
+    <span class="stat__label">Remaining AEA <span class="metric-tag metric-tag--actionable">Actionable</span></span>
     <span class="stat__value">&pound;{{ realised.remaining_aea_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Incremental CGT Difference If Wait</span>
+    <span class="stat__label">Incremental CGT Difference If Wait <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ cross_year.incremental_cgt_difference_if_wait_gbp|money }}</span>
   </div>
 </div>
@@ -107,27 +114,27 @@
 
 <div class="stats">
   <div class="stat">
-    <span class="stat__label">Sell vs Hold Net Cash Delta (+ = sell better)</span>
+    <span class="stat__label">Sell vs Hold Net Cash Delta (+ = sell better) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_vs_hold_net_cash_delta_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Sell Next Year vs This Year (+ = waiting saves net cash)</span>
+    <span class="stat__label">Sell Next Year vs This Year (+ = waiting saves net cash) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_next_vs_sell_delta_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Sell + Pension vs Sell Delta (+ = adding pension saves net cash)</span>
+    <span class="stat__label">Sell + Pension vs Sell Delta (+ = adding pension saves net cash) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_with_pension_vs_sell_delta_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Sell Next + Pension vs This + Pension (+ = waiting saves net cash)</span>
+    <span class="stat__label">Sell Next + Pension vs This + Pension (+ = waiting saves net cash) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_next_with_pension_vs_sell_with_pension_delta_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">ANI (Adj. Net Income) Reduction from Extra Pension</span>
+    <span class="stat__label">ANI (Adj. Net Income) Reduction from Extra Pension <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.ani_reduction_from_extra_pension_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Combined Tax Saved by Extra Pension</span>
+    <span class="stat__label">Combined Tax Saved by Extra Pension <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.combined_tax_saved_by_extra_pension_gbp|money }}</span>
   </div>
 </div>

@@ -23,7 +23,7 @@
 
 <div class="stats">
   <div class="stat stat--gain">
-    <div class="stat__label">Est. Net Liquidity (Sellable)</div>
+    <div class="stat__label">Est. Net Liquidity (Sellable) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if portfolio_est_net_liquidity is not none %}
     <div class="stat__value gain">&pound;{{ portfolio_est_net_liquidity | money }}</div>
     {% else %}
@@ -31,7 +31,7 @@
     {% endif %}
   </div>
   <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
-    <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today</div>
+    <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if portfolio_net_gain_if_sold is not none %}
     <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">&pound;{% if portfolio_net_gain_if_sold < 0 %}-{% elif portfolio_net_gain_if_sold > 0 %}+{% endif %}{{ portfolio_net_gain_if_sold | abs | money }}</div>
     {% else %}
@@ -39,7 +39,7 @@
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="Includes vesting locks and forfeiture windows.">Blocked/Restricted Value</div>
+    <div class="stat__label" title="Includes vesting locks and forfeiture windows.">Blocked/Restricted Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if portfolio_blocked_restricted_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_blocked_restricted_value | money }}</div>
     {% else %}
@@ -47,7 +47,7 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total Gross Market Value</div>
+    <div class="stat__label">Total Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if summary.total_market_value_gbp is not none %}
     <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
     {% else %}
@@ -55,15 +55,15 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total True Cost</div>
+    <div class="stat__label">Total True Cost <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
   </div>
   <div class="stat">
-    <div class="stat__label">Total Cost Basis</div>
+    <div class="stat__label">Total Cost Basis <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply.">Estimated Employment Tax (Sellable Only)</div>
+    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply.">Estimated Employment Tax (Sellable Only) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if portfolio_sellable_employment_tax is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
     {% else %}
@@ -72,9 +72,9 @@
   </div>
 </div>
 
-{% if not settings or (settings.default_gross_income == 0 and settings.default_other_income == 0) %}
+{% if tax_inputs_incomplete %}
 <div class="alert alert-warning">
-  Income settings are zero. Employment-tax estimates may understate your actual position.
+  Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
   <a href="/settings">Configure in Settings</a>
 </div>
 {% endif %}

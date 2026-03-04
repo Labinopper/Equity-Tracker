@@ -38,7 +38,7 @@
 
 <div class="stats">
   <div class="stat">
-    <div class="stat__label">Gross Market Value (All Lots)</div>
+    <div class="stat__label">Gross Market Value (All Lots) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if sell_all_metrics.gross_market_value_gbp is not none %}
     <div class="stat__value">&pound;{{ sell_all_metrics.gross_market_value_gbp | money }}</div>
     {% else %}
@@ -47,11 +47,13 @@
   </div>
   <div class="stat stat--warning">
     <div class="stat__label">
-      Estimated Employment Tax (All Lots)
+      Estimated Employment Tax (Sellable Lots; Sell-All Context)
+      <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
       <button class="info-button" aria-label="Estimated Employment Tax explanation">ℹ</button>
       <div class="tooltip">
         <div class="tooltip-content">
-          Income Tax, National Insurance, plus Student Loan where scheme rules apply. Estimate only.
+          Estimated on currently sellable lots only, then applied in this hypothetical sell-all view.
+          Includes Income Tax, National Insurance, plus Student Loan where scheme rules apply.
         </div>
       </div>
     </div>
@@ -64,6 +66,7 @@
   <div class="stat stat--gain">
     <div class="stat__label">
       Hypothetical Net Value (All Lots &ndash; Not Actionable)
+      <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
       <button class="info-button" aria-label="Hypothetical Net Value explanation">ℹ</button>
       <div class="tooltip">
         <div class="tooltip-content">
@@ -83,14 +86,14 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total Cost Basis (All Lots)</div>
+    <div class="stat__label">Total Cost Basis (All Lots) <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ sell_all_metrics.cost_basis_gbp | money }}</div>
   </div>
 </div>
 
-{% if not settings or (settings.default_gross_income == 0 and settings.default_other_income == 0) %}
+{% if tax_inputs_incomplete %}
 <div class="alert alert-warning">
-  Income settings are zero. Employment-tax estimates may understate your actual position.
+  Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
   <a href="/settings">Configure in Settings</a>
 </div>
 {% endif %}

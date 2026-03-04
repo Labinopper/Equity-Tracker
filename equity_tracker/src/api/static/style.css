@@ -913,6 +913,33 @@ tr:hover td.loss {
   font-weight: 600;
 }
 
+.metric-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.25;
+}
+
+.metric-tag--actionable {
+  background: var(--badge-insert-bg);
+  color: var(--badge-insert-fg);
+}
+
+.metric-tag--hypothetical {
+  background: rgba(61, 120, 240, 0.14);
+  color: #8ab4f8;
+}
+
+.metric-tag--realised {
+  background: rgba(120, 140, 160, 0.2);
+  color: #b7c4d2;
+}
+
 .stat__value {
   font-size: 1.35rem;
   font-weight: 700;
