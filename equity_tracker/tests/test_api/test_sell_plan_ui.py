@@ -446,3 +446,119 @@ def test_sell_plan_includes_espp_plus_paid_and_matured_matched(client):
     assert "Sellable: 10" in page.text
     assert 'id="total_quantity"' in page.text
     assert 'value="10"' in page.text
+
+
+def test_sell_plan_supports_limit_ladder_method(client):
+    sec_id = _add_security(client, "SPLNLIM")
+    _add_brokerage_lot(client, sec_id, quantity="12")
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "method": "LIMIT_LADDER",
+            "execution_profile": "HYBRID_DE_RISK",
+            "total_quantity": "6",
+            "tranche_count": "3",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "limit_start_gbp": "10.00",
+            "limit_step_gbp": "0.25",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    plan = next(
+        p for p in SellPlanService.list_plans(_state.get_db_path()) if p["plan_id"] == plan_id
+    )
+    assert plan["method"] == "LIMIT_LADDER"
+    assert plan["tranches"][0]["limit_price_gbp"] == "10.00"
+    assert plan["tranches"][1]["limit_price_gbp"] == "10.25"
+
+    page = client.get(f"/sell-plan?plan_id={plan_id}")
+    assert page.status_code == 200
+    assert "Limit Ladder" in page.text
+
+
+def test_sell_plan_export_requires_approval_then_returns_csv(client):
+    sec_id = _add_security(client, "SPLNEXP")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "6",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "reference_price_gbp": "10",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    export_before = client.get(f"/sell-plan/export?plan_id={plan_id}")
+    assert export_before.status_code == 422
+    assert "approved" in export_before.text.lower()
+
+    approve = client.post(
+        "/sell-plan/approval",
+        data={
+            "plan_id": plan_id,
+            "approval_status": "APPROVED",
+        },
+        follow_redirects=False,
+    )
+    assert approve.status_code == 303
+
+    export_after = client.get(f"/sell-plan/export?plan_id={plan_id}")
+    assert export_after.status_code == 200
+    assert "ExternalId,PlanId,TrancheId" in export_after.text
+    assert f",{plan_id}," in export_after.text
+    assert "SP-" in export_after.text
+
+
+def test_sell_plan_export_includes_broker_algo_fields(client):
+    sec_id = _add_security(client, "SPLNALGO")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "method": "BROKER_ALGO",
+            "total_quantity": "6",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "broker_algo_name": "VWAP",
+            "broker_algo_window_minutes": "120",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    approve = client.post(
+        "/sell-plan/approval",
+        data={
+            "plan_id": plan_id,
+            "approval_status": "APPROVED",
+        },
+        follow_redirects=False,
+    )
+    assert approve.status_code == 303
+
+    export = client.get(f"/sell-plan/export?plan_id={plan_id}")
+    assert export.status_code == 200
+    assert ",VWAP,120," in export.text

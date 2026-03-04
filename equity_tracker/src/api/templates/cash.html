@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}Cash Ledger - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Cash Ledger</h1>
+    <p class="muted">Deterministic multi-currency cash balances by container (BROKER, ISA, BANK) with append-only audit entries.</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Balances By Container</h2>
+  </div>
+  {% if dashboard.balances %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Container</th>
+          <th>Currency</th>
+          <th class="num">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.balances %}
+        <tr>
+          <td>{{ row.container }}</td>
+          <td>{{ row.currency }}</td>
+          <td class="num">
+            {% if row.currency == 'GBP' %}
+            &pound;{{ row.balance | money }}
+            {% else %}
+            {{ row.currency }} {{ row.balance | money }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No cash balances yet. Add an entry below.</p>
+  {% endif %}
+
+  {% if dashboard.totals_by_currency %}
+  <p class="muted">
+    Totals:
+    {% for row in dashboard.totals_by_currency %}
+      {% if row.currency == 'GBP' %}
+      GBP &pound;{{ row.balance | money }}
+      {% else %}
+      {{ row.currency }} {{ row.balance | money }}
+      {% endif %}
+      {% if not loop.last %}|{% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Add Cash Entry</h2>
+  </div>
+  <form method="post" action="/cash/entry">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="entry_date">Date *</label>
+        <input id="entry_date" name="entry_date" type="date" value="{{ entry_form.entry_date }}" required>
+      </div>
+      <div class="form-field">
+        <label for="container">Container *</label>
+        <select id="container" name="container" required>
+          {% for c in containers %}
+          <option value="{{ c }}" {{ 'selected' if entry_form.container == c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="currency">Currency *</label>
+        <input id="currency" name="currency" type="text" maxlength="3" value="{{ entry_form.currency }}" required>
+      </div>
+      <div class="form-field">
+        <label for="amount">Amount (+/-) *</label>
+        <input id="amount" name="amount" type="text" value="{{ entry_form.amount }}" required>
+      </div>
+      <div class="form-field">
+        <label for="entry_type">Type</label>
+        <input id="entry_type" name="entry_type" type="text" value="{{ entry_form.entry_type }}">
+      </div>
+      <div class="form-field">
+        <label for="source">Source</label>
+        <input id="source" name="source" type="text" value="{{ entry_form.source }}">
+      </div>
+      <div class="form-field">
+        <label for="notes">Notes</label>
+        <input id="notes" name="notes" type="text" value="{{ entry_form.notes }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Record Cash Entry</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">GBP-Only ISA Transfer Workflow</h2>
+  </div>
+  <p class="muted">
+    ISA transfer destination is always GBP. Non-GBP source cash requires explicit FX rate + fee provenance and creates conversion entries before transfer.
+  </p>
+  <form method="post" action="/cash/isa-transfer">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="isa_entry_date">Date *</label>
+        <input id="isa_entry_date" name="entry_date" type="date" value="{{ transfer_form.entry_date }}" required>
+      </div>
+      <div class="form-field">
+        <label for="source_container">Source Container *</label>
+        <select id="source_container" name="source_container" required>
+          {% for c in source_containers %}
+          <option value="{{ c }}" {{ 'selected' if transfer_form.source_container == c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="source_currency">Source Currency *</label>
+        <input id="source_currency" name="source_currency" type="text" maxlength="3" value="{{ transfer_form.source_currency }}" required>
+      </div>
+      <div class="form-field">
+        <label for="source_amount">Source Amount *</label>
+        <input id="source_amount" name="source_amount" type="text" value="{{ transfer_form.source_amount }}" required>
+      </div>
+      <div class="form-field">
+        <label for="fx_rate">FX Rate (source->GBP)</label>
+        <input id="fx_rate" name="fx_rate" type="text" value="{{ transfer_form.fx_rate }}">
+      </div>
+      <div class="form-field">
+        <label for="fx_fee_gbp">FX Fee (GBP)</label>
+        <input id="fx_fee_gbp" name="fx_fee_gbp" type="text" value="{{ transfer_form.fx_fee_gbp }}">
+      </div>
+      <div class="form-field">
+        <label for="fx_source">FX Source Provenance</label>
+        <input id="fx_source" name="fx_source" type="text" value="{{ transfer_form.fx_source }}" placeholder="e.g. broker statement / manual quote">
+      </div>
+      <div class="form-field">
+        <label for="isa_notes">Notes</label>
+        <input id="isa_notes" name="notes" type="text" value="{{ transfer_form.notes }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Record ISA Transfer</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Ledger Entries (Most Recent First)</h2>
+  </div>
+  {% if dashboard.entries %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Container</th>
+          <th>Currency</th>
+          <th class="num">Amount</th>
+          <th>Type</th>
+          <th>Source</th>
+          <th>Group</th>
+          <th>Created (UTC)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in dashboard.entries %}
+        <tr>
+          <td>{{ entry.entry_date }}</td>
+          <td>{{ entry.container }}</td>
+          <td>{{ entry.currency }}</td>
+          <td class="num">
+            {% if entry.currency == 'GBP' %}
+            &pound;{{ entry.amount | money }}
+            {% else %}
+            {{ entry.currency }} {{ entry.amount | money }}
+            {% endif %}
+          </td>
+          <td>{{ entry.entry_type }}</td>
+          <td>{{ entry.source or '-' }}</td>
+          <td><code>{{ entry.group_id[:8] if entry.group_id else '-' }}</code></td>
+          <td>{{ entry.created_at_utc }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No cash ledger entries yet.</p>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var sourceCurrency = document.getElementById('source_currency');
+  var fxRate = document.getElementById('fx_rate');
+  var fxSource = document.getElementById('fx_source');
+
+  function applyFxRequirements() {
+    if (!sourceCurrency || !fxRate || !fxSource) return;
+    var ccy = (sourceCurrency.value || '').trim().toUpperCase();
+    var needsFx = ccy && ccy !== 'GBP';
+    fxRate.required = needsFx;
+    fxSource.required = needsFx;
+    if (!needsFx) {
+      fxRate.value = '';
+      fxSource.value = '';
+    }
+  }
+
+  if (sourceCurrency) {
+    sourceCurrency.addEventListener('input', applyFxRequirements);
+  }
+  applyFxRequirements();
+})();
+</script>
+{% endblock %}

@@ -14,7 +14,7 @@
 
 {% set _path = request.url.path %}
 {% set _groups = {
-  'decide':   ['/', '/net-value'],
+  'decide':   ['/', '/net-value', '/cash'],
   'schemes':  ['/per-scheme'],
   'risk':     ['/risk', '/analytics', '/calendar'],
   'simulate': ['/simulate', '/scenario-lab', '/tax-plan', '/sell-plan'],
@@ -24,6 +24,7 @@
 {% set _path_to_group = {
   '/':              'decide',
   '/net-value':     'decide',
+  '/cash':          'decide',
   '/per-scheme':    'schemes',
   '/risk':          'risk',
   '/analytics':     'risk',
@@ -71,6 +72,7 @@
       {% if active_group == 'decide' %}
         <a href="/"          class="subnav__link{{ ' subnav__link--active' if _path == '/' }}">Portfolio</a>
         <a href="/net-value" class="subnav__link{{ ' subnav__link--active' if _path == '/net-value' }}">Net Value</a>
+        <a href="/cash"      class="subnav__link{{ ' subnav__link--active' if _path == '/cash' }}">Cash</a>
 
       {% elif active_group == 'risk' %}
         <a href="/risk"      class="subnav__link{{ ' subnav__link--active' if _path == '/risk' }}">Risk</a>

@@ -24,6 +24,9 @@
       <select id="sell_method" name="sell_method">
         <option value="" {{ 'selected' if not calendar_filters.sell_method }}>All</option>
         <option value="CALENDAR_TRANCHES" {{ 'selected' if calendar_filters.sell_method == 'CALENDAR_TRANCHES' }}>Calendar Tranches</option>
+        <option value="THRESHOLD_BANDS" {{ 'selected' if calendar_filters.sell_method == 'THRESHOLD_BANDS' }}>Threshold Bands</option>
+        <option value="LIMIT_LADDER" {{ 'selected' if calendar_filters.sell_method == 'LIMIT_LADDER' }}>Limit Ladder</option>
+        <option value="BROKER_ALGO" {{ 'selected' if calendar_filters.sell_method == 'BROKER_ALGO' }}>Broker Algo (TWAP/VWAP)</option>
       </select>
       <label for="sell_status">Status</label>
       <select id="sell_status" name="sell_status">

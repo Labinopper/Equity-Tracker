@@ -3,14 +3,18 @@ SellPlanService - deterministic staged-disposal plan storage and calendar events
 
 Scope:
 - Persist sell plans to a JSON sidecar file next to the active DB path.
-- Support deterministic calendar-tranche plans only (no market prediction).
+- Support deterministic staged plans across explicit execution methods
+  (calendar, threshold, limit ladder, broker algo wrapper).
 - Emit calendar-ready sell-tranche events with optional filters.
 - Enforce deterministic plan constraints and provide impact previews.
+- Provide deterministic IBKR order staging CSV export for approved plans.
 """
 
 from __future__ import annotations
 
 import json
+import csv
+import io
 from collections import defaultdict
 from datetime import date as date_type
 from datetime import datetime, timedelta, timezone
@@ -29,6 +33,19 @@ _MONEY_Q = Decimal("0.01")
 _OVERDUE_WINDOW_DAYS = 30
 
 PLAN_METHOD_CALENDAR_TRANCHES = "CALENDAR_TRANCHES"
+PLAN_METHOD_THRESHOLD_BANDS = "THRESHOLD_BANDS"
+PLAN_METHOD_LIMIT_LADDER = "LIMIT_LADDER"
+PLAN_METHOD_BROKER_ALGO = "BROKER_ALGO"
+
+BROKER_ALGO_TWAP = "TWAP"
+BROKER_ALGO_VWAP = "VWAP"
+
+PROFILE_HYBRID_DE_RISK = "HYBRID_DE_RISK"
+PROFILE_CUSTOM = "CUSTOM"
+
+APPROVAL_STATUS_DRAFT = "DRAFT"
+APPROVAL_STATUS_APPROVED = "APPROVED"
+
 TRANCHE_STATUS_PLANNED = "PLANNED"
 TRANCHE_STATUS_DUE = "DUE"
 TRANCHE_STATUS_EXECUTED = "EXECUTED"
@@ -39,6 +56,26 @@ _PLAN_STATUS_COMPLETED = "COMPLETED"
 _PLAN_STATUS_CANCELLED = "CANCELLED"
 
 _DEFAULT_MIN_SPACING_DAYS = 1
+_DEFAULT_THRESHOLD_UPPER_PCT = Decimal("70.00")
+_DEFAULT_THRESHOLD_TARGET_PCT = Decimal("40.00")
+_DEFAULT_THRESHOLD_REVIEW_DAYS = 7
+_DEFAULT_LIMIT_STEP_GBP = Decimal("0.50")
+_DEFAULT_BROKER_ALGO_WINDOW_MINUTES = 60
+_DEFAULT_PROFILE_CONCENTRATION_TRIGGER_PCT = Decimal("40.00")
+_DEFAULT_PROFILE_LIMIT_GUARDRAIL_DISCOUNT_PCT = Decimal("1.00")
+
+_PLAN_METHODS = frozenset(
+    {
+        PLAN_METHOD_CALENDAR_TRANCHES,
+        PLAN_METHOD_THRESHOLD_BANDS,
+        PLAN_METHOD_LIMIT_LADDER,
+        PLAN_METHOD_BROKER_ALGO,
+    }
+)
+
+_BROKER_ALGOS = frozenset({BROKER_ALGO_TWAP, BROKER_ALGO_VWAP})
+_PROFILE_CODES = frozenset({PROFILE_HYBRID_DE_RISK, PROFILE_CUSTOM})
+_APPROVAL_STATUSES = frozenset({APPROVAL_STATUS_DRAFT, APPROVAL_STATUS_APPROVED})
 
 _TRANCHE_STATUSES = frozenset(
     {
@@ -96,6 +133,39 @@ def _safe_decimal_or_none(value: object) -> Decimal | None:
         return Decimal(raw)
     except Exception:
         return None
+
+
+def _safe_int_or_none(value: object) -> int | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _normalized_method(value: object) -> str:
+    method = str(value or PLAN_METHOD_CALENDAR_TRANCHES).strip().upper()
+    if method not in _PLAN_METHODS:
+        raise ValueError("Unsupported execution method.")
+    return method
+
+
+def _normalized_profile(value: object) -> str:
+    profile = str(value or PROFILE_HYBRID_DE_RISK).strip().upper()
+    if profile not in _PROFILE_CODES:
+        raise ValueError("Unsupported execution profile.")
+    return profile
+
+
+def _normalized_approval_status(value: object) -> str:
+    status = str(value or APPROVAL_STATUS_DRAFT).strip().upper()
+    if status not in _APPROVAL_STATUSES:
+        raise ValueError("Unsupported approval status.")
+    return status
 
 
 def _load_payload(path: Path) -> dict:
@@ -259,6 +329,243 @@ def _cgt_baseline_state(
     }
 
 
+def _default_method_config(
+    *,
+    method: str,
+    tranche_count: int,
+    reference_price_gbp: Decimal | None,
+    threshold_upper_pct: Decimal | None,
+    threshold_target_pct: Decimal | None,
+    threshold_review_days: int | None,
+    limit_start_gbp: Decimal | None,
+    limit_step_gbp: Decimal | None,
+    broker_algo_name: str | None,
+    broker_algo_window_minutes: int | None,
+) -> dict:
+    if method == PLAN_METHOD_THRESHOLD_BANDS:
+        upper = threshold_upper_pct or _DEFAULT_THRESHOLD_UPPER_PCT
+        target = threshold_target_pct or _DEFAULT_THRESHOLD_TARGET_PCT
+        review_days = threshold_review_days or _DEFAULT_THRESHOLD_REVIEW_DAYS
+        if upper <= target:
+            raise ValueError("Threshold upper percentage must be greater than target percentage.")
+        if review_days < 1 or review_days > 365:
+            raise ValueError("Threshold review cadence must be between 1 and 365 days.")
+        if upper <= Decimal("0") or target <= Decimal("0"):
+            raise ValueError("Threshold percentages must be greater than zero.")
+        return {
+            "threshold_upper_pct": str(_q_money(upper)),
+            "threshold_target_pct": str(_q_money(target)),
+            "threshold_review_cadence_days": review_days,
+            "formula": (
+                "At each review cadence, execute next tranche if employer concentration "
+                "is above target band."
+            ),
+        }
+
+    if method == PLAN_METHOD_LIMIT_LADDER:
+        base = limit_start_gbp if limit_start_gbp is not None else reference_price_gbp
+        if base is None or base <= Decimal("0"):
+            raise ValueError("Limit ladder requires a positive limit start or reference price.")
+        step = limit_step_gbp or _DEFAULT_LIMIT_STEP_GBP
+        if step <= Decimal("0"):
+            raise ValueError("Limit ladder step must be greater than zero.")
+        return {
+            "limit_start_gbp": str(_q_money(base)),
+            "limit_step_gbp": str(_q_money(step)),
+            "formula": (
+                "Per-tranche limit price = limit_start_gbp + "
+                "(sequence_index * limit_step_gbp)."
+            ),
+        }
+
+    if method == PLAN_METHOD_BROKER_ALGO:
+        algo = str(broker_algo_name or BROKER_ALGO_TWAP).strip().upper()
+        if algo not in _BROKER_ALGOS:
+            raise ValueError("Broker algorithm must be TWAP or VWAP.")
+        window_minutes = broker_algo_window_minutes or _DEFAULT_BROKER_ALGO_WINDOW_MINUTES
+        if window_minutes < 1 or window_minutes > 1440:
+            raise ValueError("Broker algorithm window must be between 1 and 1440 minutes.")
+        return {
+            "broker_algo": algo,
+            "broker_algo_window_minutes": window_minutes,
+            "formula": "Broker-native algorithm wrapper with fixed execution window.",
+        }
+
+    if method == PLAN_METHOD_CALENDAR_TRANCHES:
+        return {
+            "formula": "Even whole-share allocation by sequence over fixed cadence dates."
+        }
+
+    raise ValueError("Unsupported execution method.")
+
+
+def _profile_payload(
+    *,
+    profile_code: str,
+    concentration_trigger_pct: Decimal | None,
+    limit_guardrail_discount_pct: Decimal | None,
+) -> dict:
+    trigger = concentration_trigger_pct or _DEFAULT_PROFILE_CONCENTRATION_TRIGGER_PCT
+    guardrail = (
+        limit_guardrail_discount_pct
+        if limit_guardrail_discount_pct is not None
+        else _DEFAULT_PROFILE_LIMIT_GUARDRAIL_DISCOUNT_PCT
+    )
+    if trigger <= Decimal("0") or trigger >= Decimal("100"):
+        raise ValueError("Profile concentration trigger must be between 0 and 100.")
+    if guardrail < Decimal("0") or guardrail >= Decimal("100"):
+        raise ValueError("Profile limit guardrail discount must be between 0 and 100.")
+
+    rationale = (
+        "Non-advisory default profile combining calendar tranches, concentration-band "
+        "review discipline, and limit-order guardrails."
+    )
+    if profile_code == PROFILE_CUSTOM:
+        rationale = (
+            "Custom profile. Keep deterministic quantity/date/guardrail parameters "
+            "explicit and auditable."
+        )
+
+    return {
+        "profile_code": profile_code,
+        "concentration_trigger_pct": str(_q_money(trigger)),
+        "limit_guardrail_discount_pct": str(_q_money(guardrail)),
+        "rationale": rationale,
+    }
+
+
+def _enrich_tranches_with_method_fields(
+    *,
+    method: str,
+    tranches: list[dict],
+    method_config: dict,
+) -> None:
+    if method == PLAN_METHOD_LIMIT_LADDER:
+        base = _safe_decimal(method_config.get("limit_start_gbp"))
+        step = _safe_decimal(method_config.get("limit_step_gbp"))
+        for idx, tranche in enumerate(tranches):
+            limit_price = _q_money(base + (step * Decimal(idx)))
+            tranche["limit_price_gbp"] = str(limit_price)
+            tranche["order_type"] = "LMT"
+    elif method == PLAN_METHOD_THRESHOLD_BANDS:
+        upper = _safe_decimal(method_config.get("threshold_upper_pct"))
+        target = _safe_decimal(method_config.get("threshold_target_pct"))
+        if len(tranches) == 1:
+            levels = [upper]
+        else:
+            step = (upper - target) / Decimal(max(1, len(tranches) - 1))
+            levels = [upper - (step * Decimal(i)) for i in range(len(tranches))]
+        for idx, tranche in enumerate(tranches):
+            tranche["threshold_trigger_pct"] = str(_q_money(levels[idx]))
+            tranche["order_type"] = "MKT"
+    elif method == PLAN_METHOD_BROKER_ALGO:
+        algo = str(method_config.get("broker_algo") or BROKER_ALGO_TWAP).upper()
+        window = _safe_int_or_none(method_config.get("broker_algo_window_minutes")) or 60
+        for tranche in tranches:
+            tranche["broker_algo"] = algo
+            tranche["broker_algo_window_minutes"] = window
+            tranche["order_type"] = "MKT"
+    else:
+        for tranche in tranches:
+            tranche["order_type"] = "MKT"
+
+
+def _find_plan(
+    *,
+    plans: list[dict],
+    plan_id: str,
+) -> dict | None:
+    target = (plan_id or "").strip()
+    if not target:
+        return None
+    return next((plan for plan in plans if str(plan.get("plan_id") or "") == target), None)
+
+
+def _csv_safe(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _deterministic_external_id(*, plan_id: str, sequence: int, event_date: str) -> str:
+    compact = event_date.replace("-", "")
+    return f"SP-{plan_id[:12]}-{sequence:03d}-{compact}"
+
+
+def _normalize_plan_record(plan: dict) -> dict:
+    out = dict(plan)
+    method_raw = out.get("method", PLAN_METHOD_CALENDAR_TRANCHES)
+    try:
+        method = _normalized_method(method_raw)
+    except ValueError:
+        method = PLAN_METHOD_CALENDAR_TRANCHES
+    out["method"] = method
+
+    approval_raw = out.get("approval_status", APPROVAL_STATUS_DRAFT)
+    try:
+        approval = _normalized_approval_status(approval_raw)
+    except ValueError:
+        approval = APPROVAL_STATUS_DRAFT
+    out["approval_status"] = approval
+    if approval != APPROVAL_STATUS_APPROVED:
+        out["approved_at_utc"] = None
+    else:
+        out["approved_at_utc"] = out.get("approved_at_utc")
+
+    method_config = out.get("method_config")
+    if not isinstance(method_config, dict):
+        method_config = _default_method_config(
+            method=method,
+            tranche_count=int(out.get("tranche_count") or 1),
+            reference_price_gbp=_safe_decimal_or_none(_constraints_for_plan(out).get("reference_price_gbp")),
+            threshold_upper_pct=None,
+            threshold_target_pct=None,
+            threshold_review_days=None,
+            limit_start_gbp=None,
+            limit_step_gbp=None,
+            broker_algo_name=None,
+            broker_algo_window_minutes=None,
+        )
+    out["method_config"] = method_config
+
+    execution_profile = out.get("execution_profile")
+    if not isinstance(execution_profile, dict):
+        execution_profile = _profile_payload(
+            profile_code=PROFILE_HYBRID_DE_RISK,
+            concentration_trigger_pct=None,
+            limit_guardrail_discount_pct=None,
+        )
+    else:
+        profile_code = execution_profile.get("profile_code", PROFILE_HYBRID_DE_RISK)
+        try:
+            profile_code = _normalized_profile(profile_code)
+        except ValueError:
+            profile_code = PROFILE_HYBRID_DE_RISK
+        execution_profile = _profile_payload(
+            profile_code=profile_code,
+            concentration_trigger_pct=_safe_decimal_or_none(
+                execution_profile.get("concentration_trigger_pct")
+            ),
+            limit_guardrail_discount_pct=_safe_decimal_or_none(
+                execution_profile.get("limit_guardrail_discount_pct")
+            ),
+        )
+    out["execution_profile"] = execution_profile
+
+    tranches = out.get("tranches", [])
+    if isinstance(tranches, list):
+        new_tranches = [dict(t) for t in tranches if isinstance(t, dict)]
+        _enrich_tranches_with_method_fields(
+            method=method,
+            tranches=new_tranches,
+            method_config=method_config,
+        )
+        out["tranches"] = new_tranches
+    else:
+        out["tranches"] = []
+    return out
+
+
 class SellPlanService:
     @staticmethod
     def load_plans(db_path: Path | None) -> list[dict]:
@@ -266,7 +573,9 @@ class SellPlanService:
             return []
         payload = _load_payload(_plans_path(db_path))
         plans = payload.get("plans", [])
-        return plans if isinstance(plans, list) else []
+        if not isinstance(plans, list):
+            return []
+        return [_normalize_plan_record(plan) for plan in plans if isinstance(plan, dict)]
 
     @staticmethod
     def save_plans(db_path: Path | None, plans: list[dict]) -> None:
@@ -293,8 +602,55 @@ class SellPlanService:
         reference_price_gbp: Decimal | None = None,
         fee_per_tranche_gbp: Decimal | None = None,
     ) -> dict:
+        return SellPlanService.create_plan(
+            db_path=db_path,
+            security_id=security_id,
+            ticker=ticker,
+            method=PLAN_METHOD_CALENDAR_TRANCHES,
+            total_quantity=total_quantity,
+            tranche_count=tranche_count,
+            start_date=start_date,
+            cadence_days=cadence_days,
+            max_sellable_quantity=max_sellable_quantity,
+            max_daily_quantity=max_daily_quantity,
+            max_daily_notional_gbp=max_daily_notional_gbp,
+            min_spacing_days=min_spacing_days,
+            reference_price_gbp=reference_price_gbp,
+            fee_per_tranche_gbp=fee_per_tranche_gbp,
+        )
+
+    @staticmethod
+    def create_plan(
+        *,
+        db_path: Path | None,
+        security_id: str,
+        ticker: str,
+        method: str,
+        total_quantity: Decimal,
+        tranche_count: int,
+        start_date: date_type,
+        cadence_days: int,
+        max_sellable_quantity: Decimal,
+        max_daily_quantity: Decimal | None = None,
+        max_daily_notional_gbp: Decimal | None = None,
+        min_spacing_days: int = _DEFAULT_MIN_SPACING_DAYS,
+        reference_price_gbp: Decimal | None = None,
+        fee_per_tranche_gbp: Decimal | None = None,
+        threshold_upper_pct: Decimal | None = None,
+        threshold_target_pct: Decimal | None = None,
+        threshold_review_days: int | None = None,
+        limit_start_gbp: Decimal | None = None,
+        limit_step_gbp: Decimal | None = None,
+        broker_algo_name: str | None = None,
+        broker_algo_window_minutes: int | None = None,
+        execution_profile: str = PROFILE_HYBRID_DE_RISK,
+        profile_concentration_trigger_pct: Decimal | None = None,
+        profile_limit_guardrail_discount_pct: Decimal | None = None,
+    ) -> dict:
         if db_path is None:
             raise ValueError("Database path is required.")
+        method_code = _normalized_method(method)
+        profile_code = _normalized_profile(execution_profile)
         if cadence_days < 1:
             raise ValueError("Cadence days must be at least 1.")
         if tranche_count < 1 or tranche_count > 120:
@@ -359,6 +715,24 @@ class SellPlanService:
         if breaches:
             raise ValueError("Constraint breach: " + " | ".join(breaches))
 
+        method_config = _default_method_config(
+            method=method_code,
+            tranche_count=tranche_count,
+            reference_price_gbp=reference_price_gbp,
+            threshold_upper_pct=threshold_upper_pct,
+            threshold_target_pct=threshold_target_pct,
+            threshold_review_days=threshold_review_days,
+            limit_start_gbp=limit_start_gbp,
+            limit_step_gbp=limit_step_gbp,
+            broker_algo_name=broker_algo_name,
+            broker_algo_window_minutes=broker_algo_window_minutes,
+        )
+        profile_payload = _profile_payload(
+            profile_code=profile_code,
+            concentration_trigger_pct=profile_concentration_trigger_pct,
+            limit_guardrail_discount_pct=profile_limit_guardrail_discount_pct,
+        )
+
         created_at = _now_utc_iso()
         plan_id = uuid4().hex
         tranches: list[dict] = []
@@ -374,19 +748,28 @@ class SellPlanService:
                     "updated_at_utc": created_at,
                 }
             )
+        _enrich_tranches_with_method_fields(
+            method=method_code,
+            tranches=tranches,
+            method_config=method_config,
+        )
 
         plan = {
             "plan_id": plan_id,
             "created_at_utc": created_at,
             "updated_at_utc": created_at,
-            "method": PLAN_METHOD_CALENDAR_TRANCHES,
+            "method": method_code,
             "status": _PLAN_STATUS_ACTIVE,
+            "approval_status": APPROVAL_STATUS_DRAFT,
+            "approved_at_utc": None,
             "security_id": security_id,
             "ticker": ticker,
             "total_quantity": _qty_str(total_q),
             "max_sellable_quantity_at_create": _qty_str(max_whole_sellable),
             "cadence_days": cadence_days,
             "tranche_count": tranche_count,
+            "method_config": method_config,
+            "execution_profile": profile_payload,
             "constraints": {
                 "max_daily_quantity": (
                     _qty_str(max_daily_qty_cap)
@@ -421,6 +804,131 @@ class SellPlanService:
         plans = SellPlanService.load_plans(db_path)
         plans.sort(key=lambda p: (p.get("created_at_utc") or "", p.get("plan_id") or ""))
         return plans
+
+    @staticmethod
+    def get_plan_by_id(
+        *,
+        db_path: Path | None,
+        plan_id: str,
+    ) -> dict | None:
+        plans = SellPlanService.load_plans(db_path)
+        return _find_plan(plans=plans, plan_id=plan_id)
+
+    @staticmethod
+    def set_plan_approval_status(
+        *,
+        db_path: Path | None,
+        plan_id: str,
+        approval_status: str,
+    ) -> dict:
+        if db_path is None:
+            raise ValueError("Database path is required.")
+        status = _normalized_approval_status(approval_status)
+
+        plans = SellPlanService.load_plans(db_path)
+        target_plan = _find_plan(plans=plans, plan_id=plan_id)
+        if target_plan is None:
+            raise ValueError("Plan not found.")
+        if str(target_plan.get("status") or "").upper() == _PLAN_STATUS_CANCELLED:
+            raise ValueError("Cancelled plans cannot be approved.")
+
+        now = _now_utc_iso()
+        target_plan["approval_status"] = status
+        target_plan["approved_at_utc"] = now if status == APPROVAL_STATUS_APPROVED else None
+        target_plan["updated_at_utc"] = now
+
+        SellPlanService.save_plans(db_path, plans)
+        return target_plan
+
+    @staticmethod
+    def export_ibkr_order_staging_csv(
+        *,
+        db_path: Path | None,
+        plan_id: str,
+        include_closed: bool = False,
+    ) -> str:
+        plan = SellPlanService.get_plan_by_id(db_path=db_path, plan_id=plan_id)
+        if plan is None:
+            raise ValueError("Plan not found.")
+        if str(plan.get("approval_status") or APPROVAL_STATUS_DRAFT).upper() != APPROVAL_STATUS_APPROVED:
+            raise ValueError("Plan must be approved before export.")
+
+        method = _normalized_method(plan.get("method"))
+        method_config = plan.get("method_config", {}) if isinstance(plan.get("method_config"), dict) else {}
+        ticker = str(plan.get("ticker") or "")
+        if not ticker:
+            raise ValueError("Plan ticker is required for export.")
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(
+            [
+                "ExternalId",
+                "PlanId",
+                "TrancheId",
+                "Security",
+                "Action",
+                "Quantity",
+                "OrderType",
+                "LimitPrice",
+                "AlgoStrategy",
+                "AlgoWindowMinutes",
+                "GoodAfterDate",
+                "TIF",
+                "Method",
+                "Sequence",
+                "TrancheDate",
+                "TrancheStatus",
+                "ThresholdTriggerPct",
+            ]
+        )
+
+        for tranche in plan.get("tranches", []):
+            status = str(tranche.get("status") or TRANCHE_STATUS_PLANNED).upper()
+            if not include_closed and status in {TRANCHE_STATUS_CANCELLED, TRANCHE_STATUS_EXECUTED}:
+                continue
+
+            sequence = int(tranche.get("sequence") or 0)
+            event_date = str(tranche.get("event_date") or "")
+            if sequence <= 0 or not event_date:
+                continue
+
+            order_type = str(tranche.get("order_type") or "MKT").upper()
+            limit_price = ""
+            if order_type == "LMT":
+                limit_price = _csv_safe(tranche.get("limit_price_gbp"))
+
+            algo_strategy = ""
+            algo_window = ""
+            if method == PLAN_METHOD_BROKER_ALGO:
+                algo_strategy = _csv_safe(method_config.get("broker_algo") or tranche.get("broker_algo"))
+                algo_window = _csv_safe(
+                    method_config.get("broker_algo_window_minutes") or tranche.get("broker_algo_window_minutes")
+                )
+
+            writer.writerow(
+                [
+                    _deterministic_external_id(plan_id=str(plan.get("plan_id") or ""), sequence=sequence, event_date=event_date),
+                    _csv_safe(plan.get("plan_id")),
+                    _csv_safe(tranche.get("tranche_id")),
+                    ticker,
+                    "SELL",
+                    _csv_safe(tranche.get("quantity")),
+                    order_type,
+                    limit_price,
+                    algo_strategy,
+                    algo_window,
+                    f"{event_date} 09:30:00",
+                    "DAY",
+                    method,
+                    sequence,
+                    event_date,
+                    status,
+                    _csv_safe(tranche.get("threshold_trigger_pct")),
+                ]
+            )
+
+        return output.getvalue()
 
     @staticmethod
     def delete_plan(

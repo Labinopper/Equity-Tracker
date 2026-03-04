@@ -5,10 +5,10 @@
 <div class="page-title">
   <div>
     <h1>Sell Plan</h1>
-    <p class="muted">Deterministic staged-disposal planner (calendar tranches, no price forecasting).</p>
+    <p class="muted">Deterministic staged-disposal planner (method profiles, no market prediction).</p>
   </div>
   <div class="page-actions">
-    <a href="/calendar?sell_method=CALENDAR_TRANCHES" class="btn btn-secondary btn-sm">View in Calendar</a>
+    <a href="/calendar" class="btn btn-secondary btn-sm">View in Calendar</a>
   </div>
 </div>
 
@@ -17,12 +17,12 @@
 {% endif %}
 
 <div class="alert alert-info">
-  Recommended flow: run <a href="/simulate">Simulate Disposal</a> first, then create or refine a sell plan.
+  Recommended flow: run <a href="/simulate">Simulate Disposal</a> first, then create, approve, and export staged orders.
 </div>
 
 <div class="card">
   <div class="card__header">
-    <h2 class="card__title">Create Plan ({{ method_label }})</h2>
+    <h2 class="card__title">Create Plan</h2>
   </div>
   <form method="post" action="/sell-plan">
     <div class="form-grid">
@@ -40,6 +40,33 @@
           </option>
           {% endfor %}
         </select>
+      </div>
+      <div class="form-field">
+        <label for="method">Execution Method *</label>
+        <select id="method" name="method" required>
+          {% for code, label in method_options.items() %}
+          <option value="{{ code }}" {{ 'selected' if form_defaults.method == code }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="execution_profile">Execution Profile *</label>
+        <select id="execution_profile" name="execution_profile" required>
+          {% for code, label in profile_options.items() %}
+          <option value="{{ code }}" {{ 'selected' if form_defaults.execution_profile == code }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">
+          Hybrid De-Risk rationale: fixed calendar pacing + concentration trigger discipline + limit guardrails (non-advisory).
+        </span>
+      </div>
+      <div class="form-field">
+        <label for="profile_concentration_trigger_pct">Profile Concentration Trigger (%)</label>
+        <input id="profile_concentration_trigger_pct" name="profile_concentration_trigger_pct" type="text" value="{{ form_defaults.profile_concentration_trigger_pct }}">
+      </div>
+      <div class="form-field">
+        <label for="profile_limit_guardrail_discount_pct">Profile Limit Guardrail Discount (%)</label>
+        <input id="profile_limit_guardrail_discount_pct" name="profile_limit_guardrail_discount_pct" type="text" value="{{ form_defaults.profile_limit_guardrail_discount_pct }}">
       </div>
       <div class="form-field">
         <label for="total_quantity">Total Quantity *</label>
@@ -75,11 +102,46 @@
       </div>
       <div class="form-field">
         <label for="reference_price_gbp">Reference Price (GBP)</label>
-        <input id="reference_price_gbp" name="reference_price_gbp" type="text" placeholder="required for notional cap / impact preview" value="{{ form_defaults.reference_price_gbp }}">
+        <input id="reference_price_gbp" name="reference_price_gbp" type="text" placeholder="required for impact preview/notional checks" value="{{ form_defaults.reference_price_gbp }}">
       </div>
       <div class="form-field">
         <label for="fee_per_tranche_gbp">Fee per Tranche (GBP)</label>
         <input id="fee_per_tranche_gbp" name="fee_per_tranche_gbp" type="text" value="{{ form_defaults.fee_per_tranche_gbp }}">
+      </div>
+
+      <div class="form-field" data-method-section="THRESHOLD_BANDS">
+        <label for="threshold_upper_pct">Threshold Upper (%)</label>
+        <input id="threshold_upper_pct" name="threshold_upper_pct" type="text" value="{{ form_defaults.threshold_upper_pct }}">
+      </div>
+      <div class="form-field" data-method-section="THRESHOLD_BANDS">
+        <label for="threshold_target_pct">Threshold Target (%)</label>
+        <input id="threshold_target_pct" name="threshold_target_pct" type="text" value="{{ form_defaults.threshold_target_pct }}">
+      </div>
+      <div class="form-field" data-method-section="THRESHOLD_BANDS">
+        <label for="threshold_review_days">Threshold Review Cadence (days)</label>
+        <input id="threshold_review_days" name="threshold_review_days" type="number" min="1" max="365" value="{{ form_defaults.threshold_review_days }}">
+      </div>
+
+      <div class="form-field" data-method-section="LIMIT_LADDER">
+        <label for="limit_start_gbp">Limit Start (GBP)</label>
+        <input id="limit_start_gbp" name="limit_start_gbp" type="text" value="{{ form_defaults.limit_start_gbp }}">
+      </div>
+      <div class="form-field" data-method-section="LIMIT_LADDER">
+        <label for="limit_step_gbp">Limit Step (GBP)</label>
+        <input id="limit_step_gbp" name="limit_step_gbp" type="text" value="{{ form_defaults.limit_step_gbp }}">
+      </div>
+
+      <div class="form-field" data-method-section="BROKER_ALGO">
+        <label for="broker_algo_name">Broker Algo</label>
+        <select id="broker_algo_name" name="broker_algo_name">
+          {% for algo in broker_algo_options %}
+          <option value="{{ algo }}" {{ 'selected' if form_defaults.broker_algo_name == algo }}>{{ algo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field" data-method-section="BROKER_ALGO">
+        <label for="broker_algo_window_minutes">Algo Window (minutes)</label>
+        <input id="broker_algo_window_minutes" name="broker_algo_window_minutes" type="number" min="1" max="1440" value="{{ form_defaults.broker_algo_window_minutes }}">
       </div>
     </div>
     <div class="form-actions">
@@ -98,28 +160,68 @@
     <div id="plan-{{ plan.plan_id }}" class="card{% if selected_plan_id and selected_plan_id == plan.plan_id %} card--highlight{% endif %}">
       <div class="card__header">
         <h3 class="card__title">
-          {{ plan.ticker }} | {{ plan.method | replace('_', ' ') | title }}
+          {{ plan.ticker }} | {{ plan.method_label }}
           <span class="badge badge-neutral">{{ plan.status }}</span>
+          <span class="badge {{ 'badge-sellable' if plan.is_approved else 'badge-warning' }}">{{ plan.approval_status or 'DRAFT' }}</span>
         </h3>
-        <form method="post" action="/sell-plan/delete" class="inline-form" onsubmit="return confirm('Delete sell plan {{ plan.plan_id[:8] }}? This cannot be undone.');">
-          <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
-          <button type="submit" class="btn btn-secondary btn-sm">Delete Plan</button>
-        </form>
+        <div class="inline-form">
+          {% if plan.is_approved %}
+          <form method="post" action="/sell-plan/approval" class="inline-form">
+            <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+            <input type="hidden" name="approval_status" value="DRAFT">
+            <button type="submit" class="btn btn-secondary btn-sm">Set Draft</button>
+          </form>
+          {% else %}
+          <form method="post" action="/sell-plan/approval" class="inline-form">
+            <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+            <input type="hidden" name="approval_status" value="{{ approval_status_approved }}">
+            <button type="submit" class="btn btn-primary btn-sm">Approve Plan</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/sell-plan/delete" class="inline-form" onsubmit="return confirm('Delete sell plan {{ plan.plan_id[:8] }}? This cannot be undone.');">
+            <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+            <button type="submit" class="btn btn-secondary btn-sm">Delete Plan</button>
+          </form>
+        </div>
       </div>
       <p class="muted">
         Plan ID <code>{{ plan.plan_id }}</code> |
         Total Qty {{ plan.total_quantity }} |
         Tranches {{ plan.tranche_count }} |
         Cadence {{ plan.cadence_days }} day(s) |
-        <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}">Open in Calendar</a>
+        <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}">Open in Calendar</a> |
+        {% if plan.is_approved %}
+        <a href="/sell-plan/export?plan_id={{ plan.plan_id }}">Export IBKR CSV</a>
+        {% else %}
+        <span>Export IBKR CSV (approve first)</span>
+        {% endif %}
       </p>
       {% set constraints = plan.constraints or {} %}
+      {% set method_config = plan.method_config or {} %}
+      {% set profile = plan.execution_profile or {} %}
       <p class="muted">
         Constraints: Min spacing {{ constraints.min_spacing_days or '-' }} day(s),
         Max daily qty {{ constraints.max_daily_quantity or '-' }},
         Max daily notional GBP {{ constraints.max_daily_notional_gbp or '-' }},
         Ref price GBP {{ constraints.reference_price_gbp or '-' }},
         Fee/tranche GBP {{ constraints.fee_per_tranche_gbp or '0.00' }}.
+      </p>
+      <p class="muted">
+        Method config:
+        {% if plan.method == 'THRESHOLD_BANDS' %}
+        Upper {{ method_config.threshold_upper_pct }}%, Target {{ method_config.threshold_target_pct }}%, Review {{ method_config.threshold_review_cadence_days }} day(s).
+        {% elif plan.method == 'LIMIT_LADDER' %}
+        Start &pound;{{ method_config.limit_start_gbp | money }}, Step &pound;{{ method_config.limit_step_gbp | money }}.
+        {% elif plan.method == 'BROKER_ALGO' %}
+        Algo {{ method_config.broker_algo }}, Window {{ method_config.broker_algo_window_minutes }} minute(s).
+        {% else %}
+        Even tranche allocation over fixed cadence.
+        {% endif %}
+      </p>
+      <p class="muted">
+        Profile: {{ profile.profile_code or 'HYBRID_DE_RISK' }}
+        (Concentration trigger {{ profile.concentration_trigger_pct or '-' }}%,
+        Limit guardrail {{ profile.limit_guardrail_discount_pct or '-' }}%).
       </p>
       {% if plan.impact_totals %}
       <p class="muted">
@@ -144,6 +246,7 @@
               <th>#</th>
               <th>Date</th>
               <th class="num">Qty</th>
+              <th>Order</th>
               <th>Status</th>
               <th class="num">Gross (GBP)</th>
               <th class="num">Emp Tax Est.</th>
@@ -162,6 +265,18 @@
               <td>{{ tranche.sequence }}</td>
               <td>{{ tranche.event_date }}</td>
               <td class="num">{{ tranche.quantity }}</td>
+              <td>
+                {{ tranche.order_type or 'MKT' }}
+                {% if tranche.limit_price_gbp %}
+                @ &pound;{{ tranche.limit_price_gbp | money }}
+                {% endif %}
+                {% if tranche.threshold_trigger_pct %}
+                | Trigger &gt; {{ tranche.threshold_trigger_pct }}%
+                {% endif %}
+                {% if tranche.broker_algo %}
+                | {{ tranche.broker_algo }} {{ tranche.broker_algo_window_minutes }}m
+                {% endif %}
+              </td>
               <td>
                 <span class="badge {% if tranche.effective_status in ['DUE', 'CANCELLED'] %}badge-warning{% elif tranche.effective_status == 'EXECUTED' %}badge-sellable{% else %}badge-neutral{% endif %}">
                   {{ tranche.effective_status }}
@@ -240,7 +355,7 @@
             </tr>
             {% if tranche.impact_note %}
             <tr>
-              <td colspan="13" class="muted">{{ tranche.impact_note }}</td>
+              <td colspan="14" class="muted">{{ tranche.impact_note }}</td>
             </tr>
             {% endif %}
             {% endfor %}
@@ -257,10 +372,15 @@
 <script>
 (function () {
   var securitySel = document.getElementById('security_id');
+  var methodSel = document.getElementById('method');
+  var profileSel = document.getElementById('execution_profile');
   var qtyInput = document.getElementById('total_quantity');
   var maxBtn = document.getElementById('btn-max');
   var qtyHint = document.getElementById('qty-available');
   var refPriceInput = document.getElementById('reference_price_gbp');
+  var limitStartInput = document.getElementById('limit_start_gbp');
+  var profileTriggerInput = document.getElementById('profile_concentration_trigger_pct');
+  var profileGuardrailInput = document.getElementById('profile_limit_guardrail_discount_pct');
 
   function selectedOption() {
     if (!securitySel) return null;
@@ -290,6 +410,29 @@
       refPriceInput.value = price;
       refPriceInput.dataset.autoFilled = 'true';
     }
+    if (limitStartInput && (!limitStartInput.value || limitStartInput.dataset.autoFilled === 'true')) {
+      limitStartInput.value = price;
+      limitStartInput.dataset.autoFilled = 'true';
+    }
+  }
+
+  function updateMethodSections() {
+    var method = methodSel ? methodSel.value : '';
+    var sections = document.querySelectorAll('[data-method-section]');
+    sections.forEach(function (node) {
+      var target = node.getAttribute('data-method-section');
+      node.style.display = (!target || target === method) ? '' : 'none';
+    });
+  }
+
+  function applyRecommendedProfileDefaults() {
+    if (!profileSel || profileSel.value !== 'HYBRID_DE_RISK') return;
+    if (profileTriggerInput && !profileTriggerInput.value) {
+      profileTriggerInput.value = '40.00';
+    }
+    if (profileGuardrailInput && !profileGuardrailInput.value) {
+      profileGuardrailInput.value = '1.00';
+    }
   }
 
   if (qtyInput) {
@@ -302,8 +445,19 @@
       refPriceInput.dataset.autoFilled = 'false';
     });
   }
+  if (limitStartInput) {
+    limitStartInput.addEventListener('input', function () {
+      limitStartInput.dataset.autoFilled = 'false';
+    });
+  }
   if (securitySel) {
     securitySel.addEventListener('change', updateDefaultsFromSelection);
+  }
+  if (methodSel) {
+    methodSel.addEventListener('change', updateMethodSections);
+  }
+  if (profileSel) {
+    profileSel.addEventListener('change', applyRecommendedProfileDefaults);
   }
   if (maxBtn) {
     maxBtn.addEventListener('click', function () {
@@ -315,6 +469,8 @@
   }
 
   updateDefaultsFromSelection();
+  updateMethodSections();
+  applyRecommendedProfileDefaults();
 })();
 </script>
 {% endblock %}
