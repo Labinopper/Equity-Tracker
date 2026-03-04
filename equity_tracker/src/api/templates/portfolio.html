@@ -33,13 +33,13 @@
   <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today</div>
     {% if portfolio_net_gain_if_sold is not none %}
-    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% elif portfolio_net_gain_if_sold > 0 %}+{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
+    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">&pound;{% if portfolio_net_gain_if_sold < 0 %}-{% elif portfolio_net_gain_if_sold > 0 %}+{% endif %}{{ portfolio_net_gain_if_sold | abs | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="Includes vesting locks and forfeiture windows.">Blocked / Restricted Market Value</div>
+    <div class="stat__label" title="Includes vesting locks and forfeiture windows.">Blocked/Restricted Value</div>
     {% if portfolio_blocked_restricted_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_blocked_restricted_value | money }}</div>
     {% else %}
@@ -55,7 +55,7 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total True Economic Cost</div>
+    <div class="stat__label">Total True Cost</div>
     <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
   </div>
   <div class="stat">
@@ -124,9 +124,10 @@
           {% elif daily.direction == "down" %}
           Down
           {% else %}
-          Flat
+          No change{% if daily.market_status and daily.market_status | lower == "open" %} (market open){% endif %}
           {% endif %}
-          {{ "%.2f"|format(daily.percent_change | abs) }}% 
+          {{ "%.2f"|format(daily.percent_change | abs) }}%
+          ({% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }})
         </span>
         <button class="info-button" aria-label="Daily change breakdown">ℹ</button>
         <div class="tooltip">
@@ -185,7 +186,7 @@
         {% if daily.market_status | lower == 'open' %}
           Open
         {% else %}
-          Closed
+          Closed{% if daily.market_opens_in %} (opening in {{ daily.market_opens_in }}){% endif %}
         {% endif %}
       </span>
       {% endif %}
@@ -220,14 +221,14 @@
     <div class="security-lots-toggle__body">
 
   <div class="security-meta">
-    <span>Qty <strong>{{ "%.2f"|format(ss.total_quantity) }}</strong></span>
+    <span>Total Quantity <strong>{{ "%.2f"|format(ss.total_quantity) }}</strong></span>
     <span>Cost basis <strong>&pound;{{ ss.total_cost_basis_gbp | money }}</strong></span>
     <span>True cost <strong>&pound;{{ ss.total_true_cost_gbp | money }}</strong></span>
     {% if ss.current_price_native is not none and ss.market_value_native_currency %}
     <span>
-      Price <strong>{% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}{{ ss.current_price_native | public_money }}</strong>
+      Price <strong>{% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}{{ ss.current_price_native | money }}</strong>
       {% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}
-      / <strong>&pound;{{ ss.current_price_gbp | public_money }}</strong>
+      / <strong>&pound;{{ ss.current_price_gbp | money }}</strong>
       {% endif %}
     </span>
     {% endif %}
@@ -239,6 +240,14 @@
       {% endif %}
       <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
     </span>
+    {% if ss.sellable_net_gain_gbp is not none %}
+    <span>
+      P&amp;L (Economic)
+      <strong class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">
+        {% if ss.sellable_net_gain_gbp < 0 %}-{% elif ss.sellable_net_gain_gbp > 0 %}+{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}
+      </strong>
+    </span>
+    {% endif %}
     {% if ss.sellable_net_gain_gbp is not none or ss.locked_unrealised_gain_economic_gbp is not none or ss.forfeit_risk_market_value_gbp is not none %}
     <details class="unrealised-gains-toggle">
       <summary>
@@ -287,7 +296,7 @@
             <th class="num">Gain If Sold Today</th>
             <th class="decision-zone-head">Net If Held (Next Milestone)</th>
             <th class="num">Gain If Held</th>
-            <th class="decision-zone-head">Net When Long-Term Status Met</th>
+            <th class="decision-zone-head">Net If Long-Term (5+ Years)</th>
             <th class="num">Gain If Long-Term</th>
             <th>Notes</th>
             <th class="actions-head">Actions</th>
@@ -316,7 +325,7 @@
             <td>
               <span class="status-stack">
                 {% if has_forfeiture_risk %}
-                <span class="badge badge-warning">Forfeiture Window ({{ row.forfeiture_risk_days_remaining }}d left)</span>
+                <span class="badge badge-warning">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d left)</span>
                 {% elif row.sellability_status == "LOCKED" %}
                 <span class="badge badge-neutral">Locked</span>
                 {% else %}
@@ -367,7 +376,7 @@
               {% elif row.sellability_status == "LOCKED" %}
               <span class="badge badge-neutral">Locked</span>
               {% else %}
-              <span class="muted">{{ row.reason_unavailable or "Unavailable" }}</span>
+              <span class="muted">Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}</span>
               {% endif %}
             </td>
             <td class="num {% if row.sell_now_economic_result is not none and row.sell_now_economic_result > 0 %}gain{% elif row.sell_now_economic_result is not none and row.sell_now_economic_result < 0 %}loss{% endif %}">
@@ -376,7 +385,7 @@
               {% elif row.sellability_status == "LOCKED" %}
               <span class="badge badge-neutral">Locked</span>
               {% else %}
-              <span class="muted">{{ row.reason_unavailable or "Unavailable" }}</span>
+              <span class="muted">Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}</span>
               {% endif %}
             </td>
             <td class="decision-zone num">
@@ -584,7 +593,7 @@
         <div class="position-card__label">Identity</div>
         <div class="position-card__value">
           {% if has_forfeiture_risk %}
-          <span class="badge badge-warning">Forfeiture Window ({{ row.forfeiture_risk_days_remaining }}d left)</span>
+          <span class="badge badge-warning">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d left)</span>
           {% elif row.sellability_status == "LOCKED" %}
           <span class="badge badge-neutral">Locked</span>
           {% else %}
@@ -606,8 +615,8 @@
       </div>
       <div class="position-card__section">
         <div class="position-card__label">Sell Today</div>
-        <div class="position-card__value">Net If Sold Today {% if row.net_cash_if_sold is not none %}&pound;{{ row.net_cash_if_sold | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}{{ row.reason_unavailable or "Unavailable" }}{% endif %}</div>
-        <div class="position-card__value">Gain If Sold Today {% if row.sell_now_economic_result is not none %}{% if row.sell_now_economic_result < 0 %}-{% elif row.sell_now_economic_result > 0 %}+{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}{{ row.reason_unavailable or "Unavailable" }}{% endif %}</div>
+        <div class="position-card__value">Net If Sold Today {% if row.net_cash_if_sold is not none %}&pound;{{ row.net_cash_if_sold | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
+        <div class="position-card__value">Gain If Sold Today {% if row.sell_now_economic_result is not none %}{% if row.sell_now_economic_result < 0 %}-{% elif row.sell_now_economic_result > 0 %}+{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
       </div>
       <div class="position-card__section">
         <div class="position-card__label">Next Milestone</div>

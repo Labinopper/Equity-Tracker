@@ -65,7 +65,8 @@ async def api_portfolio_history(
     """Accurate portfolio value over time."""
     days = _RANGE_DAYS.get(range)
     from_date = date.today() - timedelta(days=days) if days else None
-    return HistoryService.get_portfolio_history(from_date=from_date)
+    settings = _load_settings()
+    return HistoryService.get_portfolio_history(from_date=from_date, settings=settings)
 
 
 @router.get("/api/history/{security_id}")
@@ -77,7 +78,12 @@ async def api_security_history(
     """Per-security price history, cost basis overlays, and summary stats."""
     days = _RANGE_DAYS.get(range)
     from_date = date.today() - timedelta(days=days) if days else None
-    return HistoryService.get_security_history(security_id, from_date=from_date)
+    settings = _load_settings()
+    return HistoryService.get_security_history(
+        security_id,
+        from_date=from_date,
+        settings=settings,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +97,7 @@ async def history_overview(request: Request) -> HTMLResponse:
         return _locked_response(request)
 
     settings = _load_settings()
-    history_data = HistoryService.get_portfolio_history()
+    history_data = HistoryService.get_portfolio_history(settings=settings)
     return templates.TemplateResponse(
         request,
         "history.html",
@@ -111,7 +117,7 @@ async def history_security(request: Request, security_id: str) -> HTMLResponse:
         return _locked_response(request)
 
     settings = _load_settings()
-    history_data = HistoryService.get_security_history(security_id)
+    history_data = HistoryService.get_security_history(security_id, settings=settings)
 
     if history_data.get("error") == "security_not_found":
         return templates.TemplateResponse(

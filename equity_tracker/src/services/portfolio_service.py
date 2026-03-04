@@ -940,6 +940,12 @@ class PortfolioService:
                 total_cost = sum((ls.cost_basis_total_gbp  for ls in lot_summaries), Decimal("0"))
                 total_true = sum((ls.true_cost_total_gbp   for ls in lot_summaries), Decimal("0"))
 
+                # Badge values are computed from priced lots. Keep explicit defaults
+                # so unpriced securities still render without runtime errors.
+                badge_sellable_mv: Decimal | None = None
+                badge_espp_plus_pending_mv: Decimal | None = None
+                badge_rsu_vesting_mv: Decimal | None = None
+
                 # Phase L: attach live price data when available
                 price_row = price_repo.get_latest(security.id)
                 if price_row is not None and price_row.close_price_gbp is not None:

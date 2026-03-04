@@ -344,6 +344,8 @@
           </td>
           {% elif row.sellability_status == 'LOCKED' %}
           <td class="num muted">-</td>
+          {% else %}
+          <td class="num muted">Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}</td>
           {% endif %}
 
           <td class="risk-cell">
@@ -373,8 +375,12 @@
     </table>
   </div>
     </div>
-  </details>
+  {% elif position_rows %}
+  <div class="security-lots-toggle__body">
+    <p class="muted no-lots-note">No live price available.</p>
+  </div>
   {% endif %}
+  </details>
 </div>
 {% endfor %}
 

@@ -36,6 +36,7 @@ import bisect
 import logging
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
@@ -46,6 +47,8 @@ from ..db.repository import (
     PriceRepository,
     SecurityRepository,
 )
+from ..settings import AppSettings
+from .portfolio_service import _estimate_sell_all_employment_tax
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +149,8 @@ def _is_lot_locked_on(lot, d: date) -> bool:
     acquisition.
     """
     if lot.scheme_type == "ESPP_PLUS" and lot.matching_lot_id is not None:
-        return d < lot.acquisition_date + timedelta(days=183)
+        end = lot.forfeiture_period_end or (lot.acquisition_date + timedelta(days=183))
+        return d < end
     return False
 
 
@@ -162,6 +166,65 @@ def _is_lot_sellable_on(lot, d: date) -> bool:
     if lot.scheme_type == "RSU":
         return d >= lot.acquisition_date
     return not _is_lot_locked_on(lot, d)
+
+
+def _q2(v: Decimal) -> Decimal:
+    return v.quantize(_QUANT2, rounding=ROUND_HALF_UP)
+
+
+def _shadow_lot_with_qty(lot, qty: Decimal):
+    """
+    Lightweight lot object for tax estimation at historical quantity.
+    Uses only fields needed by portfolio tax helpers.
+    """
+    return SimpleNamespace(
+        id=lot.id,
+        scheme_type=lot.scheme_type,
+        acquisition_date=lot.acquisition_date,
+        quantity_remaining=str(qty),
+        acquisition_price_gbp=lot.acquisition_price_gbp,
+        true_cost_per_share_gbp=lot.true_cost_per_share_gbp,
+        matching_lot_id=getattr(lot, "matching_lot_id", None),
+        forfeiture_period_end=getattr(lot, "forfeiture_period_end", None),
+        fmv_at_acquisition_gbp=getattr(lot, "fmv_at_acquisition_gbp", None),
+    )
+
+
+def _lot_sell_now_economic_gain(
+    *,
+    lot,
+    qty: Decimal,
+    price_gbp: Decimal,
+    disposal_date: date,
+    settings: AppSettings | None,
+) -> Decimal | None:
+    """
+    Portfolio-aligned per-lot economic gain for a hypothetical same-day sale.
+    Returns None when tax is required but settings are unavailable.
+    """
+    if qty <= 0:
+        return Decimal("0.00")
+
+    true_per_share = (
+        _safe_decimal(lot.true_cost_per_share_gbp)
+        or _safe_decimal(lot.acquisition_price_gbp)
+        or Decimal("0")
+    )
+    lot_mkt = _q2(qty * price_gbp)
+    lot_true_total = _q2(qty * true_per_share)
+
+    shadow_lot = _shadow_lot_with_qty(lot, qty)
+    est_tax = _estimate_sell_all_employment_tax(
+        [shadow_lot],
+        price_gbp,
+        disposal_date,
+        settings,
+    )
+    if est_tax is None:
+        return None
+
+    est_net = _q2(lot_mkt - est_tax)
+    return _q2(est_net - lot_true_total)
 
 
 def _pct_change_str(current: Decimal, past: Decimal) -> str | None:
@@ -212,6 +275,7 @@ class HistoryService:
     def get_security_history(
         security_id: str,
         from_date: date | None = None,
+        settings: AppSettings | None = None,
     ) -> dict:
         """
         Returns a dict with price series, cost-basis overlays, lot events, and
@@ -375,11 +439,35 @@ class HistoryService:
                     if total_qty > 0
                     else None
                 )
-                sellable_gain = (
-                    (sellable_value - sellable_true).quantize(_QUANT2, rounding=ROUND_HALF_UP)
-                    if sellable_value is not None
-                    else None
-                )
+                sellable_gain = Decimal("0.00")
+                sellable_gain_incomplete = False
+                for lot in lots_sorted:
+                    if lot.acquisition_date > d:
+                        continue
+                    if not _is_lot_sellable_on(lot, d):
+                        continue
+                    current_qty = _safe_decimal(lot.quantity_remaining) or Decimal("0")
+                    future_disposed = sum(
+                        qty
+                        for tx_date, qty in lot_disposal_evts.get(lot.id, [])
+                        if tx_date > d
+                    )
+                    remaining = max(Decimal("0"), current_qty + future_disposed)
+                    if remaining <= 0:
+                        continue
+                    lot_gain = _lot_sell_now_economic_gain(
+                        lot=lot,
+                        qty=remaining,
+                        price_gbp=price_gbp,
+                        disposal_date=d,
+                        settings=settings,
+                    )
+                    if lot_gain is None:
+                        sellable_gain_incomplete = True
+                        break
+                    sellable_gain += lot_gain
+
+                sellable_gain_out = None if sellable_gain_incomplete else _q2(sellable_gain)
                 price_series.append({
                     "date": d.isoformat(),
                     "price_gbp": str(price_gbp.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
@@ -392,7 +480,11 @@ class HistoryService:
                     "nonsellable_qty": str(nonsellable_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
                     "sellable_value_gbp": str(sellable_value) if sellable_value is not None else None,
                     "nonsellable_value_gbp": str(nonsellable_value) if nonsellable_value is not None else None,
-                    "sellable_gain_gbp": str(sellable_gain) if sellable_gain is not None else None,
+                    "sellable_gain_gbp": (
+                        str(sellable_gain_out)
+                        if sellable_gain_out is not None
+                        else None
+                    ),
                     "has_lot_event": d in lot_event_dates,
                     "purchased_qty": (
                         str(purchased_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP))
@@ -471,7 +563,10 @@ class HistoryService:
         }
 
     @staticmethod
-    def get_portfolio_history(from_date: date | None = None) -> dict:
+    def get_portfolio_history(
+        from_date: date | None = None,
+        settings: AppSettings | None = None,
+    ) -> dict:
         """
         Accurate portfolio value over time.
 
@@ -637,7 +732,7 @@ class HistoryService:
             for d in sorted_dates:
                 total = Decimal("0")
                 sellable_gain = Decimal("0")
-                sellable_gain_has_price = False
+                sellable_gain_incomplete = False
                 priced_count = 0
                 held_count = 0
                 for sec in securities:
@@ -655,17 +750,13 @@ class HistoryService:
                         total += value
                         priced_count += 1
 
-                        # Gain If Sold Today: market value minus true cost for each
-                        # sellable lot. Includes regular lots and ESPP+ paid (employee)
-                        # shares. Excludes RSUs always; excludes ESPP+ matched (free)
-                        # shares only during their 183-day lock window.
+                        # Gain If Sold Today: portfolio-aligned per-lot net economic gain
+                        # for sellable holdings at date D.
                         sec_lots = lots_by_security.get(sec.id, [])
                         for lot in sec_lots:
                             if lot.acquisition_date > d:
                                 continue
-                            if lot.scheme_type == "RSU":
-                                continue
-                            if _is_lot_locked_on(lot, d):
+                            if not _is_lot_sellable_on(lot, d):
                                 continue
                             lot_remaining = _safe_decimal(lot.quantity_remaining) or Decimal("0")
                             lot_future = sum(
@@ -674,9 +765,19 @@ class HistoryService:
                             lot_qty = max(Decimal("0"), lot_remaining + lot_future)
                             if lot_qty <= 0:
                                 continue
-                            true_cost = _safe_decimal(lot.true_cost_per_share_gbp) or _safe_decimal(lot.acquisition_price_gbp) or Decimal("0")
-                            sellable_gain += (lot_qty * (price - true_cost)).quantize(_QUANT2, rounding=ROUND_HALF_UP)
-                            sellable_gain_has_price = True
+                            lot_gain = _lot_sell_now_economic_gain(
+                                lot=lot,
+                                qty=lot_qty,
+                                price_gbp=price,
+                                disposal_date=d,
+                                settings=settings,
+                            )
+                            if lot_gain is None:
+                                sellable_gain_incomplete = True
+                                break
+                            sellable_gain += lot_gain
+                        if sellable_gain_incomplete:
+                            continue
                     else:
                         per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None, "price_gbp": price_str})
 
@@ -710,7 +811,11 @@ class HistoryService:
                 total_series.append({
                     "date": d.isoformat(),
                     "total_value_gbp": str(total.quantize(_QUANT2)) if held_count > 0 else None,
-                    "sellable_gain_gbp": str(sellable_gain.quantize(_QUANT2)) if sellable_gain_has_price else None,
+                    "sellable_gain_gbp": (
+                        None
+                        if sellable_gain_incomplete or priced_count == 0
+                        else str(_q2(sellable_gain))
+                    ),
                     "priced_count": priced_count,
                     "total_count": held_count,
                     "share_events": share_events,
