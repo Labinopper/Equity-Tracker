@@ -1,5 +1,5 @@
 """
-Sell Plan routes (UI only for staged-disposal planning baseline).
+Sell Plan routes (UI-only staged-disposal planning).
 """
 
 from __future__ import annotations
@@ -49,7 +49,8 @@ def _sellable_securities(summary) -> list[dict]:
     for security_summary in summary.securities:
         sellable_qty = Decimal("0")
         for lot_summary in security_summary.active_lots:
-            if lot_summary.sellability_status == "LOCKED":
+            # SELLABLE only: excludes locked RSU and forfeiture-risk matched lots.
+            if str(lot_summary.sellability_status).upper() != "SELLABLE":
                 continue
             sellable_qty += lot_summary.quantity_remaining
         if sellable_qty <= Decimal("0"):
@@ -60,15 +61,44 @@ def _sellable_securities(summary) -> list[dict]:
                 "ticker": security_summary.security.ticker,
                 "name": security_summary.security.name,
                 "sellable_quantity": sellable_qty,
+                "reference_price_gbp": security_summary.current_price_gbp,
             }
         )
     rows.sort(key=lambda row: row["ticker"])
     return rows
 
 
-def _decorate_plan_for_ui(plan: dict, *, today: date_type) -> dict:
+def _parse_optional_decimal(raw_value: str, *, field_label: str) -> tuple[Decimal | None, str | None]:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return None, None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return None, f"Invalid {field_label}."
+    return value, None
+
+
+def _parse_optional_int(raw_value: str, *, field_label: str) -> tuple[int | None, str | None]:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return None, None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None, f"Invalid {field_label}."
+    return value, None
+
+
+def _decorate_plan_for_ui(
+    plan: dict,
+    *,
+    settings: AppSettings | None,
+    today: date_type,
+) -> dict:
+    enriched = SellPlanService.plan_with_impact_preview(plan=plan, settings=settings)
     tranches = []
-    for tranche in plan.get("tranches", []):
+    for tranche in enriched.get("tranches", []):
         event_date_raw = tranche.get("event_date")
         status = str(tranche.get("status") or TRANCHE_STATUS_PLANNED).upper()
         is_due = status == TRANCHE_STATUS_PLANNED and event_date_raw <= today.isoformat()
@@ -80,7 +110,7 @@ def _decorate_plan_for_ui(plan: dict, *, today: date_type) -> dict:
                 "is_actionable": effective_status in {"PLANNED", "DUE"},
             }
         )
-    return {**plan, "tranches": tranches}
+    return {**enriched, "tranches": tranches}
 
 
 def _render_sell_plan_page(
@@ -100,8 +130,9 @@ def _render_sell_plan_page(
     securities = _sellable_securities(summary)
     db_path = _state.get_db_path()
     today = date_type.today()
+
     plans = [
-        _decorate_plan_for_ui(plan, today=today)
+        _decorate_plan_for_ui(plan, settings=settings, today=today)
         for plan in SellPlanService.list_plans(db_path)
     ]
 
@@ -111,6 +142,11 @@ def _render_sell_plan_page(
         "tranche_count": "4",
         "start_date": today.isoformat(),
         "cadence_days": "14",
+        "max_daily_quantity": "",
+        "max_daily_notional_gbp": "",
+        "min_spacing_days": "7",
+        "reference_price_gbp": "",
+        "fee_per_tranche_gbp": "0.00",
     }
 
     return templates.TemplateResponse(
@@ -158,6 +194,11 @@ async def sell_plan_create(
     tranche_count: str = Form(...),
     start_date: str = Form(...),
     cadence_days: str = Form(...),
+    max_daily_quantity: str = Form(""),
+    max_daily_notional_gbp: str = Form(""),
+    min_spacing_days: str = Form(""),
+    reference_price_gbp: str = Form(""),
+    fee_per_tranche_gbp: str = Form("0"),
 ) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
@@ -169,6 +210,11 @@ async def sell_plan_create(
         "tranche_count": tranche_count,
         "start_date": start_date,
         "cadence_days": cadence_days,
+        "max_daily_quantity": max_daily_quantity,
+        "max_daily_notional_gbp": max_daily_notional_gbp,
+        "min_spacing_days": min_spacing_days,
+        "reference_price_gbp": reference_price_gbp,
+        "fee_per_tranche_gbp": fee_per_tranche_gbp,
     }
 
     summary = PortfolioService.get_portfolio_summary(
@@ -231,6 +277,73 @@ async def sell_plan_create(
             previous_form=previous_form,
         )
 
+    parsed_max_daily_qty, max_daily_qty_err = _parse_optional_decimal(
+        max_daily_quantity,
+        field_label="max daily quantity",
+    )
+    if max_daily_qty_err:
+        return _render_sell_plan_page(
+            request=request,
+            settings=settings,
+            error=max_daily_qty_err,
+            status_code=422,
+            previous_form=previous_form,
+        )
+
+    parsed_max_daily_notional, max_daily_notional_err = _parse_optional_decimal(
+        max_daily_notional_gbp,
+        field_label="max daily notional",
+    )
+    if max_daily_notional_err:
+        return _render_sell_plan_page(
+            request=request,
+            settings=settings,
+            error=max_daily_notional_err,
+            status_code=422,
+            previous_form=previous_form,
+        )
+
+    parsed_min_spacing, min_spacing_err = _parse_optional_int(
+        min_spacing_days,
+        field_label="minimum spacing days",
+    )
+    if min_spacing_err:
+        return _render_sell_plan_page(
+            request=request,
+            settings=settings,
+            error=min_spacing_err,
+            status_code=422,
+            previous_form=previous_form,
+        )
+    if parsed_min_spacing is None:
+        parsed_min_spacing = 7
+
+    parsed_ref_price, ref_price_err = _parse_optional_decimal(
+        reference_price_gbp,
+        field_label="reference price",
+    )
+    if ref_price_err:
+        return _render_sell_plan_page(
+            request=request,
+            settings=settings,
+            error=ref_price_err,
+            status_code=422,
+            previous_form=previous_form,
+        )
+
+    parsed_fee, fee_err = _parse_optional_decimal(
+        fee_per_tranche_gbp,
+        field_label="fee per tranche",
+    )
+    if fee_err:
+        return _render_sell_plan_page(
+            request=request,
+            settings=settings,
+            error=fee_err,
+            status_code=422,
+            previous_form=previous_form,
+        )
+
     db_path = _state.get_db_path()
     try:
         plan = SellPlanService.create_calendar_tranche_plan(
@@ -242,6 +355,11 @@ async def sell_plan_create(
             start_date=start,
             cadence_days=cadence,
             max_sellable_quantity=selected_security["sellable_quantity"],
+            max_daily_quantity=parsed_max_daily_qty,
+            max_daily_notional_gbp=parsed_max_daily_notional,
+            min_spacing_days=parsed_min_spacing,
+            reference_price_gbp=parsed_ref_price,
+            fee_per_tranche_gbp=parsed_fee,
         )
     except ValueError as exc:
         return _render_sell_plan_page(
@@ -296,4 +414,3 @@ async def sell_plan_set_tranche_status(
         f"/sell-plan?plan_id={plan_id}&msg={quote_plus(msg)}",
         status_code=303,
     )
-

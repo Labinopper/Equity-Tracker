@@ -13,6 +13,8 @@ Scope guardrails:
 - Tax-input health warning now appears consistently on Portfolio, Net Value, Simulate, and Tax Plan.
 - Stage 2 baseline started: `/sell-plan` UI shipped with deterministic calendar-tranche plan creation and tranche status updates (`planned`/`due`/`executed`/`cancelled`).
 - Calendar linkage shipped: sell-plan tranche events now appear in `/calendar` with deep links and sell-plan filters (`sell_plan_id`, `method`, `status`).
+- Stage 2 core extended: sell-plan constraint engine now enforces sellable-only quantity, lock/forfeiture exclusion, minimum spacing, and daily quantity/notional caps with explicit breach reasons.
+- Stage 2 impact preview shipped: per-tranche deterministic projections now include `gross proceeds`, `employment tax estimate`, `CGT estimate`, `fees`, `net cash`, and cumulative totals.
 
 ## Core v1 (Critical)
 

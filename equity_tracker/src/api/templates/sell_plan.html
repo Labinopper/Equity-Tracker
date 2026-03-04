@@ -28,7 +28,7 @@
           <option value="">-- select --</option>
           {% for sec in securities %}
           <option value="{{ sec.security_id }}" {{ 'selected' if form_defaults.security_id == sec.security_id }}>
-            {{ sec.ticker }} — {{ sec.name }} (Sellable: {{ sec.sellable_quantity }})
+            {{ sec.ticker }} - {{ sec.name }} (Sellable: {{ sec.sellable_quantity }})
           </option>
           {% endfor %}
         </select>
@@ -48,6 +48,26 @@
       <div class="form-field">
         <label for="cadence_days">Cadence (days) *</label>
         <input id="cadence_days" name="cadence_days" type="number" min="1" max="365" value="{{ form_defaults.cadence_days }}" required>
+      </div>
+      <div class="form-field">
+        <label for="min_spacing_days">Min Spacing (days) *</label>
+        <input id="min_spacing_days" name="min_spacing_days" type="number" min="1" max="365" value="{{ form_defaults.min_spacing_days }}" required>
+      </div>
+      <div class="form-field">
+        <label for="max_daily_quantity">Max Daily Quantity</label>
+        <input id="max_daily_quantity" name="max_daily_quantity" type="text" placeholder="optional" value="{{ form_defaults.max_daily_quantity }}">
+      </div>
+      <div class="form-field">
+        <label for="max_daily_notional_gbp">Max Daily Notional (GBP)</label>
+        <input id="max_daily_notional_gbp" name="max_daily_notional_gbp" type="text" placeholder="optional" value="{{ form_defaults.max_daily_notional_gbp }}">
+      </div>
+      <div class="form-field">
+        <label for="reference_price_gbp">Reference Price (GBP)</label>
+        <input id="reference_price_gbp" name="reference_price_gbp" type="text" placeholder="required for notional cap / impact preview" value="{{ form_defaults.reference_price_gbp }}">
+      </div>
+      <div class="form-field">
+        <label for="fee_per_tranche_gbp">Fee per Tranche (GBP)</label>
+        <input id="fee_per_tranche_gbp" name="fee_per_tranche_gbp" type="text" value="{{ form_defaults.fee_per_tranche_gbp }}">
       </div>
     </div>
     <div class="form-actions">
@@ -77,6 +97,30 @@
         Cadence {{ plan.cadence_days }} day(s) |
         <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}">Open in Calendar</a>
       </p>
+      {% set constraints = plan.constraints or {} %}
+      <p class="muted">
+        Constraints: Min spacing {{ constraints.min_spacing_days or '-' }} day(s),
+        Max daily qty {{ constraints.max_daily_quantity or '-' }},
+        Max daily notional GBP {{ constraints.max_daily_notional_gbp or '-' }},
+        Ref price GBP {{ constraints.reference_price_gbp or '-' }},
+        Fee/tranche GBP {{ constraints.fee_per_tranche_gbp or '0.00' }}.
+      </p>
+      {% if plan.impact_totals %}
+      <p class="muted">
+        Impact totals (planned model): Gross &pound;{{ plan.impact_totals.gross_proceeds_gbp | money }},
+        Emp Tax &pound;{{ plan.impact_totals.employment_tax_gbp | money }},
+        CGT &pound;{{ plan.impact_totals.cgt_gbp | money }},
+        Fees &pound;{{ plan.impact_totals.fees_gbp | money }},
+        Net Cash &pound;{{ plan.impact_totals.net_cash_gbp | money }}.
+      </p>
+      {% endif %}
+      {% if plan.impact_notes %}
+      <div class="alert alert-warning">
+        {% for note in plan.impact_notes %}
+        <div>{{ note }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="table-wrap">
         <table>
           <thead>
@@ -85,6 +129,12 @@
               <th>Date</th>
               <th class="num">Qty</th>
               <th>Status</th>
+              <th class="num">Gross (GBP)</th>
+              <th class="num">Emp Tax Est.</th>
+              <th class="num">CGT Est.</th>
+              <th class="num">Fees</th>
+              <th class="num">Net Cash</th>
+              <th class="num">Cum Net Cash</th>
               <th>Calendar</th>
               <th>Actions</th>
             </tr>
@@ -99,6 +149,48 @@
                 <span class="badge {% if tranche.effective_status in ['DUE', 'CANCELLED'] %}badge-warning{% elif tranche.effective_status == 'EXECUTED' %}badge-sellable{% else %}badge-neutral{% endif %}">
                   {{ tranche.effective_status }}
                 </span>
+              </td>
+              <td class="num">
+                {% if tranche.impact_available %}
+                &pound;{{ tranche.impact_gross_proceeds_gbp | money }}
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td class="num">
+                {% if tranche.impact_available %}
+                &pound;{{ tranche.impact_employment_tax_gbp | money }}
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td class="num">
+                {% if tranche.impact_available %}
+                &pound;{{ tranche.impact_cgt_gbp | money }}
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td class="num">
+                {% if tranche.impact_available %}
+                &pound;{{ tranche.impact_fees_gbp | money }}
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td class="num">
+                {% if tranche.impact_available %}
+                &pound;{{ tranche.impact_net_cash_gbp | money }}
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td class="num">
+                {% if tranche.impact_available %}
+                &pound;{{ tranche.impact_cumulative_net_cash_gbp | money }}
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
               </td>
               <td>
                 <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}&sell_status={{ tranche.effective_status | upper }}">
@@ -124,6 +216,11 @@
                 {% endif %}
               </td>
             </tr>
+            {% if tranche.impact_note %}
+            <tr>
+              <td colspan="12" class="muted">{{ tranche.impact_note }}</td>
+            </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
         </table>
@@ -135,4 +232,3 @@
   {% endif %}
 </div>
 {% endblock %}
-

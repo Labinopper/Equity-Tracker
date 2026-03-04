@@ -131,3 +131,97 @@ def test_sell_plan_tranche_status_filter_executed(client):
     assert "Executed" in calendar.text
     assert "Sell tranche" in calendar.text
 
+
+def test_sell_plan_rejects_min_spacing_constraint_breach(client):
+    sec_id = _add_security(client, "SPLNSPACE")
+    _add_brokerage_lot(client, sec_id, quantity="20")
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "12",
+            "tranche_count": "3",
+            "start_date": start_date,
+            "cadence_days": "7",
+            "min_spacing_days": "10",
+        },
+    )
+    assert create.status_code == 422
+    assert "Constraint breach" in create.text
+    assert "Minimum spacing breach" in create.text
+
+
+def test_sell_plan_rejects_daily_quantity_cap_breach(client):
+    sec_id = _add_security(client, "SPLNQCAP")
+    _add_brokerage_lot(client, sec_id, quantity="20")
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "12",
+            "tranche_count": "3",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "max_daily_quantity": "3.5",
+        },
+    )
+    assert create.status_code == 422
+    assert "Constraint breach" in create.text
+    assert "Daily quantity cap breach" in create.text
+
+
+def test_sell_plan_rejects_daily_notional_cap_breach(client):
+    sec_id = _add_security(client, "SPLNNCAP")
+    _add_brokerage_lot(client, sec_id, quantity="20")
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "12",
+            "tranche_count": "3",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "max_daily_notional_gbp": "39.99",
+            "reference_price_gbp": "10",
+        },
+    )
+    assert create.status_code == 422
+    assert "Constraint breach" in create.text
+    assert "Daily notional cap breach" in create.text
+
+
+def test_sell_plan_shows_impact_preview_when_reference_price_set(client):
+    sec_id = _add_security(client, "SPLNIMPACT")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "6",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "reference_price_gbp": "10",
+            "fee_per_tranche_gbp": "1.00",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    page = client.get(f"/sell-plan?plan_id={plan_id}")
+    assert page.status_code == 200
+    assert "Impact totals (planned model)" in page.text
+    assert "Gross (GBP)" in page.text
+    assert "&pound;60.00" in page.text
