@@ -11,6 +11,7 @@
     <form id="manual-refresh-form" method="post" action="/portfolio/refresh-prices" class="inline-form">
       <button type="submit" class="btn btn-secondary btn-sm">Refresh Prices</button>
     </form>
+    <a href="/capital-stack" class="btn btn-secondary btn-sm">Capital Stack</a>
     <button type="button" class="btn btn-secondary btn-sm" id="audit-json-btn">Download audit JSON</button>
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
     <a href="/portfolio/add-lot" class="btn btn-primary btn-sm">+ Lot</a>
@@ -57,6 +58,25 @@
   <div class="stat">
     <div class="stat__label">Total True Cost <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      Dividend-Adjusted Capital at Risk <span class="metric-tag metric-tag--realised">Realised</span>
+      <button class="info-button" aria-label="Dividend-adjusted capital at risk explanation">ℹ</button>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Acquisition true cost minus portfolio-level estimated net dividends. This is separate from True Cost and does not alter tax/report cost basis calculations.
+        </div>
+      </div>
+    </div>
+    {% if dividend_adjusted_capital_at_risk_gbp is not none %}
+    <div class="stat__value warning-text">&pound;{{ dividend_adjusted_capital_at_risk_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+    {% if estimated_net_dividends_gbp is not none %}
+    <span class="stat-caption">Net dividends offset: &pound;{{ estimated_net_dividends_gbp | money }}</span>
+    {% endif %}
   </div>
   <div class="stat">
     <div class="stat__label">Total Cost Basis <span class="metric-tag metric-tag--realised">Realised</span></div>

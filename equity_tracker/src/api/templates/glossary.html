@@ -13,8 +13,12 @@
     <table>
       <tbody>
         <tr>
-          <th style="width:220px">True Cost</th>
-          <td>What you effectively paid after accounting for tax events at acquisition: income tax at vest for RSU; employer subsidy for ESPP+; purchase price for ESPP/BROKERAGE/ISA. Used in Economic Gain.</td>
+          <th style="width:220px">True Cost (Acquisition)</th>
+          <td>Immutable acquisition-time economic cost used in reporting and economic gain calculations. It is not reduced by later dividends.</td>
+        </tr>
+        <tr>
+          <th>Dividend-Adjusted Capital at Risk</th>
+          <td>`True Cost (Acquisition) - Estimated Net Dividends` (floored at zero). Portfolio-level indicator only; does not replace True Cost and does not change tax-report logic.</td>
         </tr>
         <tr>
           <th>Cost Basis</th>

@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Capital Stack - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Capital Stack</h1>
+    <p class="muted">Deterministic holdings-capital decomposition from gross value to net deployable capital.</p>
+  </div>
+</div>
+
+<p class="muted">As of {{ stack.as_of_date }}.</p>
+
+{% if tax_inputs_incomplete %}
+<div class="alert alert-warning">
+  Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
+  <a href="/settings">Configure in Settings</a>
+</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat__label">Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__value">&pound;{{ stack.gross_market_value_gbp | money }}</div>
+  </div>
+  <div class="stat stat--gain">
+    <div class="stat__label">Net Deployable Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    {% if stack.net_deployable_today_gbp is not none %}
+    <div class="stat__value gain">&pound;{{ stack.net_deployable_today_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">True Cost (Acquisition) <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__value">&pound;{{ stack.true_cost_acquisition_gbp | money }}</div>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">Dividend-Adjusted Capital at Risk <span class="metric-tag metric-tag--realised">Realised</span></div>
+    {% if stack.dividend_adjusted_capital_at_risk_gbp is not none %}
+    <div class="stat__value warning-text">&pound;{{ stack.dividend_adjusted_capital_at_risk_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">Estimated Net Dividends (Portfolio-Level Offset) <span class="metric-tag metric-tag--realised">Realised</span></div>
+    {% if stack.estimated_net_dividends_gbp is not none %}
+    <div class="stat__value">&pound;{{ stack.estimated_net_dividends_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">CGT Marginal Rate Used</div>
+    <div class="stat__value">{{ "%.2f"|format(stack.cgt_marginal_rate * 100) }}%</div>
+    <span class="stat-caption">{{ stack.cgt_rate_source }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Stack Formula</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Step</th>
+          <th class="num">Amount (GBP)</th>
+          <th>Classification</th>
+          <th>Formula Basis</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Gross Market Value</td>
+          <td class="num">&pound;{{ stack.gross_market_value_gbp | money }}</td>
+          <td>Theoretical</td>
+          <td>Sum of all priced active lots.</td>
+        </tr>
+        <tr>
+          <td>Locked Capital</td>
+          <td class="num">-&pound;{{ stack.locked_capital_gbp | money }}</td>
+          <td>Constraint</td>
+          <td>Lots with `sellability_status = LOCKED` (excluding forfeitable matched shares).</td>
+        </tr>
+        <tr>
+          <td>Forfeitable Capital</td>
+          <td class="num">-&pound;{{ stack.forfeitable_capital_gbp | money }}</td>
+          <td>Constraint</td>
+          <td>ESPP+ matched shares still inside forfeiture window.</td>
+        </tr>
+        <tr>
+          <td>Hypothetical Liquid Capital</td>
+          <td class="num">&pound;{{ stack.hypothetical_liquid_gbp | money }}</td>
+          <td>Pre-tax</td>
+          <td>`gross - locked - forfeitable`.</td>
+        </tr>
+        <tr>
+          <td>Estimated Employment Tax</td>
+          <td class="num">
+            {% if stack.estimated_employment_tax_gbp is not none %}
+            -&pound;{{ stack.estimated_employment_tax_gbp | money }}
+            {% else %}
+            <span class="muted">Unavailable</span>
+            {% endif %}
+          </td>
+          <td>Tax drag</td>
+          <td>Sum of per-lot employment-tax estimates on currently liquid lots.</td>
+        </tr>
+        <tr>
+          <td>Estimated CGT</td>
+          <td class="num">-&pound;{{ stack.estimated_cgt_gbp | money }}</td>
+          <td>Tax drag</td>
+          <td>`max(taxable liquid gains, 0) * marginal CGT rate` (ISA excluded).</td>
+        </tr>
+        <tr>
+          <td>Estimated Fees</td>
+          <td class="num">-&pound;{{ stack.estimated_fees_gbp | money }}</td>
+          <td>Friction</td>
+          <td>{{ stack.fee_model.method }}.</td>
+        </tr>
+        <tr>
+          <td><strong>Net Deployable Capital Today</strong></td>
+          <td class="num">
+            {% if stack.net_deployable_today_gbp is not none %}
+            <strong>&pound;{{ stack.net_deployable_today_gbp | money }}</strong>
+            {% else %}
+            <strong class="muted">Unavailable</strong>
+            {% endif %}
+          </td>
+          <td>Actionable estimate</td>
+          <td>`hypothetical liquid - employment tax - CGT - fees`.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">
+    Hypothetical liquid quantity: {{ stack.hypothetical_liquid_quantity }} shares.
+    Fee model sample: {{ stack.fee_model.historical_fee_sample_qty }} shares, total fees &pound;{{ stack.fee_model.historical_fee_sample_total_gbp | money }}, avg/share &pound;{{ stack.fee_model.avg_fee_per_share_gbp | money }}.
+  </p>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Cash Sidecar (Not Yet In Stack Formula)</h2>
+  </div>
+  {% if stack.cash_totals_by_currency %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Currency</th>
+          <th class="num">Total Cash</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in stack.cash_totals_by_currency %}
+        <tr>
+          <td>{{ row.currency }}</td>
+          <td class="num">
+            {% if row.currency == 'GBP' %}
+            &pound;{{ row.balance | money }}
+            {% else %}
+            {{ row.currency }} {{ row.balance | money }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">
+    GBP deployable cash (BROKER + BANK): &pound;{{ stack.gbp_deployable_cash_gbp | money }}.
+    Cash integration into cross-surface deployable metrics is tracked separately.
+  </p>
+  {% else %}
+  <p class="muted">No cash ledger balances recorded.</p>
+  {% endif %}
+</div>
+
+{% if stack.notes %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <ul>
+    {% for note in stack.notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

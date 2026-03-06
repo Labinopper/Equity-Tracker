@@ -58,6 +58,7 @@ from ...db.models import Lot, LotDisposal, Transaction
 from ...db.repository import LotRepository, PriceRepository, SecurityRepository
 from ...services.fx_service import FxService
 from ...services.ibkr_price_service import IbkrPriceService
+from ...services.capital_stack_service import CapitalStackService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -1913,6 +1914,11 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
     portfolio_net_gain_if_sold = _portfolio_net_gain_if_sold(position_rows_by_security)
     portfolio_sellable_employment_tax = _portfolio_sellable_employment_tax(position_rows_by_security)
     portfolio_sellable_true_cost = _portfolio_sellable_true_cost(position_rows_by_security)
+    capital_stack_snapshot = CapitalStackService.get_snapshot(
+        settings=settings,
+        db_path=db_path,
+        summary=summary,
+    )
     today = _utc_now().date()
     return templates.TemplateResponse(
         request,
@@ -1930,6 +1936,10 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
             "portfolio_sellable_employment_tax": portfolio_sellable_employment_tax,
             "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
+            "dividend_adjusted_capital_at_risk_gbp": (
+                capital_stack_snapshot.get("dividend_adjusted_capital_at_risk_gbp")
+            ),
+            "estimated_net_dividends_gbp": capital_stack_snapshot.get("estimated_net_dividends_gbp"),
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
             "refresh_diag": refresh_diag,
             "today": today,
@@ -2127,6 +2137,33 @@ async def net_value(request: Request) -> HTMLResponse:
             "settings": settings,
             "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
             "security_daily_changes": security_daily_changes,
+            "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
+        },
+    )
+
+
+@router.get("/capital-stack", response_class=HTMLResponse, include_in_schema=False)
+async def capital_stack(request: Request) -> HTMLResponse:
+    if _is_locked():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
+    IbkrPriceService.ingest_all()
+    summary = PortfolioService.get_portfolio_summary(
+        settings=settings,
+        use_live_true_cost=False,
+    )
+    stack = CapitalStackService.get_snapshot(
+        settings=settings,
+        db_path=db_path,
+        summary=summary,
+    )
+    return _html_template_response(
+        "capital_stack.html",
+        {
+            "request": request,
+            "stack": stack,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
         },
     )
