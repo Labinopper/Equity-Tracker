@@ -9,9 +9,8 @@ staleness flags) picks up live/delayed IB prices without any template changes.
 FX conversion strategy
 ──────────────────────
 For non-GBP securities (e.g. IBM / USD) we derive the GBP rate from the
-most recent PriceHistory row already in the main DB (gbp / native).  This
-avoids calling the Google Sheets FX API on every page load.  If no prior
-row exists we fall back to FxService (which does call Sheets).
+most recent PriceHistory row already in the main DB (gbp / native). If no
+prior row exists we fall back to FxService live FX resolution.
 
 Source field
 ────────────
@@ -156,23 +155,31 @@ def _find_security(sess: Session, ticker: str) -> Security | None:
     ).first()
 
 
-def _derive_fx_rate(price_repo: PriceRepository, security_id: str,
-                    price_native: Decimal) -> Decimal | None:
+def _derive_fx_rate(
+    price_repo: PriceRepository,
+    security_id: str,
+    price_native: Decimal,
+) -> tuple[Decimal | None, str | None]:
     """
     Extract the implied GBP/native FX rate from the most recent PriceHistory
     row.  Returns None if the row is missing or the division is not possible.
     """
     row = price_repo.get_latest(security_id)
     if row is None:
-        return None
+        return None, None
     try:
-        gbp    = Decimal(row.close_price_gbp)
+        gbp = Decimal(row.close_price_gbp)
         native = Decimal(row.close_price_original_ccy)
         if native > 0:
-            return gbp / native
+            fx_as_of = None
+            src = row.source or ""
+            if "|fx:" in src:
+                _, fx_part = src.split("|fx:", 1)
+                fx_as_of = fx_part or None
+            return gbp / native, fx_as_of
     except (TypeError, ValueError):
         pass
-    return None
+    return None, None
 
 
 def _ingest_one(sess: Session, price_repo: PriceRepository,
@@ -203,22 +210,26 @@ def _ingest_one(sess: Session, price_repo: PriceRepository,
     currency = (security.currency or "GBP").strip().upper()
 
     # Convert to GBP.
+    source = _IBKR_SOURCE
     if currency in ("GBP", "GBX"):
         price_gbp = price_native / 100 if currency == "GBX" else price_native
     else:
-        fx_rate = _derive_fx_rate(price_repo, security.id, price_native)
+        fx_rate, fx_as_of = _derive_fx_rate(price_repo, security.id, price_native)
         if fx_rate is None:
-            # No prior row — fall back to FxService (calls Sheets).
+            # No prior row — fall back to live FxService resolution.
             try:
                 from .fx_service import FxService  # noqa: PLC0415
-                quote   = FxService.get_rate(currency, "GBP")
+                quote = FxService.get_rate(currency, "GBP")
                 fx_rate = quote.rate
+                fx_as_of = quote.as_of
             except Exception as exc:
                 logger.warning(
                     "IbkrPriceService: FX unavailable for %s (%s): %s",
                     symbol, currency, exc,
                 )
                 return False
+        if fx_as_of:
+            source = f"{_IBKR_SOURCE}|fx:{fx_as_of}"
         price_gbp = (price_native * fx_rate).quantize(_QUANT, rounding=ROUND_HALF_UP)
 
     price_gbp_str    = str(price_gbp)
@@ -231,7 +242,7 @@ def _ingest_one(sess: Session, price_repo: PriceRepository,
         snap_date,
         price_native_str,
         currency,
-        _IBKR_SOURCE,
+        source,
         close_price_gbp=price_gbp_str,
     )
 
@@ -241,7 +252,7 @@ def _ingest_one(sess: Session, price_repo: PriceRepository,
         security_id=security.id,
         price_date=snap_date,
         price_gbp=price_gbp_str,
-        source=_IBKR_SOURCE,
+        source=source,
         observed_at=snapshot_dt,
     )
 

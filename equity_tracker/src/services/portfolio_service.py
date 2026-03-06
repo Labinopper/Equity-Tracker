@@ -976,14 +976,19 @@ class PortfolioService:
                     price_as_of = price_row.price_date
                     # Extract price-tab and FX timestamps from the source field.
                     # Source formats:
-                    #   GBP: "google_sheets:{price_ts}"
-                    #   USD: "google_sheets:{price_ts}|fx:{fx_ts}"
-                    #   IB:  "ibkr"  (timestamp carried via PriceTickerSnapshot)
+                    #   GBP: "google_sheets:{price_ts}" or "yfinance:{price_ts}"
+                    #   USD: "{provider}:{price_ts}|fx:{fx_ts}"
+                    #   IB:  "ibkr" or "ibkr|fx:{fx_ts}" (snapshot time lives in
+                    #        PriceTickerSnapshot.observed_at)
                     _src = price_row.source or ""
-                    _prefix = "google_sheets:"
+                    _legacy_prefix = "google_sheets:"
+                    _live_prefix = "yfinance:"
                     _fx_sep = "|fx:"
-                    if _src.startswith(_prefix):
-                        _after = _src[len(_prefix):]
+                    if _src.startswith(_legacy_prefix) or _src.startswith(_live_prefix):
+                        if _src.startswith(_legacy_prefix):
+                            _after = _src[len(_legacy_prefix):]
+                        else:
+                            _after = _src[len(_live_prefix):]
                         if _fx_sep in _after:
                             _pts, _fts = _after.split(_fx_sep, 1)
                             price_refreshed_at: str | None = _pts or None
@@ -991,11 +996,15 @@ class PortfolioService:
                         else:
                             price_refreshed_at = _after or None
                             sec_fx_as_of = None
-                    elif _src == "ibkr":
+                    elif _src.startswith("ibkr"):
                         # Timestamp is stored in PriceTickerSnapshot.observed_at
                         # and surfaced via freshness_text — no separate display needed.
                         price_refreshed_at = None
-                        sec_fx_as_of = None
+                        if _fx_sep in _src:
+                            _, _fts = _src.split(_fx_sep, 1)
+                            sec_fx_as_of = _fts or None
+                        else:
+                            sec_fx_as_of = None
                     else:
                         price_refreshed_at = None
                         sec_fx_as_of = None

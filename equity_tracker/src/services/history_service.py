@@ -15,11 +15,11 @@ Entry points
 
 Price kind classification
 ─────────────────────────
-Only "daily" sources (yfinance_history, google_sheets:*) are included in
+Only "daily" sources (yfinance, yfinance_history, google_sheets:*) are included in
 history charts.  Intraday IBKR snapshots (source == "ibkr") are excluded.
 
 When multiple daily rows exist for the same (security, date), the source
-priority is: google_sheets:* (0) > yfinance_history (1).
+priority is: yfinance:* (0) > google_sheets:* (1) > yfinance_history (2).
 
 FX strategy
 ───────────
@@ -57,7 +57,7 @@ _QUANT2 = Decimal("0.01")
 _QUANT4 = Decimal("0.0001")
 
 # Sources that produce end-of-day closing prices (not intraday snapshots).
-_DAILY_PREFIXES = ("yfinance_history", "google_sheets")
+_DAILY_PREFIXES = ("yfinance", "yfinance_history", "google_sheets")
 
 
 def _is_daily(source: str) -> bool:
@@ -66,10 +66,12 @@ def _is_daily(source: str) -> bool:
 
 def _source_priority(source: str) -> int:
     """Lower integer = higher priority when deduplicating same-date rows."""
-    if source.startswith("google_sheets"):
+    if source.startswith("yfinance:"):
         return 0
-    if source == "yfinance_history":
+    if source.startswith("google_sheets"):
         return 1
+    if source == "yfinance_history":
+        return 2
     return 99
 
 

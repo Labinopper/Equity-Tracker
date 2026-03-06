@@ -1,26 +1,27 @@
 """
 FxService - provider-agnostic FX quote resolution.
 
-Default provider is the existing Google Sheets FX tab reader.
+Default provider is yfinance FX symbols (e.g. USDGBP=X).
 
 Capabilities:
 - Direct pair lookup (e.g. USD2GBP)
 - Inverse lookup (e.g. derive USD2GBP from GBP2USD)
-- Multi-hop path lookup for generalized currency conversion
+- Multi-hop path lookup for generalized currency conversion (for explicit
+  pre-loaded rates only).
 """
 
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterable, Mapping
 
-from .sheets_fx_service import FxRow, SheetsFxService
+from .sheets_fx_service import FxRow
 
 _FX_TS_FMT = "%Y-%m-%d %H:%M:%S"
-_SHEETS_SOURCE = "google_sheets_fx_tab"
+_LIVE_SOURCE = "yfinance_fx"
 _MAX_PATH_HOPS = 4
 
 
@@ -75,8 +76,66 @@ class FxService:
 
     @staticmethod
     def read_rates() -> dict[str, FxRow]:
-        """Read provider FX rows (pair -> FxRow)."""
-        return SheetsFxService.read_fx_rates()
+        """
+        Legacy bulk-rates hook.
+
+        The runtime provider now resolves FX on-demand via yfinance, so no
+        pre-loaded table is required by default.
+        """
+        return {}
+
+    @staticmethod
+    def _read_live_pair(
+        *,
+        from_currency: str,
+        to_currency: str,
+    ) -> FxQuote | None:
+        """
+        Read an FX rate from yfinance using the canonical pair symbol.
+
+        Example: USD->GBP uses symbol USDGBP=X.
+        """
+        symbol = f"{from_currency}{to_currency}=X"
+        try:
+            import yfinance as yf  # noqa: PLC0415
+        except Exception as exc:  # pragma: no cover - dependency is present in app env
+            raise RuntimeError("yfinance is unavailable for FX conversion.") from exc
+
+        try:
+            hist = yf.Ticker(symbol).history(
+                period="5d",
+                interval="1d",
+                auto_adjust=False,
+                actions=False,
+            )
+        except Exception:
+            return None
+
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return None
+
+        close_series = hist["Close"].dropna()
+        if close_series.empty:
+            return None
+
+        try:
+            rate = Decimal(str(close_series.iloc[-1]))
+        except Exception:
+            return None
+
+        if rate <= 0:
+            return None
+
+        as_of = datetime.now(timezone.utc).strftime(_FX_TS_FMT)
+        pair_label = f"{from_currency}2{to_currency}"
+        return FxQuote(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            rate=rate,
+            as_of=as_of,
+            source=_LIVE_SOURCE,
+            path=(pair_label,),
+        )
 
     @staticmethod
     def _resolve_direct_or_inverse(
@@ -93,7 +152,7 @@ class FxService:
                 to_currency=to_currency,
                 rate=direct.rate,
                 as_of=direct.as_of or None,
-                source=_SHEETS_SOURCE,
+                source="provided_rates",
                 path=(direct_key,),
             )
 
@@ -105,7 +164,7 @@ class FxService:
                 to_currency=to_currency,
                 rate=Decimal("1") / inverse.rate,
                 as_of=inverse.as_of or None,
-                source=_SHEETS_SOURCE,
+                source="provided_rates",
                 path=(inverse_key,),
             )
         return None
@@ -163,7 +222,7 @@ class FxService:
                     to_currency=to_currency,
                     rate=acc_rate,
                     as_of=_oldest_as_of(as_of_path),
-                    source=_SHEETS_SOURCE,
+                    source="provided_rates",
                     path=path,
                 )
             if hops >= _MAX_PATH_HOPS:
@@ -213,23 +272,65 @@ class FxService:
                 path=(f"{frm}2{to}",),
             )
 
-        fx_rows = rates if rates is not None else FxService.read_rates()
+        # If rates are explicitly provided (including {}), stay fully deterministic
+        # and do not call any external provider.
+        if rates is not None:
+            direct = FxService._resolve_direct_or_inverse(
+                from_currency=frm,
+                to_currency=to,
+                rates=rates,
+            )
+            if direct is not None:
+                return direct
 
-        direct = FxService._resolve_direct_or_inverse(
-            from_currency=frm,
-            to_currency=to,
-            rates=fx_rows,
-        )
-        if direct is not None:
-            return direct
+            path_quote = FxService._resolve_via_path(
+                from_currency=frm,
+                to_currency=to,
+                rates=rates,
+            )
+            if path_quote is not None:
+                return path_quote
+        else:
+            live_direct = FxService._read_live_pair(
+                from_currency=frm,
+                to_currency=to,
+            )
+            if live_direct is not None:
+                return live_direct
 
-        path_quote = FxService._resolve_via_path(
-            from_currency=frm,
-            to_currency=to,
-            rates=fx_rows,
-        )
-        if path_quote is not None:
-            return path_quote
+            live_inverse = FxService._read_live_pair(
+                from_currency=to,
+                to_currency=frm,
+            )
+            if live_inverse is not None and live_inverse.rate > 0:
+                return FxQuote(
+                    from_currency=frm,
+                    to_currency=to,
+                    rate=Decimal("1") / live_inverse.rate,
+                    as_of=live_inverse.as_of,
+                    source=live_inverse.source,
+                    path=live_inverse.path,
+                )
+
+            # Conservative two-leg fallback via USD.
+            if frm != "USD" and to != "USD":
+                leg1 = FxService._read_live_pair(
+                    from_currency=frm,
+                    to_currency="USD",
+                )
+                leg2 = FxService._read_live_pair(
+                    from_currency="USD",
+                    to_currency=to,
+                )
+                if leg1 is not None and leg2 is not None:
+                    return FxQuote(
+                        from_currency=frm,
+                        to_currency=to,
+                        rate=leg1.rate * leg2.rate,
+                        as_of=_oldest_as_of((leg1.as_of, leg2.as_of)),
+                        source=_LIVE_SOURCE,
+                        path=(f"{frm}2USD", f"USD2{to}"),
+                    )
 
         pair_hint = f"{frm}2{to}"
         raise RuntimeError(

@@ -2,6 +2,26 @@
 {% block title %}Cash Ledger - Equity Tracker{% endblock %}
 
 {% block content %}
+{% macro signed_currency_amount(currency, amount) -%}
+  {%- set ccy = (currency or '') -%}
+  {%- set raw = (amount | string) if amount is not none else '' -%}
+  {%- set is_negative = raw.startswith('-') -%}
+  {%- if is_negative -%}
+    {%- set abs_raw = raw[1:] -%}
+    {%- if ccy == 'GBP' -%}
+      -&pound;{{ abs_raw | money }}
+    {%- else -%}
+      -{{ ccy }} {{ abs_raw | money }}
+    {%- endif -%}
+  {%- else -%}
+    {%- if ccy == 'GBP' -%}
+      &pound;{{ amount | money }}
+    {%- else -%}
+      {{ ccy }} {{ amount | money }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
 <div class="page-title">
   <div>
     <h1>Cash Ledger</h1>
@@ -36,11 +56,7 @@
           <td>{{ row.container }}</td>
           <td>{{ row.currency }}</td>
           <td class="num">
-            {% if row.currency == 'GBP' %}
-            &pound;{{ row.balance | money }}
-            {% else %}
-            {{ row.currency }} {{ row.balance | money }}
-            {% endif %}
+            {{ signed_currency_amount(row.currency, row.balance) }}
           </td>
           <td>
             {% if row.last_entry_date %}
@@ -80,9 +96,9 @@
     Totals:
     {% for row in dashboard.totals_by_currency %}
       {% if row.currency == 'GBP' %}
-      GBP &pound;{{ row.balance | money }}
+      GBP {{ signed_currency_amount(row.currency, row.balance) }}
       {% else %}
-      {{ row.currency }} {{ row.balance | money }}
+      {{ signed_currency_amount(row.currency, row.balance) }}
       {% endif %}
       {% if not loop.last %}|{% endif %}
     {% endfor %}
@@ -204,13 +220,13 @@
       </div>
       <div class="edit-summary__row">FX source: {{ transfer_preview.fx_source or '-' }}</div>
       {% if transfer_preview.gross_converted_gbp is not none %}
-      <div class="edit-summary__row">Gross converted GBP: &pound;{{ transfer_preview.gross_converted_gbp | money }}</div>
+      <div class="edit-summary__row">Gross converted GBP: {{ signed_currency_amount('GBP', transfer_preview.gross_converted_gbp) }}</div>
       {% endif %}
       {% endif %}
       <div class="edit-summary__row">
         Net transfer to ISA (GBP):
         {% if transfer_preview.net_transfer_gbp is not none %}
-        &pound;{{ transfer_preview.net_transfer_gbp | money }}
+        {{ signed_currency_amount('GBP', transfer_preview.net_transfer_gbp) }}
         {% else %}
         -
         {% endif %}
@@ -256,11 +272,7 @@
           <td>{{ entry.container }}</td>
           <td>{{ entry.currency }}</td>
           <td class="num">
-            {% if entry.currency == 'GBP' %}
-            &pound;{{ entry.amount | money }}
-            {% else %}
-            {{ entry.currency }} {{ entry.amount | money }}
-            {% endif %}
+            {{ signed_currency_amount(entry.currency, entry.amount) }}
           </td>
           <td>{{ entry.entry_type }}</td>
           <td>{{ entry.source or '-' }}</td>

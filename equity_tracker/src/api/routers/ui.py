@@ -69,7 +69,6 @@ from ...services.portfolio_service import (
 )
 from ...services.price_service import PriceService
 from ...services.report_service import ReportService
-from ...services.sheets_price_service import SheetsPriceService
 from ...services.dividend_service import DividendService
 from ...settings import AppSettings
 from .. import _state
@@ -2387,16 +2386,12 @@ def _build_add_lot_currency_workflow(
 
     fx_to_gbp: dict[str, dict[str, str]] = {}
     fx_error: str | None = None
-    try:
-        fx_rates = FxService.read_rates()
-    except RuntimeError as exc:
-        fx_rates = {}
-        fx_error = str(exc)
-
     for currency in currency_options:
         try:
-            quote = FxService.get_rate(currency, "GBP", rates=fx_rates)
-        except Exception:
+            quote = FxService.get_rate(currency, "GBP")
+        except Exception as exc:
+            if currency != "GBP" and fx_error is None:
+                fx_error = str(exc)
             continue
         fx_to_gbp[currency] = {
             "rate": str(quote.rate),
@@ -3023,18 +3018,7 @@ async def add_security_submit(
             status_code=422,
         )
 
-    # Auto-sync the new ticker into the Google Sheet (column A).
-    # Failure is non-fatal â€” security was already saved to the DB.
     _clean_ticker = ticker.strip().upper()
-    try:
-        SheetsPriceService.sync_tickers([_clean_ticker])
-    except Exception:
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            "Could not sync ticker %r to Google Sheet after add-security "
-            "(Sheet may be unavailable). Run POST /prices/sync-tickers manually.",
-            _clean_ticker,
-        )
 
     return RedirectResponse(
         f"/?msg=Security+%27{_clean_ticker}%27+added.", status_code=303

@@ -132,3 +132,38 @@ def test_cash_isa_transfer_non_gbp_converts_then_transfers(client):
     assert "FX_CONVERSION_IN" in page.text
     assert "ISA_TRANSFER_IN" in page.text
     assert "High (explicit FX source)" in page.text
+
+
+def test_cash_negative_values_render_minus_before_currency_symbol(client):
+    seed = client.post(
+        "/cash/entry",
+        data={
+            "entry_date": date.today().isoformat(),
+            "container": "BROKER",
+            "currency": "GBP",
+            "amount": "50.00",
+            "entry_type": "MANUAL_ADJUSTMENT",
+            "source": "test-seed",
+        },
+        follow_redirects=False,
+    )
+    assert seed.status_code == 303
+
+    create = client.post(
+        "/cash/entry",
+        data={
+            "entry_date": date.today().isoformat(),
+            "container": "BROKER",
+            "currency": "GBP",
+            "amount": "-10.00",
+            "entry_type": "MANUAL_ADJUSTMENT",
+            "source": "test-negative",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+
+    page = client.get("/cash")
+    assert page.status_code == 200
+    assert "-&pound;10.00" in page.text
+    assert "&pound;-10.00" not in page.text

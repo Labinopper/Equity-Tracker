@@ -78,6 +78,8 @@
     {% if valuation.fx_required_count > 0 %}
       {% if valuation.stale_fx_count > 0 %}
       <span class="valuation-pill valuation-pill--warning">{{ valuation.stale_fx_count }} stale FX basis</span>
+      {% elif valuation.missing_fx_count > 0 %}
+      <span class="valuation-pill valuation-pill--warning">FX basis incomplete</span>
       {% elif valuation.fx_is_stale %}
       <span class="valuation-pill valuation-pill--warning">FX basis stale</span>
       {% else %}

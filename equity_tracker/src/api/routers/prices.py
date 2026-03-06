@@ -1,17 +1,16 @@
 """
-Prices router — live market price fetching and retrieval.
+Prices router - live market price fetching and retrieval.
 
 Phase L endpoints
-──────────────────
-  POST /prices/refresh       Fetch latest prices for all securities from Sheets
+-----------------
+  POST /prices/refresh       Fetch latest prices for all securities
   GET  /prices               Latest stored price per security as JSON
-  POST /prices/sync-tickers  Append missing ticker rows to the Sheets prices tab
+  POST /prices/sync-tickers  Legacy no-op endpoint
 
 Error mapping
-─────────────
-  AppContextError (DB not initialised) → HTTP 503 (caught by db_required dep)
-  Per-security fetch failures are captured and returned in the response body
-  (the endpoint itself always returns 200 as long as the DB is available).
+-------------
+  AppContextError (DB not initialised) -> HTTP 503 (caught by db_required dep)
+  Per-security fetch failures are captured and returned in the response body.
 """
 
 from __future__ import annotations
@@ -21,10 +20,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ...db.repository import SecurityRepository
-from ...app_context import AppContext
 from ...services.price_service import PriceService
-from ...services.sheets_price_service import SheetsPriceService
 from .. import _state
 from ..dependencies import db_required, session_required
 
@@ -32,7 +28,7 @@ router = APIRouter(prefix="/prices", tags=["prices"], dependencies=[Depends(sess
 
 
 # ---------------------------------------------------------------------------
-# Response schemas (local — price-specific, not worth adding to portfolio.py)
+# Response schemas (local â€” price-specific, not worth adding to portfolio.py)
 # ---------------------------------------------------------------------------
 
 class PriceSnapshotSchema(BaseModel):
@@ -70,12 +66,12 @@ async def refresh_prices(
     _: None = Depends(db_required),
 ) -> RefreshResultSchema:
     """
-    Read the Google Sheets prices tab and store the latest price for every
-    matching security.
+    Read live provider prices and store the latest price for every
+    security.
 
     Returns a count of successful fetches and a list of per-security errors.
-    Partial failures (e.g. ticker not in sheet) do not cause a non-200 response
-    — the result body indicates which securities failed and why.
+    Partial failures do not cause a non-200 response
+    â€” the result body indicates which securities failed and why.
     """
     try:
         result = PriceService.fetch_all()
@@ -131,43 +127,15 @@ class SyncTickersResultSchema(BaseModel):
 @router.post(
     "/sync-tickers",
     response_model=SyncTickersResultSchema,
-    summary="Append missing tickers to the Google Sheets prices tab",
+    summary="Legacy no-op ticker sync endpoint",
 )
 async def sync_tickers(
     _: None = Depends(db_required),
 ) -> SyncTickersResultSchema:
     """
-    Read all security tickers from the database and append any that are missing
-    from column A of the Google Sheets prices tab.
+    Legacy compatibility endpoint.
 
-    Matching is case-insensitive. Only column A is modified — existing prices
-    in columns B–D are never touched.
-
-    Returns the count and list of tickers actually appended. If the Sheet is
-    unavailable the error is returned in the response body (HTTP 200) so the
-    caller can display it gracefully.
+    The pricing stack no longer requires ticker-sheet synchronization, so this
+    route returns a deterministic no-op response.
     """
-    with AppContext.read_session() as sess:
-        sec_repo = SecurityRepository(sess)
-        tickers = [s.ticker for s in sec_repo.list_all()]
-
-    if not tickers:
-        return SyncTickersResultSchema(appended=0, tickers_appended=[])
-
-    try:
-        # Read which tickers are already in the sheet
-        sheet_prices = SheetsPriceService.read_prices()
-        existing_upper = set(sheet_prices.keys())
-        to_append = [t for t in tickers if t.upper() not in existing_upper]
-
-        appended = SheetsPriceService.sync_tickers(tickers)
-        return SyncTickersResultSchema(
-            appended=appended,
-            tickers_appended=to_append[:appended],
-        )
-    except RuntimeError as exc:
-        return SyncTickersResultSchema(
-            appended=0,
-            tickers_appended=[],
-            error=str(exc),
-        )
+    return SyncTickersResultSchema(appended=0, tickers_appended=[], error=None)
