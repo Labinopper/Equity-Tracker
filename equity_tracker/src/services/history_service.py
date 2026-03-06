@@ -49,6 +49,7 @@ from ..db.repository import (
 )
 from ..settings import AppSettings
 from .portfolio_service import _estimate_sell_all_employment_tax
+from .dividend_service import DividendService
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +270,31 @@ def _compute_changes(date_price: dict[date, Decimal], today: date) -> dict:
     return result
 
 
+def _cumulative_on_or_before(
+    *,
+    cumulative_by_date: dict[str, str],
+    target_date: date,
+) -> Decimal:
+    """Return cumulative value at the latest key date <= target_date."""
+    if not cumulative_by_date:
+        return Decimal("0.00")
+    dated: list[tuple[date, Decimal]] = []
+    for raw_date, raw_value in cumulative_by_date.items():
+        try:
+            dated.append((date.fromisoformat(raw_date), Decimal(raw_value)))
+        except (ValueError, InvalidOperation, TypeError):
+            continue
+    if not dated:
+        return Decimal("0.00")
+    dated.sort(key=lambda item: item[0])
+    latest = Decimal("0.00")
+    for d, value in dated:
+        if d > target_date:
+            break
+        latest = _q2(value)
+    return latest
+
+
 class HistoryService:
 
     @staticmethod
@@ -297,6 +323,18 @@ class HistoryService:
 
             # All PriceHistory rows for this security (daily + intraday).
             rows = price_repo.get_history_range(security_id, from_date=from_date)
+            dividend_timeline = DividendService.get_net_dividends_timeline(
+                settings=settings,
+            )
+            security_cumulative_dividends = (
+                (dividend_timeline.get("cumulative_net_dividends_by_security") or {})
+                .get(security_id, {})
+            )
+            security_total_net_dividends = _safe_decimal(
+                (dividend_timeline.get("net_dividends_by_security_gbp") or {}).get(
+                    security_id
+                )
+            ) or Decimal("0.00")
 
             # One GBP price per date (daily sources only, best priority).
             date_price: dict[date, Decimal] = _dedup_daily_rows(rows, currency)
@@ -468,6 +506,15 @@ class HistoryService:
                     sellable_gain += lot_gain
 
                 sellable_gain_out = None if sellable_gain_incomplete else _q2(sellable_gain)
+                cumulative_net_dividends = _cumulative_on_or_before(
+                    cumulative_by_date=security_cumulative_dividends,
+                    target_date=d,
+                )
+                sellable_gain_plus_net_dividends = (
+                    _q2(sellable_gain_out + cumulative_net_dividends)
+                    if sellable_gain_out is not None
+                    else None
+                )
                 price_series.append({
                     "date": d.isoformat(),
                     "price_gbp": str(price_gbp.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
@@ -483,6 +530,12 @@ class HistoryService:
                     "sellable_gain_gbp": (
                         str(sellable_gain_out)
                         if sellable_gain_out is not None
+                        else None
+                    ),
+                    "cumulative_net_dividends_gbp": str(cumulative_net_dividends),
+                    "sellable_gain_plus_net_dividends_gbp": (
+                        str(sellable_gain_plus_net_dividends)
+                        if sellable_gain_plus_net_dividends is not None
                         else None
                     ),
                     "has_lot_event": d in lot_event_dates,
@@ -549,6 +602,22 @@ class HistoryService:
                 stats["weighted_avg_cost_gbp"] = None
                 stats["weighted_avg_true_cost_gbp"] = None
 
+            latest_gain: Decimal | None = None
+            for point in reversed(price_series):
+                gain_value = _safe_decimal(point.get("sellable_gain_gbp"))
+                if gain_value is not None:
+                    latest_gain = _q2(gain_value)
+                    break
+            stats["estimated_net_dividends_gbp"] = str(_q2(security_total_net_dividends))
+            stats["gain_if_sold_plus_net_dividends_gbp"] = (
+                str(_q2(latest_gain + security_total_net_dividends))
+                if latest_gain is not None
+                else None
+            )
+            stats["capital_at_risk_after_dividends_gbp"] = str(
+                _q2(max(Decimal("0"), today_true - security_total_net_dividends))
+            )
+
         return {
             "security_id": security.id,
             "ticker": security.ticker,
@@ -596,6 +665,16 @@ class HistoryService:
                     "has_data": False, "total_series": [], "per_security": [],
                     "summary_stats": {}, "notes": [], "securities": [],
                 }
+
+            dividend_timeline = DividendService.get_net_dividends_timeline(
+                settings=settings,
+            )
+            cumulative_portfolio_dividends = (
+                dividend_timeline.get("cumulative_net_dividends_by_date") or {}
+            )
+            total_portfolio_net_dividends = _safe_decimal(
+                dividend_timeline.get("total_net_dividends_gbp")
+            ) or Decimal("0.00")
 
             # Build {security_id: {date: price_gbp}} — daily only, deduplicated.
             sec_date_price: dict[str, dict[date, Decimal]] = {}
@@ -816,6 +895,25 @@ class HistoryService:
                         if sellable_gain_incomplete or priced_count == 0
                         else str(_q2(sellable_gain))
                     ),
+                    "cumulative_net_dividends_gbp": str(
+                        _cumulative_on_or_before(
+                            cumulative_by_date=cumulative_portfolio_dividends,
+                            target_date=d,
+                        )
+                    ),
+                    "sellable_gain_plus_net_dividends_gbp": (
+                        None
+                        if sellable_gain_incomplete or priced_count == 0
+                        else str(
+                            _q2(
+                                sellable_gain
+                                + _cumulative_on_or_before(
+                                    cumulative_by_date=cumulative_portfolio_dividends,
+                                    target_date=d,
+                                )
+                            )
+                        )
+                    ),
                     "priced_count": priced_count,
                     "total_count": held_count,
                     "share_events": share_events,
@@ -829,6 +927,34 @@ class HistoryService:
                 if p["total_value_gbp"] is not None
             }
             portfolio_stats = _compute_changes(total_date_price, today)
+            latest_gain: Decimal | None = None
+            for point in reversed(total_series):
+                gain_value = _safe_decimal(point.get("sellable_gain_gbp"))
+                if gain_value is not None:
+                    latest_gain = _q2(gain_value)
+                    break
+            current_true_cost = Decimal("0")
+            for lots in lots_by_security.values():
+                for lot in lots:
+                    remaining = _safe_decimal(lot.quantity_remaining) or Decimal("0")
+                    if remaining <= Decimal("0"):
+                        continue
+                    true_per_share = _safe_decimal(lot.true_cost_per_share_gbp)
+                    if true_per_share is None:
+                        true_per_share = _safe_decimal(lot.acquisition_price_gbp) or Decimal("0")
+                    current_true_cost += remaining * true_per_share
+            current_true_cost = _q2(current_true_cost)
+            portfolio_stats["estimated_net_dividends_gbp"] = str(
+                _q2(total_portfolio_net_dividends)
+            )
+            portfolio_stats["gain_if_sold_plus_net_dividends_gbp"] = (
+                str(_q2(latest_gain + total_portfolio_net_dividends))
+                if latest_gain is not None
+                else None
+            )
+            portfolio_stats["capital_at_risk_after_dividends_gbp"] = str(
+                _q2(max(Decimal("0"), current_true_cost - total_portfolio_net_dividends))
+            )
 
         # Build per-security output (only securities with at least one priced point).
         per_security_out = []

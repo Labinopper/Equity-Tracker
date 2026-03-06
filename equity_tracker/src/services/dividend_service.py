@@ -537,3 +537,148 @@ class DividendService:
             },
             "notes": notes,
         }
+
+    @staticmethod
+    def _build_net_entry_rows(
+        *,
+        entries: list[Any],
+        settings: AppSettings | None,
+        as_of_date: date,
+    ) -> list[dict[str, Any]]:
+        """
+        Resolve per-entry net dividends (after estimated dividend tax allocation).
+
+        Tax allocation is deterministic per tax year:
+        - Taxable entries share that year's estimated dividend tax proportionally.
+        - Rounding remainder is assigned to the largest taxable entry in that year.
+        """
+        rows: list[dict[str, Any]] = []
+        taxable_rows_by_year: dict[str, list[dict[str, Any]]] = {}
+
+        for entry in entries:
+            if entry.dividend_date > as_of_date:
+                continue
+            amount = _to_decimal(entry.amount_gbp)
+            if amount is None:
+                continue
+            amount = _q_money(amount)
+            treatment = (entry.tax_treatment or "TAXABLE").strip().upper()
+            if treatment not in _VALID_TREATMENTS:
+                treatment = "TAXABLE"
+            is_taxable = treatment == "TAXABLE"
+            tax_year = tax_year_for_date(entry.dividend_date)
+            row = {
+                "id": str(entry.id),
+                "security_id": str(entry.security_id),
+                "dividend_date": entry.dividend_date,
+                "tax_year": tax_year,
+                "amount_gbp": amount,
+                "is_taxable": is_taxable,
+                "allocated_tax_gbp": Decimal("0.00"),
+                "net_dividend_gbp": amount,
+            }
+            rows.append(row)
+            if is_taxable:
+                taxable_rows_by_year.setdefault(tax_year, []).append(row)
+
+        for tax_year, taxable_rows in taxable_rows_by_year.items():
+            taxable_total = _q_money(
+                sum((row["amount_gbp"] for row in taxable_rows), Decimal("0"))
+            )
+            if taxable_total <= Decimal("0"):
+                continue
+            taxable_income = _taxable_income_ex_dividends(
+                settings=settings,
+                tax_year=tax_year,
+            )
+            tax_result = calculate_dividend_tax(
+                tax_year=tax_year,
+                total_dividends=taxable_total,
+                taxable_income_ex_dividends=taxable_income,
+            )
+            total_tax = _q_money(tax_result.total_dividend_tax)
+            if total_tax <= Decimal("0"):
+                continue
+
+            ranked = sorted(
+                taxable_rows,
+                key=lambda row: (
+                    row["amount_gbp"],
+                    row["dividend_date"],
+                    row["id"],
+                ),
+                reverse=True,
+            )
+            allocated_sum = Decimal("0")
+            for row in ranked:
+                allocated = _q_money((total_tax * row["amount_gbp"]) / taxable_total)
+                row["allocated_tax_gbp"] = allocated
+                allocated_sum += allocated
+
+            remainder = _q_money(total_tax - allocated_sum)
+            if remainder != Decimal("0") and ranked:
+                ranked[0]["allocated_tax_gbp"] = _q_money(
+                    ranked[0]["allocated_tax_gbp"] + remainder
+                )
+
+        for row in rows:
+            row["net_dividend_gbp"] = _q_money(row["amount_gbp"] - row["allocated_tax_gbp"])
+
+        return rows
+
+    @staticmethod
+    def get_net_dividends_timeline(
+        *,
+        settings: AppSettings | None = None,
+        as_of: date | None = None,
+    ) -> dict[str, Any]:
+        """
+        Deterministic cumulative net-dividend timeline (portfolio + per-security).
+
+        Future-dated entries after ``as_of`` are excluded.
+        """
+        as_of_date = as_of or date.today()
+
+        with AppContext.read_session() as sess:
+            entries = DividendEntryRepository(sess).list_all()
+
+        net_rows = DividendService._build_net_entry_rows(
+            entries=entries,
+            settings=settings,
+            as_of_date=as_of_date,
+        )
+
+        net_by_date: dict[date, Decimal] = {}
+        net_by_security_by_date: dict[str, dict[date, Decimal]] = {}
+        for row in net_rows:
+            d = row["dividend_date"]
+            security_id = row["security_id"]
+            net = row["net_dividend_gbp"]
+            net_by_date[d] = net_by_date.get(d, Decimal("0")) + net
+            sec_bucket = net_by_security_by_date.setdefault(security_id, {})
+            sec_bucket[d] = sec_bucket.get(d, Decimal("0")) + net
+
+        cumulative_by_date: dict[str, str] = {}
+        running_total = Decimal("0")
+        for d in sorted(net_by_date):
+            running_total = _q_money(running_total + net_by_date[d])
+            cumulative_by_date[d.isoformat()] = str(running_total)
+
+        cumulative_by_security: dict[str, dict[str, str]] = {}
+        totals_by_security: dict[str, str] = {}
+        for security_id, dated_values in net_by_security_by_date.items():
+            running = Decimal("0")
+            sec_map: dict[str, str] = {}
+            for d in sorted(dated_values):
+                running = _q_money(running + dated_values[d])
+                sec_map[d.isoformat()] = str(running)
+            cumulative_by_security[security_id] = sec_map
+            totals_by_security[security_id] = str(running)
+
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "total_net_dividends_gbp": str(_q_money(running_total)),
+            "net_dividends_by_security_gbp": totals_by_security,
+            "cumulative_net_dividends_by_date": cumulative_by_date,
+            "cumulative_net_dividends_by_security": cumulative_by_security,
+        }

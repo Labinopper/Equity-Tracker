@@ -16,6 +16,7 @@ from src.core.tax_engine import TaxContext, get_marginal_rates, tax_year_for_dat
 from src.db.repository import SecurityCatalogRepository
 from src.db.repository.lots import LotRepository
 from src.db.repository.prices import PriceRepository
+from src.services.dividend_service import DividendService
 from src.services.portfolio_service import PortfolioService
 from src.services.sheets_fx_service import FxRow
 from src.settings import AppSettings
@@ -2329,6 +2330,9 @@ def test_per_scheme_page_renders_current_and_historic_rows(client):
     assert "Total Prev Lots" in page.text
     assert "Unrealised P&amp;L If Sold Now (Post-Tax)" in page.text
     assert "Realised P&amp;L (Economic)" in page.text
+    assert "Net Dividends (Allocated)" in page.text
+    assert "Economic P&amp;L + Net Dividends" in page.text
+    assert "Capital at Risk After Dividends" in page.text
     assert "Scheme Visibility" in page.text
     assert "per_scheme.visibility.v1" in page.text
 
@@ -2403,6 +2407,65 @@ def test_per_scheme_est_net_liquidation_uses_economic_post_tax_pnl(client):
     assert rsu_report.current.post_tax_economic_pnl_gbp == Decimal("20.00")
     assert rsu_report.current.est_net_liquidation_gbp == Decimal("20.00")
     assert rsu_report.current.est_net_liquidation_gbp != rsu_report.current.market_value_gbp
+    assert rsu_report.current.allocated_net_dividends_gbp == Decimal("0.00")
+    assert rsu_report.current.economic_plus_net_dividends_gbp == Decimal("20.00")
+    assert rsu_report.current.capital_at_risk_after_dividends_gbp == Decimal("100.00")
+
+
+def test_per_scheme_allocates_net_dividends_by_true_cost_weight(client):
+    sec_id = _add_security(client, ticker="UIPERSCHDIV")
+    for scheme_type, qty, price in (
+        ("BROKERAGE", "5", "10.00"),
+        ("ISA", "5", "20.00"),
+    ):
+        add = client.post(
+            "/portfolio/lots",
+            json={
+                "security_id": sec_id,
+                "scheme_type": scheme_type,
+                "acquisition_date": "2024-01-15",
+                "quantity": qty,
+                "acquisition_price_gbp": price,
+                "true_cost_per_share_gbp": price,
+            },
+        )
+        assert add.status_code == 201, add.text
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date.today(),
+            close_price_original_ccy="30.00",
+            close_price_gbp="30.00",
+            currency="GBP",
+            source="test-ui",
+        )
+    DividendService.add_dividend_entry(
+        security_id=sec_id,
+        dividend_date=date.today(),
+        amount_gbp=Decimal("100.00"),
+        tax_treatment="TAXABLE",
+    )
+
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
+    summary = PortfolioService.get_portfolio_summary(
+        settings=settings,
+        use_live_true_cost=False,
+    )
+    rows_by_security = _build_portfolio_position_rows(summary)
+    scheme_reports = _build_per_scheme_reports(rows_by_security, settings=settings)
+    brokerage = next(sr for sr in scheme_reports if sr.scheme_type == "BROKERAGE")
+    isa = next(sr for sr in scheme_reports if sr.scheme_type == "ISA")
+
+    assert brokerage.current.allocated_net_dividends_gbp == Decimal("33.33")
+    assert isa.current.allocated_net_dividends_gbp == Decimal("66.67")
+    assert (
+        brokerage.current.allocated_net_dividends_gbp
+        + isa.current.allocated_net_dividends_gbp
+    ) == Decimal("100.00")
+    assert brokerage.current.capital_at_risk_after_dividends_gbp == Decimal("16.67")
+    assert isa.current.capital_at_risk_after_dividends_gbp == Decimal("33.33")
 
 
 def test_cgt_page_shows_isa_exempt_notice(client):

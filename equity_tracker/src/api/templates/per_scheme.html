@@ -89,6 +89,24 @@
       <div class="stat__value muted">Unavailable</div>
       {% endif %}
     </div>
+    <div class="stat">
+      <div class="stat__label">Net Dividends (Allocated)</div>
+      <div class="stat__value">&pound;{{ sr.current.allocated_net_dividends_gbp | money }}</div>
+    </div>
+    <div class="stat {% if sr.current.economic_plus_net_dividends_gbp is not none and sr.current.economic_plus_net_dividends_gbp > 0 %}stat--gain{% elif sr.current.economic_plus_net_dividends_gbp is not none and sr.current.economic_plus_net_dividends_gbp < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+      <div class="stat__label">Economic P&amp;L + Net Dividends</div>
+      {% if sr.current.economic_plus_net_dividends_gbp is not none %}
+      <div class="stat__value {% if sr.current.economic_plus_net_dividends_gbp > 0 %}gain{% elif sr.current.economic_plus_net_dividends_gbp < 0 %}loss{% endif %}">
+        {% if sr.current.economic_plus_net_dividends_gbp > 0 %}+{% endif %}&pound;{{ sr.current.economic_plus_net_dividends_gbp | money }}
+      </div>
+      {% else %}
+      <div class="stat__value muted">Unavailable</div>
+      {% endif %}
+    </div>
+    <div class="stat">
+      <div class="stat__label">Capital at Risk After Dividends</div>
+      <div class="stat__value">&pound;{{ sr.current.capital_at_risk_after_dividends_gbp | money }}</div>
+    </div>
     <div class="stat {% if sr.historic.realised_economic_pnl_gbp > 0 %}stat--gain{% elif sr.historic.realised_economic_pnl_gbp < 0 %}stat--loss{% else %}stat--accent{% endif %}">
       <div class="stat__label">Realised P&amp;L (Economic)</div>
       <div class="stat__value {% if sr.historic.realised_economic_pnl_gbp > 0 %}gain{% elif sr.historic.realised_economic_pnl_gbp < 0 %}loss{% endif %}">
@@ -120,6 +138,9 @@
           <th class="num">True Cost</th>
           <th class="num">P&amp;L (Tax Basis)</th>
           <th class="num">P&amp;L (Economic / Post-Tax)</th>
+          <th class="num">Net Dividends (Allocated)</th>
+          <th class="num">Economic + Net Dividends</th>
+          <th class="num">Capital at Risk</th>
           <th class="num">Employment Tax (Est)</th>
           <th class="num">Net If Sold (Est)</th>
         </tr>
@@ -146,6 +167,15 @@
             <span class="muted">Unavailable</span>
             {% endif %}
           </td>
+          <td class="num">&pound;{{ sr.current.allocated_net_dividends_gbp | money }}</td>
+          <td class="num {% if sr.current.economic_plus_net_dividends_gbp is not none and sr.current.economic_plus_net_dividends_gbp > 0 %}gain{% elif sr.current.economic_plus_net_dividends_gbp is not none and sr.current.economic_plus_net_dividends_gbp < 0 %}loss{% endif %}">
+            {% if sr.current.economic_plus_net_dividends_gbp is not none %}
+            {% if sr.current.economic_plus_net_dividends_gbp > 0 %}+{% endif %}&pound;{{ sr.current.economic_plus_net_dividends_gbp | money }}
+            {% else %}
+            <span class="muted">Unavailable</span>
+            {% endif %}
+          </td>
+          <td class="num">&pound;{{ sr.current.capital_at_risk_after_dividends_gbp | money }}</td>
           <td class="num">{% if sr.current.est_employment_tax_gbp is not none %}&pound;{{ sr.current.est_employment_tax_gbp | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
           <td class="num">{% if sr.current.est_net_liquidation_gbp is not none %}&pound;{{ sr.current.est_net_liquidation_gbp | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
         </tr>
@@ -162,6 +192,9 @@
           <td class="num {% if sr.historic.realised_economic_pnl_gbp > 0 %}gain{% elif sr.historic.realised_economic_pnl_gbp < 0 %}loss{% endif %}">
             {% if sr.historic.realised_economic_pnl_gbp > 0 %}+{% endif %}&pound;{{ sr.historic.realised_economic_pnl_gbp | money }}
           </td>
+          <td class="num muted">-</td>
+          <td class="num muted">-</td>
+          <td class="num muted">-</td>
           <td class="num muted">-</td>
           <td class="num muted">-</td>
         </tr>

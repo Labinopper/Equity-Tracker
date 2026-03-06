@@ -80,7 +80,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: Current hypothetical sell-now metrics plus realised disposal history by scheme, with true-cost/economic framing.
 3. Illusion vs Reality Risks: Current and realised blocks can be miscompared as like-for-like.
 4. Decision Support Role: Identify scheme-level drag/constraint burden.
-5. Structural Improvements: Complete `T35` extension (`Economic Gain + Net Dividends` and `Capital at Risk` by scheme).
+5. Structural Improvements: Add scheme-level drill-through from dividend-adjusted totals to contributing securities/lots.
 
 ## Tax Plan (`/tax-plan`)
 1. Purpose: UK tax-year drag planning surface.
@@ -122,7 +122,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: Reconstructed holdings, gain-if-sold series, price/cost overlays, and security-specific progression.
 3. Illusion vs Reality Risks: Chart narratives can encourage recency bias and hide non-sellable windows.
 4. Decision Support Role: Forensic trend/context review, not prediction.
-5. Structural Improvements: Add lock-window shading (`T16`) and complete dividend-adjusted history surfaces (`T35`).
+5. Structural Improvements: Add lock-window shading (`T16`) and source-level decomposition (price vs quantity vs dividends).
 
 ## Reports (`/cgt`, `/economic-gain`, `/dividends`)
 1. Purpose: Realised tax/economic reporting plus dividend drag/provenance.
@@ -182,9 +182,9 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 # Core v1 vs v2 Summary Recommendations
 
 ## Core v1
-1. Complete `T35` rollout so dividend-adjusted retained-wealth metrics are consistent on Portfolio, Per-Scheme, History, and Security History.
-2. Add deterministic cross-page reconciliation (`T28`) to explain why outputs differ across Portfolio, Net Value, Simulate, and Tax Plan.
-3. Add concentration guardrail alerts (`T20`) with explicit non-predictive thresholds.
+1. Add deterministic cross-page reconciliation (`T28`) to explain why outputs differ across Portfolio, Net Value, Simulate, and Tax Plan.
+2. Add concentration guardrail alerts (`T20`) with explicit non-predictive thresholds.
+3. Add deterministic execution-order sensitivity in Scenario Lab (`T15`).
 
 ## v2 Strategic Upgrade
 1. `T15`: sequential-leg Scenario Lab mode for order-sensitive FIFO realism.

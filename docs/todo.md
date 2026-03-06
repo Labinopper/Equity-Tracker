@@ -10,7 +10,7 @@ Scope guardrails:
 
 - Stages `1`-`7` remain complete as previously logged.
 - Stage `8` complete: `T10` glossary deep links, `T11` analytics criticality metadata/order, and `T12` regression lock-in.
-- Stage `9` in progress: `T34`, `T41`, `T42`, and `T44` complete; `T35` partially complete (Portfolio + Dividends done; Per-Scheme/History pending).
+- Stage `9` complete: `T34`, `T35`, `T41`, `T42`, and `T44` are now fully shipped.
 - Stage `10` in progress: `T13` wrapper allocation strip and `T14` FX attribution widget complete; `T15`-`T32` pending.
 
 ## Execution Status (Source of Truth)
@@ -25,7 +25,7 @@ Scope guardrails:
 | 6 | `T03`, `T04`, `T39`, `T40` | Complete | Portfolio and Risk now show concentration (gross/sellable), locked/forfeitable split, cash-aware deployable metrics, and employer dependence ratio. |
 | 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Complete | Decision-surface hardening and execution governance shipped. |
 | 8 | `T10`, `T11`, `T12` | Complete | Glossary deep-linking, analytics criticality metadata/order, and regression lock-in are live. |
-| 9 | `T34`, `T35`, `T41`, `T42`, `T44` | In Progress | `T34`, `T41`, `T42`, `T44` complete; `T35` partially complete (Portfolio/Dividends done, Per-Scheme/History pending). |
+| 9 | `T34`, `T35`, `T41`, `T42`, `T44` | Complete | Dividend attribution, dividend-adjusted Per-Scheme/History surfaces, optionality timeline/index, and dividend FX provenance are live. |
 | 10 | `T13`-`T32` | In Progress | `T13` and `T14` complete; remaining expansion backlog pending. |
 
 ## Task Delivery Snapshot (2026-03-06)
@@ -36,7 +36,7 @@ Scope guardrails:
 | T11 | Complete | Analytics widgets carry context/criticality metadata and priority order. |
 | T12 | Complete | New tests cover wording/links and deterministic exposure/widget outputs. |
 | T34 | Complete | Security-level dividend allocation with deterministic tax split and reconciliation totals. |
-| T35 | Partial | Portfolio + Dividends surfaces live; Per-Scheme and History integration still pending. |
+| T35 | Complete | Dividend-adjusted metrics now span Portfolio, Per-Scheme, History, and Security History with reconciliation tests. |
 | T41 | Complete | Risk optionality timeline bands shipped in service/API/UI. |
 | T42 | Complete | Optionality index shipped with transparent weighted component breakdown. |
 | T44 | Complete | Dividend native-currency input and FX provenance fully supported end-to-end. |
@@ -131,8 +131,7 @@ Method basis used for scoping (non-advisory):
 
 - These items are intentionally deterministic extensions of existing services/data.
 - None of these items require predictive AI, market timing, or buy/sell advice logic.
-- Prioritize completion of `T35` first (Per-Scheme/History dividend-adjusted surfaces + reconciliation tests).
-- Then prioritize `T15`, `T16`, `T17`, and `T19` as the next highest-value structural upgrades.
+- Prioritize `T15`, `T16`, `T17`, and `T19` as the next highest-value structural upgrades.
 - Sell execution additions (`T45`-`T53`) are execution-policy tooling, not return forecasting or trade recommendation logic.
 
 ## Execution Order (Source of Truth)
@@ -145,12 +144,11 @@ Method basis used for scoping (non-advisory):
 6. `T03`, `T04`, `T39`, `T40` (Completed).
 7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` (Completed).
 8. `T10`, `T11`, `T12` (Completed).
-9. `T34`, `T41`, `T42`, `T44` (Completed) + `T35` (In Progress).
+9. `T34`, `T35`, `T41`, `T42`, `T44` (Completed).
 10. `T13`, `T14` (Completed), then `T15`-`T32` (Pending).
 
 ## Definition of Done (Current + Next)
 
 - Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
-- Partial completion active: Stage 9 is complete except full `T35` rollout into Per-Scheme/History; Stage 10 has `T13` and `T14` complete.
-- Next exit criteria: complete `T35` across Portfolio, Per-Scheme, History, and Security History with reconciliation tests.
+- Partial completion active: Stage 10 has `T13` and `T14` complete; `T15`-`T32` remain queued.
 - Next exit criteria: merge selected Stage 10 follow-ons (`T15`/`T16`/`T17` or `T19`) with deterministic test coverage.

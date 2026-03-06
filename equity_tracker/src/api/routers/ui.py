@@ -69,6 +69,7 @@ from ...services.portfolio_service import (
 from ...services.price_service import PriceService
 from ...services.report_service import ReportService
 from ...services.sheets_price_service import SheetsPriceService
+from ...services.dividend_service import DividendService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
@@ -199,6 +200,9 @@ class SchemeCurrentMetrics:
     est_employment_tax_gbp: Decimal | None
     est_net_liquidation_gbp: Decimal | None
     post_tax_economic_pnl_gbp: Decimal | None
+    allocated_net_dividends_gbp: Decimal
+    economic_plus_net_dividends_gbp: Decimal | None
+    capital_at_risk_after_dividends_gbp: Decimal
     potential_forfeiture_value_gbp: Decimal
 
 
@@ -1759,6 +1763,9 @@ def _default_current_metrics() -> SchemeCurrentMetrics:
         est_employment_tax_gbp=None,
         est_net_liquidation_gbp=None,
         post_tax_economic_pnl_gbp=None,
+        allocated_net_dividends_gbp=Decimal("0"),
+        economic_plus_net_dividends_gbp=None,
+        capital_at_risk_after_dividends_gbp=Decimal("0"),
         potential_forfeiture_value_gbp=Decimal("0"),
     )
 
@@ -1794,8 +1801,101 @@ def _row_estimated_employment_tax_gbp(row: PositionGroupRow) -> Decimal | None:
     return _q2(row.total_mv - row.net_cash_if_sold)
 
 
+def _allocate_scheme_net_dividends(
+    rows_by_security: dict[str, list[PositionGroupRow]],
+    *,
+    settings: AppSettings | None = None,
+) -> dict[str, Decimal]:
+    """
+    Allocate security-level net dividends to schemes using active true-cost weights.
+
+    Reconciliation invariant:
+      sum(per-scheme allocated net dividends) == sum(security allocated net dividends)
+    """
+    dividend_summary = DividendService.get_summary(settings=settings)
+    allocation_rows = (
+        (dividend_summary.get("allocation") or {}).get("rows") or []
+    )
+    if not allocation_rows:
+        return {}
+
+    scheme_true_cost_by_security: dict[str, dict[str, Decimal]] = {}
+    for security_id, rows in rows_by_security.items():
+        sec_bucket: dict[str, Decimal] = {}
+        for row in rows:
+            if not row.detail_lots:
+                continue
+            scheme_type = str(row.detail_lots[0].lot.scheme_type or "").upper()
+            if not scheme_type:
+                continue
+            sec_bucket[scheme_type] = sec_bucket.get(scheme_type, Decimal("0")) + row.paid_true_cost
+        if sec_bucket:
+            scheme_true_cost_by_security[security_id] = sec_bucket
+
+    allocated_by_scheme: dict[str, Decimal] = {}
+    for row in allocation_rows:
+        security_id = str(row.get("security_id") or "").strip()
+        if not security_id:
+            continue
+        try:
+            allocated_net = Decimal(str(row.get("allocated_net_dividends_gbp") or "0"))
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        allocated_net = _q2(allocated_net)
+        if allocated_net == Decimal("0"):
+            continue
+
+        scheme_weights = scheme_true_cost_by_security.get(security_id)
+        if not scheme_weights:
+            continue
+
+        positive_weights = {
+            scheme: weight
+            for scheme, weight in scheme_weights.items()
+            if weight > Decimal("0")
+        }
+        if positive_weights:
+            ranked_schemes = sorted(
+                positive_weights.items(),
+                key=lambda item: (item[1], item[0]),
+                reverse=True,
+            )
+            denominator = sum((weight for _, weight in ranked_schemes), Decimal("0"))
+        else:
+            ranked_schemes = sorted(
+                scheme_weights.items(),
+                key=lambda item: item[0],
+            )
+            denominator = Decimal(len(ranked_schemes))
+
+        if not ranked_schemes or denominator <= Decimal("0"):
+            continue
+
+        allocated_sum = Decimal("0")
+        for scheme_type, weight in ranked_schemes:
+            if positive_weights:
+                portion = _q2((allocated_net * weight) / denominator)
+            else:
+                portion = _q2(allocated_net / denominator)
+            allocated_sum += portion
+            allocated_by_scheme[scheme_type] = (
+                allocated_by_scheme.get(scheme_type, Decimal("0")) + portion
+            )
+
+        remainder = _q2(allocated_net - allocated_sum)
+        if remainder != Decimal("0"):
+            top_scheme = ranked_schemes[0][0]
+            allocated_by_scheme[top_scheme] = (
+                allocated_by_scheme.get(top_scheme, Decimal("0")) + remainder
+            )
+
+    return {scheme: _q2(value) for scheme, value in allocated_by_scheme.items()}
+
+
 def _aggregate_current_scheme_metrics(
     rows_by_security: dict[str, list[PositionGroupRow]],
+    *,
+    scheme_net_dividends_gbp: dict[str, Decimal] | None = None,
 ) -> dict[str, SchemeCurrentMetrics]:
     """
     Aggregate current (open position) metrics by scheme from portfolio rows.
@@ -1839,12 +1939,22 @@ def _aggregate_current_scheme_metrics(
 
     current: dict[str, SchemeCurrentMetrics] = {}
     for scheme_type, bucket in current_raw.items():
+        allocated_net_dividends = _q2(
+            (scheme_net_dividends_gbp or {}).get(scheme_type, Decimal("0"))
+        )
+        post_tax_economic_pnl = _sum_optional(bucket["post_tax_economic_pnls"])
+        economic_plus_net_dividends = (
+            _q2(post_tax_economic_pnl + allocated_net_dividends)
+            if post_tax_economic_pnl is not None
+            else None
+        )
+        true_cost_total = _q2(bucket["true_cost_gbp"])
         current[scheme_type] = SchemeCurrentMetrics(
             lot_count=bucket["lot_count"],
             position_count=bucket["position_count"],
             quantity=bucket["quantity"],
             cost_basis_gbp=_q2(bucket["cost_basis_gbp"]),
-            true_cost_gbp=_q2(bucket["true_cost_gbp"]),
+            true_cost_gbp=true_cost_total,
             market_value_gbp=_sum_optional(bucket["market_values"]),
             unrealised_tax_pnl_gbp=_sum_optional(bucket["unrealised_tax_pnls"]),
             unrealised_economic_pnl_gbp=_sum_optional(
@@ -1853,8 +1963,13 @@ def _aggregate_current_scheme_metrics(
             est_employment_tax_gbp=_sum_optional(bucket["employment_taxes"]),
             # "Est. Net Liquidation" is intended as economic net outcome
             # (post-tax P&L), not gross cash / market-value style totals.
-            est_net_liquidation_gbp=_sum_optional(bucket["post_tax_economic_pnls"]),
-            post_tax_economic_pnl_gbp=_sum_optional(bucket["post_tax_economic_pnls"]),
+            est_net_liquidation_gbp=post_tax_economic_pnl,
+            post_tax_economic_pnl_gbp=post_tax_economic_pnl,
+            allocated_net_dividends_gbp=allocated_net_dividends,
+            economic_plus_net_dividends_gbp=economic_plus_net_dividends,
+            capital_at_risk_after_dividends_gbp=_q2(
+                max(Decimal("0"), true_cost_total - allocated_net_dividends)
+            ),
             potential_forfeiture_value_gbp=_q2(
                 bucket["potential_forfeiture_value_gbp"]
             ),
@@ -1938,9 +2053,18 @@ def _aggregate_historic_scheme_metrics() -> dict[str, SchemeHistoricMetrics]:
 
 def _build_per_scheme_reports(
     rows_by_security: dict[str, list[PositionGroupRow]],
+    *,
+    settings: AppSettings | None = None,
 ) -> list[SchemeReport]:
     """Build per-scheme report payload for /per-scheme page."""
-    current = _aggregate_current_scheme_metrics(rows_by_security)
+    scheme_net_dividends = _allocate_scheme_net_dividends(
+        rows_by_security,
+        settings=settings,
+    )
+    current = _aggregate_current_scheme_metrics(
+        rows_by_security,
+        scheme_net_dividends_gbp=scheme_net_dividends,
+    )
     historic = _aggregate_historic_scheme_metrics()
 
     scheme_types: list[str] = []
@@ -2357,7 +2481,10 @@ async def per_scheme(request: Request) -> HTMLResponse:
         summary,
         settings=settings,
     )
-    scheme_reports = _build_per_scheme_reports(position_rows_by_security)
+    scheme_reports = _build_per_scheme_reports(
+        position_rows_by_security,
+        settings=settings,
+    )
     return _html_template_response(
         "per_scheme.html",
         {

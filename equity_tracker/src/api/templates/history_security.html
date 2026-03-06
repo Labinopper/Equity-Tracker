@@ -71,6 +71,30 @@
     <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.weighted_avg_true_cost_gbp }}{% endif %}</div>
   </div>
   {% endif %}
+
+  {% if stats.estimated_net_dividends_gbp %}
+  <div class="stat">
+    <div class="stat__label">Est. Net Dividends</div>
+    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.estimated_net_dividends_gbp }}{% endif %}</div>
+  </div>
+  {% endif %}
+
+  {% if stats.gain_if_sold_plus_net_dividends_gbp is not none %}
+  {% set gain_plus = stats.gain_if_sold_plus_net_dividends_gbp | float %}
+  <div class="stat {{ 'stat--gain' if gain_plus >= 0 else 'stat--loss' }}">
+    <div class="stat__label">Gain + Net Dividends</div>
+    <div class="stat__value {{ 'gain' if gain_plus >= 0 else 'loss' }}">
+      {% if hide_values %}&bull;&bull;&bull;{% else %}{{ '+' if gain_plus >= 0 else '' }}&pound;{{ gain_plus | abs | round(2) | string }}{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if stats.capital_at_risk_after_dividends_gbp %}
+  <div class="stat">
+    <div class="stat__label">Capital at Risk After Dividends</div>
+    <div class="stat__value">{% if hide_values %}&bull;&bull;&bull;{% else %}&pound;{{ stats.capital_at_risk_after_dividends_gbp }}{% endif %}</div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="security-history-grid">
@@ -91,8 +115,14 @@
   </div>
 
   <div class="card security-history-card">
-    <div class="card__header"><h2 class="card__title">Gain If Sold Today</h2></div>
-    <p class="muted">Estimated net proceeds minus true cost for sellable shares.</p>
+    <div class="card__header security-history-card__header">
+      <h2 class="card__title">Gain If Sold Today</h2>
+      <div class="security-history-overlay-btns">
+        <button type="button" class="btn btn-secondary btn-sm gain-overlay-btn gain-overlay-btn--active" data-gain-overlay="baseline">Baseline</button>
+        <button type="button" class="btn btn-secondary btn-sm gain-overlay-btn" data-gain-overlay="plus_dividends">+ Net Dividends</button>
+      </div>
+    </div>
+    <p class="muted">Toggle baseline gain vs dividend-adjusted gain using cumulative net dividends through each date.</p>
     <div class="security-history-chart-wrap">
       <canvas id="chart-security-gain" aria-label="{{ history_data.ticker }} gain if sold today"></canvas>
     </div>
@@ -227,6 +257,7 @@
   };
   var activeRange = "all";
   var activeOverlay = "true_cost";
+  var activeGainOverlay = "baseline";
   var filteredRef = [];
 
   var firstPurchaseDate = null;
@@ -463,7 +494,13 @@
 
   function renderGainChart(filtered) {
     var labels = filtered.map(function (p) { return p.date; });
-    var values = filtered.map(function (p) { return hideValues ? null : toNum(p.sellable_gain_gbp); });
+    var gainKey = activeGainOverlay === "plus_dividends"
+      ? "sellable_gain_plus_net_dividends_gbp"
+      : "sellable_gain_gbp";
+    var gainLabel = activeGainOverlay === "plus_dividends"
+      ? "Gain If Sold + Net Dividends (GBP)"
+      : "Gain If Sold (GBP)";
+    var values = filtered.map(function (p) { return hideValues ? null : toNum(p[gainKey]); });
     var pointR = eventPointRadii(filtered, 4);
 
     var options = baseLineOptions(
@@ -472,7 +509,7 @@
       function (ctx) {
         if (hideValues) return " -";
         var v = ctx.parsed.y;
-        return " " + (v >= 0 ? "+" : "") + formatMoney(v);
+        return " " + gainLabel + ": " + (v >= 0 ? "+" : "") + formatMoney(v);
       },
       function (ctxArr) {
         var idx = ctxArr[0] && ctxArr[0].dataIndex;
@@ -485,7 +522,7 @@
     upsertChart("gain", "chart-security-gain", "line", {
       labels: labels,
       datasets: [{
-        label: "Gain If Sold (GBP)",
+        label: gainLabel,
         data: values,
         borderColor: theme.gain,
         backgroundColor: "rgba(0, 209, 140, 0.10)",
@@ -773,6 +810,17 @@
     });
   });
 
+  document.querySelectorAll(".gain-overlay-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".gain-overlay-btn").forEach(function (b) {
+        b.classList.remove("gain-overlay-btn--active");
+      });
+      btn.classList.add("gain-overlay-btn--active");
+      activeGainOverlay = btn.dataset.gainOverlay || "baseline";
+      renderGainChart(filteredRef);
+    });
+  });
+
   var tableToggle = document.getElementById("history-security-table-toggle");
   var tableWrap = document.getElementById("history-security-table-wrap");
   if (tableToggle && tableWrap) {
@@ -795,7 +843,8 @@
   align-items: center;
 }
 .history-range-btn--active,
-.overlay-btn--active {
+.overlay-btn--active,
+.gain-overlay-btn--active {
   background: var(--accent) !important;
   color: #fff !important;
   border-color: var(--accent) !important;

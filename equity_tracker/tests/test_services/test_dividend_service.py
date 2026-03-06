@@ -103,3 +103,40 @@ def test_dividend_entry_supports_native_currency_with_fx_provenance(app_context)
     assert entry["fx_rate_to_gbp"] == "0.800000"
     assert payload["allocation"]["mode"] == "SECURITY_LEVEL"
     assert payload["allocation"]["rows"][0]["ticker"] == "DIVUSD"
+
+
+def test_net_dividend_timeline_returns_cumulative_portfolio_and_security_maps(app_context):
+    sec_a = _add_security("DIVTL1")
+    sec_b = _add_security("DIVTL2")
+
+    DividendService.add_dividend_entry(
+        security_id=sec_a.id,
+        dividend_date=date(2026, 1, 1),
+        amount_gbp=Decimal("30.00"),
+        tax_treatment="TAXABLE",
+    )
+    DividendService.add_dividend_entry(
+        security_id=sec_b.id,
+        dividend_date=date(2026, 2, 1),
+        amount_gbp=Decimal("20.00"),
+        tax_treatment="TAXABLE",
+    )
+    # Excluded by as_of cutoff.
+    DividendService.add_dividend_entry(
+        security_id=sec_a.id,
+        dividend_date=date(2026, 3, 1),
+        amount_gbp=Decimal("50.00"),
+        tax_treatment="ISA_EXEMPT",
+    )
+
+    timeline = DividendService.get_net_dividends_timeline(as_of=date(2026, 2, 15))
+    assert timeline["total_net_dividends_gbp"] == "50.00"
+    assert timeline["cumulative_net_dividends_by_date"] == {
+        "2026-01-01": "30.00",
+        "2026-02-01": "50.00",
+    }
+    assert timeline["net_dividends_by_security_gbp"][sec_a.id] == "30.00"
+    assert timeline["net_dividends_by_security_gbp"][sec_b.id] == "20.00"
+    assert timeline["cumulative_net_dividends_by_security"][sec_a.id] == {
+        "2026-01-01": "30.00"
+    }
