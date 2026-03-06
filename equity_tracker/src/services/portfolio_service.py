@@ -858,6 +858,7 @@ class PortfolioService:
         settings: AppSettings | None = None,
         *,
         use_live_true_cost: bool = True,
+        as_of: date | None = None,
     ) -> PortfolioSummary:
         """
         Return aggregated portfolio data across all securities.
@@ -872,11 +873,13 @@ class PortfolioService:
             use_live_true_cost: When True, income-sensitive lot true costs may be
                       recalculated from current settings. When False, summary uses
                       persisted lot.true_cost_per_share_gbp values.
+            as_of: Optional deterministic date override used for sellability,
+                      lock, forfeiture, and estimate timing context.
 
         Returned ORM objects (Security, Lot) are detached; scalar attributes
         are safe to access, relationships are not.
         """
-        today = date.today()
+        today = as_of or date.today()
 
         with AppContext.read_session() as sess:
             sec_repo   = SecurityRepository(sess)

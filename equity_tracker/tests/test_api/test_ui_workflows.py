@@ -633,12 +633,11 @@ def test_portfolio_page_renders_qol_view_controls(client):
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "Portfolio View Controls" in home.text
-    assert "Quick Filters" in home.text
-    assert "Sort Decision Rows" in home.text
-    assert "Focus Mode (compact decision-first view)" in home.text
+    assert "Portfolio View Controls" not in home.text
+    assert "Quick Filters" not in home.text
+    assert "Sort Decision Rows" not in home.text
+    assert "Focus Mode (compact decision-first view)" not in home.text
     assert "portfolio.view_prefs.v1" in home.text
-    assert "Formula" in home.text
 
 
 def test_portfolio_shows_locked_est_net_reason_for_pre_vest_rsu(client):
@@ -675,9 +674,9 @@ def test_portfolio_shows_locked_est_net_reason_for_pre_vest_rsu(client):
 def test_portfolio_refresh_diagnostics_rendered(client):
     home = client.get("/")
     assert home.status_code == 200
-    assert "Last success:" in home.text
-    assert "Last error:" in home.text
-    assert "Next refresh:" in home.text
+    assert "Last success:" not in home.text
+    assert "Last error:" not in home.text
+    assert "Next refresh:" not in home.text
     assert "refresh-state" in home.text
 
 

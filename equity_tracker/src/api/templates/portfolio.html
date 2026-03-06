@@ -261,8 +261,7 @@
           {% else %}
           No change{% if daily.market_status and daily.market_status | lower == "open" %} (market open){% endif %}
           {% endif %}
-          {{ "%.2f"|format(daily.percent_change | abs) }}%
-          ({% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }})
+          {{ "%.2f"|format(daily.percent_change | abs) }}% ({% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }})
         </span>
         <button class="info-button" aria-label="Daily change breakdown">ℹ</button>
         <div class="tooltip">
@@ -273,13 +272,13 @@
               <span>&pound;{{ daily.previous_price_gbp | money }}</span>
             </div>
             {% endif %}
-            {% if daily.previous_price_native is not none and daily.native_currency %}
+            {% if daily.previous_price_native is not none and daily.native_currency and daily.native_currency != "GBP" %}
             <div class="position-detail-line">
               <span>Prev Close ({{ daily.native_currency }})</span>
               <span>{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.previous_price_native | money }}</span>
             </div>
             {% endif %}
-            {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency %}
+            {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency and daily.native_currency != "GBP" %}
             {% set stock_pct = (daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100 %}
             <div class="position-detail-line">
               <span>Stock Movement</span>
@@ -321,7 +320,7 @@
         {% if daily.market_status | lower == 'open' %}
           Open
         {% else %}
-          Closed{% if daily.market_opens_in %} (opening in {{ daily.market_opens_in }}){% endif %}
+          closed{% if daily.market_opens_in %} (opening in {{ daily.market_opens_in }}){% endif %}
         {% endif %}
       </span>
       {% endif %}

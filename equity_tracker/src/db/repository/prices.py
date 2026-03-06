@@ -75,6 +75,24 @@ class PriceRepository:
         """
         Append a per-refresh ticker snapshot for UI freshness/staleness tracking.
         """
+        snapshot_at = observed_at or datetime.now(tz=timezone.utc)
+
+        existing = self._s.scalars(
+            select(PriceTickerSnapshot)
+            .where(
+                PriceTickerSnapshot.security_id == security_id,
+                PriceTickerSnapshot.price_date == price_date,
+                PriceTickerSnapshot.source == source,
+                PriceTickerSnapshot.observed_at == snapshot_at,
+            )
+            .limit(1)
+        ).first()
+        if existing is not None:
+            existing.price_gbp = price_gbp
+            existing.direction = direction
+            existing.percent_change = percent_change
+            return existing
+
         row = PriceTickerSnapshot(
             security_id=security_id,
             price_date=price_date,
@@ -82,7 +100,7 @@ class PriceRepository:
             source=source,
             direction=direction,
             percent_change=percent_change,
-            observed_at=observed_at or datetime.now(tz=timezone.utc),
+            observed_at=snapshot_at,
         )
         row.id = _new_uuid()
         self._s.add(row)
@@ -220,4 +238,3 @@ class PriceRepository:
             & (PriceHistory.price_date == subq.c.max_date),
         )
         return list(self._s.scalars(stmt).all())
-

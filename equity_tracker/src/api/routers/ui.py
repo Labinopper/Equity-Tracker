@@ -54,7 +54,7 @@ from ...core.tax_engine import (
     tax_year_for_date,
 )
 from ...core.tax_engine.context import TaxContext
-from ...db.models import Lot, LotDisposal, Transaction
+from ...db.models import Lot, LotDisposal, PriceTickerSnapshot, Transaction
 from ...db.repository import LotRepository, PriceRepository, SecurityRepository
 from ...services.fx_service import FxService
 from ...services.ibkr_price_service import IbkrPriceService
@@ -1044,11 +1044,11 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 changes[security_id] = daily
                 continue
 
-            previous_row = price_repo.get_latest_before(security_id, latest_row.price_date)
-            if previous_row is None:
+            latest_price_gbp = _price_row_gbp_value(latest_row)
+            if latest_price_gbp is None:
                 daily = _security_daily_change_unavailable(
                     security_id,
-                    "Need at least two price dates.",
+                    "Current price unavailable.",
                 )
                 daily.price_last_changed_at = last_changed_at
                 daily.freshness_text = freshness_text
@@ -1059,13 +1059,65 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 changes[security_id] = daily
                 continue
 
-            latest_price_gbp = _price_row_gbp_value(latest_row)
-            previous_price_gbp = _price_row_gbp_value(previous_row)
+            previous_price_gbp: Decimal | None = None
+            current_as_of = latest_row.price_date
+            previous_as_of: date_type | None = None
+            latest_native = _price_row_native_value(latest_row)
+            previous_native: Decimal | None = None
+
+            # Prefer intraday ticker snapshots when two observations are available
+            # on the same latest price date. This preserves "No change" visibility
+            # while the market is open even when yesterday-vs-today close moved.
+            snap_rows = list(
+                sess.scalars(
+                    select(PriceTickerSnapshot)
+                    .where(PriceTickerSnapshot.security_id == security_id)
+                    .order_by(PriceTickerSnapshot.observed_at.desc())
+                    .limit(2)
+                ).all()
+            )
             if (
-                latest_price_gbp is None
-                or previous_price_gbp is None
-                or previous_price_gbp <= Decimal("0")
+                len(snap_rows) >= 2
+                and snap_rows[0].price_date == latest_row.price_date
+                and snap_rows[1].price_date == latest_row.price_date
             ):
+                try:
+                    snap_latest_price = Decimal(snap_rows[0].price_gbp)
+                    snap_previous_price = Decimal(snap_rows[1].price_gbp)
+                    if snap_previous_price > Decimal("0"):
+                        latest_price_gbp = snap_latest_price
+                        previous_price_gbp = snap_previous_price
+                        current_as_of = snap_rows[0].price_date
+                        previous_as_of = snap_rows[1].price_date
+                        # Native-currency intraday deltas are unavailable from
+                        # ticker snapshots because only GBP display price is stored.
+                        latest_native = None
+                        previous_native = None
+                except (InvalidOperation, TypeError, ValueError):
+                    previous_price_gbp = None
+
+            if previous_price_gbp is None:
+                previous_row = price_repo.get_latest_before(security_id, latest_row.price_date)
+                if previous_row is None:
+                    daily = _security_daily_change_unavailable(
+                        security_id,
+                        "Need at least two price dates.",
+                    )
+                    daily.price_last_changed_at = last_changed_at
+                    daily.freshness_text = freshness_text
+                    daily.freshness_level = freshness_level
+                    daily.freshness_title = freshness_title
+                    daily.market_status = market_status
+                    daily.market_opens_in = market_opens_in
+                    changes[security_id] = daily
+                    continue
+                previous_price_gbp = _price_row_gbp_value(previous_row)
+                previous_as_of = previous_row.price_date
+                if latest_native is None:
+                    latest_native = _price_row_native_value(latest_row)
+                previous_native = _price_row_native_value(previous_row)
+
+            if previous_price_gbp is None or previous_price_gbp <= Decimal("0"):
                 daily = _security_daily_change_unavailable(
                     security_id,
                     "Previous close unavailable.",
@@ -1087,8 +1139,6 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
 
             # Native-currency value change (uses original-CCY prices directly)
             native_currency = ss.market_value_native_currency or None
-            latest_native = _price_row_native_value(latest_row)
-            previous_native = _price_row_native_value(previous_row)
             if (
                 latest_native is not None
                 and previous_native is not None
@@ -1117,8 +1167,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 arrow=arrow,
                 percent_change=pct_change,
                 value_change_gbp=value_change,
-                current_as_of=latest_row.price_date,
-                previous_as_of=previous_row.price_date,
+                current_as_of=current_as_of,
+                previous_as_of=previous_as_of,
                 price_last_changed_at=last_changed_at,
                 freshness_text=freshness_text,
                 freshness_level=freshness_level,
@@ -1577,10 +1627,18 @@ def _build_espp_plus_group_row(
         net_cash_if_sold = paid_cash
 
     # Invariant: Gain = Net – True Economic Cost.
-    # Forfeiture is handled via quantity (match shares excluded from net),
-    # never as an additional deduction.
+    # If matched shares are forfeited on early sale, include that lost value
+    # as an explicit economic deduction.
     sell_now_economic = (
-        _q2(net_cash_if_sold - paid_true_cost)
+        _q2(
+            net_cash_if_sold
+            - paid_true_cost
+            - (
+                _q2(forfeited_match_value)
+                if match_effect == "FORFEITED"
+                else Decimal("0.00")
+            )
+        )
         if net_cash_if_sold is not None
         else None
     )

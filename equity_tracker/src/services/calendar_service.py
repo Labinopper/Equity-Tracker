@@ -127,6 +127,7 @@ class CalendarService:
         summary = PortfolioService.get_portfolio_summary(
             settings=settings,
             use_live_true_cost=False,
+            as_of=as_of_date,
         )
 
         events: list[dict[str, Any]] = []
