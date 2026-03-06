@@ -33,7 +33,7 @@ def _locked_response(request: Request) -> HTMLResponse:
 async def api_risk_summary(_: None = Depends(db_required)) -> RiskSummarySchema:
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
-    summary = RiskService.get_risk_summary(settings=settings)
+    summary = RiskService.get_risk_summary(settings=settings, db_path=db_path)
     return RiskSummarySchema.from_service(summary)
 
 
@@ -44,7 +44,7 @@ async def risk_page(request: Request) -> HTMLResponse:
 
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
-    summary = RiskService.get_risk_summary(settings=settings)
+    summary = RiskService.get_risk_summary(settings=settings, db_path=db_path)
     return templates.TemplateResponse(
         request,
         "risk.html",

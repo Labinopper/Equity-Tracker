@@ -24,6 +24,7 @@ Scope guardrails:
 - Stage 4 shipped: `/cash` multi-currency ledger (BROKER/ISA/BANK), append-only auditable cash entries, and GBP-only ISA transfer workflow with mandatory FX conversion provenance for non-GBP sources.
 - Stage 5 shipped: `/capital-stack` wealth-reality stack now reconciles Gross -> Locked -> Forfeitable -> Hypothetical Liquid -> (Employment Tax + CGT + Fees) -> Net Deployable Today with explicit deterministic formula notes.
 - Dual-cost policy shipped: `True Cost (Acquisition)` remains immutable and `Dividend-Adjusted Capital at Risk` is now surfaced separately (Portfolio + Capital Stack + Glossary), without changing tax-report cost logic.
+- Stage 6 shipped: Portfolio now surfaces top-holding and employer concentration (gross + sellable), split `Locked` vs `Forfeitable` value buckets, deployable-capital metrics including GBP cash sidecar, and deterministic Employer Dependence Ratio with transparent formula components.
 
 ## Execution Status (Source of Truth)
 
@@ -34,8 +35,8 @@ Scope guardrails:
 | 3 | `T48`, `T49`, `T50` | Complete | Method modes, approval workflow, and deterministic IBKR staging export are live. |
 | 4 | `T36`, `T37` | Complete | Multi-currency cash ledger and GBP-only ISA transfer conversion workflow are live. |
 | 5 | `T38`, `T33` | Complete | Capital stack and dual-cost dividend-adjusted capital-at-risk policy are live. |
-| 6 | `T03`, `T04`, `T39`, `T40` | Next | Concentration and deployable-capital realism. |
-| 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Pending | Decision-surface hardening and execution governance. |
+| 6 | `T03`, `T04`, `T39`, `T40` | Complete | Portfolio and Risk now show concentration (gross/sellable), locked/forfeitable split, cash-aware deployable metrics, and employer dependence ratio. |
+| 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Next | Decision-surface hardening and execution governance. |
 | 8 | `T10`, `T11`, `T12` | Pending | Cross-surface clarity and regression lock-in. |
 | 9 | `T34`, `T35`, `T41`, `T42`, `T44` | Pending | Dividend attribution and optionality extensions. |
 | 10 | `T13`-`T32` | Pending | Remaining strategic expansion pages/features. |
@@ -138,8 +139,8 @@ Method basis used for scoping (non-advisory):
 3. `T48`, `T49`, `T50` (Completed).
 4. `T36`, `T37` (Completed).
 5. `T38`, `T33` (Completed).
-6. `T03`, `T04`, `T39`, `T40` (Next active stage).
-7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52`.
+6. `T03`, `T04`, `T39`, `T40` (Completed).
+7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` (Next active stage).
 8. `T10`, `T11`, `T12`.
 9. `T34`, `T35`, `T41`, `T42`, `T44`.
 10. `T13`-`T32`.

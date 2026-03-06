@@ -1540,9 +1540,11 @@ def test_portfolio_est_net_liquidity_excludes_locked_and_tracks_blocked_value(cl
     home = client.get("/")
     assert home.status_code == 200
     assert "Est. Net Liquidity (Sellable)" in home.text
-    assert "Blocked/Restricted Value" in home.text
+    assert "Locked Capital" in home.text
+    assert "Forfeitable Capital" in home.text
     assert "&pound;24.00" in home.text
     assert "&pound;360.00" in home.text
+    assert "&pound;0.00" in home.text
     assert "Est. Net Liquidation" not in home.text
 
 
@@ -2491,4 +2493,3 @@ def test_economic_gain_page_uses_tax_year_selector_controls(client):
     assert 'id="economic-tax-year"' in page.text
     assert "Prev" in page.text
     assert "Next" in page.text
-

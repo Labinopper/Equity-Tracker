@@ -45,6 +45,9 @@ def test_api_risk_summary_empty_portfolio(client):
     assert body["security_concentration"] == []
     assert body["scheme_concentration"] == []
     assert body["liquidity"]["classified_total_gbp"] == "0.00"
+    assert body["top_holding_sellable_pct"] == "0.00"
+    assert body["deployable"]["deployable_capital_gbp"] == "0.00"
+    assert body["employer_dependence"]["ratio_pct"] == "0.00"
     assert len(body["stress_points"]) == 6
 
 
@@ -71,6 +74,9 @@ def test_api_risk_summary_with_priced_holdings(client):
     assert body["security_concentration"][0]["label"] == "RISKAPI"
     assert body["security_concentration"][0]["value_gbp"] == "200.00"
     assert body["liquidity"]["sellable_gbp"] == "200.00"
+    assert body["top_holding_sellable_pct"] == "100.00"
+    assert body["deployable"]["deployable_capital_gbp"] == "200.00"
+    assert body["deployable"]["employer_share_of_deployable_pct"] == "0.00"
     assert body["stress_points"][0]["shock_label"] == "-30%"
     assert body["stress_points"][-1]["shock_label"] == "+20%"
 

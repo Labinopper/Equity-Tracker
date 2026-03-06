@@ -40,12 +40,56 @@
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="Includes vesting locks and forfeiture windows.">Blocked/Restricted Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_blocked_restricted_value is not none %}
-    <div class="stat__value warning-text">&pound;{{ portfolio_blocked_restricted_value | money }}</div>
+    <div class="stat__label" title="Sellability-locked value excluding forfeitable matched shares.">Locked Capital <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    {% if portfolio_locked_value is not none %}
+    <div class="stat__value warning-text">&pound;{{ portfolio_locked_value | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label" title="Matched shares inside forfeiture window.">Forfeitable Capital <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    {% if portfolio_forfeitable_value is not none %}
+    <div class="stat__value warning-text">&pound;{{ portfolio_forfeitable_value | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">Top Holding Concentration <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    {% if portfolio_top_holding_ticker_gross %}
+    <div class="stat__value">{{ "%.2f"|format(portfolio_top_holding_pct_gross) }}%</div>
+    <span class="stat-caption">{{ portfolio_top_holding_ticker_gross }} of gross; sellable pool {{ "%.2f"|format(portfolio_top_holding_pct_sellable) }}% ({{ portfolio_top_holding_ticker_sellable or '-' }})</span>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">Employer Exposure <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    {% if portfolio_employer_ticker %}
+    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_pct_of_gross) }}%</div>
+    <span class="stat-caption">{{ portfolio_employer_ticker }} gross; sellable {{ "%.2f"|format(portfolio_employer_pct_of_sellable) }}%</span>
+    {% else %}
+    <div class="stat__value muted">Unconfigured</div>
+    <span class="stat-caption"><a href="/settings">Set employer ticker</a> to enable employer concentration metrics.</span>
+    {% endif %}
+  </div>
+  <div class="stat stat--accent">
+    <div class="stat__label">Deployable Capital (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__value">&pound;{{ portfolio_deployable_capital_gbp | money }}</div>
+    <span class="stat-caption">Sellable holdings &pound;{{ portfolio_total_sellable_market_value_gbp | money }} + deployable GBP cash &pound;{{ portfolio_deployable_cash_gbp | money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Employer Share of Deployable Capital <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
+    {% if portfolio_employer_ticker %}
+    <span class="stat-caption">{{ portfolio_employer_ticker }} sellable market value over deployable capital pool.</span>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">Employer Dependence Ratio <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_dependence_ratio_pct) }}%</div>
+    <span class="stat-caption">({% if portfolio_employer_ticker %}{{ portfolio_employer_ticker }} equity{% else %}Employer equity{% endif %} + income proxy &pound;{{ portfolio_employer_income_dependency_proxy_gbp | money }}) / base &pound;{{ portfolio_employer_dependence_denominator_gbp | money }}</span>
   </div>
   <div class="stat">
     <div class="stat__label">Total Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
@@ -96,6 +140,14 @@
 <div class="alert alert-warning">
   Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
   <a href="/settings">Configure in Settings</a>
+</div>
+{% endif %}
+
+{% if portfolio_exposure_notes %}
+<div class="alert alert-info">
+  {% for note in portfolio_exposure_notes %}
+  <div>{{ note }}</div>
+  {% endfor %}
 </div>
 {% endif %}
 

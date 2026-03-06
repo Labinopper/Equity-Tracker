@@ -52,6 +52,22 @@
       </div>
 
       <div class="form-field">
+        <label for="employer_ticker">Employer Ticker (optional)</label>
+        <input id="employer_ticker" name="employer_ticker" type="text"
+               placeholder="IBM"
+               value="{{ settings.employer_ticker if settings else '' }}">
+        <span class="form-hint">Used for employer concentration and dependence metrics on Portfolio and Risk pages.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="employer_income_dependency_pct">Employer Income Dependency (%)</label>
+        <input id="employer_income_dependency_pct" name="employer_income_dependency_pct" type="number"
+               min="0" max="100" step="0.01"
+               value="{{ settings.employer_income_dependency_pct if settings else '0' }}">
+        <span class="form-hint">Optional weight used as an income-dependency proxy in Employer Dependence Ratio (0-100).</span>
+      </div>
+
+      <div class="form-field">
         <label for="default_tax_year">Default Tax Year</label>
         <select id="default_tax_year" name="default_tax_year">
           {% for y in tax_years %}

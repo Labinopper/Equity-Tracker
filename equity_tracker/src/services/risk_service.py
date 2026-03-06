@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
+from .exposure_service import ExposureService
 from .portfolio_service import PortfolioService
 from ..settings import AppSettings
 
@@ -74,6 +75,25 @@ class RiskLiquidityBreakdown:
 
 
 @dataclass(frozen=True)
+class RiskDeployableBreakdown:
+    sellable_holdings_gbp: Decimal
+    deployable_cash_gbp: Decimal
+    deployable_capital_gbp: Decimal
+    employer_sellable_market_value_gbp: Decimal
+    employer_share_of_deployable_pct: Decimal
+
+
+@dataclass(frozen=True)
+class EmployerDependenceBreakdown:
+    employer_ticker: str | None
+    employer_equity_gbp: Decimal
+    income_dependency_proxy_gbp: Decimal
+    income_dependency_pct: Decimal
+    denominator_gbp: Decimal
+    ratio_pct: Decimal
+
+
+@dataclass(frozen=True)
 class RiskStressPoint:
     shock_pct: Decimal
     shock_label: str
@@ -85,9 +105,12 @@ class RiskSummary:
     generated_at_utc: datetime
     total_market_value_gbp: Decimal
     top_holding_pct: Decimal
+    top_holding_sellable_pct: Decimal
     security_concentration: list[RiskConcentrationItem] = field(default_factory=list)
     scheme_concentration: list[RiskConcentrationItem] = field(default_factory=list)
     liquidity: RiskLiquidityBreakdown | None = None
+    deployable: RiskDeployableBreakdown | None = None
+    employer_dependence: EmployerDependenceBreakdown | None = None
     stress_points: list[RiskStressPoint] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -100,15 +123,25 @@ class RiskService:
     @staticmethod
     def get_risk_summary(
         settings: AppSettings | None = None,
+        db_path=None,
     ) -> RiskSummary:
         summary = PortfolioService.get_portfolio_summary(
             settings=settings,
             use_live_true_cost=False,
         )
-        return RiskService._from_portfolio_summary(summary)
+        return RiskService._from_portfolio_summary(
+            summary,
+            settings=settings,
+            db_path=db_path,
+        )
 
     @staticmethod
-    def _from_portfolio_summary(summary) -> RiskSummary:
+    def _from_portfolio_summary(
+        summary,
+        *,
+        settings: AppSettings | None = None,
+        db_path=None,
+    ) -> RiskSummary:
         security_values: list[tuple[str, str, Decimal]] = []
         scheme_values: dict[str, Decimal] = {}
         sellable = Decimal("0")
@@ -216,14 +249,60 @@ class RiskService:
             if security_concentration
             else Decimal("0.00")
         )
+        exposure = ExposureService.get_snapshot(
+            settings=settings,
+            db_path=db_path,
+            summary=summary,
+        )
+        deployable = RiskDeployableBreakdown(
+            sellable_holdings_gbp=_q_money(
+                Decimal(str(exposure["total_sellable_market_value_gbp"]))
+            ),
+            deployable_cash_gbp=_q_money(
+                Decimal(str(exposure["deployable_cash_gbp"]))
+            ),
+            deployable_capital_gbp=_q_money(
+                Decimal(str(exposure["deployable_capital_gbp"]))
+            ),
+            employer_sellable_market_value_gbp=_q_money(
+                Decimal(str(exposure["employer_sellable_market_value_gbp"]))
+            ),
+            employer_share_of_deployable_pct=_q_pct(
+                Decimal(str(exposure["employer_share_of_deployable_pct"]))
+            ),
+        )
+        employer_dependence = EmployerDependenceBreakdown(
+            employer_ticker=exposure.get("employer_ticker"),
+            employer_equity_gbp=_q_money(
+                Decimal(str(exposure["employer_market_value_gbp"]))
+            ),
+            income_dependency_proxy_gbp=_q_money(
+                Decimal(str(exposure["employer_income_dependency_proxy_gbp"]))
+            ),
+            income_dependency_pct=_q_pct(
+                Decimal(str(exposure["employer_income_dependency_pct"]))
+            ),
+            denominator_gbp=_q_money(
+                Decimal(str(exposure["employer_dependence_denominator_gbp"]))
+            ),
+            ratio_pct=_q_pct(
+                Decimal(str(exposure["employer_dependence_ratio_pct"]))
+            ),
+        )
+        notes.extend(list(exposure.get("notes", [])))
 
         return RiskSummary(
             generated_at_utc=datetime.now(timezone.utc),
             total_market_value_gbp=total_market_value,
             top_holding_pct=top_holding_pct,
+            top_holding_sellable_pct=_q_pct(
+                Decimal(str(exposure["top_holding_pct_sellable"]))
+            ),
             security_concentration=security_concentration,
             scheme_concentration=scheme_concentration,
             liquidity=liquidity,
+            deployable=deployable,
+            employer_dependence=employer_dependence,
             stress_points=stress_points,
             notes=notes,
         )

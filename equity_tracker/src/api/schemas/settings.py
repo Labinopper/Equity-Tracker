@@ -20,6 +20,8 @@ class SettingsSchema(BaseModel):
     default_pension_sacrifice: str   # Decimal → str
     default_student_loan_plan: int | None
     default_other_income: str        # Decimal → str
+    employer_income_dependency_pct: str
+    employer_ticker: str
     default_tax_year: str
     show_exhausted_lots: bool
     hide_values: bool
@@ -33,6 +35,8 @@ class SettingsSchema(BaseModel):
             default_pension_sacrifice=str(s.default_pension_sacrifice),
             default_student_loan_plan=s.default_student_loan_plan,
             default_other_income=str(s.default_other_income),
+            employer_income_dependency_pct=str(s.employer_income_dependency_pct),
+            employer_ticker=s.employer_ticker,
             default_tax_year=s.default_tax_year,
             show_exhausted_lots=s.show_exhausted_lots,
             hide_values=s.hide_values,
@@ -58,6 +62,16 @@ class UpdateSettingsRequest(BaseModel):
         None, description="None, 1 (Plan 1), 2 (Plan 2), or 4 (Plan 4 / Scottish)"
     )
     default_other_income: Decimal = Field(..., ge=0)
+    employer_income_dependency_pct: Decimal = Field(
+        Decimal("0"),
+        ge=0,
+        le=100,
+        description="Optional employer-income dependency weight used by Employer Dependence Ratio.",
+    )
+    employer_ticker: str = Field(
+        "",
+        description="Optional employer ticker used for concentration and dependence metrics.",
+    )
     default_tax_year: str = Field(
         ..., description="Default tax year shown in reports, e.g. '2024-25'"
     )
@@ -77,6 +91,8 @@ class UpdateSettingsRequest(BaseModel):
                 "default_pension_sacrifice": "5000.00",
                 "default_student_loan_plan": 2,
                 "default_other_income": "0.00",
+                "employer_income_dependency_pct": "0.00",
+                "employer_ticker": "IBM",
                 "default_tax_year": "2024-25",
                 "show_exhausted_lots": False,
                 "hide_values": False,

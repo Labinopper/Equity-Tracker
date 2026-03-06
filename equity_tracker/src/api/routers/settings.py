@@ -85,6 +85,8 @@ async def update_settings(
     settings.default_pension_sacrifice = req.default_pension_sacrifice
     settings.default_student_loan_plan = req.default_student_loan_plan
     settings.default_other_income = req.default_other_income
+    settings.employer_income_dependency_pct = req.employer_income_dependency_pct
+    settings.employer_ticker = req.employer_ticker.strip().upper()
     settings.default_tax_year = req.default_tax_year
     settings.show_exhausted_lots = req.show_exhausted_lots
     settings.hide_values = req.hide_values

@@ -15,8 +15,12 @@
     <span class="stat__value">&pound;{{ risk_summary.total_market_value_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Top Holding</span>
+    <span class="stat__label">Top Holding (Gross)</span>
     <span class="stat__value">{{ risk_summary.top_holding_pct }}%</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Top Holding (Sellable Pool)</span>
+    <span class="stat__value">{{ risk_summary.top_holding_sellable_pct }}%</span>
   </div>
   <div class="stat">
     <span class="stat__label">Sellable</span>
@@ -30,6 +34,95 @@
     <span class="stat__label">At Risk</span>
     <span class="stat__value">&pound;{{ risk_summary.liquidity.at_risk_gbp|money }}</span>
   </div>
+  <div class="stat stat--accent">
+    <span class="stat__label">Deployable Capital</span>
+    <span class="stat__value">&pound;{{ risk_summary.deployable.deployable_capital_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Employer Share of Deployable</span>
+    <span class="stat__value">{{ risk_summary.deployable.employer_share_of_deployable_pct }}%</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Employer Dependence Ratio</span>
+    <span class="stat__value">{{ risk_summary.employer_dependence.ratio_pct }}%</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Deployable Capital Breakdown</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th class="num">Value (GBP)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Sellable Holdings Market Value</td>
+          <td class="num">&pound;{{ risk_summary.deployable.sellable_holdings_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td>Deployable GBP Cash (BROKER + BANK)</td>
+          <td class="num">&pound;{{ risk_summary.deployable.deployable_cash_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td><strong>Deployable Capital</strong></td>
+          <td class="num"><strong>&pound;{{ risk_summary.deployable.deployable_capital_gbp|money }}</strong></td>
+        </tr>
+        <tr>
+          <td>Employer Sellable Market Value</td>
+          <td class="num">&pound;{{ risk_summary.deployable.employer_sellable_market_value_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td>Employer Share of Deployable Capital</td>
+          <td class="num">{{ risk_summary.deployable.employer_share_of_deployable_pct }}%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Employer Dependence Ratio Formula</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th class="num">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Employer Ticker</td>
+          <td class="num">{{ risk_summary.employer_dependence.employer_ticker or "Unconfigured" }}</td>
+        </tr>
+        <tr>
+          <td>Employer Equity (Gross Market Value)</td>
+          <td class="num">&pound;{{ risk_summary.employer_dependence.employer_equity_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td>Income Dependency Proxy</td>
+          <td class="num">&pound;{{ risk_summary.employer_dependence.income_dependency_proxy_gbp|money }} ({{ risk_summary.employer_dependence.income_dependency_pct }}%)</td>
+        </tr>
+        <tr>
+          <td>Denominator Base</td>
+          <td class="num">&pound;{{ risk_summary.employer_dependence.denominator_gbp|money }}</td>
+        </tr>
+        <tr>
+          <td><strong>Employer Dependence Ratio</strong></td>
+          <td class="num"><strong>{{ risk_summary.employer_dependence.ratio_pct }}%</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Formula: (Employer Equity + Income Dependency Proxy) / (Gross Market Value + Deployable GBP Cash + Income Dependency Proxy).</p>
 </div>
 
 <div class="card">

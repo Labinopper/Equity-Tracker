@@ -59,6 +59,7 @@ from ...db.repository import LotRepository, PriceRepository, SecurityRepository
 from ...services.fx_service import FxService
 from ...services.ibkr_price_service import IbkrPriceService
 from ...services.capital_stack_service import CapitalStackService
+from ...services.exposure_service import ExposureService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -1914,6 +1915,11 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
     portfolio_net_gain_if_sold = _portfolio_net_gain_if_sold(position_rows_by_security)
     portfolio_sellable_employment_tax = _portfolio_sellable_employment_tax(position_rows_by_security)
     portfolio_sellable_true_cost = _portfolio_sellable_true_cost(position_rows_by_security)
+    exposure_snapshot = ExposureService.get_snapshot(
+        settings=settings,
+        db_path=db_path,
+        summary=summary,
+    )
     capital_stack_snapshot = CapitalStackService.get_snapshot(
         settings=settings,
         db_path=db_path,
@@ -1936,6 +1942,23 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
             "portfolio_sellable_employment_tax": portfolio_sellable_employment_tax,
             "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
+            "portfolio_locked_value": exposure_snapshot.get("locked_capital_gbp"),
+            "portfolio_forfeitable_value": exposure_snapshot.get("forfeitable_capital_gbp"),
+            "portfolio_top_holding_ticker_gross": exposure_snapshot.get("top_holding_ticker_gross"),
+            "portfolio_top_holding_pct_gross": exposure_snapshot.get("top_holding_pct_gross"),
+            "portfolio_top_holding_ticker_sellable": exposure_snapshot.get("top_holding_ticker_sellable"),
+            "portfolio_top_holding_pct_sellable": exposure_snapshot.get("top_holding_pct_sellable"),
+            "portfolio_employer_ticker": exposure_snapshot.get("employer_ticker"),
+            "portfolio_employer_pct_of_gross": exposure_snapshot.get("employer_pct_of_gross"),
+            "portfolio_employer_pct_of_sellable": exposure_snapshot.get("employer_pct_of_sellable"),
+            "portfolio_total_sellable_market_value_gbp": exposure_snapshot.get("total_sellable_market_value_gbp"),
+            "portfolio_deployable_cash_gbp": exposure_snapshot.get("deployable_cash_gbp"),
+            "portfolio_deployable_capital_gbp": exposure_snapshot.get("deployable_capital_gbp"),
+            "portfolio_employer_share_of_deployable_pct": exposure_snapshot.get("employer_share_of_deployable_pct"),
+            "portfolio_employer_dependence_ratio_pct": exposure_snapshot.get("employer_dependence_ratio_pct"),
+            "portfolio_employer_income_dependency_proxy_gbp": exposure_snapshot.get("employer_income_dependency_proxy_gbp"),
+            "portfolio_employer_dependence_denominator_gbp": exposure_snapshot.get("employer_dependence_denominator_gbp"),
+            "portfolio_exposure_notes": exposure_snapshot.get("notes", []),
             "dividend_adjusted_capital_at_risk_gbp": (
                 capital_stack_snapshot.get("dividend_adjusted_capital_at_risk_gbp")
             ),
@@ -3577,6 +3600,8 @@ async def settings_submit(
     default_pension_sacrifice: str = Form("0"),
     default_student_loan_plan: str = Form(""),
     default_other_income: str = Form("0"),
+    employer_income_dependency_pct: str = Form("0"),
+    employer_ticker: str = Form(""),
     default_tax_year: str = Form(...),
     price_stale_after_days: str = Form("1"),
     fx_stale_after_minutes: str = Form("10"),
@@ -3593,6 +3618,8 @@ async def settings_submit(
         gross = Decimal(default_gross_income or "0")
         pension = Decimal(default_pension_sacrifice or "0")
         other = Decimal(default_other_income or "0")
+        income_dependency_pct = Decimal(employer_income_dependency_pct or "0")
+        employer_ticker_clean = (employer_ticker or "").strip().upper()
         plan: int | None = int(default_student_loan_plan) if default_student_loan_plan else None
         price_stale_days = int(price_stale_after_days or "1")
         fx_stale_minutes = int(fx_stale_after_minutes or "10")
@@ -3610,12 +3637,21 @@ async def settings_submit(
             error="Staleness thresholds must be zero or greater.",
             status_code=422,
         )
+    if income_dependency_pct < Decimal("0") or income_dependency_pct > Decimal("100"):
+        return _render_settings_page(
+            request,
+            db_path,
+            error="Employer income dependency must be between 0 and 100.",
+            status_code=422,
+        )
 
     settings = AppSettings.load(db_path)
     settings.default_gross_income = gross
     settings.default_pension_sacrifice = pension
     settings.default_student_loan_plan = plan
     settings.default_other_income = other
+    settings.employer_income_dependency_pct = income_dependency_pct
+    settings.employer_ticker = employer_ticker_clean
     settings.default_tax_year = default_tax_year
     settings.price_stale_after_days = price_stale_days
     settings.fx_stale_after_minutes = fx_stale_minutes

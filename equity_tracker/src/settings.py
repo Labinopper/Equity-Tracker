@@ -41,6 +41,8 @@ class AppSettings:
     default_pension_sacrifice: Decimal
     default_student_loan_plan: int | None  # None, 1, or 2
     default_other_income: Decimal
+    employer_income_dependency_pct: Decimal
+    employer_ticker: str
 
     # ── UI preferences ──────────────────────────────────────────────────────
     default_tax_year: str
@@ -55,6 +57,8 @@ class AppSettings:
         self.default_pension_sacrifice = Decimal("0")
         self.default_student_loan_plan: int | None = None
         self.default_other_income = Decimal("0")
+        self.employer_income_dependency_pct = Decimal("0")
+        self.employer_ticker = ""
 
         # UI defaults
         self.default_tax_year = "2024-25"
@@ -111,6 +115,8 @@ class AppSettings:
             "default_pension_sacrifice": str(self.default_pension_sacrifice),
             "default_student_loan_plan": self.default_student_loan_plan,
             "default_other_income": str(self.default_other_income),
+            "employer_income_dependency_pct": str(self.employer_income_dependency_pct),
+            "employer_ticker": self.employer_ticker,
             "default_tax_year": self.default_tax_year,
             "show_exhausted_lots": self.show_exhausted_lots,
             "hide_values": self.hide_values,
@@ -139,6 +145,15 @@ class AppSettings:
             self.default_student_loan_plan = int(raw) if raw is not None else None
         if "default_other_income" in data:
             self.default_other_income = _dec(data["default_other_income"])
+        if "employer_income_dependency_pct" in data:
+            raw_pct = _dec(data["employer_income_dependency_pct"])
+            if raw_pct < Decimal("0"):
+                raw_pct = Decimal("0")
+            if raw_pct > Decimal("100"):
+                raw_pct = Decimal("100")
+            self.employer_income_dependency_pct = raw_pct
+        if "employer_ticker" in data:
+            self.employer_ticker = str(data["employer_ticker"] or "").strip().upper()
         if "default_tax_year" in data:
             self.default_tax_year = str(data["default_tax_year"])
         if "show_exhausted_lots" in data:
