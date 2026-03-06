@@ -1,0 +1,44 @@
+﻿{% extends "base.html" %}
+{% block title %}Data Quality - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><div><h1>Data Quality</h1><p class="muted">Staleness, missing-input diagnostics, and modelling impact by surface.</p></div></div>
+
+<div class="stats">
+  <div class="stat"><span class="stat__label">Stale Price Securities</span><span class="stat__value">{{ payload.summary.stale_price_security_count }}</span></div>
+  <div class="stat"><span class="stat__label">Stale FX Securities</span><span class="stat__value">{{ payload.summary.stale_fx_security_count }}</span></div>
+  <div class="stat stat--warning"><span class="stat__label">Missing Price Securities</span><span class="stat__value">{{ payload.summary.missing_price_security_count }}</span></div>
+  <div class="stat stat--warning"><span class="stat__label">Missing Price Lots</span><span class="stat__value">{{ payload.summary.missing_price_lot_count }}</span></div>
+  <div class="stat"><span class="stat__label">Missing Tax Estimate Lots</span><span class="stat__value">{{ payload.summary.missing_tax_estimate_lot_count }}</span></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Impact by Surface</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Surface</th><th>Issue</th><th class="num">Count</th><th>Severity</th></tr></thead>
+    <tbody>
+      {% for row in payload.impact_rows %}
+      <tr>
+        <td>{{ row.surface }}</td>
+        <td>{{ row.issue }}</td>
+        <td class="num">{{ row.impact_count }}</td>
+        <td>{{ row.severity }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Tax Plan Freshness Cross-Check</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Stale Price Securities</th><td>{{ payload.tax_plan_freshness.stale_price_security_count }}</td></tr>
+    <tr><th>Stale FX Securities</th><td>{{ payload.tax_plan_freshness.stale_fx_security_count }}</td></tr>
+    <tr><th>Unpriced Lots</th><td>{{ payload.tax_plan_freshness.unpriced_lot_count }}</td></tr>
+  </tbody></table></div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

@@ -19,6 +19,22 @@
   </div>
 </div>
 
+{% set model_scope = {
+  "inputs": [
+    "Active lots, latest market prices, stored FX basis, configured tax inputs",
+    "Lot-level scheme metadata including lock and forfeiture windows"
+  ],
+  "assumptions": [
+    "Employment tax is estimated on sellable lots only",
+    "Locked and forfeitable values are separated from sellable liquidity"
+  ],
+  "exclusions": [
+    "No return forecasting",
+    "No buy/sell recommendation logic"
+  ]
+} %}
+{% include "partials/model_scope_card.html" %}
+
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}

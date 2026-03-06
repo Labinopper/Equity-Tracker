@@ -1,0 +1,81 @@
+﻿{% extends "base.html" %}
+{% block title %}Capital Efficiency - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Capital Efficiency</h1>
+    <p class="muted">Deterministic structural drag decomposition.</p>
+  </div>
+</div>
+
+{% include "partials/model_scope_card.html" %}
+
+<div class="stats">
+  <div class="stat stat--accent">
+    <span class="stat__label">Capital Base</span>
+    <span class="stat__value">&pound;{{ payload.capital_base_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Total Structural Drag</span>
+    <span class="stat__value">&pound;{{ payload.total_structural_drag_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Drag Rate</span>
+    <span class="stat__value">{{ payload.structural_drag_rate_pct }}%</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Annualized Drag Rate</span>
+    <span class="stat__value">{{ payload.annualized_drag_rate_pct }}%</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Observed Window</span>
+    <span class="stat__value">{{ payload.observed_window_days }}d</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Drag Components</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th class="num">Amount</th>
+          <th>Basis</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.components %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="num">&pound;{{ row.amount_gbp|money }}</td>
+          <td>{{ row.basis }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Fee Realization Context</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Realized Fee Drag (All-Time)</th><td>&pound;{{ payload.realized_fee_drag_total_gbp|money }}</td></tr>
+        <tr><th>Realized Fee Drag (12m)</th><td>&pound;{{ payload.realized_fee_drag_12m_gbp|money }}</td></tr>
+        <tr><th>Realized Proceeds (12m)</th><td>&pound;{{ payload.realized_proceeds_12m_gbp|money }}</td></tr>
+        <tr><th>Fee Drag as % of Proceeds (12m)</th><td>{{ payload.realized_fee_drag_12m_pct_of_proceeds }}%</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if payload.notes %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Notes</h2></div>
+  <div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endif %}
+{% endblock %}

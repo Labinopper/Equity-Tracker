@@ -23,6 +23,22 @@
   </div>
 </div>
 
+{% set model_scope = {
+  "inputs": [
+    "Current market values for all active lots",
+    "Sellable-lot employment tax estimate model"
+  ],
+  "assumptions": [
+    "Sell-all framing is hypothetical and includes locked/forfeitable value",
+    "Employment tax estimate is applied to sellable lots only"
+  ],
+  "exclusions": [
+    "No execution staging assumptions",
+    "No forward pricing assumptions"
+  ]
+} %}
+{% include "partials/model_scope_card.html" %}
+
 {% if sell_all_metrics.fx_conversion_basis or sell_all_metrics.fx_as_of %}
 <div class="alert {% if sell_all_metrics.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
   {% if sell_all_metrics.fx_is_stale %}Warning: {% endif %}

@@ -1,0 +1,68 @@
+﻿{% extends "base.html" %}
+{% block title %}Price/FX Basis Timeline - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Price/FX Basis Timeline</h1>
+    <p class="muted">Native move vs FX move contribution under observed basis updates.</p>
+  </div>
+  <div class="page-actions">
+    <form method="get" action="/basis-timeline" class="inline-form">
+      <label for="lookback_days">Lookback (days)</label>
+      <input id="lookback_days" name="lookback_days" type="number" min="30" max="1825" value="{{ lookback_days }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Aggregate By Date</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th class="num">Native Move</th><th class="num">FX Move</th><th class="num">Total Change</th></tr></thead>
+    <tbody>
+      {% if payload.date_rows %}
+        {% for row in payload.date_rows %}
+        <tr>
+          <td>{{ row.date }}</td>
+          <td class="num">&pound;{{ row.native_move_gbp|money }}</td>
+          <td class="num">&pound;{{ row.fx_move_gbp|money }}</td>
+          <td class="num">&pound;{{ row.total_change_gbp|money }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="4" class="muted">No timeline rows.</td></tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Security Basis Rows</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Security</th><th>CCY</th><th class="num">Qty Basis</th><th class="num">Native Move</th><th class="num">FX Move</th><th class="num">Total</th><th>Source</th></tr></thead>
+    <tbody>
+      {% if payload.security_rows %}
+        {% for row in payload.security_rows %}
+        <tr>
+          <td>{{ row.date }}</td>
+          <td>{{ row.ticker }}</td>
+          <td>{{ row.currency }}</td>
+          <td class="num">{{ row.quantity_basis }}</td>
+          <td class="num">&pound;{{ row.native_move_gbp|money }}</td>
+          <td class="num">&pound;{{ row.fx_move_gbp|money }}</td>
+          <td class="num">&pound;{{ row.total_change_gbp|money }}</td>
+          <td>{{ row.source }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="8" class="muted">No security rows.</td></tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

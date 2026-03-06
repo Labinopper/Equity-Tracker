@@ -1,0 +1,54 @@
+﻿{% extends "base.html" %}
+{% block title %}Employment Tax Events - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><div><h1>Employment Tax Events</h1><p class="muted">Persisted + derived employment-tax trail by tax year.</p></div></div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Tax-Year Totals</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Tax Year</th><th class="num">Event Count</th><th class="num">Estimated Tax Total</th></tr></thead>
+    <tbody>
+      {% if payload.tax_year_rows %}
+        {% for row in payload.tax_year_rows %}
+        <tr>
+          <td>{{ row.tax_year }}</td>
+          <td class="num">{{ row.event_count }}</td>
+          <td class="num">&pound;{{ row.estimated_tax_total_gbp|money }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="3" class="muted">No events.</td></tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Event Ledger</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Tax Year</th><th>Source</th><th>Security</th><th>Event Type</th><th class="num">Est. Tax</th><th>Note</th></tr></thead>
+    <tbody>
+      {% if payload.event_rows %}
+        {% for row in payload.event_rows %}
+        <tr>
+          <td>{{ row.event_date }}</td>
+          <td>{{ row.tax_year }}</td>
+          <td>{{ row.event_source }}</td>
+          <td>{{ row.ticker }}</td>
+          <td>{{ row.event_type }}</td>
+          <td class="num">{% if row.estimated_tax_gbp is not none %}&pound;{{ row.estimated_tax_gbp|money }}{% else %}<span class="muted">-</span>{% endif %}</td>
+          <td>{{ row.note or '-' }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="7" class="muted">No rows.</td></tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

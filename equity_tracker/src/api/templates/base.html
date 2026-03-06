@@ -18,7 +18,7 @@
   'schemes':  ['/per-scheme'],
   'risk':     ['/risk', '/analytics', '/calendar'],
   'simulate': ['/simulate', '/scenario-lab', '/tax-plan', '/sell-plan'],
-  'reports':  ['/cgt', '/economic-gain', '/dividends', '/audit'],
+  'reports':  ['/cgt', '/economic-gain', '/dividends', '/audit', '/insights', '/capital-efficiency', '/employment-exit', '/isa-efficiency', '/fee-drag', '/data-quality', '/employment-tax-events', '/reconcile', '/basis-timeline'],
   'settings': ['/settings', '/glossary']
 } %}
 {% set _path_to_group = {
@@ -38,6 +38,15 @@
   '/economic-gain': 'reports',
   '/dividends':     'reports',
   '/audit':         'reports',
+  '/insights':      'reports',
+  '/capital-efficiency': 'reports',
+  '/employment-exit': 'reports',
+  '/isa-efficiency': 'reports',
+  '/fee-drag': 'reports',
+  '/data-quality': 'reports',
+  '/employment-tax-events': 'reports',
+  '/reconcile': 'reports',
+  '/basis-timeline': 'reports',
   '/settings':      'settings',
   '/glossary':      'settings'
 } %}
@@ -92,6 +101,7 @@
         <a href="/economic-gain" class="subnav__link{{ ' subnav__link--active' if _path == '/economic-gain' }}">Economic Gain</a>
         <a href="/dividends"     class="subnav__link{{ ' subnav__link--active' if _path == '/dividends' }}">Dividends</a>
         <a href="/audit"         class="subnav__link{{ ' subnav__link--active' if _path == '/audit' }}">Audit</a>
+        <a href="/insights"      class="subnav__link{{ ' subnav__link--active' if _path == '/insights' or _path == '/capital-efficiency' or _path == '/employment-exit' or _path == '/isa-efficiency' or _path == '/fee-drag' or _path == '/data-quality' or _path == '/employment-tax-events' or _path == '/reconcile' or _path == '/basis-timeline' }}">Insights</a>
 
       {% elif active_group == 'settings' %}
         <a href="/settings" class="subnav__link{{ ' subnav__link--active' if _path == '/settings' }}">Settings</a>

@@ -22,6 +22,22 @@
   </div>
 </div>
 
+{% set model_scope = {
+  "inputs": [
+    "Configured income/tax settings, disposal history, active lot inventory",
+    "Current market values and freshness diagnostics"
+  ],
+  "assumptions": [
+    "Assumption-quality labels are explicit per projection block",
+    "Sale projections use deterministic formula logic"
+  ],
+  "exclusions": [
+    "No probabilistic modelling",
+    "No recommendation engine"
+  ]
+} %}
+{% include "partials/model_scope_card.html" %}
+
 <p class="muted">As of {{ tax_plan.as_of_date }}. Generated {{ tax_plan.generated_at_utc }}.</p>
 
 {% if tax_inputs_incomplete %}

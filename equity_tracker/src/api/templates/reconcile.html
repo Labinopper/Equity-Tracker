@@ -1,0 +1,34 @@
+﻿{% extends "base.html" %}
+{% block title %}Reconcile - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><div><h1>Cross-Page Reconciliation</h1><p class="muted">Why Portfolio, Net Value, Capital Stack, and Tax Plan differ.</p></div></div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Reconciliation Path</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Step</th><th class="num">Amount</th><th>Scope Meaning</th></tr></thead>
+    <tbody>
+      {% for row in payload.components %}
+      <tr>
+        <td>{{ row.step }}</td>
+        <td class="num">&pound;{{ row.amount_gbp|money }}</td>
+        <td>{{ row.scope }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><span class="stat__label">Reconciled Deployable</span><span class="stat__value">&pound;{{ payload.reconciled_deployable_capital_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Reported Deployable</span><span class="stat__value">&pound;{{ payload.reported_deployable_capital_gbp|money }}</span></div>
+  <div class="stat stat--warning"><span class="stat__label">Delta</span><span class="stat__value">&pound;{{ payload.reconciliation_delta_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Tax Plan Realised Net Gain</span><span class="stat__value">&pound;{{ payload.tax_plan_realised_net_gain_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Tax Plan Realised CGT</span><span class="stat__value">&pound;{{ payload.tax_plan_realised_cgt_gbp|money }}</span></div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

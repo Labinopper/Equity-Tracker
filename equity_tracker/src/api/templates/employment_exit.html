@@ -1,0 +1,85 @@
+﻿{% extends "base.html" %}
+{% block title %}Employment Exit - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Employment Exit</h1>
+    <p class="muted">Deterministic leave-employment scenario at static price basis.</p>
+  </div>
+</div>
+
+{% include "partials/model_scope_card.html" %}
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Scenario Inputs</h2></div>
+  <form method="get" action="/employment-exit" class="inline-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="exit_date">Exit Date</label>
+        <input id="exit_date" name="exit_date" type="date" value="{{ input_exit_date }}">
+      </div>
+      <div class="form-field">
+        <label for="price_shock_pct">Price Shock %</label>
+        <input id="price_shock_pct" name="price_shock_pct" type="text" inputmode="decimal" value="{{ input_price_shock_pct }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Run</button>
+      <a href="/employment-exit" class="btn btn-secondary">Reset</a>
+    </div>
+  </form>
+</div>
+
+<div class="stats">
+  <div class="stat"><span class="stat__label">Exit Date</span><span class="stat__value">{{ payload.exit_date }}</span></div>
+  <div class="stat"><span class="stat__label">Price Shock</span><span class="stat__value">{{ payload.price_shock_pct }}%</span></div>
+  <div class="stat"><span class="stat__label">Gross Value</span><span class="stat__value">&pound;{{ payload.totals.gross_value_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Retained Value</span><span class="stat__value">&pound;{{ payload.totals.retained_value_gbp|money }}</span></div>
+  <div class="stat stat--warning"><span class="stat__label">Forfeited Value</span><span class="stat__value">&pound;{{ payload.totals.forfeited_value_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Estimated Tax</span><span class="stat__value">&pound;{{ payload.totals.estimated_tax_gbp|money }}</span></div>
+  <div class="stat stat--accent"><span class="stat__label">Net After Tax</span><span class="stat__value">&pound;{{ payload.totals.net_after_tax_gbp|money }}</span></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Per-Security Exit View</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Exit Price</th>
+          <th class="num">Gross</th>
+          <th class="num">Retained</th>
+          <th class="num">Forfeited</th>
+          <th class="num">Forfeiture Lots</th>
+          <th class="num">Est. Tax</th>
+          <th class="num">Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if payload.rows %}
+          {% for row in payload.rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td class="num">&pound;{{ row.exit_price_used_gbp|money }}</td>
+            <td class="num">&pound;{{ row.gross_value_gbp|money }}</td>
+            <td class="num">&pound;{{ row.retained_value_gbp|money }}</td>
+            <td class="num">&pound;{{ row.forfeited_value_gbp|money }}</td>
+            <td class="num">{{ row.forfeiture_lot_count }}</td>
+            <td class="num">{% if row.estimated_employment_tax_gbp is not none %}&pound;{{ row.estimated_employment_tax_gbp|money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+            <td class="num">{% if row.net_after_tax_gbp is not none %}&pound;{{ row.net_after_tax_gbp|money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="8" class="muted">No priced holdings available.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

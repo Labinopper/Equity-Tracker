@@ -1,0 +1,71 @@
+﻿{% extends "base.html" %}
+{% block title %}Fee Drag - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title"><div><h1>Fee Drag Ledger</h1><p class="muted">Broker-fee drag versus proceeds and economic gain.</p></div></div>
+
+<div class="stats">
+  <div class="stat"><span class="stat__label">Gross Proceeds</span><span class="stat__value">&pound;{{ payload.totals.gross_proceeds_gbp|money }}</span></div>
+  <div class="stat stat--warning"><span class="stat__label">Broker Fees</span><span class="stat__value">&pound;{{ payload.totals.broker_fees_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Fee % of Proceeds</span><span class="stat__value">{{ payload.totals.fee_pct_of_proceeds }}%</span></div>
+  <div class="stat"><span class="stat__label">Realised Economic Gain</span><span class="stat__value">&pound;{{ payload.totals.realised_economic_gain_gbp|money }}</span></div>
+  <div class="stat stat--accent"><span class="stat__label">Economic After Fees</span><span class="stat__value">&pound;{{ payload.totals.realised_economic_after_fees_gbp|money }}</span></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">By Tax Year</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tax Year</th><th class="num">Transactions</th><th class="num">Proceeds</th><th class="num">Fees</th><th class="num">Fee %</th><th class="num">Economic Gain</th><th class="num">Economic After Fees</th></tr></thead>
+      <tbody>
+        {% if payload.tax_year_rows %}
+          {% for row in payload.tax_year_rows %}
+          <tr>
+            <td>{{ row.tax_year }}</td>
+            <td class="num">{{ row.transaction_count }}</td>
+            <td class="num">&pound;{{ row.gross_proceeds_gbp|money }}</td>
+            <td class="num">&pound;{{ row.broker_fees_gbp|money }}</td>
+            <td class="num">{{ row.fee_pct_of_proceeds }}%</td>
+            <td class="num">&pound;{{ row.realised_economic_gain_gbp|money }}</td>
+            <td class="num">&pound;{{ row.realised_economic_after_fees_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="7" class="muted">No disposal history available.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Transaction Ledger</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Tax Year</th><th>Security</th><th class="num">Qty</th><th class="num">Proceeds</th><th class="num">Fees</th><th class="num">Fee %</th><th class="num">Economic Gain</th></tr></thead>
+      <tbody>
+        {% if payload.transaction_rows %}
+          {% for row in payload.transaction_rows %}
+          <tr>
+            <td>{{ row.transaction_date }}</td>
+            <td>{{ row.tax_year }}</td>
+            <td>{{ row.ticker }}</td>
+            <td class="num">{{ row.quantity }}</td>
+            <td class="num">&pound;{{ row.gross_proceeds_gbp|money }}</td>
+            <td class="num">&pound;{{ row.broker_fees_gbp|money }}</td>
+            <td class="num">{{ row.fee_pct_of_proceeds }}%</td>
+            <td class="num">&pound;{{ row.realised_economic_gain_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="8" class="muted">No rows.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

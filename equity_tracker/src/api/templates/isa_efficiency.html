@@ -1,0 +1,34 @@
+﻿{% extends "base.html" %}
+{% block title %}ISA Efficiency - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>ISA Efficiency</h1>
+    <p class="muted">Tax-shelter allocation and headroom lens.</p>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat stat--accent"><span class="stat__label">Active Tax Year</span><span class="stat__value">{{ payload.active_tax_year }}</span></div>
+  <div class="stat"><span class="stat__label">ISA Market Value</span><span class="stat__value">&pound;{{ payload.isa_market_value_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Taxable Market Value</span><span class="stat__value">&pound;{{ payload.taxable_market_value_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">ISA Ratio</span><span class="stat__value">{{ payload.isa_ratio_pct }}%</span></div>
+  <div class="stat"><span class="stat__label">ISA Allowance</span><span class="stat__value">&pound;{{ payload.isa_annual_allowance_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Estimated Contributions</span><span class="stat__value">&pound;{{ payload.estimated_isa_contributions_gbp|money }}</span></div>
+  <div class="stat stat--warning"><span class="stat__label">Headroom</span><span class="stat__value">&pound;{{ payload.estimated_isa_headroom_gbp|money }}</span></div>
+  <div class="stat"><span class="stat__label">Potential Shelterable Today</span><span class="stat__value">&pound;{{ payload.potential_shelterable_today_gbp|money }}</span></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Tax-Year Context</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Tax Year Start</th><td>{{ payload.tax_year_start }}</td></tr>
+    <tr><th>Tax Year End</th><td>{{ payload.tax_year_end }}</td></tr>
+  </tbody></table></div>
+</div>
+
+{% if payload.notes %}
+<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,39 @@
+﻿{% extends "base.html" %}
+{% block title %}Insights - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Insights</h1>
+    <p class="muted">Stage-10 strategic analysis surfaces.</p>
+  </div>
+</div>
+
+{% include "partials/model_scope_card.html" %}
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Strategic Pages</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Page</th>
+          <th>Description</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in links %}
+        <tr>
+          <td>{{ item.label }}</td>
+          <td>{{ item.desc }}</td>
+          <td><a href="{{ item.href }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -9,6 +9,22 @@
   </div>
 </div>
 
+{% set model_scope = {
+  "inputs": [
+    "User-defined scenario legs, FIFO lot state, optional deterministic price shock",
+    "Configured tax settings for employment-tax estimate path"
+  ],
+  "assumptions": [
+    "Execution mode is explicit: independent or sequential",
+    "Shock is deterministic and uniformly applied"
+  ],
+  "exclusions": [
+    "No return forecasting",
+    "No timing optimization or advisory output"
+  ]
+} %}
+{% include "partials/model_scope_card.html" %}
+
 <p class="muted">As of {{ scenario_context.as_of_date }}. Generated {{ scenario_context.generated_at_utc }}.</p>
 
 {% if scenario_context.hide_values %}
