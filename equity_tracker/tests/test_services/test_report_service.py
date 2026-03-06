@@ -467,3 +467,12 @@ class TestAuditLog:
         lots_entries = ReportService.audit_log(table_name="lots")
         assert len(lots_entries) >= 1
         assert lots_entries[0].action == "INSERT"
+
+    def test_record_id_filter(self, app_context):
+        sec_a = PortfolioService.add_security("RID1", "Record Filter 1", "GBP", is_manual_override=True)
+        _ = PortfolioService.add_security("RID2", "Record Filter 2", "GBP", is_manual_override=True)
+
+        entries = ReportService.audit_log(table_name="securities", record_id=sec_a.id)
+        assert entries
+        assert all(e.table_name == "securities" for e in entries)
+        assert all(e.record_id == sec_a.id for e in entries)

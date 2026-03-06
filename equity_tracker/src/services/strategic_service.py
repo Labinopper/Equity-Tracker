@@ -22,6 +22,7 @@ from .capital_stack_service import CapitalStackService
 from .dividend_service import DividendService
 from .exposure_service import ExposureService
 from .portfolio_service import PortfolioService, _estimate_sell_all_employment_tax
+from .report_service import ReportService
 from .tax_plan_service import TaxPlanService
 
 _MONEY_Q = Decimal("0.01")
@@ -613,6 +614,62 @@ class StrategicService:
         reported_deployable = _q_money(_safe_decimal(exposure.get("deployable_capital_gbp")))
         realised_to_date = (tax_plan.get("summary") or {}).get("realised_to_date") or {}
 
+        contributing_lot_rows: list[dict[str, Any]] = []
+        for security_summary in summary.securities:
+            ticker = str(security_summary.security.ticker or "UNKNOWN")
+            for lot_summary in security_summary.active_lots:
+                lot = lot_summary.lot
+                contributing_lot_rows.append(
+                    {
+                        "ticker": ticker,
+                        "security_id": lot.security_id,
+                        "lot_id": lot.id,
+                        "scheme_type": lot.scheme_type,
+                        "acquisition_date": lot.acquisition_date.isoformat(),
+                        "quantity_remaining": str(lot_summary.quantity_remaining),
+                        "market_value_gbp": (
+                            str(_q_money(lot_summary.market_value_gbp))
+                            if lot_summary.market_value_gbp is not None
+                            else None
+                        ),
+                        "sellability_status": lot_summary.sellability_status,
+                        "sellability_unlock_date": (
+                            lot_summary.sellability_unlock_date.isoformat()
+                            if lot_summary.sellability_unlock_date is not None
+                            else None
+                        ),
+                        "forfeiture_days_remaining": (
+                            lot_summary.forfeiture_risk.days_remaining
+                            if lot_summary.forfeiture_risk is not None
+                            else None
+                        ),
+                        "audit_href": f"/audit?table_name=lots&record_id={lot.id}",
+                    }
+                )
+        contributing_lot_rows.sort(
+            key=lambda row: abs(_safe_decimal(row.get("market_value_gbp"))),
+            reverse=True,
+        )
+
+        recent_audit_rows = []
+        for entry in ReportService.audit_log()[:40]:
+            recent_audit_rows.append(
+                {
+                    "changed_at_utc": (
+                        entry.changed_at.isoformat(sep=" ")
+                        if entry.changed_at is not None
+                        else None
+                    ),
+                    "table_name": entry.table_name,
+                    "action": entry.action,
+                    "record_id": entry.record_id,
+                    "notes": entry.notes,
+                    "audit_href": (
+                        f"/audit?table_name={entry.table_name}&record_id={entry.record_id}"
+                    ),
+                }
+            )
+
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
             "components": [
@@ -657,8 +714,15 @@ class StrategicService:
             "reconciliation_delta_gbp": str(_q_money(reconciled_deployable - reported_deployable)),
             "tax_plan_realised_net_gain_gbp": str(_q_money(_safe_decimal(realised_to_date.get("net_gain_gbp")))),
             "tax_plan_realised_cgt_gbp": str(_q_money(_safe_decimal(realised_to_date.get("total_cgt_gbp")))),
+            "contributing_lot_rows": contributing_lot_rows[:120],
+            "recent_audit_rows": recent_audit_rows,
+            "trace_links": {
+                "contributing_lots": "/reconcile#trace-contributing-lots",
+                "audit_mutations": "/reconcile#trace-audit-mutations",
+            },
             "notes": [
                 "Cross-page differences are scope differences, not arithmetic contradictions.",
+                "Top-value contributing lots and recent audit mutations are included for traceability.",
                 "This utility uses current deterministic service outputs only.",
             ],
         }

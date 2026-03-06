@@ -284,6 +284,10 @@ async def audit_log(
             "Valid values: lots, transactions, securities, lot_disposals."
         ),
     ),
+    record_id: str | None = Query(
+        None,
+        description="Optional exact record id filter.",
+    ),
     since: datetime | None = Query(
         None,
         description=(
@@ -296,8 +300,12 @@ async def audit_log(
     """
     Audit log entries, newest first.
 
-    Calls ``ReportService.audit_log(table_name, since)``.
+    Calls ``ReportService.audit_log(table_name, record_id, since)``.
     All returned ``changed_at`` timestamps are naive UTC datetimes.
     """
-    entries = ReportService.audit_log(table_name=table_name, since=since)
+    entries = ReportService.audit_log(
+        table_name=table_name,
+        record_id=record_id,
+        since=since,
+    )
     return [AuditLogEntrySchema.from_orm_entry(e) for e in entries]

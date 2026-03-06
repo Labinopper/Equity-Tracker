@@ -11,7 +11,7 @@ Scope guardrails:
 - Stages `1`-`7` remain complete as previously logged.
 - Stage `8` complete: `T10` glossary deep links, `T11` analytics criticality metadata/order, and `T12` regression lock-in.
 - Stage `9` complete: `T34`, `T35`, `T41`, `T42`, and `T44` are now fully shipped.
-- Stage `10` in progress: `T13` wrapper allocation strip and `T14` FX attribution widget complete; `T15`-`T32` pending.
+- Stage `10` complete: `T13`-`T32` shipped, including strategic pages, sequential/persisted Scenario Lab, lock-window history overlays, and cross-page traceability.
 
 ## Execution Status (Source of Truth)
 
@@ -26,7 +26,7 @@ Scope guardrails:
 | 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Complete | Decision-surface hardening and execution governance shipped. |
 | 8 | `T10`, `T11`, `T12` | Complete | Glossary deep-linking, analytics criticality metadata/order, and regression lock-in are live. |
 | 9 | `T34`, `T35`, `T41`, `T42`, `T44` | Complete | Dividend attribution, dividend-adjusted Per-Scheme/History surfaces, optionality timeline/index, and dividend FX provenance are live. |
-| 10 | `T13`-`T32` | In Progress | `T13` and `T14` complete; remaining expansion backlog pending. |
+| 10 | `T13`-`T32` | Complete | Strategic expansion pages, scenario persistence/mode controls, lock-window overlays, alert center/guardrails, reconciliation, and model-scope disclosures are live. |
 
 ## Task Delivery Snapshot (2026-03-06)
 
@@ -42,6 +42,16 @@ Scope guardrails:
 | T44 | Complete | Dividend native-currency input and FX provenance fully supported end-to-end. |
 | T13 | Complete | ISA/taxable wrapper allocation surfaced on Portfolio and Risk. |
 | T14 | Complete | Analytics FX attribution widget shipped and wired into widget governance. |
+| T15 + T29 | Complete | Scenario Lab supports independent/sequential execution and persists snapshots with reload/list APIs. |
+| T16 | Complete | History and Security History now include lock-window/non-sellable overlays. |
+| T17 | Complete | Key totals now deep-link to reconcile traces; `/reconcile` includes contributing lots and recent audit mutations; `/audit` supports record-level filters. |
+| T18 | Complete | Add Security blocks duplicate/ambiguous instrument setup and surfaces pre-submit metadata-quality warnings. |
+| T19-T25 | Complete | Strategic pages live: `/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`. |
+| T26 + T20 + T31 | Complete | Top-nav alert center and concentration guardrails are configurable; Risk includes deterministic rebalance friction panel. |
+| T27 | Complete | Forfeiture heatmap buckets now visible in Risk/Analytics. |
+| T28 | Complete | `/reconcile` explains cross-surface delta components deterministically. |
+| T30 | Complete | `/basis-timeline` exposes native-vs-FX basis attribution timeline. |
+| T32 | Complete | Model Scope cards standardized across Portfolio, Net Value, Tax Plan, and Scenario Lab. |
 
 ## Core v1 (Critical)
 
@@ -131,7 +141,7 @@ Method basis used for scoping (non-advisory):
 
 - These items are intentionally deterministic extensions of existing services/data.
 - None of these items require predictive AI, market timing, or buy/sell advice logic.
-- Prioritize `T15`, `T16`, `T17`, and `T19` as the next highest-value structural upgrades.
+- Stage-10 items `T15`-`T32` are now implemented; future iterations should focus on hardening and regression coverage depth.
 - Sell execution additions (`T45`-`T53`) are execution-policy tooling, not return forecasting or trade recommendation logic.
 
 ## Execution Order (Source of Truth)
@@ -145,10 +155,10 @@ Method basis used for scoping (non-advisory):
 7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` (Completed).
 8. `T10`, `T11`, `T12` (Completed).
 9. `T34`, `T35`, `T41`, `T42`, `T44` (Completed).
-10. `T13`, `T14` (Completed), then `T15`-`T32` (Pending).
+10. `T13`-`T32` (Completed).
 
 ## Definition of Done (Current + Next)
 
 - Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
-- Partial completion active: Stage 10 has `T13` and `T14` complete; `T15`-`T32` remain queued.
-- Next exit criteria: merge selected Stage 10 follow-ons (`T15`/`T16`/`T17` or `T19`) with deterministic test coverage.
+- Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
+- Next exit criteria: broaden integration coverage for strategic pages and complete remaining non-Stage-10 backlog in priority order.

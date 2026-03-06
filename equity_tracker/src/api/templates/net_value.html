@@ -38,6 +38,11 @@
   ]
 } %}
 {% include "partials/model_scope_card.html" %}
+<p class="muted">
+  Trace key totals:
+  <a href="/reconcile#trace-contributing-lots">Contributing lots</a> |
+  <a href="/reconcile#trace-audit-mutations">Recent mutations</a>
+</p>
 
 {% if sell_all_metrics.fx_conversion_basis or sell_all_metrics.fx_as_of %}
 <div class="alert {% if sell_all_metrics.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
@@ -54,7 +59,7 @@
 
 <div class="stats">
   <div class="stat">
-    <div class="stat__label"><a href="/glossary#hypothetical-full-liquidation">Gross Market Value (All Lots)</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label"><a href="/glossary#hypothetical-full-liquidation">Gross Market Value (All Lots)</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></div>
     {% if sell_all_metrics.gross_market_value_gbp is not none %}
     <div class="stat__value">&pound;{{ sell_all_metrics.gross_market_value_gbp | money }}</div>
     {% else %}
@@ -65,6 +70,7 @@
     <div class="stat__label">
       <a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Lots; Sell-All Context)</a>
       <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
+      <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a>
       <button class="info-button" aria-label="Estimated Employment Tax explanation">ℹ</button>
       <div class="tooltip">
         <div class="tooltip-content">

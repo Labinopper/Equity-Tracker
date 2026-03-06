@@ -18,4 +18,4 @@ Last updated: `2026-03-06`
 
 - Stages `1`-`8`: complete.
 - Stage `9`: complete (`T34`, `T35`, `T41`, `T42`, `T44`).
-- Stage `10`: in progress (`T13`, `T14` complete; `T15`-`T32` pending).
+- Stage `10`: complete (`T13`-`T32` shipped).

@@ -139,7 +139,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: These pages govern assumptions and inputs feeding all decision surfaces (not independent valuation engines).
 3. Illusion vs Reality Risks: Incomplete settings or poor metadata can silently degrade downstream estimates.
 4. Decision Support Role: Model integrity and auditability.
-5. Structural Improvements: Add page-level dependency map in Settings showing which assumptions affect which outputs (`T32`).
+5. Structural Improvements: `T32` complete. Model Scope disclosures are now standardized across major decision pages.
 
 # System Alignment Review
 
@@ -149,46 +149,41 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 
 ## Is ISA clearly structurally differentiated?
 - Yes at a practical level: wrapper allocation is explicit in Portfolio and Risk, and GBP-only ISA cash transfer controls are enforced in Cash.
-- Remaining gap: no dedicated ISA strategy page yet (`T22`).
+- Dedicated ISA strategy surface is now live at `/isa-efficiency` (`T22`).
 
 ## Is employer concentration visible enough?
 - Improved: Portfolio, Risk, and sell-plan adherence now expose concentration directly.
-- Remaining gap: no threshold-alert guardrails yet (`T20`).
+- Threshold guardrails and alerting are now live via configurable settings and top-nav alert center (`T20`, `T26`).
 
 ## Is employment tax treated transparently?
 - Yes: Simulate, Portfolio, Net Value context labels, Tax Plan assumption tags, and explicit missing-estimate acknowledgement are in place.
 
 ## Are theoretical vs sellable values clearly separated?
-- Mostly yes: actionable/hypothetical tagging and Capital Stack improve clarity.
-- Remaining gap: cross-page reconciliation surface is still missing (`T28`).
+- Yes: actionable/hypothetical tagging, Capital Stack, and `/reconcile` now make scope deltas explicit (`T28`).
 
 ## Is forfeiture exposure made emotionally visible?
-- Yes in Portfolio split buckets, Simulate/Sell Plan constraint engine, and Calendar events.
-- Remaining gap: no forfeiture heatmap timing distribution yet (`T27`).
+- Yes in Portfolio split buckets, Simulate/Sell Plan constraints, Calendar events, and forfeiture heatmap buckets in Risk/Analytics (`T27`).
 
 ## Is FX risk visible or implicit?
-- Improved: analytics FX attribution widget, dividend FX provenance, and cash conversion provenance are live.
-- Remaining gap: no dedicated FX basis timeline (`T30`).
+- Improved: analytics FX attribution, dividend FX provenance, cash conversion provenance, and `/basis-timeline` are live (`T14`, `T30`).
 
 # Behavioural Risk Surface
 
 - Confirmation bias via gross-value anchoring: still possible if users skip Capital Stack and focus on gross market value.
-- Over-confidence in employer equity: reduced by concentration/employer dependence metrics, but still possible without guardrail alerts.
+- Over-confidence in employer equity: reduced by concentration/employer dependence metrics plus guardrail alerts; residual risk remains if alerts are ignored.
 - Tax underestimation: reduced by assumption-quality tags and acknowledgement gates; still vulnerable when settings are incomplete.
-- Risk masking through aggregation: improved via split liquidity/forfeiture cards; still present when users hide critical analytics widgets.
+- Risk masking through aggregation: reduced by `/reconcile` trace sections and lot/audit drill-through; still present when users skip trace workflows.
 - Comfort from large headline numbers: mitigated, not eliminated; hypothetical and actionable values can still be conflated by inattentive usage.
 - False precision risk: persists in manual price inputs and forecast dividend entries.
 
 # Core v1 vs v2 Summary Recommendations
 
 ## Core v1
-1. Add deterministic cross-page reconciliation (`T28`) to explain why outputs differ across Portfolio, Net Value, Simulate, and Tax Plan.
-2. Add concentration guardrail alerts (`T20`) with explicit non-predictive thresholds.
-3. Add deterministic execution-order sensitivity in Scenario Lab (`T15`).
+1. Keep strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`) under regression coverage as model formulas evolve.
+2. Expand end-to-end tests around alert thresholds and trace-link integrity to preserve deterministic transparency.
+3. Harden documentation/test coupling so wording changes remain aligned with implementation semantics.
 
 ## v2 Strategic Upgrade
-1. `T15`: sequential-leg Scenario Lab mode for order-sensitive FIFO realism.
-2. `T16`: lock/forfeiture window overlays in history charts.
-3. `T17`: traceability links from top cards to lot rows and audit mutations.
-4. `T19`: capital-efficiency page decomposing annualized structural drag rate.
-5. `T22`: ISA allocation lens with tax-year sheltering headroom.
+1. Add broader strategic API/UI regression suite for all Stage-10 pages.
+2. Add reconciliation delta tolerance tests across representative portfolio states.
+3. Add UX friction checks for trace flows (Portfolio/Net Value/Tax Plan -> Reconcile -> Audit record).

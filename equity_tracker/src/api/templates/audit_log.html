@@ -16,14 +16,20 @@
     <option value="{{ t }}" {{ 'selected' if active_table == t }}>{{ t }}</option>
     {% endfor %}
   </select>
+  <label for="record_id" class="filter-label">Record ID:</label>
+  <input id="record_id" name="record_id" type="text" value="{{ active_record_id }}" placeholder="Exact UUID">
   <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
-  {% if active_table %}
+  {% if active_table or active_record_id %}
   <a href="/audit" class="btn btn-secondary btn-sm">Clear filter</a>
   {% endif %}
 </form>
 
 {% if not entries %}
-<div class="empty-state">No audit entries{{ ' for ' + active_table if active_table else '' }}.</div>
+<div class="empty-state">
+  No audit entries
+  {% if active_table %} for {{ active_table }}{% endif %}
+  {% if active_record_id %} (record {{ active_record_id }}){% endif %}.
+</div>
 {% else %}
 <div class="card">
   <div class="table-wrap">
@@ -53,7 +59,7 @@
             </span>
           </td>
           <td class="muted audit-record-id">
-            {{ e.record_id[:8] }}...
+            <a href="/audit?table_name={{ e.table_name }}&record_id={{ e.record_id }}">{{ e.record_id[:8] }}...</a>
           </td>
           <td class="audit-changes-cell">
             {% if e.old_values_json or e.new_values_json %}

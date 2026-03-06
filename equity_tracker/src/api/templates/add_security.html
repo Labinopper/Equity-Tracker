@@ -29,6 +29,7 @@
                value="{{ prev.ticker if prev and not prev.is_manual_override else '' }}"
                class="catalog-search-input">
         <span class="form-hint">Start typing to search LSE, NYSE, and NASDAQ listings.</span>
+        <span class="form-hint">Data-quality guardrails: duplicate ticker+currency pairs are blocked; ticker conflicts across currencies require ISIN/exchange disambiguation.</span>
 
         {# Dropdown results #}
         <ul id="catalog-dropdown" role="listbox" aria-label="Instrument suggestions" class="catalog-dropdown"></ul>
@@ -118,7 +119,7 @@
         </div>
       </div>
       <p id="manual-quality-warning" class="form-hint" style="color: var(--warning-text-color, #d18616);" hidden>
-        Provide at least one disambiguator: Exchange or ISIN.
+        Data-quality warning: provide at least one disambiguator (Exchange or ISIN) to reduce ambiguous ticker mapping.
       </p>
     </div>
 

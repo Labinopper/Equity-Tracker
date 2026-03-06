@@ -4174,11 +4174,18 @@ async def economic_gain_report(
 
 @router.get("/audit", response_class=HTMLResponse, include_in_schema=False)
 async def audit_log(
-    request: Request, table_name: str | None = None
+    request: Request,
+    table_name: str | None = None,
+    record_id: str | None = None,
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
-    entries = ReportService.audit_log(table_name=table_name or None)
+    active_table = (table_name or "").strip()
+    active_record_id = (record_id or "").strip()
+    entries = ReportService.audit_log(
+        table_name=active_table or None,
+        record_id=active_record_id or None,
+    )
     tables = ["lots", "securities", "transactions", "lot_disposals"]
     return templates.TemplateResponse(
         request,
@@ -4187,7 +4194,8 @@ async def audit_log(
             "request": request,
             "entries": entries,
             "tables": tables,
-            "active_table": table_name or "",
+            "active_table": active_table,
+            "active_record_id": active_record_id,
         },
     )
 

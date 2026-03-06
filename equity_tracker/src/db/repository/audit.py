@@ -119,6 +119,7 @@ class AuditRepository:
 
         Args:
             table_name : Optional filter by table (e.g. "lots", "transactions").
+            record_id  : Optional exact record-id filter.
             since      : If provided, only return entries after this UTC datetime.
 
         Used by the Reports > Audit Log tab.

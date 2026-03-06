@@ -34,6 +34,11 @@
   ]
 } %}
 {% include "partials/model_scope_card.html" %}
+<p class="muted">
+  Trace key totals:
+  <a href="/reconcile#trace-contributing-lots">Contributing lots</a> |
+  <a href="/reconcile#trace-audit-mutations">Recent mutations</a>
+</p>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
@@ -41,7 +46,7 @@
 
 <div class="stats">
   <div class="stat stat--gain">
-    <div class="stat__label"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></div>
     {% if portfolio_est_net_liquidity is not none %}
     <div class="stat__value gain">&pound;{{ portfolio_est_net_liquidity | money }}</div>
     {% else %}
@@ -165,7 +170,7 @@
     <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></div>
     {% if portfolio_sellable_employment_tax is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
     {% else %}
@@ -676,7 +681,7 @@
                   <div class="lot-menu__items">
                     <a class="lot-menu__item" href="/portfolio/edit-lot?lot_id={{ row.action_lot_id }}">Edit</a>
                     <a class="lot-menu__item" href="/portfolio/transfer-lot?lot_id={{ row.action_lot_id }}">Transfer</a>
-                    <a class="lot-menu__item" href="/audit?table_name=lots">History</a>
+                    <a class="lot-menu__item" href="/audit?table_name=lots&record_id={{ row.action_lot_id }}">History</a>
                   </div>
                 </details>
               </span>
@@ -714,7 +719,7 @@
             <div class="lot-menu__items">
               <a class="lot-menu__item" href="/portfolio/edit-lot?lot_id={{ row.action_lot_id }}">Edit</a>
               <a class="lot-menu__item" href="/portfolio/transfer-lot?lot_id={{ row.action_lot_id }}">Transfer</a>
-              <a class="lot-menu__item" href="/audit?table_name=lots">History</a>
+              <a class="lot-menu__item" href="/audit?table_name=lots&record_id={{ row.action_lot_id }}">History</a>
             </div>
           </details>
         </span>

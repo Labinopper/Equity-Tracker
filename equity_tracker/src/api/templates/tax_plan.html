@@ -37,6 +37,11 @@
   ]
 } %}
 {% include "partials/model_scope_card.html" %}
+<p class="muted">
+  Trace key totals:
+  <a href="/reconcile#trace-contributing-lots">Contributing lots</a> |
+  <a href="/reconcile#trace-audit-mutations">Recent mutations</a>
+</p>
 
 <p class="muted">As of {{ tax_plan.as_of_date }}. Generated {{ tax_plan.generated_at_utc }}.</p>
 
@@ -63,7 +68,7 @@
     <span class="stat__value">{{ tax_plan.active_tax_year }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Net Gain to Date <span class="metric-tag metric-tag--realised">Realised</span></span>
+    <span class="stat__label">Net Gain to Date <span class="metric-tag metric-tag--realised">Realised</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></span>
     <span class="stat__value">&pound;{{ realised.net_gain_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">

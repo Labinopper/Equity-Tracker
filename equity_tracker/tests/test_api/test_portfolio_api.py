@@ -786,3 +786,14 @@ def test_audit_log_after_mutations(client):
     entries = resp.json()
     assert len(entries) >= 1
     assert entries[0]["table_name"] == "securities"
+
+
+def test_audit_log_record_id_filter(client):
+    sec = _add_security(client, ticker="RIDFILT", name="Record Filter Plc", currency="GBP")
+
+    resp = client.get(f"/reports/audit?table_name=securities&record_id={sec['id']}")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) >= 1
+    assert all(row["table_name"] == "securities" for row in rows)
+    assert all(row["record_id"] == sec["id"] for row in rows)

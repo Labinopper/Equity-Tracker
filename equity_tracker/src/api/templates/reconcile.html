@@ -4,6 +4,12 @@
 {% block content %}
 <div class="page-title"><div><h1>Cross-Page Reconciliation</h1><p class="muted">Why Portfolio, Net Value, Capital Stack, and Tax Plan differ.</p></div></div>
 
+<p class="muted">
+  Trace paths:
+  <a href="#trace-contributing-lots">Contributing lots</a> |
+  <a href="#trace-audit-mutations">Recent audit mutations</a>
+</p>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Reconciliation Path</h2></div>
   <div class="table-wrap"><table>
@@ -31,4 +37,78 @@
 {% if payload.notes %}
 <div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
 {% endif %}
+
+<div class="card" id="trace-contributing-lots">
+  <div class="card__header"><h2 class="card__title">Trace: Contributing Lots</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th>Lot ID</th>
+          <th>Scheme</th>
+          <th>Status</th>
+          <th class="num">Qty</th>
+          <th class="num">Market Value</th>
+          <th>Trace</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if payload.contributing_lot_rows %}
+          {% for row in payload.contributing_lot_rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td><code>{{ row.lot_id }}</code></td>
+            <td>{{ row.scheme_type }}</td>
+            <td>
+              {{ row.sellability_status }}
+              {% if row.sellability_unlock_date %}<div class="muted">Unlocks {{ row.sellability_unlock_date }}</div>{% endif %}
+              {% if row.forfeiture_days_remaining is not none %}<div class="muted">Forfeiture {{ row.forfeiture_days_remaining }}d</div>{% endif %}
+            </td>
+            <td class="num">{{ row.quantity_remaining }}</td>
+            <td class="num">{% if row.market_value_gbp is not none %}&pound;{{ row.market_value_gbp|money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
+            <td><a href="{{ row.audit_href }}">Open lot audit</a></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="7" class="muted">No active lots available for trace.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" id="trace-audit-mutations">
+  <div class="card__header"><h2 class="card__title">Trace: Recent Audit Mutations</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>When (UTC)</th>
+          <th>Table</th>
+          <th>Action</th>
+          <th>Record ID</th>
+          <th>Note</th>
+          <th>Trace</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if payload.recent_audit_rows %}
+          {% for row in payload.recent_audit_rows %}
+          <tr>
+            <td>{{ row.changed_at_utc or "-" }}</td>
+            <td>{{ row.table_name }}</td>
+            <td>{{ row.action }}</td>
+            <td><code>{{ row.record_id }}</code></td>
+            <td>{{ row.notes or "-" }}</td>
+            <td><a href="{{ row.audit_href }}">Open mutation</a></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="6" class="muted">No audit mutations available.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
