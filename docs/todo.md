@@ -8,7 +8,7 @@ Scope guardrails:
 
 Execution mode (`2026-03-06`):
 - Refinement and hardening only.
-- Active implementation scope: `T58`-`T79`.
+- Active implementation scope: closed (`T58`-`T79` complete).
 - Deferred (not active): `T54`-`T57`, `T80`-`T82`.
 
 ## Progress Update (2026-03-06)
@@ -18,14 +18,17 @@ Execution mode (`2026-03-06`):
 - Stage `9` complete: `T34`, `T35`, `T41`, `T42`, and `T44` are now fully shipped.
 - Stage `10` complete: `T13`-`T32` shipped, including strategic pages, sequential/persisted Scenario Lab, lock-window history overlays, and cross-page traceability.
 - Regression hardening pass completed for strategic surfaces: API/page smoke coverage and boundary validation added.
+- Wave A complete (`T58`-`T69`; commit `d2d9751`).
+- Wave B complete (`T70`-`T77`; commit `7ff36ac`).
+- Wave C complete (`T78`-`T79`; glossary reverse links and operational auth/lock recovery messaging shipped with regression coverage).
 
-## Active Refinement Queue (Current)
+## Active Refinement Queue (Closed)
 
 | Wave | Scope | Status | Exit Criteria |
 |---|---|---|---|
-| Wave A (P1) | `T58`-`T69` | Ready | Portfolio and page-level clarity refinements merged with deterministic regression updates where behaviour/labels change. |
-| Wave B (P2) | `T70`-`T77` | Queued | Traceability, decomposition, and input-integrity refinements merged with cross-surface reconciliation checks. |
-| Wave C (P3) | `T78`-`T79` | Queued | Glossary reverse-linking and operational messaging refinements merged without scope expansion. |
+| Wave A (P1) | `T58`-`T69` | Complete | Portfolio and page-level clarity refinements merged with deterministic regression updates where behaviour/labels change. |
+| Wave B (P2) | `T70`-`T77` | Complete | Traceability, decomposition, and input-integrity refinements merged with cross-surface reconciliation checks. |
+| Wave C (P3) | `T78`-`T79` | Complete | Glossary reverse-linking and operational messaging refinements merged without scope expansion. |
 
 ## Execution Status (Source of Truth)
 
@@ -66,6 +69,10 @@ Execution mode (`2026-03-06`):
 | T28 | Complete | `/reconcile` explains cross-surface delta components deterministically. |
 | T30 | Complete | `/basis-timeline` exposes native-vs-FX basis attribution timeline. |
 | T32 | Complete | Model Scope cards standardized across Portfolio, Net Value, Tax Plan, and Scenario Lab. |
+| T58-T69 | Complete | Wave A refinements delivered across Portfolio, Net Value, Capital Stack, Cash, Sell Plan, Simulate, Analytics, and Calendar surfaces. |
+| T70-T77 | Complete | Wave B refinements delivered for Scenario Lab traceability, history decomposition, report clarity, reconcile drift, audit diffing, input impact previews, and settings completeness. |
+| T78 | Complete | `/glossary` anchors now include reverse links to primary consuming pages. |
+| T79 | Complete | `/auth/login` and `locked.html` now include actionable rate-limit/recovery guidance without exposing sensitive auth internals. |
 
 ## Core v1 (Critical, Delivered Archive)
 
@@ -175,8 +182,8 @@ Method basis used for scoping (non-advisory):
 
 - Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
 - Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
-- Next exit criteria: close refinement backlog `T58`-`T79` with regression coverage for changed semantics, labels, traces, and reconciliation pathways.
-- Feature expansion backlog remains deferred until refinement closure.
+- Refinement backlog closure achieved: `T58`-`T79` complete with regression coverage for changed semantics, labels, traces, reconciliation pathways, and operational messaging.
+- Deferred feature candidates remain parked until explicit reprioritization.
 
 ## Deferred Feature Backlog (Post-Refinement, Not Active)
 
@@ -187,7 +194,7 @@ Method basis used for scoping (non-advisory):
 | T56 | P2 | M | Major | Add `/reconcile` drift explainer comparing current vs prior snapshot deltas by cause (price, FX, quantity, settings/audit). | Transparency, behavioural risk reduction | Users can trace a headline delta to deterministic components and linked audit rows in <=3 clicks. |
 | T57 | P2 | S | Minor | Add persisted alert lifecycle (server-side dismiss/snooze states with deterministic expiry semantics). | Risk salience, cross-session consistency | Alert state survives browser reset/device changes and is auditable by state transition. |
 
-## Portfolio Template Refinements
+## Portfolio Template Refinements (Delivered Archive)
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -197,7 +204,7 @@ Method basis used for scoping (non-advisory):
 | T61 | P3 | S | Minor | Standardize wording/capitalization for market-state and decision badges (`Open`/`Closed`, `Sellable`, `Locked`, etc.). | Clarity, UX friction reduction | Status labels are consistent across table, mobile cards, and tooltips with no mixed-case drift. |
 | T62 | P2 | M | Major | Move Portfolio view-control semantics from generic text to deterministic control help panel tied to active filters/sort. | Clarity, risk visibility | Control panel shows active filter/sort impact and affected-row count; text is specific to current selection. |
 
-## Page-by-Page Refinement Backlog (Post Assessment 2026-03-06)
+## Page-by-Page Refinement Backlog (Post Assessment 2026-03-06, Delivered Archive)
 
 Reference: `docs/STRATEGIC_DOCUMENTATION.md` section `Individual Page Effectiveness Assessment (2026-03-06)`.
 
@@ -223,7 +230,7 @@ Reference: `docs/STRATEGIC_DOCUMENTATION.md` section `Individual Page Effectiven
 
 ## Deferred Feature Candidates (Separate Track, Not Active)
 
-These are capability expansions, not page refinements. Keep parked until the active refinement queue is complete.
+These are capability expansions, not page refinements. Active refinement queue is complete; keep these parked until explicit reprioritization.
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|

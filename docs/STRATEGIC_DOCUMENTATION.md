@@ -2,7 +2,7 @@
 
 Last updated: `2026-03-06`
 
-Execution mode: refinement and hardening only. New feature-expansion tracks are documented but deferred.
+Execution mode: refinement and hardening closure complete (`T58`-`T79` shipped). New feature-expansion tracks are documented and deferred pending reprioritization.
 
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
 
@@ -263,7 +263,7 @@ Legend: `H` = high objective alignment, `M` = moderate alignment (useful but wit
 
 # Deferred Additional Features (Not in Active Scope)
 
-These are capability expansions, not page-polish refinements. Keep parked until the active refinement backlog is closed.
+These are capability expansions, not page-polish refinements. Active refinement backlog is closed; keep parked until explicit reprioritization.
 
 ## AF1: Global As-of Mode (Cross-Surface)
 1. Scope: One shared `as_of` selector for Portfolio, Net Value, Risk, Calendar, Scenario Lab, and exports.

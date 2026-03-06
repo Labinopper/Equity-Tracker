@@ -1001,6 +1001,10 @@ tr:hover td.loss {
 .loss { color: var(--loss); }
 .muted { color: var(--text-muted); font-size: 0.85em; }
 
+.glossary-links {
+  margin-top: 0.35rem;
+}
+
 /* -- Summary stat tiles --------------------------------- */
 
 .stats {
@@ -1471,6 +1475,32 @@ tr:hover td.loss {
 
 .locked-page h1 { color: var(--text-muted); }
 .locked-page p  { color: var(--text-muted); max-width: 480px; }
+
+.locked-checklist {
+  width: 100%;
+  max-width: 620px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  background: var(--bg-card-alt);
+}
+
+.locked-checklist h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--text-heading);
+}
+
+.locked-checklist ol {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+}
+
+.locked-checklist li + li {
+  margin-top: 0.35rem;
+}
 
 .lock-icon {
   font-size: 3rem;

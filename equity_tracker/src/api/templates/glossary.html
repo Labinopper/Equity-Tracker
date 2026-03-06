@@ -14,23 +14,61 @@
       <tbody>
         <tr>
           <th id="true-cost-acquisition" style="width:220px">True Cost (Acquisition)</th>
-          <td>Immutable acquisition-time economic cost used in reporting and economic gain calculations. It is not reduced by later dividends.</td>
+          <td>
+            Immutable acquisition-time economic cost used in reporting and economic gain calculations. It is not reduced by later dividends.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/">Portfolio</a>,
+              <a href="/per-scheme">Per Scheme</a>,
+              <a href="/economic-gain">Economic Gain Report</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="dividend-adjusted-capital-at-risk">Dividend-Adjusted Capital at Risk</th>
-          <td>`True Cost (Acquisition) - Estimated Net Dividends` (floored at zero). Portfolio-level indicator only; does not replace True Cost and does not change tax-report logic.</td>
+          <td>
+            `True Cost (Acquisition) - Estimated Net Dividends` (floored at zero). Portfolio-level indicator only; does not replace True Cost and does not change tax-report logic.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/">Portfolio</a>,
+              <a href="/capital-stack">Capital Stack</a>,
+              <a href="/dividends">Dividends</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="cost-basis">Cost Basis</th>
-          <td>The HMRC-recognised cost base for calculating capital gain on disposal (also called Allowable Cost). May differ from True Cost when acquisition-time tax creates a gap.</td>
+          <td>
+            The HMRC-recognised cost base for calculating capital gain on disposal (also called Allowable Cost). May differ from True Cost when acquisition-time tax creates a gap.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/cgt">CGT Report</a>,
+              <a href="/net-value">Net Value</a>,
+              <a href="/tax-plan">Tax Plan</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="allowable-cost">Allowable Cost</th>
-          <td>HMRC term for Cost Basis in CGT self-assessment filing context. Used in the CGT Report.</td>
+          <td>
+            HMRC term for Cost Basis in CGT self-assessment filing context. Used in the CGT Report.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/cgt">CGT Report</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="economic-gain">Economic Gain</th>
-          <td>Proceeds minus True Cost. Shows true investment return. May differ from CGT Gain because True Cost and Cost Basis can differ.</td>
+          <td>
+            Proceeds minus True Cost. Shows true investment return. May differ from CGT Gain because True Cost and Cost Basis can differ.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/economic-gain">Economic Gain Report</a>,
+              <a href="/dividends">Dividends</a>,
+              <a href="/scenario-lab">Scenario Lab</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th>Unrealised P&amp;L</th>
@@ -48,15 +86,36 @@
       <tbody>
         <tr>
           <th id="employment-tax" style="width:220px">Employment Tax</th>
-          <td>Income Tax (IT) + National Insurance (NI) + Student Loan (SL) on scheme-eligible disposals (RSU, ESPP+). Abbreviated "IT + NI + SL".</td>
+          <td>
+            Income Tax (IT) + National Insurance (NI) + Student Loan (SL) on scheme-eligible disposals (RSU, ESPP+). Abbreviated "IT + NI + SL".
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/tax-plan">Tax Plan</a>,
+              <a href="/simulate">Simulate Disposal</a>,
+              <a href="/sell-plan">Sell Plan</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="aea">AEA</th>
-          <td>Annual Exempt Amount &mdash; the CGT tax-free threshold for the year (&pound;3,000 for 2024&ndash;25 onwards). Gains below AEA in a tax year are not subject to CGT.</td>
+          <td>
+            Annual Exempt Amount &mdash; the CGT tax-free threshold for the year (&pound;3,000 for 2024&ndash;25 onwards). Gains below AEA in a tax year are not subject to CGT.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/tax-plan">Tax Plan</a>,
+              <a href="/cgt">CGT Report</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="ani-adjusted-net-income">ANI (Adjusted Net Income)</th>
-          <td>Gross Employment Income minus Pension Sacrifice plus Other Income. Determines Personal Allowance taper above &pound;100k. Used in the Tax Plan what-if analysis.</td>
+          <td>
+            Gross Employment Income minus Pension Sacrifice plus Other Income. Determines Personal Allowance taper above &pound;100k. Used in the Tax Plan what-if analysis.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/tax-plan">Tax Plan</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th>SL (Student Loan)</th>
@@ -74,23 +133,59 @@
       <tbody>
         <tr>
           <th id="est-net-liquidity-sellable" style="width:220px">Est. Net Liquidity (Sellable)</th>
-          <td>Sum of Net If Sold Today for <strong>sellable rows only</strong>. Locked and forfeiture-restricted lots are excluded. Shown on the Portfolio page.</td>
+          <td>
+            Sum of Net If Sold Today for <strong>sellable rows only</strong>. Locked and forfeiture-restricted lots are excluded. Shown on the Portfolio page.
+            <div class="muted glossary-links">
+              Primary page:
+              <a href="/">Portfolio</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="hypothetical-full-liquidation">Hypothetical Full Liquidation</th>
-          <td>Gross market value across <strong>all lots</strong> minus estimated employment tax from <strong>currently sellable lots</strong>. Shown on the Net Value page in sell-all context. Not directly comparable to Est. Net Liquidity.</td>
+          <td>
+            Gross market value across <strong>all lots</strong> minus estimated employment tax from <strong>currently sellable lots</strong>. Shown on the Net Value page in sell-all context. Not directly comparable to Est. Net Liquidity.
+            <div class="muted glossary-links">
+              Primary page:
+              <a href="/net-value">Net Value</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="locked-capital">Locked Capital</th>
-          <td>Market value of lots that are currently non-sellable due to lock status (for example pre-vest RSU). Excludes forfeitable matched-share value.</td>
+          <td>
+            Market value of lots that are currently non-sellable due to lock status (for example pre-vest RSU). Excludes forfeitable matched-share value.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/">Portfolio</a>,
+              <a href="/capital-stack">Capital Stack</a>,
+              <a href="/risk">Risk</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="forfeitable-capital">Forfeitable Capital</th>
-          <td>Market value of ESPP+ matched shares still inside the forfeiture window. Value is at risk if linked employee shares are sold before the window ends.</td>
+          <td>
+            Market value of ESPP+ matched shares still inside the forfeiture window. Value is at risk if linked employee shares are sold before the window ends.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/">Portfolio</a>,
+              <a href="/risk">Risk</a>,
+              <a href="/calendar">Calendar</a>.
+            </div>
+          </td>
         </tr>
         <tr>
           <th id="forfeiture-window">Forfeiture Window</th>
-          <td>The period after ESPP+ lot acquisition during which selling the paired employee shares forfeits the matched (employer) shares. Badge "(Xd left)" means X days remaining until the window closes and it is safe to sell.</td>
+          <td>
+            The period after ESPP+ lot acquisition during which selling the paired employee shares forfeits the matched (employer) shares. Badge "(Xd left)" means X days remaining until the window closes and it is safe to sell.
+            <div class="muted glossary-links">
+              Primary pages:
+              <a href="/calendar">Calendar</a>,
+              <a href="/simulate">Simulate Disposal</a>,
+              <a href="/sell-plan">Sell Plan</a>.
+            </div>
+          </td>
         </tr>
       </tbody>
     </table>
