@@ -44,6 +44,10 @@ _SCHEME_LABELS: dict[str, str] = {
     "ISA": "ISA",
 }
 
+_ASSUMPTION_QUALITY_EXACT = "Exact"
+_ASSUMPTION_QUALITY_WEIGHTED = "Weighted Estimate"
+_ASSUMPTION_QUALITY_UNAVAILABLE = "Unavailable"
+
 
 def _q_money(value: Decimal) -> Decimal:
     return value.quantize(_GBP_Q, rounding=ROUND_HALF_UP)
@@ -53,6 +57,13 @@ def _money_str(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return str(_q_money(value))
+
+
+def _assumption_quality(label: str, reason: str | None = None) -> dict[str, str | None]:
+    return {
+        "label": label,
+        "reason": reason,
+    }
 
 
 def _to_decimal(value: object) -> Decimal | None:
@@ -390,6 +401,7 @@ def _build_compensation_row(
     student_loan_plan: int | None,
     estimated_sale_gain_gbp: Decimal,
     estimated_sale_loss_gbp: Decimal,
+    assumption_quality: dict[str, str | None],
 ) -> dict[str, Any]:
     pension_total = _q_money(
         base_pension_sacrifice_gbp + max(additional_pension_sacrifice_gbp, _ZERO)
@@ -512,6 +524,7 @@ def _build_compensation_row(
         "pension_net_cash_cost_gbp": _money_str(pension_net_cash_cost),
         "combined_tax_drag_gbp": _money_str(_q_money(bonus_tax["total_gbp"] + incremental_cgt)),
         "net_decision_cash_gbp": _money_str(net_decision_cash),
+        "assumption_quality": assumption_quality,
     }
 
 
@@ -697,6 +710,10 @@ class TaxPlanService:
                 unavailable_reason: str | None = None
                 current_projection: dict[str, Decimal] | None = None
                 next_projection: dict[str, Decimal] | None = None
+                lot_assumption_quality = _assumption_quality(
+                    _ASSUMPTION_QUALITY_UNAVAILABLE,
+                    "Projection unavailable for this lot under current inputs.",
+                )
 
                 if market_value is None:
                     unavailable_reason = "No live price available for this lot."
@@ -728,6 +745,18 @@ class TaxPlanService:
                     sellable_projected_lot_count += 1
                     sellable_taxable_market_pool += _q_money(market_value)
                     sellable_taxable_cost_pool += cost_basis
+                    lot_assumption_quality = _assumption_quality(
+                        _ASSUMPTION_QUALITY_EXACT,
+                        (
+                            "Uses this lot's current market value and persisted cost basis; "
+                            "next-year view keeps the same quantity/price assumption."
+                        ),
+                    )
+                elif unavailable_reason is not None:
+                    lot_assumption_quality = _assumption_quality(
+                        _ASSUMPTION_QUALITY_UNAVAILABLE,
+                        unavailable_reason,
+                    )
 
                 lot_rows.append(
                     {
@@ -746,6 +775,7 @@ class TaxPlanService:
                         ),
                         "projection_available": projection_available,
                         "projection_unavailable_reason": unavailable_reason,
+                        "assumption_quality": lot_assumption_quality,
                         "is_taxable_for_cgt": taxable_for_cgt,
                         "price_per_share_gbp": _money_str(price_per_share),
                         "market_value_gbp": _money_str(_q_money(market_value))
@@ -800,6 +830,18 @@ class TaxPlanService:
             sell_now_projection["projected_incremental_cgt_gbp"]
             - sell_after_projection["projected_incremental_cgt_gbp"]
         )
+        cross_year_assumption_quality = _assumption_quality(
+            _ASSUMPTION_QUALITY_WEIGHTED,
+            (
+                "Assumes identical disposal quantities/prices across the tax-year boundary; "
+                "difference is from tax-year context only."
+            ),
+        )
+        if sellable_projected_lot_count == 0:
+            cross_year_assumption_quality = _assumption_quality(
+                _ASSUMPTION_QUALITY_UNAVAILABLE,
+                "No sellable priced taxable lots are available for cross-year projection.",
+            )
 
         summary = {
             "realised_to_date": {
@@ -816,6 +858,7 @@ class TaxPlanService:
                 "total_cgt_gbp": _money_str(baseline_current.total_cgt_gbp),
             },
             "cross_year_comparison": {
+                "assumption_quality": cross_year_assumption_quality,
                 "additional_realisation_scope": {
                     "sellable_projected_lot_count": sellable_projected_lot_count,
                     "projected_gains_gbp": _money_str(total_additional_gains_now),
@@ -827,6 +870,7 @@ class TaxPlanService:
                 "sell_before_tax_year_end": {
                     "tax_year": current_tax_year,
                     "assumed_disposal_date": as_of_date.isoformat(),
+                    "assumption_quality": cross_year_assumption_quality,
                     "projected_total_cgt_gbp": _money_str(
                         sell_now_projection["projected_total_cgt_gbp"]
                     ),
@@ -843,6 +887,7 @@ class TaxPlanService:
                 "sell_after_tax_year_rollover": {
                     "tax_year": next_tax_year,
                     "assumed_disposal_date": next_year_start.isoformat(),
+                    "assumption_quality": cross_year_assumption_quality,
                     "projected_total_cgt_gbp": _money_str(
                         sell_after_projection["projected_total_cgt_gbp"]
                     ),
@@ -868,6 +913,32 @@ class TaxPlanService:
             sellable_market_value_pool_gbp=sellable_taxable_market_pool,
             sellable_cost_basis_pool_gbp=sellable_taxable_cost_pool,
         )
+        sale_assumption_method = str(sale_estimate["method"])
+        sale_assumption_quality = _assumption_quality(
+            _ASSUMPTION_QUALITY_WEIGHTED,
+            (
+                "Estimated sale gain/loss uses portfolio-weighted cost ratio across "
+                "sellable taxable lots."
+            ),
+        )
+        if sale_assumption_method == "no-sale":
+            sale_assumption_quality = _assumption_quality(
+                _ASSUMPTION_QUALITY_EXACT,
+                "No sale amount entered; no estimated gain/loss allocation applied.",
+            )
+        elif sale_assumption_method == "no-priced-sellable-taxable-pool-assume-full-gain":
+            sale_assumption_quality = _assumption_quality(
+                _ASSUMPTION_QUALITY_UNAVAILABLE,
+                "No priced sellable taxable pool exists; sale amount assumed as full gain.",
+            )
+        elif sale_assumption_method == "portfolio-weighted-cost-ratio-with-excess-assumed-full-gain":
+            sale_assumption_quality = _assumption_quality(
+                _ASSUMPTION_QUALITY_WEIGHTED,
+                (
+                    "Weighted cost ratio applied for covered sale value; excess sale amount "
+                    "assumed as full gain."
+                ),
+            )
 
         hold_row = _build_compensation_row(
             scenario_id="hold_baseline",
@@ -882,6 +953,10 @@ class TaxPlanService:
             student_loan_plan=student_loan_plan,
             estimated_sale_gain_gbp=_ZERO,
             estimated_sale_loss_gbp=_ZERO,
+            assumption_quality=_assumption_quality(
+                _ASSUMPTION_QUALITY_EXACT,
+                "No sale leg is modelled in this baseline scenario.",
+            ),
         )
         sell_row = _build_compensation_row(
             scenario_id="sell_baseline",
@@ -896,6 +971,7 @@ class TaxPlanService:
             student_loan_plan=student_loan_plan,
             estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
             estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
+            assumption_quality=sale_assumption_quality,
         )
         sell_next_row = _build_compensation_row(
             scenario_id="sell_next_tax_year",
@@ -910,6 +986,13 @@ class TaxPlanService:
             student_loan_plan=student_loan_plan,
             estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
             estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
+            assumption_quality=_assumption_quality(
+                sale_assumption_quality["label"],
+                (
+                    "Uses the same estimated sale gain/loss and input amounts while "
+                    "switching to next-year tax bands."
+                ),
+            ),
         )
         sell_with_pension_row = _build_compensation_row(
             scenario_id="sell_with_extra_pension",
@@ -924,6 +1007,7 @@ class TaxPlanService:
             student_loan_plan=student_loan_plan,
             estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
             estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
+            assumption_quality=sale_assumption_quality,
         )
         sell_next_with_pension_row = _build_compensation_row(
             scenario_id="sell_next_tax_year_with_extra_pension",
@@ -938,6 +1022,13 @@ class TaxPlanService:
             student_loan_plan=student_loan_plan,
             estimated_sale_gain_gbp=sale_estimate["est_gain_gbp"],
             estimated_sale_loss_gbp=sale_estimate["est_loss_gbp"],
+            assumption_quality=_assumption_quality(
+                sale_assumption_quality["label"],
+                (
+                    "Uses the same estimated sale gain/loss and input amounts while "
+                    "switching to next-year tax bands."
+                ),
+            ),
         )
 
         def _bonus_tax_component(row: dict[str, Any], component: str) -> Decimal:
@@ -1041,6 +1132,13 @@ class TaxPlanService:
             )
 
         compensation_plan = {
+            "assumption_quality": _assumption_quality(
+                _ASSUMPTION_QUALITY_WEIGHTED,
+                (
+                    "Combines payroll-tax modelling with estimated sale gain/loss assumptions "
+                    "for deterministic scenario comparison."
+                ),
+            ),
             "inputs": {
                 "gross_income_gbp": _money_str(compensation_inputs.gross_income_gbp),
                 "bonus_gbp": _money_str(compensation_inputs.bonus_gbp),
@@ -1054,6 +1152,7 @@ class TaxPlanService:
             },
             "sale_assumption": {
                 "method": sale_estimate["method"],
+                "assumption_quality": sale_assumption_quality,
                 "sellable_market_value_pool_gbp": _money_str(sellable_taxable_market_pool),
                 "sellable_cost_basis_pool_gbp": _money_str(sellable_taxable_cost_pool),
                 "covered_by_pool_gbp": _money_str(sale_estimate["covered_by_pool_gbp"]),

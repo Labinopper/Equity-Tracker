@@ -98,6 +98,7 @@
 
 <!-- Result -->
 {% if result %}
+{% set tax_status = employment_tax_status if employment_tax_status else {'applicable': False, 'estimate_available': True, 'ack_required': False} %}
 <div class="card card-result">
   <div class="card__header">
     <span class="card__title">Simulation Result</span>
@@ -149,9 +150,9 @@
     </div>
     <div class="stat">
       <div class="stat__label">Employment Tax (IT + NIC + SL)</div>
-      {% if result.sip_tax_estimates %}
+      {% if tax_status.applicable and tax_status.estimate_available %}
       <div class="stat__value warning-value">&pound;{{ "%.2f" % result.total_sip_employment_tax_gbp }}</div>
-      {% elif prev and prev.scheme_type in ('BROKERAGE', 'ISA') %}
+      {% elif not tax_status.applicable %}
       <div class="stat__value muted">N/A (not applicable to this scheme type)</div>
       {% else %}
       <div class="stat__value muted"><a href="/settings">Settings required &rarr;</a></div>
@@ -159,11 +160,11 @@
     </div>
     <div class="stat">
       <div class="stat__label">Net Proceeds After Employment Tax</div>
-      {% if result.sip_tax_estimates %}
+      {% if tax_status.applicable and tax_status.estimate_available %}
       <div class="stat__value gain">
         &pound;{{ "%.2f" % (result.total_proceeds_gbp - result.total_sip_employment_tax_gbp) }}
       </div>
-      {% elif prev and prev.scheme_type in ('BROKERAGE', 'ISA') %}
+      {% elif not tax_status.applicable %}
       <div class="stat__value muted">N/A (not applicable to this scheme type)</div>
       {% else %}
       <div class="stat__value muted">&mdash;</div>
@@ -235,7 +236,7 @@
     </table>
   </div>
 
-  {% if not result.sip_tax_estimates %}
+  {% if tax_status.applicable and not tax_status.estimate_available %}
   <p class="muted note-small-top">
     Note: Employment tax estimates (IT + NIC + Student Loan) require income settings &mdash; configure in <a href="/settings">Settings</a>.
   </p>
@@ -395,6 +396,24 @@
         <label for="notes">Notes</label>
         <textarea id="notes" name="notes" placeholder="Optional notes"></textarea>
       </div>
+
+      {% if tax_status.ack_required %}
+      <div class="form-field row-full">
+        <div class="alert alert-warning">
+          Employment-tax estimate is unavailable for this simulation scope. Commit requires explicit acknowledgement that employment-tax drag is currently unknown.
+        </div>
+        <label class="checkbox-inline">
+          <input
+            id="employment_tax_acknowledged"
+            name="employment_tax_acknowledged"
+            type="checkbox"
+            value="yes"
+            required
+          >
+          I acknowledge employment-tax estimate is unavailable for this commit.
+        </label>
+      </div>
+      {% endif %}
 
     </div>
 

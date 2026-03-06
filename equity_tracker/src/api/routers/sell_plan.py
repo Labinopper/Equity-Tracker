@@ -5,7 +5,7 @@ Sell Plan routes (UI-only staged-disposal planning).
 from __future__ import annotations
 
 from datetime import date as date_type
-from decimal import ROUND_FLOOR, Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -42,6 +42,7 @@ _METHOD_LABELS = {
     PLAN_METHOD_LIMIT_LADDER: "Limit Ladder",
     PLAN_METHOD_BROKER_ALGO: "Broker Algo (TWAP/VWAP)",
 }
+_MONEY_Q = Decimal("0.01")
 
 
 def _floor_whole(value: Decimal) -> Decimal:
@@ -123,6 +124,104 @@ def _parse_optional_int(raw_value: str, *, field_label: str) -> tuple[int | None
     return value, None
 
 
+def _safe_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal("0")
+
+
+def _q_money(value: Decimal) -> Decimal:
+    return value.quantize(_MONEY_Q, rounding=ROUND_HALF_UP)
+
+
+def _build_plan_adherence_panel(
+    *,
+    total_quantity: str,
+    tranches: list[dict],
+    as_of: date_type,
+) -> dict:
+    total_target_qty = _safe_decimal(total_quantity)
+    planned_qty = Decimal("0")
+    executed_qty = Decimal("0")
+    pending_qty = Decimal("0")
+    planned_to_date_qty = Decimal("0")
+    pending_tranche_count = 0
+    due_tranche_count = 0
+    executed_tranche_count = 0
+    cancelled_tranche_count = 0
+    remaining_tax_budget = Decimal("0")
+    realised_tax_budget = Decimal("0")
+
+    for tranche in tranches:
+        qty = _safe_decimal(tranche.get("quantity"))
+        effective_status = str(tranche.get("effective_status") or TRANCHE_STATUS_PLANNED).upper()
+        raw_status = str(tranche.get("status") or TRANCHE_STATUS_PLANNED).upper()
+        event_date = None
+        try:
+            event_date = date_type.fromisoformat(str(tranche.get("event_date") or ""))
+        except ValueError:
+            event_date = None
+
+        if raw_status != TRANCHE_STATUS_CANCELLED:
+            planned_qty += qty
+
+        if effective_status == "EXECUTED":
+            executed_qty += qty
+            executed_tranche_count += 1
+        elif effective_status == "CANCELLED":
+            cancelled_tranche_count += 1
+        elif effective_status in {"PLANNED", "DUE"}:
+            pending_qty += qty
+            pending_tranche_count += 1
+            if effective_status == "DUE":
+                due_tranche_count += 1
+
+        if event_date is not None and event_date <= as_of and effective_status in {"DUE", "EXECUTED"}:
+            planned_to_date_qty += qty
+
+        if tranche.get("impact_available"):
+            tranche_tax = _safe_decimal(tranche.get("impact_employment_tax_gbp")) + _safe_decimal(
+                tranche.get("impact_cgt_gbp")
+            )
+            if effective_status == "EXECUTED":
+                realised_tax_budget += tranche_tax
+            elif effective_status in {"PLANNED", "DUE"}:
+                remaining_tax_budget += tranche_tax
+
+    if planned_qty <= Decimal("0"):
+        planned_qty = total_target_qty
+
+    drift_qty = executed_qty - planned_to_date_qty
+    adherence_status = "ON_TRACK"
+    if drift_qty < Decimal("0"):
+        adherence_status = "BEHIND"
+    elif drift_qty > Decimal("0"):
+        adherence_status = "AHEAD"
+
+    concentration_reduction_pct = Decimal("0")
+    if total_target_qty > Decimal("0"):
+        concentration_reduction_pct = (executed_qty / total_target_qty) * Decimal("100")
+
+    return {
+        "planned_quantity": str(planned_qty),
+        "executed_quantity": str(executed_qty),
+        "pending_quantity": str(pending_qty),
+        "planned_to_date_quantity": str(planned_to_date_qty),
+        "drift_quantity": str(drift_qty),
+        "adherence_status": adherence_status,
+        "concentration_reduction_achieved_pct": str(_q_money(concentration_reduction_pct)),
+        "remaining_tax_budget_gbp": str(_q_money(remaining_tax_budget)),
+        "realised_tax_budget_gbp": str(_q_money(realised_tax_budget)),
+        "calendar_status_counts": {
+            "planned": pending_tranche_count - due_tranche_count,
+            "due": due_tranche_count,
+            "executed": executed_tranche_count,
+            "cancelled": cancelled_tranche_count,
+        },
+    }
+
+
 def _default_form_values(
     *,
     today: date_type,
@@ -177,11 +276,17 @@ def _decorate_plan_for_ui(
         )
     method = str(enriched.get("method") or PLAN_METHOD_CALENDAR_TRANCHES).upper()
     approval = str(enriched.get("approval_status") or APPROVAL_STATUS_DRAFT).upper()
+    adherence_panel = _build_plan_adherence_panel(
+        total_quantity=str(enriched.get("total_quantity") or "0"),
+        tranches=tranches,
+        as_of=today,
+    )
     return {
         **enriched,
         "tranches": tranches,
         "method_label": _METHOD_LABELS.get(method, method.replace("_", " ").title()),
         "is_approved": approval == APPROVAL_STATUS_APPROVED,
+        "adherence_panel": adherence_panel,
     }
 
 

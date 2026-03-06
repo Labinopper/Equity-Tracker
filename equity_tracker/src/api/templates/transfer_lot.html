@@ -94,6 +94,39 @@
       <div class="edit-summary__row">Audit Trail: <strong>Recorded in lots audit log</strong></div>
     </div>
 
+    {% if transfer_impact and transfer_impact.has_selection %}
+    <div class="edit-summary">
+      <div class="edit-summary__title">Transfer Impact Preview</div>
+      <div class="edit-summary__row">Source Scheme: <strong>{{ transfer_impact.source_scheme }}</strong></div>
+      <div class="edit-summary__row">Transfer Quantity: <strong>{{ transfer_impact.transfer_quantity or '-' }}</strong></div>
+      {% if transfer_impact.quantity_error %}
+      <div class="edit-summary__row warning-text">Quantity Validation: <strong>{{ transfer_impact.quantity_error }}</strong></div>
+      {% endif %}
+      <div class="edit-summary__row">Forfeited Matched Lots: <strong>{{ transfer_impact.forfeited_match_lot_count }}</strong></div>
+      <div class="edit-summary__row">Forfeited Matched Quantity: <strong>{{ transfer_impact.forfeited_match_quantity }}</strong></div>
+      <div class="edit-summary__row">Forfeited Value (GBP): <strong>&pound;{{ transfer_impact.forfeited_match_value_gbp | money }}</strong></div>
+      <div class="edit-summary__row">Transfer Price Basis: <strong>{% if transfer_impact.transfer_price_gbp is not none %}&pound;{{ transfer_impact.transfer_price_gbp | money }}{% else %}-{% endif %}</strong></div>
+      {% if transfer_impact.price_basis_note %}
+      <div class="edit-summary__row muted">{{ transfer_impact.price_basis_note }}</div>
+      {% endif %}
+      <div class="edit-summary__row">
+        Estimated Transfer Employment Tax:
+        <strong>
+          {% if transfer_impact.tax_estimate_available and transfer_impact.estimated_transfer_tax_gbp is not none %}
+          &pound;{{ transfer_impact.estimated_transfer_tax_gbp | money }}
+          {% else %}
+          Unavailable
+          {% endif %}
+        </strong>
+      </div>
+      {% if transfer_impact.notes %}
+      {% for note in transfer_impact.notes %}
+      <div class="edit-summary__row muted">{{ note }}</div>
+      {% endfor %}
+      {% endif %}
+    </div>
+    {% endif %}
+
     <div class="form-field form-field-inline">
       <label class="checkbox-inline">
         <input id="confirm_transfer" name="confirm_transfer" type="checkbox" value="yes" required>

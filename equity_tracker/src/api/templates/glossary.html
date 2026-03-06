@@ -93,4 +93,38 @@
   </div>
 </div>
 
+<div id="sell-execution-methods" class="card">
+  <div class="card__header"><h2 class="card__title">Sell Execution Methods (Model Scope)</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th style="width:220px">Calendar Tranches</th>
+          <td>Deterministic quantity/date ladder. No market trigger input is required. Best for explicit pacing discipline.</td>
+        </tr>
+        <tr>
+          <th>Threshold Bands</th>
+          <td>Deterministic trigger levels tied to concentration percentages. Execution is rule-based from configured thresholds, not predicted prices.</td>
+        </tr>
+        <tr>
+          <th>Limit Ladder</th>
+          <td>Deterministic per-tranche limit prices: `limit_start + (sequence * step)`. No timing prediction is included.</td>
+        </tr>
+        <tr>
+          <th>TWAP / VWAP Wrapper</th>
+          <td>Broker-native algorithm mode with fixed execution window. Equity Tracker stages deterministic instructions; broker executes the algo.</td>
+        </tr>
+        <tr>
+          <th>Hybrid De-Risk Profile</th>
+          <td>Default non-advisory profile combining calendar pacing, concentration-trigger discipline, and limit guardrails. Inputs are fully editable and deterministic.</td>
+        </tr>
+        <tr>
+          <th>Explicit Exclusions</th>
+          <td>No market forecasting, no optimal-price prediction, no automated trade recommendations, and no probabilistic AI execution logic.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 {% endblock %}

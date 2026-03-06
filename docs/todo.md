@@ -25,6 +25,7 @@ Scope guardrails:
 - Stage 5 shipped: `/capital-stack` wealth-reality stack now reconciles Gross -> Locked -> Forfeitable -> Hypothetical Liquid -> (Employment Tax + CGT + Fees) -> Net Deployable Today with explicit deterministic formula notes.
 - Dual-cost policy shipped: `True Cost (Acquisition)` remains immutable and `Dividend-Adjusted Capital at Risk` is now surfaced separately (Portfolio + Capital Stack + Glossary), without changing tax-report cost logic.
 - Stage 6 shipped: Portfolio now surfaces top-holding and employer concentration (gross + sellable), split `Locked` vs `Forfeitable` value buckets, deployable-capital metrics including GBP cash sidecar, and deterministic Employer Dependence Ratio with transparent formula components.
+- Stage 7 shipped: Tax Plan now carries projection assumption-quality tags (`Exact` / `Weighted Estimate` / `Unavailable`) across cross-year, compensation, and per-lot blocks; Simulate commit now enforces explicit acknowledgement when employment-tax estimates are unavailable; Transfer now shows deterministic pre-confirm impact (forfeiture qty/value + transfer-time employment tax estimate); Add Lot now includes persisted-equivalent pre-submit preview (cost basis, true cost, FX basis, lock/forfeiture flags); Portfolio now surfaces deterministic behavioural guardrails with local silence controls; Sell Plan now includes adherence/drift governance panel and direct glossary linkage for method scope.
 
 ## Execution Status (Source of Truth)
 
@@ -36,8 +37,8 @@ Scope guardrails:
 | 4 | `T36`, `T37` | Complete | Multi-currency cash ledger and GBP-only ISA transfer conversion workflow are live. |
 | 5 | `T38`, `T33` | Complete | Capital stack and dual-cost dividend-adjusted capital-at-risk policy are live. |
 | 6 | `T03`, `T04`, `T39`, `T40` | Complete | Portfolio and Risk now show concentration (gross/sellable), locked/forfeitable split, cash-aware deployable metrics, and employer dependence ratio. |
-| 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Next | Decision-surface hardening and execution governance. |
-| 8 | `T10`, `T11`, `T12` | Pending | Cross-surface clarity and regression lock-in. |
+| 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Complete | Decision-surface hardening and execution governance shipped. |
+| 8 | `T10`, `T11`, `T12` | Next | Cross-surface clarity and regression lock-in. |
 | 9 | `T34`, `T35`, `T41`, `T42`, `T44` | Pending | Dividend attribution and optionality extensions. |
 | 10 | `T13`-`T32` | Pending | Remaining strategic expansion pages/features. |
 
@@ -140,8 +141,8 @@ Method basis used for scoping (non-advisory):
 4. `T36`, `T37` (Completed).
 5. `T38`, `T33` (Completed).
 6. `T03`, `T04`, `T39`, `T40` (Completed).
-7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` (Next active stage).
-8. `T10`, `T11`, `T12`.
+7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` (Completed).
+8. `T10`, `T11`, `T12` (Next active stage).
 9. `T34`, `T35`, `T41`, `T42`, `T44`.
 10. `T13`-`T32`.
 

@@ -120,6 +120,22 @@ SCHEME_DISPLAY_ORDER: tuple[str, ...] = (
     "ISA",
 )
 
+_EMPLOYMENT_TAX_ESTIMATE_SCHEMES = frozenset(
+    {
+        "ESPP",
+        "ESPP_PLUS",
+        "SIP_PARTNERSHIP",
+        "SIP_MATCHING",
+        "SIP_DIVIDEND",
+    }
+)
+
+_GUARDRAIL_LIQUIDITY_ILLUSION_RATIO = Decimal("2")
+_GUARDRAIL_ISA_UNDERUTILISATION_MAX_RATIO_PCT = Decimal("25")
+_GUARDRAIL_ISA_UNDERUTILISATION_MIN_TAXABLE_GBP = Decimal("5000")
+_GUARDRAIL_DRAG_ESCALATION_PCT_OF_INCOME = Decimal("10")
+_GUARDRAIL_FORFEITURE_IMMINENCE_DAYS = 183
+
 
 @dataclass
 class PositionGroupRow:
@@ -387,6 +403,334 @@ def _sum_optional(values: list[Decimal | None]) -> Decimal | None:
     if any(v is None for v in values):
         return None
     return _q2(sum((v for v in values if v is not None), Decimal("0")))
+
+
+def _is_whole_quantity(value: Decimal) -> bool:
+    return value == value.to_integral_value(rounding=ROUND_FLOOR)
+
+
+def _quantity_text(value: Decimal) -> str:
+    if _is_whole_quantity(value):
+        return str(int(value))
+    text = format(value.normalize(), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _allocation_scheme_types(allocations: tuple) -> set[str]:
+    lot_ids = {
+        str(allocation.lot_id)
+        for allocation in allocations
+        if getattr(allocation, "lot_id", None)
+    }
+    if not lot_ids:
+        return set()
+
+    with AppContext.read_session() as sess:
+        lot_repo = LotRepository(sess)
+        scheme_types: set[str] = set()
+        for lot_id in lot_ids:
+            lot = lot_repo.get_by_id(lot_id)
+            if lot is not None and lot.scheme_type:
+                scheme_types.add(str(lot.scheme_type).upper())
+    return scheme_types
+
+
+def _simulate_employment_tax_status(result) -> dict[str, object]:
+    if result is None:
+        return {
+            "applicable": False,
+            "estimate_available": True,
+            "ack_required": False,
+            "scheme_types": (),
+        }
+
+    scheme_types = tuple(sorted(_allocation_scheme_types(result.allocations)))
+    applicable = bool(
+        set(scheme_types).intersection(_EMPLOYMENT_TAX_ESTIMATE_SCHEMES)
+    ) or bool(result.sip_tax_estimates)
+    estimate_available = bool(result.sip_tax_estimates) or not applicable
+    return {
+        "applicable": applicable,
+        "estimate_available": estimate_available,
+        "ack_required": applicable and not estimate_available,
+        "scheme_types": scheme_types,
+    }
+
+
+def _build_transfer_impact_preview(
+    *,
+    lot_id: str | None,
+    quantity_raw: str,
+    candidates: list[dict],
+    settings: AppSettings | None,
+) -> dict[str, object]:
+    preview = {
+        "has_selection": False,
+        "source_scheme": None,
+        "transfer_quantity": None,
+        "quantity_error": None,
+        "forfeited_match_lot_count": 0,
+        "forfeited_match_quantity": "0",
+        "forfeited_match_value_gbp": Decimal("0.00"),
+        "estimated_transfer_tax_gbp": None,
+        "tax_estimate_available": True,
+        "transfer_price_gbp": None,
+        "price_basis_note": None,
+        "notes": [],
+    }
+    target_lot_id = (lot_id or "").strip()
+    if not target_lot_id:
+        return preview
+
+    selected_candidate = next(
+        (candidate for candidate in candidates if candidate.get("lot_id") == target_lot_id),
+        None,
+    )
+    if selected_candidate is None:
+        preview["notes"] = ["Selected transfer source is no longer eligible."]
+        return preview
+
+    preview["has_selection"] = True
+    preview["source_scheme"] = selected_candidate.get("scheme_type")
+
+    default_qty_text = str(
+        selected_candidate.get("default_transfer_quantity")
+        or selected_candidate.get("whole_quantity_available")
+        or selected_candidate.get("quantity_remaining")
+        or ""
+    ).strip()
+    raw_qty = (quantity_raw or "").strip() or default_qty_text
+    transfer_qty: Decimal | None = None
+    if raw_qty:
+        try:
+            transfer_qty = Decimal(raw_qty)
+        except InvalidOperation:
+            preview["quantity_error"] = "Invalid transfer quantity."
+    else:
+        preview["quantity_error"] = "Transfer quantity is required."
+
+    if transfer_qty is not None:
+        preview["transfer_quantity"] = _quantity_text(transfer_qty)
+        if transfer_qty <= Decimal("0"):
+            preview["quantity_error"] = "Transfer quantity must be greater than zero."
+
+    with AppContext.read_session() as sess:
+        lot_repo = LotRepository(sess)
+        price_repo = PriceRepository(sess)
+        lot = lot_repo.get_by_id(target_lot_id)
+        if lot is None:
+            preview["notes"] = ["Selected lot was not found."]
+            return preview
+
+        scheme = str(lot.scheme_type or "").upper()
+        preview["source_scheme"] = scheme
+        lot_qty_remaining = Decimal(lot.quantity_remaining)
+        whole_qty_available = Decimal(str(selected_candidate.get("whole_quantity_available") or "0"))
+
+        if transfer_qty is not None and preview["quantity_error"] is None:
+            if scheme == "ESPP":
+                if not _is_whole_quantity(transfer_qty):
+                    preview["quantity_error"] = (
+                        "ESPP transfers require a whole number of shares."
+                    )
+                elif transfer_qty > whole_qty_available:
+                    preview["quantity_error"] = (
+                        "Requested quantity exceeds whole-share FIFO availability."
+                    )
+            elif transfer_qty != lot_qty_remaining:
+                preview["quantity_error"] = (
+                    f"{scheme} transfers must use full remaining quantity "
+                    f"({_quantity_text(lot_qty_remaining)})."
+                )
+
+        if scheme != "ESPP_PLUS":
+            preview["notes"] = [
+                "No matched-share forfeiture applies to this source scheme."
+            ]
+            return preview
+
+        if lot.matching_lot_id is not None:
+            preview["notes"] = [
+                "Matched ESPP+ lots cannot be selected directly; choose the linked paid lot."
+            ]
+            return preview
+
+        today = date_type.today()
+        latest_price_row = price_repo.get_latest(lot.security_id)
+        transfer_price = (
+            Decimal(latest_price_row.close_price_gbp)
+            if latest_price_row is not None and latest_price_row.close_price_gbp is not None
+            else Decimal(lot.acquisition_price_gbp)
+        )
+        preview["transfer_price_gbp"] = _q2(transfer_price)
+        preview["price_basis_note"] = (
+            "Latest tracked price basis."
+            if latest_price_row is not None and latest_price_row.close_price_gbp is not None
+            else "No live price available; acquisition price basis used."
+        )
+
+        linked_matched_lots = [
+            linked
+            for linked in lot_repo.get_active_lots_for_security(
+                lot.security_id,
+                scheme_type="ESPP_PLUS",
+            )
+            if linked.matching_lot_id == lot.id
+            and Decimal(linked.quantity_remaining) > Decimal("0")
+        ]
+
+        forfeited_qty = Decimal("0")
+        forfeited_count = 0
+        for linked_lot in linked_matched_lots:
+            forfeiture_end = linked_lot.forfeiture_period_end or (
+                linked_lot.acquisition_date + timedelta(days=183)
+            )
+            if today >= forfeiture_end:
+                continue
+            forfeited_count += 1
+            forfeited_qty += Decimal(linked_lot.quantity_remaining)
+
+        forfeited_value = _q2(forfeited_qty * transfer_price)
+        preview["forfeited_match_lot_count"] = forfeited_count
+        preview["forfeited_match_quantity"] = _quantity_text(forfeited_qty)
+        preview["forfeited_match_value_gbp"] = forfeited_value
+
+        est_transfer_tax = _estimate_sell_all_employment_tax(
+            [lot],
+            transfer_price,
+            today,
+            settings,
+        )
+        preview["estimated_transfer_tax_gbp"] = (
+            _q2(est_transfer_tax) if est_transfer_tax is not None else None
+        )
+        preview["tax_estimate_available"] = est_transfer_tax is not None
+        preview["notes"] = []
+        if forfeited_count <= 0:
+            preview["notes"].append(
+                "No matched shares are currently within the forfeiture window."
+            )
+        if est_transfer_tax is None:
+            preview["notes"].append(
+                "Employment-tax estimate is unavailable; configure income settings for transfer-time estimate."
+            )
+
+    return preview
+
+
+def _build_behavioral_guardrails(
+    *,
+    summary,
+    settings: AppSettings | None,
+    position_rows_by_security: dict[str, list[PositionGroupRow]],
+    deployable_capital_gbp: Decimal | None,
+    sellable_employment_tax_gbp: Decimal | None,
+    forfeitable_capital_gbp: Decimal | None,
+) -> list[dict[str, str]]:
+    warnings: list[dict[str, str]] = []
+
+    gross_market_value = summary.total_market_value_gbp
+    deployable = deployable_capital_gbp or Decimal("0")
+    if (
+        gross_market_value is not None
+        and gross_market_value > Decimal("0")
+        and deployable > Decimal("0")
+    ):
+        gross_to_deployable = gross_market_value / deployable
+        if gross_to_deployable >= _GUARDRAIL_LIQUIDITY_ILLUSION_RATIO:
+            non_deployable_pct = (
+                (gross_market_value - deployable) / gross_market_value * Decimal("100")
+            ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            warnings.append(
+                {
+                    "id": "liquidity_illusion",
+                    "severity": "warning",
+                    "title": "Liquidity illusion risk",
+                    "message": (
+                        f"{non_deployable_pct}% of gross capital is currently non-deployable "
+                        "(locked, forfeitable, or tax-constrained)."
+                    ),
+                }
+            )
+
+    isa_market_value = Decimal("0")
+    taxable_market_value = Decimal("0")
+    for security_summary in summary.securities:
+        for lot_summary in security_summary.active_lots:
+            if lot_summary.market_value_gbp is None:
+                continue
+            if lot_summary.lot.scheme_type == "ISA":
+                isa_market_value += lot_summary.market_value_gbp
+            else:
+                taxable_market_value += lot_summary.market_value_gbp
+
+    total_visible_market = isa_market_value + taxable_market_value
+    if (
+        total_visible_market > Decimal("0")
+        and taxable_market_value >= _GUARDRAIL_ISA_UNDERUTILISATION_MIN_TAXABLE_GBP
+    ):
+        isa_ratio_pct = (
+            isa_market_value / total_visible_market * Decimal("100")
+        ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        if isa_ratio_pct < _GUARDRAIL_ISA_UNDERUTILISATION_MAX_RATIO_PCT:
+            warnings.append(
+                {
+                    "id": "isa_underutilisation",
+                    "severity": "info",
+                    "title": "ISA shelter under-utilisation",
+                    "message": (
+                        f"ISA market-value share is {isa_ratio_pct}% while taxable holdings remain "
+                        f"£{_q2(taxable_market_value)}."
+                    ),
+                }
+            )
+
+    if (
+        sellable_employment_tax_gbp is not None
+        and settings is not None
+        and settings.default_gross_income > Decimal("0")
+    ):
+        drag_pct = (
+            sellable_employment_tax_gbp / settings.default_gross_income * Decimal("100")
+        ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        if drag_pct >= _GUARDRAIL_DRAG_ESCALATION_PCT_OF_INCOME:
+            warnings.append(
+                {
+                    "id": "drag_escalation",
+                    "severity": "warning",
+                    "title": "Employment-tax drag escalation",
+                    "message": (
+                        f"Sellable employment-tax estimate is {drag_pct}% of configured gross income."
+                    ),
+                }
+            )
+
+    imminent_count = 0
+    min_days_remaining: int | None = None
+    for rows in position_rows_by_security.values():
+        for row in rows:
+            days = row.forfeiture_risk_days_remaining
+            if days is None or days > _GUARDRAIL_FORFEITURE_IMMINENCE_DAYS:
+                continue
+            imminent_count += 1
+            if min_days_remaining is None or days < min_days_remaining:
+                min_days_remaining = days
+    if imminent_count > 0:
+        at_risk_value = forfeitable_capital_gbp or Decimal("0")
+        warnings.append(
+            {
+                "id": "forfeiture_imminence",
+                "severity": "warning",
+                "title": "Forfeiture timing exposure",
+                "message": (
+                    f"{imminent_count} position(s) have forfeiture windows inside "
+                    f"{_GUARDRAIL_FORFEITURE_IMMINENCE_DAYS} days "
+                    f"(nearest in {min_days_remaining} days; value at risk £{_q2(at_risk_value)})."
+                ),
+            }
+        )
+
+    return warnings
 
 
 def _price_row_gbp_value(price_row) -> Decimal | None:
@@ -1925,6 +2269,14 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         db_path=db_path,
         summary=summary,
     )
+    behavioral_guardrails = _build_behavioral_guardrails(
+        summary=summary,
+        settings=settings,
+        position_rows_by_security=position_rows_by_security,
+        deployable_capital_gbp=exposure_snapshot.get("deployable_capital_gbp"),
+        sellable_employment_tax_gbp=portfolio_sellable_employment_tax,
+        forfeitable_capital_gbp=exposure_snapshot.get("forfeitable_capital_gbp"),
+    )
     today = _utc_now().date()
     return templates.TemplateResponse(
         request,
@@ -1965,6 +2317,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "estimated_net_dividends_gbp": capital_stack_snapshot.get("estimated_net_dividends_gbp"),
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
             "refresh_diag": refresh_diag,
+            "behavioral_guardrails": behavioral_guardrails,
             "today": today,
             **_flash(msg),
         },
@@ -2928,6 +3281,7 @@ def _load_transfer_candidates() -> list[dict[str, str]]:
 def _render_transfer_lot_page(
     request: Request,
     *,
+    settings: AppSettings | None = None,
     error: str | None = None,
     preselect_lot_id: str | None = None,
     quantity: str = "",
@@ -2972,6 +3326,12 @@ def _render_transfer_lot_page(
         resolved_broker_currency,
         *[c.get("broker_currency") for c in candidates],
     )
+    transfer_impact = _build_transfer_impact_preview(
+        lot_id=resolved_preselect_lot_id,
+        quantity_raw=quantity,
+        candidates=candidates,
+        settings=settings,
+    )
     return _html_template_response(
         "transfer_lot.html",
         {
@@ -2983,6 +3343,7 @@ def _render_transfer_lot_page(
             "broker_currency": resolved_broker_currency,
             "broker_currency_options": broker_currency_options,
             "notes": notes,
+            "transfer_impact": transfer_impact,
         },
         status_code=status_code,
     )
@@ -3000,8 +3361,11 @@ async def transfer_lot_form(
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
     return _render_transfer_lot_page(
         request,
+        settings=settings,
         error=error,
         preselect_lot_id=lot_id,
     )
@@ -3022,10 +3386,13 @@ async def transfer_lot_submit(
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
 
     if confirm_transfer.lower() not in ("on", "true", "1", "yes"):
         return _render_transfer_lot_page(
             request,
+            settings=settings,
             error="Confirm the transfer summary before continuing.",
             preselect_lot_id=lot_id,
             quantity=quantity,
@@ -3041,6 +3408,7 @@ async def transfer_lot_submit(
         except InvalidOperation as exc:
             return _render_transfer_lot_page(
                 request,
+                settings=settings,
                 error=f"Invalid transfer quantity: {exc}",
                 preselect_lot_id=lot_id,
                 quantity=quantity,
@@ -3059,6 +3427,7 @@ async def transfer_lot_submit(
         except ValueError as exc:
             return _render_transfer_lot_page(
                 request,
+                settings=settings,
                 error=str(exc),
                 preselect_lot_id=lot_id,
                 quantity=quantity,
@@ -3068,8 +3437,6 @@ async def transfer_lot_submit(
             )
 
     try:
-        db_path = _state.get_db_path()
-        settings = AppSettings.load(db_path) if db_path else None
         _, audit_id = PortfolioService.transfer_lot_to_brokerage(
             lot_id=lot_id,
             notes=notes,
@@ -3080,6 +3447,7 @@ async def transfer_lot_submit(
     except (KeyError, ValueError) as exc:
         return _render_transfer_lot_page(
             request,
+            settings=settings,
             error=str(exc),
             preselect_lot_id=lot_id,
             quantity=quantity,
@@ -3153,6 +3521,12 @@ async def simulate_form(
             },
             "simulate_meta": {s["id"]: s for s in securities},
             "exit_summary": None,
+            "employment_tax_status": {
+                "applicable": False,
+                "estimate_available": True,
+                "ack_required": False,
+                "scheme_types": (),
+            },
             "settings": settings,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
             "linked_sell_plan": linked_sell_plan,
@@ -3187,6 +3561,12 @@ async def simulate_submit(
             "settings": settings,
             "tax_inputs_incomplete": tax_inputs_incomplete,
             "exit_summary": None,
+            "employment_tax_status": {
+                "applicable": False,
+                "estimate_available": True,
+                "ack_required": False,
+                "scheme_types": (),
+            },
         }
         base_context.update(context)
         return _html_template_response(
@@ -3336,6 +3716,7 @@ async def simulate_submit(
             },
             status_code=422,
         )
+    employment_tax_status = _simulate_employment_tax_status(result)
 
     return _render_simulate(
         {
@@ -3346,6 +3727,7 @@ async def simulate_submit(
                 employment_tax_due_gbp=result.total_sip_employment_tax_gbp,
                 broker_fees_gbp=fees,
             ),
+            "employment_tax_status": employment_tax_status,
             "error": None,
             "prev": {
                 "security_id": security_id,
@@ -3378,6 +3760,7 @@ async def commit_disposal(
     broker_reference: str = Form(""),
     external_id: str = Form(""),
     notes: str = Form(""),
+    employment_tax_acknowledged: str = Form(""),
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
@@ -3397,6 +3780,31 @@ async def commit_disposal(
     try:
         db_path = _state.get_db_path()
         settings = AppSettings.load(db_path) if db_path else None
+        preflight = PortfolioService.simulate_disposal(
+            security_id=security_id,
+            quantity=qty,
+            price_per_share_gbp=price,
+            scheme_type=scheme_type or None,
+            as_of_date=tx_date,
+            settings=settings,
+            broker_fees_gbp=fees,
+            use_live_true_cost=False,
+        )
+        employment_tax_status = _simulate_employment_tax_status(preflight)
+        ack_confirmed = employment_tax_acknowledged.lower() in (
+            "on",
+            "true",
+            "1",
+            "yes",
+        )
+        if employment_tax_status["ack_required"] and not ack_confirmed:
+            return RedirectResponse(
+                (
+                    "/simulate?error=Employment-tax+estimate+is+unavailable.+"
+                    "Confirm+acknowledgement+before+commit."
+                ),
+                status_code=303,
+            )
         PortfolioService.commit_disposal(
             security_id=security_id,
             quantity=qty,

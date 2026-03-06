@@ -2,6 +2,19 @@
 {% block title %}Tax Plan - Equity Tracker{% endblock %}
 
 {% block content %}
+{% macro assumption_badge(quality) -%}
+  {% if quality and quality.label == 'Exact' %}
+  <span class="badge badge-sellable">Exact</span>
+  {% elif quality and quality.label == 'Weighted Estimate' %}
+  <span class="badge badge-warning">Weighted Estimate</span>
+  {% else %}
+  <span class="badge badge-neutral">Unavailable</span>
+  {% endif %}
+  {% if quality and quality.reason %}
+  <span class="muted">{{ quality.reason }}</span>
+  {% endif %}
+{%- endmacro %}
+
 <div class="page-title">
   <div>
     <h1>Tax Plan</h1>
@@ -53,6 +66,7 @@
   <div class="card__header">
     <h2 class="card__title">Compensation What-If (IT / NI / SL + CGT)</h2>
   </div>
+  <p class="muted">Assumption quality: {{ assumption_badge(comp.assumption_quality) }}</p>
   <form method="get" action="/tax-plan" class="inline-form">
     <div class="form-grid">
       <div class="form-field">
@@ -151,6 +165,10 @@
           <td>{{ comp.sale_assumption.method }}</td>
         </tr>
         <tr>
+          <th>Assumption Quality</th>
+          <td>{{ assumption_badge(comp.sale_assumption.assumption_quality) }}</td>
+        </tr>
+        <tr>
           <th>Sellable Taxable Market Pool</th>
           <td>&pound;{{ comp.sale_assumption.sellable_market_value_pool_gbp|money }}</td>
         </tr>
@@ -191,6 +209,7 @@
           <th class="num">Sale Net Cash</th>
           <th class="num">Pension Net Cash Cost</th>
           <th class="num">Net Decision Cash</th>
+          <th>Assumption Quality</th>
         </tr>
       </thead>
       <tbody>
@@ -213,6 +232,7 @@
           <td class="num">&pound;{{ row.net_cash_from_sale_after_cgt_gbp|money }}</td>
           <td class="num">&pound;{{ row.pension_net_cash_cost_gbp|money }}</td>
           <td class="num">&pound;{{ row.net_decision_cash_gbp|money }}</td>
+          <td>{{ assumption_badge(row.assumption_quality) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -344,6 +364,7 @@
   <div class="card__header">
     <h2 class="card__title">Sell Before vs After April</h2>
   </div>
+  <p class="muted">Assumption quality: {{ assumption_badge(cross_year.assumption_quality) }}</p>
   <div class="table-wrap">
     <table>
       <thead>
@@ -351,6 +372,7 @@
           <th>Scenario</th>
           <th>Tax Year</th>
           <th>Date Assumed</th>
+          <th>Assumption Quality</th>
           <th class="num">Projected Total CGT</th>
           <th class="num">Incremental CGT</th>
           <th class="num">Projected Taxable Gain</th>
@@ -362,6 +384,7 @@
           <td>Sell Before Tax-Year End</td>
           <td>{{ cross_year.sell_before_tax_year_end.tax_year }}</td>
           <td>{{ cross_year.sell_before_tax_year_end.assumed_disposal_date }}</td>
+          <td>{{ assumption_badge(cross_year.sell_before_tax_year_end.assumption_quality) }}</td>
           <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_total_cgt_gbp|money }}</td>
           <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_incremental_cgt_gbp|money }}</td>
           <td class="num">&pound;{{ cross_year.sell_before_tax_year_end.projected_taxable_gain_gbp|money }}</td>
@@ -371,6 +394,7 @@
           <td>Sell After Tax-Year Rollover</td>
           <td>{{ cross_year.sell_after_tax_year_rollover.tax_year }}</td>
           <td>{{ cross_year.sell_after_tax_year_rollover.assumed_disposal_date }}</td>
+          <td>{{ assumption_badge(cross_year.sell_after_tax_year_rollover.assumption_quality) }}</td>
           <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_total_cgt_gbp|money }}</td>
           <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_incremental_cgt_gbp|money }}</td>
           <td class="num">&pound;{{ cross_year.sell_after_tax_year_rollover.projected_taxable_gain_gbp|money }}</td>
@@ -400,6 +424,7 @@
           <th class="num">Incremental CGT (Current Year)</th>
           <th class="num">Incremental CGT (Next Year)</th>
           <th class="num">Difference If Wait</th>
+          <th>Assumption Quality</th>
         </tr>
       </thead>
       <tbody>
@@ -455,11 +480,12 @@
               <span class="muted">-</span>
               {% endif %}
             </td>
+            <td>{{ assumption_badge(row.assumption_quality) }}</td>
           </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="11" class="muted">No active lots available.</td>
+            <td colspan="12" class="muted">No active lots available.</td>
           </tr>
         {% endif %}
       </tbody>

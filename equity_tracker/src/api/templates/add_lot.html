@@ -295,6 +295,44 @@
         </div>
       </div>
 
+      <div id="persisted-preview-wrapper" class="row-full" hidden>
+        <div class="derived-summary">
+          <span class="derived-summary__label">Persisted Preview (Before Save)</span>
+          <span id="persisted-preview-status" class="derived-summary__amount">-</span>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr>
+                  <th>Cost Basis / Share (GBP)</th>
+                  <td id="persisted-preview-cost-basis-ps">-</td>
+                </tr>
+                <tr>
+                  <th>True Cost / Share (GBP)</th>
+                  <td id="persisted-preview-true-cost-ps">-</td>
+                </tr>
+                <tr>
+                  <th>Total Cost Basis (GBP)</th>
+                  <td id="persisted-preview-cost-basis-total">-</td>
+                </tr>
+                <tr>
+                  <th>Total True Cost (GBP)</th>
+                  <td id="persisted-preview-true-cost-total">-</td>
+                </tr>
+                <tr>
+                  <th>FX Basis</th>
+                  <td id="persisted-preview-fx-basis">-</td>
+                </tr>
+                <tr>
+                  <th>Lock / Forfeiture Flags</th>
+                  <td id="persisted-preview-lock-flags">-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p id="persisted-preview-note" class="derived-summary__caveat form-hint"></p>
+        </div>
+      </div>
+
     </div>
 
     <!-- -- Additional Details (Notes) ----------------------- -->
@@ -466,12 +504,23 @@
   var inMatchedSharesOverridden = document.getElementById('matched_shares_overridden');
   var inEsppFmv  = document.getElementById('espp_fmv_at_purchase_gbp');
   var inQty      = document.getElementById('quantity');
+  var inAcqDate  = document.getElementById('acquisition_date');
+  var inRsuVestDate = document.getElementById('rsu_vesting_date');
   var notesArea  = document.getElementById('notes');
 
   var derivedWrapper = document.getElementById('derived-summary-wrapper');
   var derivedLabel   = document.getElementById('derived-summary-label');
   var derivedAmount  = document.getElementById('derived-summary-amount');
   var derivedCaveat  = document.getElementById('derived-summary-caveat');
+  var persistedWrapper = document.getElementById('persisted-preview-wrapper');
+  var persistedStatus = document.getElementById('persisted-preview-status');
+  var persistedCostBasisPs = document.getElementById('persisted-preview-cost-basis-ps');
+  var persistedTrueCostPs = document.getElementById('persisted-preview-true-cost-ps');
+  var persistedCostBasisTotal = document.getElementById('persisted-preview-cost-basis-total');
+  var persistedTrueCostTotal = document.getElementById('persisted-preview-true-cost-total');
+  var persistedFxBasis = document.getElementById('persisted-preview-fx-basis');
+  var persistedLockFlags = document.getElementById('persisted-preview-lock-flags');
+  var persistedNote = document.getElementById('persisted-preview-note');
 
   var detailsToggle  = document.getElementById('details-toggle');
   var detailsBody    = document.getElementById('details-body');
@@ -518,6 +567,25 @@
     if (currencyCode === 'GBP') return '\u00a3' + n.toFixed(2) + ' per share';
     if (currencyCode === 'USD') return '$' + n.toFixed(2) + ' per share';
     return currencyCode + ' ' + n.toFixed(2) + ' per share';
+  }
+
+  function formatGbp(n) {
+    return '\u00a3' + n.toFixed(2);
+  }
+
+  function fxRateToGbp(inputCurrency) {
+    if (inputCurrency === 'GBP') return 1;
+    var quote = fxToGbp[inputCurrency];
+    if (!quote || !quote.rate) return NaN;
+    return Number(quote.rate);
+  }
+
+  function addDaysIso(isoDate, days) {
+    if (!isoDate) return '';
+    var dt = new Date(isoDate + 'T00:00:00Z');
+    if (Number.isNaN(dt.getTime())) return '';
+    dt.setUTCDate(dt.getUTCDate() + days);
+    return dt.toISOString().slice(0, 10);
   }
 
   function updateCurrencyWorkflow() {
@@ -710,6 +778,7 @@
     syncEsppPlusNetPrice(false);
     updateDerivedSummary();
     updateCurrencyWorkflow();
+    updatePersistedPreview();
   }
 
   /* -- Derived Summary ------------------------------------ */
@@ -795,6 +864,110 @@
     }
   }
 
+  function updatePersistedPreview() {
+    if (!persistedWrapper) return;
+
+    var scheme = schemeSel.value;
+    var qty = asNum(inQty.value);
+    if (!(qty > 0)) {
+      persistedWrapper.hidden = true;
+      return;
+    }
+
+    var inputCurrency = selectedInputCurrency();
+    var fxRate = fxRateToGbp(inputCurrency);
+    if (!Number.isFinite(fxRate) || fxRate <= 0) {
+      persistedWrapper.hidden = true;
+      return;
+    }
+
+    var purchaseInput = asNum(inPurchase.value);
+    var rsuFmv = asNum(inRsuFmv.value);
+    var netOverrideInput = asNum(inEsppPlusNet.value);
+    var acqPricePerShareGbp = NaN;
+    var trueCostPerShareGbp = NaN;
+
+    if (scheme === 'RSU') {
+      if (!(rsuFmv > 0) || !rsuRateIsUsable()) {
+        persistedWrapper.hidden = true;
+        return;
+      }
+      acqPricePerShareGbp = rsuFmv;
+      trueCostPerShareGbp = rsuFmv * rsuTaxRate;
+    } else {
+      if (!(purchaseInput > 0)) {
+        persistedWrapper.hidden = true;
+        return;
+      }
+      acqPricePerShareGbp = purchaseInput * fxRate;
+      if (scheme === 'ESPP_PLUS') {
+        if (Number.isFinite(netOverrideInput) && netOverrideInput > 0) {
+          trueCostPerShareGbp = netOverrideInput * fxRate;
+        } else if (rateIsUsable()) {
+          trueCostPerShareGbp = acqPricePerShareGbp * (1 - esppCombinedRate);
+        } else {
+          trueCostPerShareGbp = acqPricePerShareGbp;
+        }
+      } else {
+        trueCostPerShareGbp = acqPricePerShareGbp;
+      }
+    }
+
+    if (!(Number.isFinite(acqPricePerShareGbp) && Number.isFinite(trueCostPerShareGbp))) {
+      persistedWrapper.hidden = true;
+      return;
+    }
+
+    var totalCostBasis = qty * acqPricePerShareGbp;
+    var totalTrueCost = qty * trueCostPerShareGbp;
+    var lockFlags = 'No structural lock from current scheme model.';
+    if (scheme === 'RSU') {
+      var vestDate = (inRsuVestDate && inRsuVestDate.value) ? inRsuVestDate.value : '';
+      if (vestDate) {
+        lockFlags = 'Locked until vest date ' + vestDate + '.';
+      } else {
+        lockFlags = 'RSU vest date required to determine lock status.';
+      }
+    } else if (scheme === 'ESPP_PLUS') {
+      var acqDate = (inAcqDate && inAcqDate.value) ? inAcqDate.value : '';
+      var matchedQty = asNum(inMatchedShares.value);
+      if (Number.isFinite(matchedQty) && matchedQty > 0 && acqDate) {
+        lockFlags = (
+          'Matched shares (' + formatQty(matchedQty) + ') are forfeitable/locked until '
+          + addDaysIso(acqDate, 183) + '.'
+        );
+      } else if (Number.isFinite(matchedQty) && matchedQty > 0) {
+        lockFlags = 'Matched shares are forfeitable for 183 days from acquisition date.';
+      } else {
+        lockFlags = 'No matched-share quantity entered; no forfeiture flag will be persisted.';
+      }
+    }
+
+    var fxLabel = inputCurrency === 'GBP'
+      ? 'GBP input; identity conversion (1.0000).'
+      : (inputCurrency + ' -> GBP @ ' + fxRate.toFixed(4));
+    var quote = fxToGbp[inputCurrency];
+    if (quote && quote.as_of) {
+      fxLabel += ' as of ' + quote.as_of + '.';
+    }
+    if (quote && quote.source) {
+      fxLabel += ' Source: ' + quote.source + '.';
+    }
+
+    persistedWrapper.hidden = false;
+    persistedStatus.textContent = 'Deterministic persisted values preview';
+    persistedCostBasisPs.textContent = formatGbp(acqPricePerShareGbp);
+    persistedTrueCostPs.textContent = formatGbp(trueCostPerShareGbp);
+    persistedCostBasisTotal.textContent = formatGbp(totalCostBasis);
+    persistedTrueCostTotal.textContent = formatGbp(totalTrueCost);
+    persistedFxBasis.textContent = fxLabel;
+    persistedLockFlags.textContent = lockFlags;
+    persistedNote.textContent = (
+      'Preview aligns to save-path formulas: GBP-converted acquisition basis, '
+      + 'scheme true-cost logic, and lock/forfeiture flags.'
+    );
+  }
+
   /* -- Event wiring --------------------------------------- */
 
   schemeSel.addEventListener('change', applySchemeFields);
@@ -816,12 +989,15 @@
   [inQty, inPurchase, inRsuFmv, inEsppFmv].forEach(function (el) {
     el.addEventListener('input',  updateDerivedSummary);
     el.addEventListener('change', updateDerivedSummary);
+    el.addEventListener('input', updatePersistedPreview);
+    el.addEventListener('change', updatePersistedPreview);
   });
 
   if (inPurchase) {
     inPurchase.addEventListener('input', function () {
       syncEsppPlusNetPrice(false);
       updateDerivedSummary();
+      updatePersistedPreview();
     });
   }
 
@@ -830,9 +1006,11 @@
       syncMatchedShares(false);
       syncEsppPlusNetPrice(false);
       updateDerivedSummary();
+      updatePersistedPreview();
     });
     inQty.addEventListener('change', function () {
       syncMatchedShares(false);
+      updatePersistedPreview();
     });
   }
 
@@ -846,6 +1024,7 @@
       } else {
         setMatchedOverridden(true);
       }
+      updatePersistedPreview();
     });
   }
 
@@ -860,7 +1039,23 @@
         setNetOverridden(true);
       }
       updateDerivedSummary();
+      updatePersistedPreview();
     });
+  }
+
+  if (inPriceInputCurrency) {
+    inPriceInputCurrency.addEventListener('change', updatePersistedPreview);
+  }
+  if (inAcqDate) {
+    inAcqDate.addEventListener('change', updatePersistedPreview);
+    inAcqDate.addEventListener('input', updatePersistedPreview);
+  }
+  if (inRsuVestDate) {
+    inRsuVestDate.addEventListener('change', updatePersistedPreview);
+    inRsuVestDate.addEventListener('input', updatePersistedPreview);
+  }
+  if (securitySel) {
+    securitySel.addEventListener('change', updatePersistedPreview);
   }
 
   /* -- Initialise ----------------------------------------- */
@@ -872,9 +1067,8 @@
 
   applySchemeFields();
   updateCurrencyWorkflow();
+  updatePersistedPreview();
 
 })();
 </script>
 {% endblock %}
-
-

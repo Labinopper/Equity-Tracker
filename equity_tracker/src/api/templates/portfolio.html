@@ -12,6 +12,7 @@
       <button type="submit" class="btn btn-secondary btn-sm">Refresh Prices</button>
     </form>
     <a href="/capital-stack" class="btn btn-secondary btn-sm">Capital Stack</a>
+    <a href="/tax-plan" class="btn btn-secondary btn-sm">Tax Plan</a>
     <button type="button" class="btn btn-secondary btn-sm" id="audit-json-btn">Download audit JSON</button>
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
     <a href="/portfolio/add-lot" class="btn btn-primary btn-sm">+ Lot</a>
@@ -151,6 +152,26 @@
 </div>
 {% endif %}
 
+{% if behavioral_guardrails %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Behavioral Guardrails</h2>
+  </div>
+  <p class="muted">Deterministic warnings for liquidity illusion, tax drag, ISA sheltering, and forfeiture timing. Dismissals are local to this browser.</p>
+  {% for guardrail in behavioral_guardrails %}
+  <div
+    class="alert {% if guardrail.severity == 'warning' %}alert-warning{% else %}alert-info{% endif %} guardrail-alert"
+    data-guardrail-id="{{ guardrail.id }}"
+  >
+    <div><strong>{{ guardrail.title }}</strong></div>
+    <div>{{ guardrail.message }}</div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary btn-sm guardrail-dismiss-btn">Dismiss</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 
 {% if summary.fx_as_of or summary.fx_conversion_basis %}
@@ -1102,6 +1123,57 @@
         btn.textContent = "Download audit JSON";
         alert("Audit export failed: " + err.message);
       });
+  });
+})();
+
+(function () {
+  var STORAGE_KEY = "portfolio.guardrails.dismissed.v1";
+  var alerts = document.querySelectorAll(".guardrail-alert[data-guardrail-id]");
+  if (!alerts.length) {
+    return;
+  }
+
+  function loadDismissed() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        return {};
+      }
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveDismissed(state) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      // Ignore storage write failures.
+    }
+  }
+
+  var dismissed = loadDismissed();
+  alerts.forEach(function (alertEl) {
+    var guardrailId = alertEl.getAttribute("data-guardrail-id");
+    if (!guardrailId) {
+      return;
+    }
+
+    if (dismissed[guardrailId]) {
+      alertEl.style.display = "none";
+    }
+
+    var dismissBtn = alertEl.querySelector(".guardrail-dismiss-btn");
+    if (!dismissBtn) {
+      return;
+    }
+    dismissBtn.addEventListener("click", function () {
+      dismissed[guardrailId] = true;
+      saveDismissed(dismissed);
+      alertEl.style.display = "none";
+    });
   });
 })();
 </script>

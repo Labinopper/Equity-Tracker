@@ -9,6 +9,7 @@
   </div>
   <div class="page-actions">
     <a href="/calendar" class="btn btn-secondary btn-sm">View in Calendar</a>
+    <a href="/glossary#sell-execution-methods" class="btn btn-secondary btn-sm">Method Glossary</a>
   </div>
 </div>
 
@@ -18,6 +19,7 @@
 
 <div class="alert alert-info">
   Recommended flow: run <a href="/simulate">Simulate Disposal</a> first, then create, approve, and export staged orders.
+  Method scope and exclusions: <a href="/glossary#sell-execution-methods">Glossary &rarr;</a>
 </div>
 
 <div class="card">
@@ -223,6 +225,56 @@
         (Concentration trigger {{ profile.concentration_trigger_pct or '-' }}%,
         Limit guardrail {{ profile.limit_guardrail_discount_pct or '-' }}%).
       </p>
+      {% set adherence = plan.adherence_panel %}
+      {% if adherence %}
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr>
+              <th>Adherence Status</th>
+              <td>{{ adherence.adherence_status | replace('_', ' ') | title }}</td>
+            </tr>
+            <tr>
+              <th>Planned vs Executed Quantity</th>
+              <td>{{ adherence.planned_quantity }} planned / {{ adherence.executed_quantity }} executed</td>
+            </tr>
+            <tr>
+              <th>Pending Quantity</th>
+              <td>{{ adherence.pending_quantity }}</td>
+            </tr>
+            <tr>
+              <th>Planned-to-Date Quantity</th>
+              <td>{{ adherence.planned_to_date_quantity }}</td>
+            </tr>
+            <tr>
+              <th>Execution Drift (Executed - Planned to Date)</th>
+              <td>{{ adherence.drift_quantity }}</td>
+            </tr>
+            <tr>
+              <th>Concentration Reduction Achieved (Quantity Basis)</th>
+              <td>{{ adherence.concentration_reduction_achieved_pct }}%</td>
+            </tr>
+            <tr>
+              <th>Remaining Tax Budget (Employment Tax + CGT)</th>
+              <td>&pound;{{ adherence.remaining_tax_budget_gbp | money }}</td>
+            </tr>
+            <tr>
+              <th>Realised Tax Budget (Employment Tax + CGT)</th>
+              <td>&pound;{{ adherence.realised_tax_budget_gbp | money }}</td>
+            </tr>
+            <tr>
+              <th>Calendar Status Mix</th>
+              <td>
+                Planned {{ adherence.calendar_status_counts.planned }},
+                Due {{ adherence.calendar_status_counts.due }},
+                Executed {{ adherence.calendar_status_counts.executed }},
+                Cancelled {{ adherence.calendar_status_counts.cancelled }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
       {% if plan.impact_totals %}
       <p class="muted">
         Impact totals (planned model): Gross &pound;{{ plan.impact_totals.gross_proceeds_gbp | money }},
