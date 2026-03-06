@@ -109,6 +109,38 @@ def _normalize_execution_mode(mode: str | None) -> str:
     return _EXECUTION_INDEPENDENT
 
 
+def _normalize_input_snapshot_legs(
+    legs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for idx, leg in enumerate(legs, start=1):
+        security_id = str(leg.get("security_id", "")).strip()
+        quantity_raw = leg.get("quantity")
+        quantity = str(quantity_raw) if quantity_raw is not None else ""
+        scheme_raw = leg.get("scheme_type")
+        scheme_type = (
+            str(scheme_raw).strip().upper()
+            if scheme_raw is not None and str(scheme_raw).strip()
+            else None
+        )
+        price_raw = leg.get("price_per_share_gbp")
+        label_raw = leg.get("label")
+        label = str(label_raw).strip() if label_raw is not None else ""
+        normalized.append(
+            {
+                "leg_id": idx,
+                "security_id": security_id,
+                "quantity": quantity,
+                "scheme_type": scheme_type,
+                "price_per_share_gbp": (
+                    str(price_raw) if price_raw is not None else None
+                ),
+                "label": label or None,
+            }
+        )
+    return normalized
+
+
 @dataclass
 class _SequentialSecurityState:
     lots_by_id: dict[str, Any]
@@ -404,6 +436,13 @@ class ScenarioService:
         scenario_id = str(uuid.uuid4())
         scenario_name = _normalize_name(name, as_of_date)
         created_at = _now_utc_iso()
+        input_snapshot = {
+            "name": scenario_name,
+            "as_of_date": as_of_date.isoformat(),
+            "price_shock_pct": str(shock_pct),
+            "execution_mode": mode,
+            "legs": _normalize_input_snapshot_legs(legs),
+        }
 
         builder_context = ScenarioService.get_builder_context(
             settings=settings,
@@ -422,6 +461,7 @@ class ScenarioService:
                 "execution_mode": mode,
                 "hide_values": True,
                 "hidden_reason": _HIDE_REASON,
+                "input_snapshot": input_snapshot,
                 "legs": [
                     {
                         "leg_id": idx,
@@ -441,11 +481,7 @@ class ScenarioService:
             }
             ScenarioService._store(
                 hidden_payload,
-                input_snapshot={
-                    "legs": legs,
-                    "price_shock_pct": str(shock_pct),
-                    "execution_mode": mode,
-                },
+                input_snapshot=input_snapshot,
             )
             return hidden_payload
 
@@ -618,6 +654,17 @@ class ScenarioService:
                 ),
                 "allocations": allocation_rows,
                 "forfeiture_warnings": forfeiture_rows,
+                "trace_links": {
+                    "reconcile_security_href": (
+                        f"/reconcile?security_id={security_id}#trace-contributing-lots"
+                    ),
+                    "reconcile_audit_href": "/reconcile#trace-audit-mutations",
+                    "first_lot_audit_href": (
+                        f"/audit?table_name=lots&record_id={allocation_rows[0]['lot_id']}"
+                        if allocation_rows
+                        else None
+                    ),
+                },
             }
             leg_payloads.append(leg_payload)
 
@@ -676,6 +723,7 @@ class ScenarioService:
             "price_shock_pct": str(shock_pct),
             "execution_mode": mode,
             "hide_values": False,
+            "input_snapshot": input_snapshot,
             "legs": leg_payloads,
             "totals": {
                 "quantity_requested": str(aggregate_quantity_requested),
@@ -710,11 +758,7 @@ class ScenarioService:
 
         ScenarioService._store(
             payload,
-            input_snapshot={
-                "legs": legs,
-                "price_shock_pct": str(shock_pct),
-                "execution_mode": mode,
-            },
+            input_snapshot=input_snapshot,
         )
         return payload
 
@@ -736,7 +780,15 @@ class ScenarioService:
                 payload = json.loads(row.payload_json)
             except json.JSONDecodeError:
                 return None
+            input_snapshot = None
+            if row.input_snapshot_json:
+                try:
+                    input_snapshot = json.loads(row.input_snapshot_json)
+                except json.JSONDecodeError:
+                    input_snapshot = None
         snapshot = copy.deepcopy(payload)
+        if input_snapshot is not None and "input_snapshot" not in snapshot:
+            snapshot["input_snapshot"] = input_snapshot
         if bool(settings and settings.hide_values):
             return ScenarioService._hide_payload(snapshot)
         return snapshot
@@ -875,6 +927,7 @@ class ScenarioService:
             "execution_mode": _normalize_execution_mode(payload.get("execution_mode")),
             "hide_values": True,
             "hidden_reason": _HIDE_REASON,
+            "input_snapshot": payload.get("input_snapshot"),
             "legs": hidden_legs,
             "totals": None,
             "tax_year_context": payload.get("tax_year_context"),

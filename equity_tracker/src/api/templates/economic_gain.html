@@ -52,6 +52,13 @@
       &pound;{{ report.net_economic_gain_gbp | money }}
     </div>
   </div>
+  <div class="stat {{ 'stat--gain' if net_delta_vs_cgt_gbp >= 0 else 'stat--loss' }}">
+    <div class="stat__label">Net Delta vs CGT Basis</div>
+    <div class="stat__value {{ 'gain' if net_delta_vs_cgt_gbp >= 0 else 'loss' }}">
+      {{ '+' if net_delta_vs_cgt_gbp >= 0 else '' }}&pound;{{ net_delta_vs_cgt_gbp | money }}
+    </div>
+    <div class="stat__meta muted">Economic minus CGT-basis net gain</div>
+  </div>
 </div>
 {% if report.isa_exempt_proceeds_gbp > 0 %}
 <div class="alert alert-info">
@@ -80,11 +87,15 @@
           <th class="num">Qty</th>
           <th class="num">Proceeds</th>
           <th class="num">True Cost</th>
+          <th class="num">CGT Gain / Loss</th>
           <th class="num">Economic Gain / Loss</th>
+          <th class="num">Delta (Economic - CGT)</th>
         </tr>
       </thead>
       <tbody>
         {% for line in report.disposal_lines %}
+        {% set cgt_gain = line.total_gain_gbp %}
+        {% set delta_gain = line.total_economic_gain_gbp - line.total_gain_gbp %}
         <tr>
           <td>{{ line.transaction.transaction_date }}</td>
           <td>{{ line.security.ticker }}</td>
@@ -94,8 +105,14 @@
             {% set true_cost = line.total_proceeds_gbp - line.total_economic_gain_gbp %}
             &pound;{{ true_cost | money }}
           </td>
+          <td class="num {{ 'gain' if cgt_gain >= 0 else 'loss' }}">
+            &pound;{{ cgt_gain | money }}
+          </td>
           <td class="num {{ 'gain' if line.total_economic_gain_gbp >= 0 else 'loss' }}">
             &pound;{{ line.total_economic_gain_gbp | money }}
+          </td>
+          <td class="num {{ 'gain' if delta_gain >= 0 else 'loss' }}">
+            {{ '+' if delta_gain >= 0 else '' }}&pound;{{ delta_gain | money }}
           </td>
         </tr>
         {% endfor %}

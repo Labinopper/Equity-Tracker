@@ -20,6 +20,29 @@
   <div class="stat"><span class="stat__label">Potential Shelterable Today</span><span class="stat__value">&pound;{{ payload.potential_shelterable_today_gbp|money }}</span></div>
 </div>
 
+{% set allowance = payload.isa_annual_allowance_gbp|float %}
+{% set contributions = payload.estimated_isa_contributions_gbp|float %}
+{% set headroom = payload.estimated_isa_headroom_gbp|float %}
+{% set utilization_pct = ((contributions / allowance) * 100) if allowance > 0 else 0 %}
+{% set headroom_pct = ((headroom / allowance) * 100) if allowance > 0 else 0 %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Allowance Utilization</th><td class="num">{{ utilization_pct|round(2) }}%</td></tr>
+    <tr><th>Headroom Remaining</th><td class="num">{{ headroom_pct|round(2) }}%</td></tr>
+    <tr><th>Wrapper Split (ISA vs Taxable)</th><td class="num">{{ payload.isa_ratio_pct }}% / {{ (100 - (payload.isa_ratio_pct|float))|round(2) }}%</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Route GBP cash into ISA</th><td><a href="/cash">Open Cash Ledger</a></td></tr>
+    <tr><th>Add next ISA lot</th><td><a href="/portfolio/add-lot">Open Add Lot</a></td></tr>
+    <tr><th>Review allowance assumptions</th><td><a href="/settings">Open Settings</a></td></tr>
+  </tbody></table></div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Tax-Year Context</h2></div>
   <div class="table-wrap"><table><tbody>

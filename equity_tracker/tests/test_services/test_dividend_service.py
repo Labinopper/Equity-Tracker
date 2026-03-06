@@ -54,6 +54,10 @@ def test_dividend_summary_trailing_forecast_and_tax_year_totals(app_context):
 
     assert summary["trailing_12m_total_gbp"] == "1050.00"
     assert summary["forecast_12m_total_gbp"] == "200.00"
+    assert summary["actual_to_date_total_gbp"] == "1050.00"
+    assert summary["forecast_entry_total_gbp"] == "200.00"
+    assert summary["actual_entry_count"] == 2
+    assert summary["forecast_entry_count"] == 1
     assert summary["all_time_total_gbp"] == "1250.00"
     assert summary["all_time_taxable_dividends_gbp"] == "1200.00"
     assert summary["all_time_isa_exempt_dividends_gbp"] == "50.00"

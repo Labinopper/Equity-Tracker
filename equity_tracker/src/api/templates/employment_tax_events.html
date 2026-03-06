@@ -4,6 +4,35 @@
 {% block content %}
 <div class="page-title"><div><h1>Employment Tax Events</h1><p class="muted">Persisted + derived employment-tax trail by tax year.</p></div></div>
 
+{% set latest_year = payload.tax_year_rows[0] if payload.tax_year_rows else None %}
+{% set prior_year = payload.tax_year_rows[1] if payload.tax_year_rows and payload.tax_year_rows|length > 1 else None %}
+{% set latest_tax_total = latest_year.estimated_tax_total_gbp|float if latest_year else 0 %}
+{% set prior_tax_total = prior_year.estimated_tax_total_gbp|float if prior_year else 0 %}
+{% set latest_delta = latest_tax_total - prior_tax_total %}
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr>
+      <th>Latest Tax Year vs Prior Tax Year</th>
+      <td class="num {{ 'loss' if latest_delta >= 0 else 'gain' }}">
+        {{ '+' if latest_delta >= 0 else '' }}&pound;{{ latest_delta|round(2) }}
+      </td>
+    </tr>
+    <tr><th>Latest Tax Year Event Count</th><td class="num">{{ latest_year.event_count if latest_year else 0 }}</td></tr>
+    <tr><th>Derived Disposal Rows</th><td class="num">{{ payload.event_rows|selectattr("event_source", "equalto", "DERIVED_DISPOSAL")|list|length }}</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Tax-year planning context</th><td><a href="/tax-plan">Open Tax Plan</a></td></tr>
+    <tr><th>Pre-commit disposal check</th><td><a href="/simulate">Open Simulate Disposal</a></td></tr>
+    <tr><th>Mutation audit trace</th><td><a href="/audit?table_name=employment_tax_events">Open Employment Tax Audit</a></td></tr>
+  </tbody></table></div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Tax-Year Totals</h2></div>
   <div class="table-wrap"><table>

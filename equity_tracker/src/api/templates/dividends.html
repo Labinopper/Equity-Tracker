@@ -144,6 +144,28 @@
 
 <div class="card">
   <div class="card__header">
+    <h2 class="card__title">Actual vs Forecast Split</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Actual Entries Through {{ dividends.as_of_date }}</th>
+          <td class="num">{{ dividends.summary.actual_entry_count or 0 }}</td>
+          <td class="num">&pound;{{ dividends.summary.actual_to_date_total_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Forecast Entries After {{ dividends.as_of_date }}</th>
+          <td class="num">{{ dividends.summary.forecast_entry_count or 0 }}</td>
+          <td class="num">&pound;{{ dividends.summary.forecast_entry_total_gbp|money }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
     <h2 class="card__title">Tax-Year Dividend Summary</h2>
   </div>
   <div class="table-wrap">

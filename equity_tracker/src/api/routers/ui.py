@@ -34,6 +34,7 @@ is not open, the locked.html page is returned instead.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date as date_type
 from datetime import datetime, time, timedelta, timezone
@@ -2898,6 +2899,49 @@ async def capital_stack(request: Request) -> HTMLResponse:
 # Add security â€” GET + POST /portfolio/add-security
 # ---------------------------------------------------------------------------
 
+def _security_conflict_index_rows() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    with AppContext.read_session() as sess:
+        securities = SecurityRepository(sess).list_all()
+    for security in securities:
+        rows.append(
+            {
+                "id": security.id,
+                "ticker": (security.ticker or "").strip().upper(),
+                "currency": (security.currency or "").strip().upper(),
+                "exchange": (security.exchange or "").strip().upper(),
+                "isin": (security.isin or "").strip().upper(),
+                "name": security.name or "",
+            }
+        )
+    return rows
+
+
+def _build_add_security_conflict_helper(
+    *,
+    ticker: str,
+    currency: str,
+) -> dict[str, object] | None:
+    ticker_clean = (ticker or "").strip().upper()
+    if not ticker_clean:
+        return None
+    currency_clean = (currency or "").strip().upper()
+    matches = [
+        row
+        for row in _security_conflict_index_rows()
+        if row["ticker"] == ticker_clean
+    ]
+    if not matches:
+        return None
+    exact = [row for row in matches if row["currency"] == currency_clean]
+    alternate = [row for row in matches if row["currency"] != currency_clean]
+    return {
+        "ticker": ticker_clean,
+        "currency": currency_clean,
+        "exact_matches": exact,
+        "alternate_currency_matches": alternate,
+    }
+
 @router.get(
     "/portfolio/add-security",
     response_class=HTMLResponse,
@@ -2911,7 +2955,11 @@ async def add_security_form(
     return templates.TemplateResponse(
         request,
         "add_security.html",
-        {"request": request, "error": error},
+        {
+            "request": request,
+            "error": error,
+            "existing_security_index": _security_conflict_index_rows(),
+        },
     )
 
 
@@ -2949,12 +2997,18 @@ async def add_security_submit(
             is_manual_override=_is_manual,
         )
     except (ValueError, IntegrityError) as exc:
+        conflict_helper = _build_add_security_conflict_helper(
+            ticker=ticker,
+            currency=currency,
+        )
         return templates.TemplateResponse(
             request,
             "add_security.html",
             {
                 "request": request,
                 "error": str(exc),
+                "existing_security_index": _security_conflict_index_rows(),
+                "conflict_helper": conflict_helper,
                 "prev": {
                     "ticker": ticker,
                     "name": name,
@@ -4196,6 +4250,52 @@ def _tax_year_nav_context(
     }
 
 
+def _cgt_assumption_badges(
+    *,
+    include_tax_due: bool,
+    settings: AppSettings | None,
+) -> list[dict[str, str]]:
+    badges: list[dict[str, str]] = []
+    if not include_tax_due:
+        badges.append(
+            {
+                "label": "Realised-only mode",
+                "style": "neutral",
+                "detail": "CGT due estimate is disabled; table shows realised disposal outcomes only.",
+            }
+        )
+        return badges
+
+    if settings is None:
+        badges.append(
+            {
+                "label": "Settings missing",
+                "style": "warning",
+                "detail": "CGT due cannot be estimated until income settings are saved in Settings.",
+            }
+        )
+        return badges
+
+    if _tax_inputs_incomplete(settings):
+        badges.append(
+            {
+                "label": "Estimate constrained",
+                "style": "warning",
+                "detail": "Income inputs are incomplete/zero; CGT due may materially understate reality.",
+            }
+        )
+        return badges
+
+    badges.append(
+        {
+            "label": "Configured estimate",
+            "style": "sellable",
+            "detail": "CGT due uses saved income, pension, and student-loan settings.",
+        }
+    )
+    return badges
+
+
 @router.get("/cgt", response_class=HTMLResponse, include_in_schema=False)
 async def cgt_report(
     request: Request,
@@ -4235,6 +4335,10 @@ async def cgt_report(
         tax_context=tax_context,
         prior_year_losses=losses,
     )
+    assumption_badges = _cgt_assumption_badges(
+        include_tax_due=include_tax_due,
+        settings=settings,
+    )
 
     return templates.TemplateResponse(
         request,
@@ -4247,6 +4351,7 @@ async def cgt_report(
             "include_tax_due": include_tax_due,
             "prior_year_losses": str(losses),
             "settings": settings,
+            "assumption_badges": assumption_badges,
             "active_year_index": nav["active_year_index"],
             "previous_tax_year": nav["previous_tax_year"],
             "next_tax_year": nav["next_tax_year"],
@@ -4276,6 +4381,8 @@ async def economic_gain_report(
     nav = _tax_year_nav_context(tax_years, active_year)
 
     report = ReportService.economic_gain_summary(active_year)
+    cgt_report = ReportService.cgt_summary(active_year)
+    net_delta_vs_cgt = report.net_economic_gain_gbp - cgt_report.net_gain_gbp
 
     return templates.TemplateResponse(
         request,
@@ -4285,6 +4392,8 @@ async def economic_gain_report(
             "report": report,
             "tax_years": tax_years,
             "active_year": active_year,
+            "cgt_report": cgt_report,
+            "net_delta_vs_cgt_gbp": net_delta_vs_cgt,
             "active_year_index": nav["active_year_index"],
             "previous_tax_year": nav["previous_tax_year"],
             "next_tax_year": nav["next_tax_year"],
@@ -4296,21 +4405,122 @@ async def economic_gain_report(
 # Audit log â€” GET /audit
 # ---------------------------------------------------------------------------
 
+def _parse_filter_date(raw: str | None) -> date_type | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return date_type.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _audit_json_to_dict(raw: str | None) -> dict[str, object]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _audit_structured_diff_rows(
+    *,
+    old_values_json: str | None,
+    new_values_json: str | None,
+) -> list[dict[str, str]]:
+    old_map = _audit_json_to_dict(old_values_json)
+    new_map = _audit_json_to_dict(new_values_json)
+    keys = sorted(set(old_map.keys()) | set(new_map.keys()))
+    rows: list[dict[str, str]] = []
+    for key in keys:
+        old_val = old_map.get(key)
+        new_val = new_map.get(key)
+        if old_val == new_val:
+            continue
+        if key not in old_map:
+            change_type = "added"
+        elif key not in new_map:
+            change_type = "removed"
+        else:
+            change_type = "changed"
+        rows.append(
+            {
+                "field": str(key),
+                "before": json.dumps(old_val, default=str) if key in old_map else "",
+                "after": json.dumps(new_val, default=str) if key in new_map else "",
+                "change_type": change_type,
+            }
+        )
+    return rows
+
+
+def _audit_entry_view(entry) -> dict[str, object]:
+    return {
+        "id": entry.id,
+        "changed_at": entry.changed_at,
+        "table_name": entry.table_name,
+        "action": entry.action,
+        "record_id": entry.record_id,
+        "old_values_json": entry.old_values_json,
+        "new_values_json": entry.new_values_json,
+        "notes": entry.notes,
+        "diff_rows": _audit_structured_diff_rows(
+            old_values_json=entry.old_values_json,
+            new_values_json=entry.new_values_json,
+        ),
+    }
+
+
 @router.get("/audit", response_class=HTMLResponse, include_in_schema=False)
 async def audit_log(
     request: Request,
     table_name: str | None = None,
     record_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
+
     active_table = (table_name or "").strip()
     active_record_id = (record_id or "").strip()
-    entries = ReportService.audit_log(
+    active_date_from = (date_from or "").strip()
+    active_date_to = (date_to or "").strip()
+
+    parsed_from = _parse_filter_date(active_date_from)
+    parsed_to = _parse_filter_date(active_date_to)
+    filter_error: str | None = None
+    if active_date_from and parsed_from is None:
+        filter_error = "Invalid start date filter; expected YYYY-MM-DD."
+    elif active_date_to and parsed_to is None:
+        filter_error = "Invalid end date filter; expected YYYY-MM-DD."
+    elif parsed_from and parsed_to and parsed_from > parsed_to:
+        filter_error = "Start date cannot be after end date."
+
+    since = datetime.combine(parsed_from, time.min) if parsed_from else None
+    until = datetime.combine(parsed_to, time.max) if parsed_to else None
+    if filter_error:
+        since = None
+        until = None
+
+    raw_entries = ReportService.audit_log(
         table_name=active_table or None,
         record_id=active_record_id or None,
+        since=since,
+        until=until,
     )
-    tables = ["lots", "securities", "transactions", "lot_disposals"]
+    entries = [_audit_entry_view(entry) for entry in raw_entries]
+    tables = [
+        "lots",
+        "securities",
+        "transactions",
+        "lot_disposals",
+        "employment_tax_events",
+        "dividend_entries",
+        "scenario_snapshots",
+    ]
     return templates.TemplateResponse(
         request,
         "audit_log.html",
@@ -4320,6 +4530,9 @@ async def audit_log(
             "tables": tables,
             "active_table": active_table,
             "active_record_id": active_record_id,
+            "active_date_from": active_date_from,
+            "active_date_to": active_date_to,
+            "filter_error": filter_error,
         },
     )
 
@@ -4327,6 +4540,99 @@ async def audit_log(
 # ---------------------------------------------------------------------------
 # Settings â€” GET + POST /settings
 # ---------------------------------------------------------------------------
+
+def _settings_completeness_payload(
+    settings: AppSettings | None,
+) -> dict[str, object]:
+    checks: list[dict[str, object]] = []
+    checks.append(
+        {
+            "label": "Income Inputs Saved",
+            "ok": bool(
+                settings is not None
+                and settings.default_gross_income > Decimal("0")
+            ),
+            "detail": "Gross employment income is required for deterministic tax estimates.",
+        }
+    )
+    checks.append(
+        {
+            "label": "Tax Year Selected",
+            "ok": bool(settings is not None and settings.default_tax_year),
+            "detail": "CGT/Economic Gain reports default to this year.",
+        }
+    )
+    checks.append(
+        {
+            "label": "Staleness Thresholds",
+            "ok": bool(
+                settings is not None
+                and settings.price_stale_after_days >= 0
+                and settings.fx_stale_after_minutes >= 0
+            ),
+            "detail": "Controls stale-price and stale-FX warning behavior.",
+        }
+    )
+    checks.append(
+        {
+            "label": "Concentration Guardrails",
+            "ok": bool(
+                settings is not None
+                and settings.concentration_top_holding_alert_pct > Decimal("0")
+                and settings.concentration_employer_alert_pct > Decimal("0")
+            ),
+            "detail": "Risk pages use these thresholds for deterministic alerts.",
+        }
+    )
+    checks.append(
+        {
+            "label": "Employer Identity",
+            "ok": bool(
+                settings is not None
+                and bool((settings.employer_ticker or "").strip())
+            ),
+            "detail": "Needed for employer concentration and dependence metrics.",
+        }
+    )
+
+    constrained_surfaces: list[dict[str, str]] = []
+    if settings is None or _tax_inputs_incomplete(settings):
+        constrained_surfaces.extend(
+            [
+                {
+                    "surface": "Portfolio / Net Value",
+                    "reason": "Employment-tax overlays may understate drag.",
+                    "href": "/",
+                },
+                {
+                    "surface": "Simulate / Scenario Lab",
+                    "reason": "Employment-tax estimates can be unavailable for sellable lots.",
+                    "href": "/simulate",
+                },
+                {
+                    "surface": "CGT / Tax Plan",
+                    "reason": "Tax-due projections remain estimate-constrained.",
+                    "href": "/cgt",
+                },
+            ]
+        )
+    if settings is None or not bool((settings.employer_ticker or "").strip()):
+        constrained_surfaces.append(
+            {
+                "surface": "Risk / Analytics",
+                "reason": "Employer exposure and dependence metrics are incomplete.",
+                "href": "/risk",
+            }
+        )
+
+    ok_count = sum(1 for row in checks if bool(row["ok"]))
+    score_pct = int(round((ok_count / len(checks)) * 100)) if checks else 0
+    return {
+        "score_pct": score_pct,
+        "checks": checks,
+        "constrained_surfaces": constrained_surfaces,
+    }
+
 
 def _render_settings_page(
     request: Request,
@@ -4341,6 +4647,7 @@ def _render_settings_page(
         "request": request,
         "settings": settings,
         "tax_years": available_tax_years(),
+        "settings_completeness": _settings_completeness_payload(settings),
         **_flash(msg),
     }
     if error:

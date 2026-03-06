@@ -91,6 +91,7 @@
       <div class="edit-summary__row">Destination Broker Currency: <strong id="summary-broker-currency">-</strong></div>
       <div class="edit-summary__row">Acquisition Date: <strong id="summary-source-acq">-</strong></div>
       <div class="edit-summary__row">Destination Scheme: <strong>BROKERAGE</strong></div>
+      <div class="edit-summary__row">Downstream Surface Impact: <strong id="summary-impact-flag">-</strong></div>
       <div class="edit-summary__row">Audit Trail: <strong>Recorded in lots audit log</strong></div>
     </div>
 
@@ -124,6 +125,14 @@
       <div class="edit-summary__row muted">{{ note }}</div>
       {% endfor %}
       {% endif %}
+      <div class="edit-summary__row">
+        Follow-up:
+        <strong>
+          <a href="/">Portfolio</a>,
+          <a href="/risk">Risk</a>,
+          <a href="/reconcile">Reconcile</a>
+        </strong>
+      </div>
     </div>
     {% endif %}
 
@@ -153,6 +162,7 @@
   var transferQtyEl = document.getElementById("summary-transfer-qty");
   var brokerCurrencyEl = document.getElementById("summary-broker-currency");
   var acqEl = document.getElementById("summary-source-acq");
+  var impactFlagEl = document.getElementById("summary-impact-flag");
 
   function updateSummary() {
     var option = lotSelect.options[lotSelect.selectedIndex];
@@ -199,6 +209,15 @@
       qtyHint.textContent = scheme === "ESPP"
         ? "ESPP allows partial FIFO transfer using whole shares only (defaults to max whole-share FIFO quantity)."
         : "RSU/ESPP+ transfer requires full remaining lot quantity.";
+    }
+    if (impactFlagEl) {
+      if (scheme === "ESPP_PLUS") {
+        impactFlagEl.textContent = "May convert locked/forfeiture-linked exposure into brokerage custody.";
+      } else if (scheme === "RSU") {
+        impactFlagEl.textContent = "Moves vested RSU custody; affects wrapper/scheme concentration mix.";
+      } else {
+        impactFlagEl.textContent = "Updates scheme-level sellability and custody distribution.";
+      }
     }
     acqEl.textContent = option.getAttribute("data-acq") || "-";
   }

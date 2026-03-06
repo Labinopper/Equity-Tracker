@@ -72,6 +72,35 @@
       </div>
     </div>
 
+    <div class="card card--inner">
+      <div class="card__header">
+        <h3 class="card__title">Scenario Templates</h3>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="scenario-template-name">Template Name</label>
+          <input
+            id="scenario-template-name"
+            name="template_name"
+            type="text"
+            placeholder="e.g. Baseline multi-leg plan"
+          >
+        </div>
+        <div class="form-field">
+          <label for="scenario-template-select">Saved Templates</label>
+          <select id="scenario-template-select">
+            <option value="">-- none --</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="scenario-template-save" class="btn btn-secondary btn-sm">Save Template</button>
+        <button type="button" id="scenario-template-load" class="btn btn-secondary btn-sm">Load Template</button>
+        <button type="button" id="scenario-template-delete" class="btn btn-secondary btn-sm">Delete Template</button>
+      </div>
+      <p class="form-hint">Templates save current legs and controls for deterministic reuse in this browser.</p>
+    </div>
+
     <div class="table-wrap">
       <table id="scenario-legs-table">
         <thead>
@@ -154,6 +183,7 @@
           <th class="num">Economic Gain</th>
           <th class="num">Employment Tax</th>
           <th class="num">Net After Tax</th>
+          <th>Trace</th>
         </tr>
       </thead>
       <tbody id="scenario-leg-results-body"></tbody>
@@ -220,11 +250,12 @@
           <th class="num">Net After Tax</th>
           <th class="num">Economic Gain</th>
           <th class="num">Shortfall?</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody id="scenario-recent-body">
         <tr>
-          <td colspan="8" class="muted">No scenarios run yet.</td>
+          <td colspan="9" class="muted">No scenarios run yet.</td>
         </tr>
       </tbody>
     </table>
@@ -289,6 +320,14 @@
   var recentBody = document.getElementById("scenario-recent-body");
   var exportJsonBtn = document.getElementById("scenario-export-json");
   var exportCsvBtn = document.getElementById("scenario-export-csv");
+  var templateNameInput = document.getElementById("scenario-template-name");
+  var templateSelect = document.getElementById("scenario-template-select");
+  var templateSaveBtn = document.getElementById("scenario-template-save");
+  var templateLoadBtn = document.getElementById("scenario-template-load");
+  var templateDeleteBtn = document.getElementById("scenario-template-delete");
+
+  var templateStorageKey = "scenario_lab.presets.v1";
+  var savedTemplates = [];
 
   function showError(message) {
     errorBox.hidden = !message;
@@ -323,6 +362,97 @@
     }
     var prefix = num > 0 ? "+" : "";
     return prefix + formatMoney(num);
+  }
+
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function readSavedTemplates() {
+    try {
+      var raw = localStorage.getItem(templateStorageKey);
+      if (!raw) {
+        return [];
+      }
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.filter(function (row) {
+        return row && typeof row.name === "string" && row.name.trim();
+      });
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  function writeSavedTemplates(rows) {
+    savedTemplates = Array.isArray(rows) ? rows.slice() : [];
+    localStorage.setItem(templateStorageKey, JSON.stringify(savedTemplates));
+    renderTemplateSelect();
+  }
+
+  function renderTemplateSelect() {
+    if (!templateSelect) {
+      return;
+    }
+    var selectedName = templateSelect.value;
+    var options = ['<option value="">-- none --</option>'];
+    savedTemplates.forEach(function (row) {
+      options.push(
+        '<option value="' + escapeHtml(row.name) + '">' +
+        escapeHtml(row.name) +
+        "</option>"
+      );
+    });
+    templateSelect.innerHTML = options.join("");
+    if (selectedName) {
+      templateSelect.value = selectedName;
+    }
+  }
+
+  function currentInputSnapshot() {
+    return {
+      name: document.getElementById("scenario-name").value.trim() || null,
+      as_of_date: document.getElementById("scenario-as-of-date").value || null,
+      price_shock_pct: String(readShockPct()),
+      execution_mode: executionModeSelect ? executionModeSelect.value : "INDEPENDENT",
+      legs: gatherLegPayloads()
+    };
+  }
+
+  function applyInputSnapshot(snapshot) {
+    if (!snapshot) {
+      return;
+    }
+    document.getElementById("scenario-name").value = snapshot.name || "";
+    document.getElementById("scenario-as-of-date").value = snapshot.as_of_date || context.as_of_date;
+    if (executionModeSelect && snapshot.execution_mode) {
+      executionModeSelect.value = snapshot.execution_mode;
+    }
+    if (shockSlider) {
+      shockSlider.value = String(toNumber(snapshot.price_shock_pct) || 0);
+      updateShockLabel();
+    }
+    clearLegRows();
+    var legs = Array.isArray(snapshot.legs) ? snapshot.legs : [];
+    if (!legs.length) {
+      createLegRow();
+      return;
+    }
+    legs.forEach(function (leg) {
+      createLegRow({
+        security_id: leg.security_id || "",
+        scheme_type: leg.scheme_type || "",
+        quantity: leg.quantity || "",
+        price_per_share_gbp: leg.price_per_share_gbp || ""
+      });
+    });
   }
 
   function readShockPct() {
@@ -526,7 +656,7 @@
 
   function renderRecentScenariosTable() {
     if (!recentSummaries.length) {
-      recentBody.innerHTML = '<tr><td colspan="8" class="muted">No scenarios run yet.</td></tr>';
+      recentBody.innerHTML = '<tr><td colspan="9" class="muted">No scenarios run yet.</td></tr>';
       return;
     }
     var html = [];
@@ -542,6 +672,9 @@
           '<td class="num">' + (row.hide_values ? "-" : formatMoney(row.total_net_after_employment_tax_gbp)) + "</td>" +
           '<td class="num">' + (row.hide_values ? "-" : formatMoney(row.total_realised_gain_economic_gbp)) + "</td>" +
           '<td class="num">' + (row.has_shortfall ? "Yes" : "No") + "</td>" +
+          "<td>" +
+            '<button type="button" class="btn btn-secondary btn-sm scenario-load-inputs" data-scenario-id="' + escapeHtml(row.scenario_id) + '">Load Inputs</button>' +
+          "</td>" +
         "</tr>"
       );
     });
@@ -598,10 +731,19 @@
     var legsBodyResult = document.getElementById("scenario-leg-results-body");
     var legRows = Array.isArray(payload.legs) ? payload.legs : [];
     if (!legRows.length) {
-      legsBodyResult.innerHTML = '<tr><td colspan="11" class="muted">No leg rows returned.</td></tr>';
+      legsBodyResult.innerHTML = '<tr><td colspan="12" class="muted">No leg rows returned.</td></tr>';
     } else {
       var rowsHtml = [];
       legRows.forEach(function (leg) {
+        var traceLinks = leg.trace_links || {};
+        var reconcileLink = traceLinks.reconcile_security_href || "/reconcile#trace-contributing-lots";
+        var reconcileAuditLink = traceLinks.reconcile_audit_href || "/reconcile#trace-audit-mutations";
+        var lotAuditLink = traceLinks.first_lot_audit_href;
+        var traceCell = '<a href="' + escapeHtml(reconcileLink) + '">Reconcile Lots</a>';
+        traceCell += ' <span class="muted">|</span> <a href="' + escapeHtml(reconcileAuditLink) + '">Reconcile Audit</a>';
+        if (lotAuditLink) {
+          traceCell += ' <span class="muted">|</span> <a href="' + escapeHtml(lotAuditLink) + '">Lot Audit</a>';
+        }
         rowsHtml.push(
           "<tr>" +
             "<td>" + leg.label + "</td>" +
@@ -615,6 +757,7 @@
             '<td class="num">' + formatMoney(leg.total_realised_gain_economic_gbp) + "</td>" +
             '<td class="num">' + formatMoney(leg.total_employment_tax_gbp) + "</td>" +
             '<td class="num">' + formatMoney(leg.net_after_employment_tax_gbp) + "</td>" +
+            "<td>" + traceCell + "</td>" +
           "</tr>"
         );
       });
@@ -728,6 +871,93 @@
       renderComparisonRows(leftPayload, rightPayload);
     } catch (err) {
       showCompareError(err && err.message ? err.message : "Comparison failed.");
+    }
+  }
+
+  function findTemplateByName(name) {
+    if (!name) {
+      return null;
+    }
+    for (var i = 0; i < savedTemplates.length; i += 1) {
+      if (savedTemplates[i].name === name) {
+        return savedTemplates[i];
+      }
+    }
+    return null;
+  }
+
+  function saveTemplateFromCurrentForm() {
+    try {
+      var name = templateNameInput && templateNameInput.value ? templateNameInput.value.trim() : "";
+      if (!name) {
+        throw new Error("Enter a template name first.");
+      }
+      var snapshot = currentInputSnapshot();
+      var row = {
+        name: name,
+        saved_at_utc: new Date().toISOString(),
+        input_snapshot: snapshot
+      };
+      var nextRows = savedTemplates.filter(function (item) {
+        return item.name !== name;
+      });
+      nextRows.unshift(row);
+      if (nextRows.length > 40) {
+        nextRows = nextRows.slice(0, 40);
+      }
+      writeSavedTemplates(nextRows);
+      if (templateSelect) {
+        templateSelect.value = name;
+      }
+      showError("");
+    } catch (err) {
+      showError(err && err.message ? err.message : "Could not save template.");
+    }
+  }
+
+  function loadSelectedTemplate() {
+    try {
+      var name = templateSelect ? templateSelect.value : "";
+      if (!name) {
+        throw new Error("Select a template first.");
+      }
+      var row = findTemplateByName(name);
+      if (!row || !row.input_snapshot) {
+        throw new Error("Template payload is not available.");
+      }
+      applyInputSnapshot(row.input_snapshot);
+      showError("");
+    } catch (err) {
+      showError(err && err.message ? err.message : "Could not load template.");
+    }
+  }
+
+  function deleteSelectedTemplate() {
+    var name = templateSelect ? templateSelect.value : "";
+    if (!name) {
+      showError("Select a template to delete.");
+      return;
+    }
+    var nextRows = savedTemplates.filter(function (row) {
+      return row.name !== name;
+    });
+    writeSavedTemplates(nextRows);
+    if (templateSelect) {
+      templateSelect.value = "";
+    }
+    showError("");
+  }
+
+  async function loadScenarioInputsById(scenarioId) {
+    try {
+      var payload = await fetchScenarioById(scenarioId);
+      if (!payload || !payload.input_snapshot) {
+        throw new Error("Input snapshot is not available for this scenario.");
+      }
+      applyInputSnapshot(payload.input_snapshot);
+      showError("");
+    } catch (err) {
+      showError(err && err.message ? err.message : "Could not load scenario inputs.");
     }
   }
 
@@ -877,11 +1107,40 @@
   compareBtn.addEventListener("click", runComparison);
   exportJsonBtn.addEventListener("click", exportCurrentScenarioJson);
   exportCsvBtn.addEventListener("click", exportCurrentScenarioCsv);
+  if (templateSaveBtn) {
+    templateSaveBtn.addEventListener("click", saveTemplateFromCurrentForm);
+  }
+  if (templateLoadBtn) {
+    templateLoadBtn.addEventListener("click", loadSelectedTemplate);
+  }
+  if (templateDeleteBtn) {
+    templateDeleteBtn.addEventListener("click", deleteSelectedTemplate);
+  }
+  if (templateSelect && templateNameInput) {
+    templateSelect.addEventListener("change", function () {
+      templateNameInput.value = templateSelect.value || "";
+    });
+  }
+  if (recentBody) {
+    recentBody.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!target || !target.classList || !target.classList.contains("scenario-load-inputs")) {
+        return;
+      }
+      var scenarioId = target.getAttribute("data-scenario-id");
+      if (!scenarioId) {
+        return;
+      }
+      loadScenarioInputsById(scenarioId);
+    });
+  }
 
   if (executionModeSelect && context.defaults && context.defaults.execution_mode) {
     executionModeSelect.value = context.defaults.execution_mode;
   }
 
+  savedTemplates = readSavedTemplates();
+  renderTemplateSelect();
   renderRecentScenariosTable();
   renderCompareSelects();
   clearLegRows();

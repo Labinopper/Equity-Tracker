@@ -86,10 +86,17 @@ async def api_employment_tax_events(_: None = Depends(db_required)) -> dict:
 
 
 @router.get("/api/strategic/reconcile")
-async def api_reconcile(_: None = Depends(db_required)) -> dict:
+async def api_reconcile(
+    lookback_days: int = Query(30, ge=7, le=365),
+    _: None = Depends(db_required),
+) -> dict:
     settings = _load_settings()
     db_path = _state.get_db_path()
-    return StrategicService.get_cross_page_reconcile(settings=settings, db_path=db_path)
+    return StrategicService.get_cross_page_reconcile(
+        settings=settings,
+        db_path=db_path,
+        lookback_days=lookback_days,
+    )
 
 
 @router.get("/api/strategic/basis-timeline")
@@ -110,14 +117,70 @@ async def insights_page(request: Request) -> HTMLResponse:
         return _locked_response(request)
 
     links = [
-        {"href": "/capital-efficiency", "label": "Capital Efficiency", "desc": "Structural drag decomposition and annualized drag rate."},
-        {"href": "/employment-exit", "label": "Employment Exit", "desc": "Deterministic leave-employment scenario."},
-        {"href": "/isa-efficiency", "label": "ISA Efficiency", "desc": "Tax-year shelter headroom and wrapper split."},
-        {"href": "/fee-drag", "label": "Fee Drag", "desc": "Broker fee ledger and fee impact by tax year."},
-        {"href": "/data-quality", "label": "Data Quality", "desc": "Stale/missing input impact map by surface."},
-        {"href": "/employment-tax-events", "label": "Employment Tax Events", "desc": "Persisted and derived employment-tax event trail."},
-        {"href": "/reconcile", "label": "Reconcile", "desc": "Cross-page reconciliation path and delta explanation."},
-        {"href": "/basis-timeline", "label": "Price/FX Basis Timeline", "desc": "Native vs FX contribution timeline by basis updates."},
+        {
+            "href": "/capital-efficiency",
+            "label": "Capital Efficiency",
+            "desc": "Structural drag decomposition and annualized drag rate.",
+            "trend_context": "Compare annualized drag against current-period drag.",
+            "action_href": "/fee-drag",
+            "action_label": "Open Fee Drag",
+        },
+        {
+            "href": "/employment-exit",
+            "label": "Employment Exit",
+            "desc": "Deterministic leave-employment scenario.",
+            "trend_context": "Compare retained vs forfeited value under fixed shock.",
+            "action_href": "/scenario-lab",
+            "action_label": "Run Scenario Lab",
+        },
+        {
+            "href": "/isa-efficiency",
+            "label": "ISA Efficiency",
+            "desc": "Tax-year shelter headroom and wrapper split.",
+            "trend_context": "Track ISA ratio and contribution headroom in current tax year.",
+            "action_href": "/cash",
+            "action_label": "Open Cash Workflow",
+        },
+        {
+            "href": "/fee-drag",
+            "label": "Fee Drag",
+            "desc": "Broker fee ledger and fee impact by tax year.",
+            "trend_context": "Compare latest-tax-year fee % against all-time fee %.",
+            "action_href": "/sell-plan",
+            "action_label": "Open Sell Plan",
+        },
+        {
+            "href": "/data-quality",
+            "label": "Data Quality",
+            "desc": "Stale/missing input impact map by surface.",
+            "trend_context": "Compare stale vs missing-input pressure on major surfaces.",
+            "action_href": "/settings",
+            "action_label": "Open Settings",
+        },
+        {
+            "href": "/employment-tax-events",
+            "label": "Employment Tax Events",
+            "desc": "Persisted and derived employment-tax event trail.",
+            "trend_context": "Compare latest tax-year event totals versus prior year.",
+            "action_href": "/tax-plan",
+            "action_label": "Open Tax Plan",
+        },
+        {
+            "href": "/reconcile",
+            "label": "Reconcile",
+            "desc": "Cross-page reconciliation path and delta explanation.",
+            "trend_context": "Decompose recent drift into price/FX/quantity/settings/transactions.",
+            "action_href": "/reconcile?lookback_days=30#trace-drift-decomposition",
+            "action_label": "Open Drift Panel",
+        },
+        {
+            "href": "/basis-timeline",
+            "label": "Price/FX Basis Timeline",
+            "desc": "Native vs FX contribution timeline by basis updates.",
+            "trend_context": "Compare cumulative native-move contribution vs FX contribution.",
+            "action_href": "/history",
+            "action_label": "Open History",
+        },
     ]
 
     return templates.TemplateResponse(
@@ -246,16 +309,27 @@ async def employment_tax_events_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/reconcile", response_class=HTMLResponse, include_in_schema=False)
-async def reconcile_page(request: Request) -> HTMLResponse:
+async def reconcile_page(
+    request: Request,
+    lookback_days: int = Query(30, ge=7, le=365),
+) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
     settings = _load_settings()
     db_path = _state.get_db_path()
-    payload = StrategicService.get_cross_page_reconcile(settings=settings, db_path=db_path)
+    payload = StrategicService.get_cross_page_reconcile(
+        settings=settings,
+        db_path=db_path,
+        lookback_days=lookback_days,
+    )
     return templates.TemplateResponse(
         request,
         "reconcile.html",
-        {"request": request, "payload": payload},
+        {
+            "request": request,
+            "payload": payload,
+            "lookback_days": lookback_days,
+        },
         media_type=_HTML_UTF8_MEDIA_TYPE,
     )
 

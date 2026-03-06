@@ -44,6 +44,29 @@
   </div>
 </form>
 
+{% if assumption_badges %}
+<div class="card card--inner">
+  <div class="card__header">
+    <h2 class="card__title">CGT Assumption Basis</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for badge in assumption_badges %}
+        <tr>
+          <td>
+            <span class="badge badge-{{ badge.style }}">{{ badge.label }}</span>
+          </td>
+          <td>{{ badge.detail }}</td>
+          <td class="num"><a href="/settings">Settings</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <!-- Summary stats -->
 <div class="stats">
   <div class="stat">
@@ -173,5 +196,4 @@
 </p>
 
 {% endblock %}
-
 

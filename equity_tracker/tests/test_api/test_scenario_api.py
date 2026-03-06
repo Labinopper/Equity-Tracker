@@ -77,6 +77,8 @@ def test_scenario_lab_ui_page_renders(client):
     assert "Scenario Lab" in page.text
     assert "Build Scenario" in page.text
     assert "Scenario Comparison" in page.text
+    assert "Scenario Templates" in page.text
+    assert "Load Inputs" in page.text
 
 
 def test_api_scenario_run_and_get_by_id(client):
@@ -103,6 +105,8 @@ def test_api_scenario_run_and_get_by_id(client):
     assert payload["hide_values"] is False
     assert payload["totals"]["total_proceeds_gbp"] == "60.00"
     assert payload["totals"]["total_cost_basis_gbp"] == "30.00"
+    assert payload["input_snapshot"]["legs"][0]["security_id"] == sec_id
+    assert payload["legs"][0]["trace_links"]["reconcile_security_href"].startswith("/reconcile")
 
     scenario_id = payload["scenario_id"]
     get_resp = client.get(f"/api/scenarios/{scenario_id}")
@@ -110,6 +114,7 @@ def test_api_scenario_run_and_get_by_id(client):
     fetched = get_resp.json()
     assert fetched["scenario_id"] == scenario_id
     assert len(fetched["legs"]) == 1
+    assert fetched["input_snapshot"]["legs"][0]["security_id"] == sec_id
 
 
 def test_api_scenario_run_returns_422_for_quantity_above_available(client):

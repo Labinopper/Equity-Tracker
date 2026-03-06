@@ -6,6 +6,7 @@
 
 <p class="muted">
   Trace paths:
+  <a href="#trace-drift-decomposition">Drift decomposition</a> |
   <a href="#trace-contributing-lots">Contributing lots</a> |
   <a href="#trace-audit-mutations">Recent audit mutations</a>
 </p>
@@ -37,6 +38,60 @@
 {% if payload.notes %}
 <div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
 {% endif %}
+
+<div class="card" id="trace-drift-decomposition">
+  <div class="card__header"><h2 class="card__title">Trace: Prior-Snapshot Drift Decomposition</h2></div>
+  <form method="get" action="/reconcile" class="filter-bar">
+    <label for="lookback_days" class="filter-label">Lookback (days):</label>
+    <input id="lookback_days" name="lookback_days" type="number" min="7" max="365" value="{{ lookback_days }}">
+    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+  </form>
+  {% if payload.drift_panel and payload.drift_panel.has_data %}
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Window</th><td>{{ payload.drift_panel.prior_date }} to {{ payload.drift_panel.current_date }}</td></tr>
+        <tr><th>Total Value Change</th><td class="num">&pound;{{ payload.drift_panel.total_change_gbp|money }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Cause</th>
+          <th class="num">Drift</th>
+          <th class="num">Mutations</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.drift_panel.rows %}
+        <tr>
+          <td>{{ row.cause }}</td>
+          <td class="num">&pound;{{ row.amount_gbp|money }}</td>
+          <td class="num">{{ row.mutation_count }}</td>
+          <td>{{ row.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if payload.drift_panel.notes %}
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in payload.drift_panel.notes %}
+        <tr><td class="muted">{{ note }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="muted">Drift decomposition is unavailable for the selected lookback window.</p>
+  {% endif %}
+</div>
 
 <div class="card" id="trace-contributing-lots">
   <div class="card__header"><h2 class="card__title">Trace: Contributing Lots</h2></div>

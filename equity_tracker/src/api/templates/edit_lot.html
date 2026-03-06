@@ -26,6 +26,9 @@
   <form id="edit-lot-form" method="post" action="/portfolio/edit-lot" class="edit-lot-form">
     <input type="hidden" name="lot_id" value="{{ lot.id }}">
     <input type="hidden" id="disposed_qty" value="{{ disposed_qty }}">
+    <input type="hidden" id="original_quantity" value="{{ lot.quantity }}">
+    <input type="hidden" id="original_acquisition_price" value="{{ lot.acquisition_price_gbp }}">
+    <input type="hidden" id="original_true_cost" value="{{ lot.true_cost_per_share_gbp }}">
 
     <div class="form-grid">
       <div class="form-field">
@@ -81,6 +84,15 @@
       {% endif %}
     </div>
 
+    <div class="edit-summary" id="edit-impact-summary">
+      <div class="edit-summary__title">Downstream Impact Preview</div>
+      <div class="edit-summary__row">Quantity Delta: <strong id="impact-qty-delta">-</strong></div>
+      <div class="edit-summary__row">Cost Basis Total Delta: <strong id="impact-cost-delta">-</strong></div>
+      <div class="edit-summary__row">True Cost Total Delta: <strong id="impact-true-cost-delta">-</strong></div>
+      <div class="edit-summary__row">Sellability / Risk Flag: <strong id="impact-risk-flag">-</strong></div>
+      <div class="edit-summary__row">Impacted Surfaces: <strong><a href="/">Portfolio</a>, <a href="/history">History</a>, <a href="/reconcile">Reconcile</a></strong></div>
+    </div>
+
     <div class="form-field form-field-inline">
       <label class="checkbox-inline">
         <input id="confirm_changes" name="confirm_changes" type="checkbox" value="yes" required>
@@ -99,6 +111,9 @@
 (function () {
   var quantityEl = document.getElementById("quantity");
   var disposedEl = document.getElementById("disposed_qty");
+  var originalQuantityEl = document.getElementById("original_quantity");
+  var originalAcqPriceEl = document.getElementById("original_acquisition_price");
+  var originalTrueCostEl = document.getElementById("original_true_cost");
   var acqDateEl = document.getElementById("acquisition_date");
   var taxYearEl = document.getElementById("tax_year");
   var acqPriceEl = document.getElementById("acquisition_price_gbp");
@@ -111,10 +126,58 @@
   var summaryAcqPriceEl = document.getElementById("summary-acq-price");
   var summaryTrueCostEl = document.getElementById("summary-true-cost");
   var summaryBrokerCurrencyEl = document.getElementById("summary-broker-currency");
+  var impactQtyDeltaEl = document.getElementById("impact-qty-delta");
+  var impactCostDeltaEl = document.getElementById("impact-cost-delta");
+  var impactTrueCostDeltaEl = document.getElementById("impact-true-cost-delta");
+  var impactRiskFlagEl = document.getElementById("impact-risk-flag");
 
   function asNum(v) {
     var n = Number(v);
     return Number.isFinite(n) ? n : NaN;
+  }
+
+  function formatSigned(v) {
+    if (!Number.isFinite(v)) return "-";
+    var sign = v >= 0 ? "+" : "-";
+    return sign + Math.abs(v).toFixed(2);
+  }
+
+  function updateImpactSummary() {
+    var qty = asNum(quantityEl.value);
+    var oldQty = asNum(originalQuantityEl.value);
+    var acqPrice = asNum(acqPriceEl.value);
+    var oldAcqPrice = asNum(originalAcqPriceEl.value);
+    var trueCost = asNum(trueCostEl.value);
+    var oldTrueCost = asNum(originalTrueCostEl.value);
+
+    if (
+      !Number.isFinite(qty)
+      || !Number.isFinite(oldQty)
+      || !Number.isFinite(acqPrice)
+      || !Number.isFinite(oldAcqPrice)
+      || !Number.isFinite(trueCost)
+      || !Number.isFinite(oldTrueCost)
+    ) {
+      impactQtyDeltaEl.textContent = "-";
+      impactCostDeltaEl.textContent = "-";
+      impactTrueCostDeltaEl.textContent = "-";
+      impactRiskFlagEl.textContent = "Pending valid numeric inputs.";
+      return;
+    }
+
+    var qtyDelta = qty - oldQty;
+    var costDelta = (qty * acqPrice) - (oldQty * oldAcqPrice);
+    var trueCostDelta = (qty * trueCost) - (oldQty * oldTrueCost);
+    var disposedQty = asNum(disposedEl.value);
+    var risk = "Updates FIFO basis for future disposals from this lot.";
+    if (Number.isFinite(disposedQty) && qty < disposedQty) {
+      risk = "Invalid: quantity would fall below disposed quantity.";
+    }
+
+    impactQtyDeltaEl.textContent = formatSigned(qtyDelta);
+    impactCostDeltaEl.textContent = (costDelta >= 0 ? "+" : "-") + "\u00A3" + Math.abs(costDelta).toFixed(2);
+    impactTrueCostDeltaEl.textContent = (trueCostDelta >= 0 ? "+" : "-") + "\u00A3" + Math.abs(trueCostDelta).toFixed(2);
+    impactRiskFlagEl.textContent = risk;
   }
 
   function updateSummary() {
@@ -133,6 +196,7 @@
     if (summaryBrokerCurrencyEl) {
       summaryBrokerCurrencyEl.textContent = brokerCurrencyEl ? (brokerCurrencyEl.value || "-") : "-";
     }
+    updateImpactSummary();
   }
 
   [quantityEl, acqDateEl, taxYearEl, acqPriceEl, trueCostEl, brokerCurrencyEl].forEach(function (el) {

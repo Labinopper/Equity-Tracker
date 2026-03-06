@@ -18,11 +18,19 @@
   </select>
   <label for="record_id" class="filter-label">Record ID:</label>
   <input id="record_id" name="record_id" type="text" value="{{ active_record_id }}" placeholder="Exact UUID">
+  <label for="date_from" class="filter-label">From:</label>
+  <input id="date_from" name="date_from" type="date" value="{{ active_date_from }}">
+  <label for="date_to" class="filter-label">To:</label>
+  <input id="date_to" name="date_to" type="date" value="{{ active_date_to }}">
   <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
-  {% if active_table or active_record_id %}
+  {% if active_table or active_record_id or active_date_from or active_date_to %}
   <a href="/audit" class="btn btn-secondary btn-sm">Clear filter</a>
   {% endif %}
 </form>
+
+{% if filter_error %}
+<div class="alert alert-error">{{ filter_error }}</div>
+{% endif %}
 
 {% if not entries %}
 <div class="empty-state">
@@ -64,6 +72,31 @@
           <td class="audit-changes-cell">
             {% if e.old_values_json or e.new_values_json %}
             <div class="audit-changes">
+              {% if e.diff_rows %}
+              <details>
+                <summary class="audit-changes__label">Structured Diff ({{ e.diff_rows|length }} field{% if e.diff_rows|length != 1 %}s{% endif %})</summary>
+                <div class="table-wrap">
+                  <table class="audit-diff-table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Before</th>
+                        <th>After</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in e.diff_rows %}
+                      <tr class="audit-diff-row audit-diff-row--{{ row.change_type }}">
+                        <td><code>{{ row.field }}</code></td>
+                        <td>{% if row.before %}<code>{{ row.before }}</code>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+                        <td>{% if row.after %}<code>{{ row.after }}</code>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+              {% endif %}
               {% if e.old_values_json %}
               <details>
                 <summary class="audit-changes__label audit-changes__label--old">Before</summary>

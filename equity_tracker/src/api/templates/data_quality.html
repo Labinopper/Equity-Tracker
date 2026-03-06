@@ -12,6 +12,26 @@
   <div class="stat"><span class="stat__label">Missing Tax Estimate Lots</span><span class="stat__value">{{ payload.summary.missing_tax_estimate_lot_count }}</span></div>
 </div>
 
+{% set stale_total = payload.summary.stale_price_security_count + payload.summary.stale_fx_security_count %}
+{% set missing_total = payload.summary.missing_price_security_count + payload.summary.missing_price_lot_count %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Stale vs Missing Input Pressure</th><td class="num">{{ stale_total }} / {{ missing_total }}</td></tr>
+    <tr><th>Tax Plan Unpriced Lots</th><td class="num">{{ payload.tax_plan_freshness.unpriced_lot_count }}</td></tr>
+    <tr><th>Scenario/Simulate Missing Tax Estimates</th><td class="num">{{ payload.summary.missing_tax_estimate_lot_count }}</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Refresh market inputs</th><td><a href="/">Open Portfolio Refresh Controls</a></td></tr>
+    <tr><th>Adjust staleness thresholds</th><td><a href="/settings">Open Settings</a></td></tr>
+    <tr><th>Check cross-surface impact</th><td><a href="/reconcile">Open Reconcile</a></td></tr>
+  </tbody></table></div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Impact by Surface</h2></div>
   <div class="table-wrap"><table>

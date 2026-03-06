@@ -12,6 +12,46 @@
   <div class="stat stat--accent"><span class="stat__label">Economic After Fees</span><span class="stat__value">&pound;{{ payload.totals.realised_economic_after_fees_gbp|money }}</span></div>
 </div>
 
+{% set latest_fee_pct = payload.tax_year_rows[0].fee_pct_of_proceeds|float if payload.tax_year_rows else 0 %}
+{% set all_time_fee_pct = payload.totals.fee_pct_of_proceeds|float %}
+{% set fee_pct_delta = latest_fee_pct - all_time_fee_pct %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Latest Tax Year Fee % vs All-Time</th>
+          <td class="num {{ 'loss' if fee_pct_delta >= 0 else 'gain' }}">
+            {{ '+' if fee_pct_delta >= 0 else '' }}{{ fee_pct_delta|round(2) }}%
+          </td>
+        </tr>
+        <tr>
+          <th>Latest Tax Year Fee %</th>
+          <td class="num">{{ latest_fee_pct|round(2) }}%</td>
+        </tr>
+        <tr>
+          <th>All-Time Fee %</th>
+          <td class="num">{{ all_time_fee_pct|round(2) }}%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Execution-policy review</th><td><a href="/sell-plan">Open Sell Plan</a></td></tr>
+        <tr><th>Cross-surface delta trace</th><td><a href="/reconcile">Open Reconcile</a></td></tr>
+        <tr><th>Transfer-custody fee context</th><td><a href="/portfolio/transfer-lot">Open Transfer Lot</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">By Tax Year</h2></div>
   <div class="table-wrap">

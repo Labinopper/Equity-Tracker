@@ -339,6 +339,7 @@ class ReportService:
         table_name: str | None = None,
         record_id: str | None = None,
         since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[AuditLog]:
         """
         Return audit log entries, newest first.
@@ -347,6 +348,7 @@ class ReportService:
             table_name: Optional filter by table (e.g. "lots", "transactions").
             record_id : Optional filter by exact record id.
             since     : Optional datetime — only return entries on/after this UTC time.
+            until     : Optional datetime — only return entries on/before this UTC time.
 
         Returns a list of AuditLog ORM objects (detached after session close;
         scalar attributes are safe to access).
@@ -357,4 +359,5 @@ class ReportService:
                 table_name=table_name,
                 record_id=record_id,
                 since=since,
+                until=until,
             )

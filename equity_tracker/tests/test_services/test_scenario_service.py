@@ -88,11 +88,17 @@ def test_run_scenario_multi_leg_returns_aggregate_totals_and_retrievable_snapsho
     assert payload["totals"]["total_realised_gain_economic_gbp"] == "42.00"
     assert payload["totals"]["total_employment_tax_gbp"] == "0.00"
     assert payload["totals"]["total_net_after_employment_tax_gbp"] == "92.00"
+    assert payload["input_snapshot"]["execution_mode"] == "INDEPENDENT"
+    assert len(payload["input_snapshot"]["legs"]) == 2
+    assert payload["input_snapshot"]["legs"][0]["security_id"] == sec_a.id
+    assert payload["legs"][0]["trace_links"]["reconcile_security_href"].startswith("/reconcile")
+    assert payload["legs"][0]["trace_links"]["reconcile_audit_href"].endswith("#trace-audit-mutations")
 
     loaded = ScenarioService.get_scenario(payload["scenario_id"])
     assert loaded is not None
     assert loaded["scenario_id"] == payload["scenario_id"]
     assert len(loaded["legs"]) == 2
+    assert loaded["input_snapshot"]["legs"][1]["security_id"] == sec_b.id
 
 
 def test_run_scenario_rejects_quantity_above_available(app_context):
@@ -138,3 +144,4 @@ def test_run_scenario_returns_hidden_payload_when_hide_values_enabled(app_contex
     assert payload["hide_values"] is True
     assert payload["totals"] is None
     assert payload["hidden_reason"] == "Values hidden by privacy mode."
+    assert payload["input_snapshot"]["legs"][0]["security_id"] == sec.id

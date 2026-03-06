@@ -15,12 +15,15 @@
   <div class="card__header">
     <h2 class="card__title">Strategic Pages</h2>
   </div>
+  <p class="muted">Each page includes a deterministic comparison lens and a direct next-action link.</p>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
           <th>Page</th>
           <th>Description</th>
+          <th>Trend Context</th>
+          <th>Quick Action</th>
           <th>Open</th>
         </tr>
       </thead>
@@ -29,6 +32,8 @@
         <tr>
           <td>{{ item.label }}</td>
           <td>{{ item.desc }}</td>
+          <td>{{ item.trend_context }}</td>
+          <td><a href="{{ item.action_href }}">{{ item.action_label }}</a></td>
           <td><a href="{{ item.href }}">Open</a></td>
         </tr>
         {% endfor %}

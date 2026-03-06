@@ -5,6 +5,7 @@
 {% set stats = history_data.summary_stats or {} %}
 {% set total_series = history_data.total_series or [] %}
 {% set per_security = history_data.per_security or [] %}
+{% set major_shift_rows = history_data.major_shift_rows or [] %}
 
 <div class="page-title">
   <div>
@@ -157,6 +158,20 @@
 
   <div class="card security-history-card">
     <div class="card__header security-history-card__header">
+      <h2 class="card__title">Shift Decomposition</h2>
+    </div>
+    <p class="muted">Daily change split into deterministic components: price, quantity, FX residual, and dividends.</p>
+    {% if total_series | length == 0 %}
+    <p class="muted">No price history available.</p>
+    {% else %}
+    <div class="security-history-chart-wrap">
+      <canvas id="chart-decomposition-history" aria-label="Daily portfolio decomposition"></canvas>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card security-history-card">
+    <div class="card__header security-history-card__header">
       <h2 class="card__title">Drawdown From Peak</h2>
     </div>
     <p class="muted">Percentage decline from prior portfolio high.</p>
@@ -198,6 +213,39 @@
   </div>
 </div>
 {# ── Portfolio table (show/hide) ────────────────────────────────────────── #}
+{% if major_shift_rows %}
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Major Shift Decomposition</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="num">Total Change</th>
+          <th class="num">Price</th>
+          <th class="num">Quantity</th>
+          <th class="num">FX</th>
+          <th class="num">Dividends</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in major_shift_rows %}
+        <tr>
+          <td>{{ row.date }}</td>
+          <td class="num">&pound;{{ row.total_change_gbp|money }}</td>
+          <td class="num">&pound;{{ row.price_component_gbp|money }}</td>
+          <td class="num">&pound;{{ row.quantity_component_gbp|money }}</td>
+          <td class="num">&pound;{{ row.fx_component_gbp|money }}</td>
+          <td class="num">&pound;{{ row.dividends_component_gbp|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Data Table</h2>
@@ -277,6 +325,7 @@
   var portfolioChart = null;
   var gainChart = null;
   var valueChangeChart = null;
+  var decompositionChart = null;
   var drawdownChart = null;
   var activityChart = null;
   var coverageChart = null;
@@ -284,6 +333,7 @@
   var portfolioFilteredRef = [];
   var gainFilteredRef = [];
   var valueChangeFilteredRef = [];
+  var decompositionFilteredRef = [];
   var drawdownFilteredRef = [];
   var activityFilteredRef = [];
   var coverageFilteredRef = [];
@@ -406,6 +456,13 @@
       var delta = cur - prev;
       prev = cur;
       return delta;
+    });
+  }
+
+  function buildDecompositionSeries(filtered, key) {
+    return filtered.map(function (p) {
+      if (hideValues) return null;
+      return toNum(p[key]);
     });
   }
 
@@ -799,6 +856,128 @@
     });
   }
 
+  function buildDecompositionChart(range) {
+    var filtered = filterByRange(totalSeries, range);
+    decompositionFilteredRef = filtered;
+    var labels = filtered.map(function (p) { return p.date; });
+    var priceValues = buildDecompositionSeries(filtered, "decomp_price_gbp");
+    var quantityValues = buildDecompositionSeries(filtered, "decomp_quantity_gbp");
+    var fxValues = buildDecompositionSeries(filtered, "decomp_fx_gbp");
+    var dividendValues = buildDecompositionSeries(filtered, "decomp_dividends_gbp");
+
+    var canvas = document.getElementById("chart-decomposition-history");
+    if (!canvas || typeof Chart === "undefined") return;
+
+    if (decompositionChart) {
+      decompositionChart.data.labels = labels;
+      decompositionChart.data.datasets[0].data = priceValues;
+      decompositionChart.data.datasets[1].data = quantityValues;
+      decompositionChart.data.datasets[2].data = fxValues;
+      decompositionChart.data.datasets[3].data = dividendValues;
+      decompositionChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      decompositionChart.update();
+      return;
+    }
+
+    decompositionChart = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Price",
+            data: priceValues,
+            backgroundColor: "rgba(61, 120, 240, 0.45)",
+            borderColor: theme.accent,
+            borderWidth: 1,
+            barPercentage: 0.85,
+            categoryPercentage: 0.9,
+            stack: "decomposition"
+          },
+          {
+            label: "Quantity",
+            data: quantityValues,
+            backgroundColor: "rgba(0, 209, 140, 0.45)",
+            borderColor: theme.gain,
+            borderWidth: 1,
+            barPercentage: 0.85,
+            categoryPercentage: 0.9,
+            stack: "decomposition"
+          },
+          {
+            label: "FX",
+            data: fxValues,
+            backgroundColor: "rgba(240, 160, 48, 0.45)",
+            borderColor: theme.warning,
+            borderWidth: 1,
+            barPercentage: 0.85,
+            categoryPercentage: 0.9,
+            stack: "decomposition"
+          },
+          {
+            label: "Dividends",
+            data: dividendValues,
+            backgroundColor: "rgba(160, 130, 220, 0.45)",
+            borderColor: "#a082dc",
+            borderWidth: 1,
+            barPercentage: 0.85,
+            categoryPercentage: 0.9,
+            stack: "decomposition"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: maxDateTicks(labels.length),
+              maxRotation: 0,
+              callback: dateTickCallback
+            }
+          },
+          y: {
+            stacked: true,
+            ticks: {
+              callback: function (v) {
+                return formatMoney(Math.abs(v));
+              }
+            }
+          }
+        },
+        plugins: {
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: function (ctx) {
+                if (hideValues) return " -";
+                var v = ctx.parsed.y;
+                if (v === null || v === undefined) return " -";
+                return " " + ctx.dataset.label + ": " + (v >= 0 ? "+" : "") + formatMoney(v);
+              },
+              afterBody: function (ctxArr) {
+                var idx = ctxArr[0] && ctxArr[0].dataIndex;
+                if (idx === undefined) return [];
+                var row = decompositionFilteredRef[idx];
+                var total = row ? toNum(row.decomp_total_change_gbp) : null;
+                var lines = [];
+                if (total !== null && !hideValues) {
+                  lines.push("Total change: " + (total >= 0 ? "+" : "") + formatMoney(total));
+                }
+                lines = lines.concat(buildShareEventLines(row));
+                return lines.concat(buildLockWindowLines(row));
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
   function buildDrawdownChart(range) {
     var filtered = filterByRange(totalSeries, range);
     drawdownFilteredRef = filtered;
@@ -1060,6 +1239,7 @@
     buildPortfolioChart(range);
     buildGainChart(range);
     buildValueChangeChart(range);
+    buildDecompositionChart(range);
     buildDrawdownChart(range);
     buildActivityChart(range);
     buildCoverageChart(range);

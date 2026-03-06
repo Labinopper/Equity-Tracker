@@ -41,6 +41,52 @@
   <div class="stat stat--accent"><span class="stat__label">Net After Tax</span><span class="stat__value">&pound;{{ payload.totals.net_after_tax_gbp|money }}</span></div>
 </div>
 
+{% set gross_total = payload.totals.gross_value_gbp|float %}
+{% set retained_total = payload.totals.retained_value_gbp|float %}
+{% set forfeited_total = payload.totals.forfeited_value_gbp|float %}
+{% set retained_pct = ((retained_total / gross_total) * 100) if gross_total > 0 else 0 %}
+{% set forfeited_pct = ((forfeited_total / gross_total) * 100) if gross_total > 0 else 0 %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Comparison Context</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Retained vs Gross</th>
+          <td class="num">{{ retained_pct|round(2) }}%</td>
+        </tr>
+        <tr>
+          <th>Forfeited vs Gross</th>
+          <td class="num">{{ forfeited_pct|round(2) }}%</td>
+        </tr>
+        <tr>
+          <th>Net After Tax vs Gross</th>
+          <td class="num">
+            {% if gross_total > 0 %}
+            {{ ((payload.totals.net_after_tax_gbp|float / gross_total) * 100)|round(2) }}%
+            {% else %}
+            0.00%
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Multi-leg what-if follow-up</th><td><a href="/scenario-lab">Open Scenario Lab</a></td></tr>
+        <tr><th>Custody-transfer workflow</th><td><a href="/portfolio/transfer-lot">Open Transfer Lot</a></td></tr>
+        <tr><th>Tax-input assumptions</th><td><a href="/settings">Open Settings</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Per-Security Exit View</h2></div>
   <div class="table-wrap">

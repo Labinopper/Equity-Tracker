@@ -12,6 +12,62 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
+{% set completeness = settings_completeness or {} %}
+{% set constrained = completeness.constrained_surfaces or [] %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Settings Completeness</h2></div>
+  <div class="stats">
+    <div class="stat {{ 'stat--gain' if (completeness.score_pct or 0) >= 80 else 'stat--warning' }}">
+      <span class="stat__label">Completeness Score</span>
+      <span class="stat__value">{{ completeness.score_pct or 0 }}%</span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Checklist Item</th>
+          <th>Status</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in completeness.checks or [] %}
+        <tr>
+          <td>{{ item.label }}</td>
+          <td>{% if item.ok %}<span class="badge badge-sellable">Complete</span>{% else %}<span class="badge badge-warning">Constrained</span>{% endif %}</td>
+          <td>{{ item.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Constrained Surface</th>
+          <th>Reason</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if constrained %}
+        {% for row in constrained %}
+        <tr>
+          <td>{{ row.surface }}</td>
+          <td>{{ row.reason }}</td>
+          <td><a href="{{ row.href }}">Open</a></td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr><td colspan="3" class="muted">No constrained surfaces detected from current settings.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <form method="post" action="/settings">
 

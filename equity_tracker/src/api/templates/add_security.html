@@ -47,6 +47,26 @@
         </div>
       </div>
 
+      <div id="client-conflict-helper" class="alert alert-warning" style="display:none;"></div>
+      {% if conflict_helper %}
+      <div class="alert alert-warning">
+        <strong>Conflict Resolution Helper:</strong>
+        <div>Ticker <code>{{ conflict_helper.ticker }}</code> already exists in this portfolio.</div>
+        {% if conflict_helper.exact_matches %}
+        <div class="muted">Exact ticker/currency match exists; update the existing security instead of creating a duplicate.</div>
+        {% endif %}
+        {% if conflict_helper.alternate_currency_matches %}
+        <div class="muted">
+          Alternate currency entries:
+          {% for row in conflict_helper.alternate_currency_matches %}
+          <span><code>{{ row.ticker }}</code> {{ row.currency }}{% if row.exchange %} ({{ row.exchange }}){% endif %}</span>{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          . Provide ISIN/exchange disambiguation if intentionally adding another listing.
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
       {# Units precision (always visible) #}
       <div class="form-field">
         <label for="units_precision">Units Precision</label>
@@ -131,6 +151,8 @@
   </form>
 </div>
 
+<script id="existing-security-index-json" type="application/json">{{ (existing_security_index or []) | tojson }}</script>
+
 <script>
 (function () {
   "use strict";
@@ -139,6 +161,8 @@
   const searchInput     = document.getElementById("catalog-search");
   const dropdown        = document.getElementById("catalog-dropdown");
   const selectedChip    = document.getElementById("selected-instrument");
+  const conflictHelperBox = document.getElementById("client-conflict-helper");
+  const existingSecurityIndexNode = document.getElementById("existing-security-index-json");
   const chipSymbol      = document.getElementById("chip-symbol");
   const chipName        = document.getElementById("chip-name");
   const chipExchange    = document.getElementById("chip-exchange");
@@ -173,6 +197,17 @@
 
   let debounceTimer = null;
   let isManualMode  = false;
+  const existingSecurityIndex = (function () {
+    if (!existingSecurityIndexNode) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(existingSecurityIndexNode.textContent || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_err) {
+      return [];
+    }
+  })();
 
   /* -- Restore state on error re-render -------------------------------- */
   (function restoreState () {
@@ -182,6 +217,7 @@
     } else if (fCatalogId.value) {
       showChip(fTicker.value, fName.value, fExchange.value, fCurrency.value);
     }
+    renderConflictHelper(fTicker.value, fCurrency.value);
   })();
 
   /* -- Catalogue search ------------------------------------------------- */
@@ -269,6 +305,7 @@
     searchInput.value = "";
     hideDropdown();
     showChip(item.symbol, item.name, item.exchange, item.currency);
+    renderConflictHelper(item.symbol, item.currency);
   }
 
   function showChip(symbol, name, exchange, currency) {
@@ -292,6 +329,7 @@
     searchInput.value = "";
     searchInput.focus();
     submitBtn.disabled = true;
+    renderConflictHelper("", "");
   });
 
   /* -- Manual override -------------------------------------------------- */
@@ -330,6 +368,7 @@
     searchInput.style.display   = "";
 
     submitBtn.disabled = !fCatalogId.value;
+    renderConflictHelper(fTicker.value, fCurrency.value);
   }
 
   function wireManualInputs() {
@@ -340,6 +379,7 @@
       fExchange.value = mExchange.value.trim().toUpperCase();
       fIsin.value     = mIsin.value.trim();
       /* units_precision is in the manual form and shares the name attribute */
+      renderConflictHelper(fTicker.value, fCurrency.value);
     }
     [mTicker, mName, mCurrency, mIsin, mExchange].forEach(function (el) {
       el.removeEventListener("input", sync);
@@ -369,6 +409,51 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function renderConflictHelper(ticker, currency) {
+    if (!conflictHelperBox) {
+      return;
+    }
+    const t = String(ticker || "").trim().toUpperCase();
+    if (!t) {
+      conflictHelperBox.style.display = "none";
+      conflictHelperBox.innerHTML = "";
+      return;
+    }
+    const c = String(currency || "").trim().toUpperCase();
+    const matches = existingSecurityIndex.filter(function (row) {
+      return String(row.ticker || "").toUpperCase() === t;
+    });
+    if (!matches.length) {
+      conflictHelperBox.style.display = "none";
+      conflictHelperBox.innerHTML = "";
+      return;
+    }
+    const exact = matches.filter(function (row) {
+      return String(row.currency || "").toUpperCase() === c;
+    });
+    const alternate = matches.filter(function (row) {
+      return String(row.currency || "").toUpperCase() !== c;
+    });
+    let html = "<strong>Conflict Resolution Helper:</strong> ";
+    if (exact.length) {
+      html += "Exact ticker/currency match exists. Add lots to the existing security instead of creating a duplicate.";
+    } else if (alternate.length) {
+      html += "Ticker exists in another currency. Confirm ISIN/exchange before saving a separate listing.";
+    } else {
+      html += "Ticker already exists. Review existing entries before submit.";
+    }
+    if (alternate.length) {
+      html += "<div class='muted'>Existing entries: ";
+      html += alternate.map(function (row) {
+        const ex = row.exchange ? (" (" + esc(row.exchange) + ")") : "";
+        return "<code>" + esc(row.ticker) + "</code> " + esc(row.currency || "") + ex;
+      }).join(", ");
+      html += ".</div>";
+    }
+    conflictHelperBox.innerHTML = html;
+    conflictHelperBox.style.display = "block";
   }
 
   /* -- Initial submit button state -------------------------------------- */

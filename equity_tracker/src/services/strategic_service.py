@@ -21,6 +21,7 @@ from ..settings import AppSettings
 from .capital_stack_service import CapitalStackService
 from .dividend_service import DividendService
 from .exposure_service import ExposureService
+from .history_service import HistoryService
 from .portfolio_service import PortfolioService, _estimate_sell_all_employment_tax
 from .report_service import ReportService
 from .tax_plan_service import TaxPlanService
@@ -594,12 +595,164 @@ class StrategicService:
                 "Derived rows are deterministic from disposal allocations and configured tax rates.",
             ],
         }
+
     @staticmethod
-    def get_cross_page_reconcile(*, settings: AppSettings | None, db_path) -> dict[str, Any]:
+    def _reconcile_drift_panel(
+        *,
+        settings: AppSettings | None,
+        lookback_days: int,
+    ) -> dict[str, Any]:
+        history = HistoryService.get_portfolio_history(settings=settings)
+        series = history.get("total_series") or []
+        if len(series) < 2:
+            return {
+                "has_data": False,
+                "lookback_days": lookback_days,
+                "rows": [],
+                "notes": [
+                    "Not enough portfolio history points to build drift decomposition.",
+                ],
+            }
+
+        lookback = max(int(lookback_days), 1)
+        cutoff = date.today() - timedelta(days=lookback)
+
+        prior_idx = 0
+        for idx, row in enumerate(series):
+            try:
+                row_date = date.fromisoformat(str(row.get("date")))
+            except ValueError:
+                continue
+            if row_date <= cutoff:
+                prior_idx = idx
+            else:
+                break
+
+        if prior_idx >= len(series) - 1:
+            prior_idx = max(0, len(series) - 2)
+
+        prior_row = series[prior_idx]
+        current_row = series[-1]
+        interval_rows = series[prior_idx + 1 :]
+
+        price_component = _q_money(
+            sum((_safe_decimal(row.get("decomp_price_gbp")) for row in interval_rows), Decimal("0"))
+        )
+        fx_component = _q_money(
+            sum((_safe_decimal(row.get("decomp_fx_gbp")) for row in interval_rows), Decimal("0"))
+        )
+        quantity_component = _q_money(
+            sum((_safe_decimal(row.get("decomp_quantity_gbp")) for row in interval_rows), Decimal("0"))
+        )
+        transaction_component = _q_money(
+            sum((_safe_decimal(row.get("decomp_dividends_gbp")) for row in interval_rows), Decimal("0"))
+        )
+        settings_component = Decimal("0.00")
+
+        total_change = _q_money(
+            _safe_decimal(current_row.get("total_value_gbp"))
+            - _safe_decimal(prior_row.get("total_value_gbp"))
+        )
+        explained_change = _q_money(
+            price_component
+            + fx_component
+            + quantity_component
+            + transaction_component
+            + settings_component
+        )
+        residual = _q_money(total_change - explained_change)
+
+        prior_date_raw = str(prior_row.get("date") or "")
+        try:
+            prior_date = date.fromisoformat(prior_date_raw)
+            since_dt = datetime.combine(prior_date, datetime.min.time())
+        except ValueError:
+            since_dt = None
+            prior_date_raw = ""
+
+        mutation_counts = {
+            "price_fx": 0,
+            "quantity": 0,
+            "transactions": 0,
+            "settings": 0,
+        }
+        if since_dt is not None:
+            for entry in ReportService.audit_log(since=since_dt):
+                table_name = str(entry.table_name or "").lower()
+                if table_name in {"price_history", "fx_rates"}:
+                    mutation_counts["price_fx"] += 1
+                elif table_name == "lots":
+                    mutation_counts["quantity"] += 1
+                elif table_name in {"transactions", "lot_disposals", "employment_tax_events", "dividend_entries"}:
+                    mutation_counts["transactions"] += 1
+                elif table_name in {"settings", "app_settings"}:
+                    mutation_counts["settings"] += 1
+
+        return {
+            "has_data": True,
+            "lookback_days": lookback,
+            "prior_date": prior_date_raw or None,
+            "current_date": current_row.get("date"),
+            "total_change_gbp": str(total_change),
+            "rows": [
+                {
+                    "cause": "Price",
+                    "amount_gbp": str(price_component),
+                    "detail": "Daily price move at prior-day quantity basis.",
+                    "mutation_count": mutation_counts["price_fx"],
+                },
+                {
+                    "cause": "FX",
+                    "amount_gbp": str(fx_component),
+                    "detail": "Residual FX move after price/quantity/dividend effects.",
+                    "mutation_count": mutation_counts["price_fx"],
+                },
+                {
+                    "cause": "Quantity",
+                    "amount_gbp": str(quantity_component),
+                    "detail": "Quantity changes at prior-day price (buy/sell/transfer effect).",
+                    "mutation_count": mutation_counts["quantity"],
+                },
+                {
+                    "cause": "Transactions",
+                    "amount_gbp": str(transaction_component),
+                    "detail": "Cashflow component from dividend-ledger deltas in the interval.",
+                    "mutation_count": mutation_counts["transactions"],
+                },
+                {
+                    "cause": "Settings",
+                    "amount_gbp": str(settings_component),
+                    "detail": "No deterministic settings-value reprice is applied in this panel.",
+                    "mutation_count": mutation_counts["settings"],
+                },
+                {
+                    "cause": "Residual",
+                    "amount_gbp": str(residual),
+                    "detail": "Rounding remainder after component aggregation.",
+                    "mutation_count": 0,
+                },
+            ],
+            "notes": [
+                "Drift components are aggregated from portfolio-history decomposition rows.",
+                "Settings impact is shown as mutation count; value-effect remains zero without a deterministic replay engine.",
+            ],
+        }
+
+    @staticmethod
+    def get_cross_page_reconcile(
+        *,
+        settings: AppSettings | None,
+        db_path,
+        lookback_days: int = 30,
+    ) -> dict[str, Any]:
         summary = PortfolioService.get_portfolio_summary(settings=settings, use_live_true_cost=False)
         exposure = ExposureService.get_snapshot(settings=settings, db_path=db_path, summary=summary)
         stack = CapitalStackService.get_snapshot(settings=settings, db_path=db_path, summary=summary)
         tax_plan = TaxPlanService.get_summary(settings=settings)
+        drift_panel = StrategicService._reconcile_drift_panel(
+            settings=settings,
+            lookback_days=lookback_days,
+        )
 
         gross = _safe_decimal(summary.total_market_value_gbp)
         net_value = _safe_decimal(summary.est_total_net_liquidation_gbp)
@@ -716,9 +869,11 @@ class StrategicService:
             "tax_plan_realised_cgt_gbp": str(_q_money(_safe_decimal(realised_to_date.get("total_cgt_gbp")))),
             "contributing_lot_rows": contributing_lot_rows[:120],
             "recent_audit_rows": recent_audit_rows,
+            "drift_panel": drift_panel,
             "trace_links": {
                 "contributing_lots": "/reconcile#trace-contributing-lots",
                 "audit_mutations": "/reconcile#trace-audit-mutations",
+                "drift_panel": "/reconcile#trace-drift-decomposition",
             },
             "notes": [
                 "Cross-page differences are scope differences, not arithmetic contradictions.",

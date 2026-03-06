@@ -16,6 +16,32 @@
   </div>
 </div>
 
+{% set ns = namespace(native_total=0.0, fx_total=0.0, total_abs=0.0) %}
+{% for row in payload.date_rows %}
+  {% set ns.native_total = ns.native_total + (row.native_move_gbp|float) %}
+  {% set ns.fx_total = ns.fx_total + (row.fx_move_gbp|float) %}
+  {% set ns.total_abs = ns.total_abs + (row.total_change_gbp|float)|abs %}
+{% endfor %}
+{% set fx_share_pct = ((ns.fx_total|abs) / ns.total_abs * 100) if ns.total_abs > 0 else 0 %}
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Cumulative Native Move</th><td class="num">&pound;{{ ns.native_total|round(2) }}</td></tr>
+    <tr><th>Cumulative FX Move</th><td class="num">&pound;{{ ns.fx_total|round(2) }}</td></tr>
+    <tr><th>FX Share of Absolute Change</th><td class="num">{{ fx_share_pct|round(2) }}%</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Portfolio trend review</th><td><a href="/history">Open History</a></td></tr>
+    <tr><th>Cross-surface drift context</th><td><a href="/reconcile">Open Reconcile</a></td></tr>
+    <tr><th>Input freshness checks</th><td><a href="/data-quality">Open Data Quality</a></td></tr>
+  </tbody></table></div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Aggregate By Date</h2></div>
   <div class="table-wrap"><table>

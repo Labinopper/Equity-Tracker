@@ -113,6 +113,7 @@ class AuditRepository:
         table_name: str | None = None,
         record_id: str | None = None,
         since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[AuditLog]:
         """
         Return audit log entries, newest first.
@@ -131,4 +132,6 @@ class AuditRepository:
             stmt = stmt.where(AuditLog.record_id == record_id)
         if since is not None:
             stmt = stmt.where(AuditLog.changed_at >= since)
+        if until is not None:
+            stmt = stmt.where(AuditLog.changed_at <= until)
         return list(self._s.execute(stmt).scalars())

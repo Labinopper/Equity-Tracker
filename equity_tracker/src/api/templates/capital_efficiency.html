@@ -34,6 +34,46 @@
   </div>
 </div>
 
+{% set annualized_delta = payload.annualized_drag_rate_pct|float - payload.structural_drag_rate_pct|float %}
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Annualized vs Observed Drag Rate</th>
+          <td class="num {{ 'loss' if annualized_delta >= 0 else 'gain' }}">
+            {{ '+' if annualized_delta >= 0 else '' }}{{ annualized_delta|round(2) }}%
+          </td>
+        </tr>
+        <tr>
+          <th>Fee Drag (12m vs All-Time)</th>
+          <td class="num">
+            &pound;{{ payload.realized_fee_drag_12m_gbp|money }} / &pound;{{ payload.realized_fee_drag_total_gbp|money }}
+          </td>
+        </tr>
+        <tr>
+          <th>Window Start</th>
+          <td>{{ payload.observed_window_start }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Fee concentration drill-down</th><td><a href="/fee-drag">Open Fee Drag Ledger</a></td></tr>
+        <tr><th>Tax-assumption review</th><td><a href="/tax-plan">Open Tax Plan</a></td></tr>
+        <tr><th>Cross-page scope reconciliation</th><td><a href="/reconcile">Open Reconcile</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card__header"><h2 class="card__title">Drag Components</h2></div>
   <div class="table-wrap">

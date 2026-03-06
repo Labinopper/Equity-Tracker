@@ -210,6 +210,10 @@ class DividendService:
                 "summary": {
                     "trailing_12m_total_gbp": None,
                     "forecast_12m_total_gbp": None,
+                    "actual_to_date_total_gbp": None,
+                    "forecast_entry_total_gbp": None,
+                    "actual_entry_count": None,
+                    "forecast_entry_count": None,
                     "all_time_total_gbp": None,
                     "estimated_tax_gbp": None,
                     "estimated_net_dividends_gbp": None,
@@ -239,6 +243,10 @@ class DividendService:
         all_time_isa = Decimal("0")
         trailing_total = Decimal("0")
         forecast_total = Decimal("0")
+        actual_to_date_total = Decimal("0")
+        forecast_entry_total = Decimal("0")
+        actual_entry_count = 0
+        forecast_entry_count = 0
 
         buckets: dict[str, dict[str, Decimal | int]] = {}
         security_buckets: dict[str, dict[str, Decimal | int | str]] = {}
@@ -280,6 +288,12 @@ class DividendService:
                 trailing_total += amount
             if as_of_date < entry.dividend_date <= forecast_end:
                 forecast_total += amount
+            if entry.dividend_date <= as_of_date:
+                actual_to_date_total += amount
+                actual_entry_count += 1
+            else:
+                forecast_entry_total += amount
+                forecast_entry_count += 1
 
             bucket = buckets.setdefault(
                 tax_year,
@@ -513,6 +527,10 @@ class DividendService:
             "summary": {
                 "trailing_12m_total_gbp": _money_str(trailing_total),
                 "forecast_12m_total_gbp": _money_str(forecast_total),
+                "actual_to_date_total_gbp": _money_str(actual_to_date_total),
+                "forecast_entry_total_gbp": _money_str(forecast_entry_total),
+                "actual_entry_count": actual_entry_count,
+                "forecast_entry_count": forecast_entry_count,
                 "all_time_total_gbp": _money_str(all_time_total),
                 "all_time_taxable_dividends_gbp": _money_str(all_time_taxable),
                 "all_time_isa_exempt_dividends_gbp": _money_str(all_time_isa),

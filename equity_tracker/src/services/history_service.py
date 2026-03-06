@@ -295,6 +295,105 @@ def _cumulative_on_or_before(
     return latest
 
 
+def _append_decomposition_fields(
+    *,
+    series: list[dict],
+    value_key: str,
+    qty_key: str,
+    price_key: str,
+    cumulative_dividends_key: str = "cumulative_net_dividends_gbp",
+) -> None:
+    """
+    Add deterministic daily decomposition fields to a timeseries row set.
+
+    Components:
+      - decomp_price_gbp      : move from price change at prior-day quantity.
+      - decomp_quantity_gbp   : move from quantity change at prior-day price.
+      - decomp_dividends_gbp  : cumulative-net-dividends day delta.
+      - decomp_fx_gbp         : residual to reconcile total change.
+      - decomp_total_change_gbp: observed day-on-day total value change.
+    """
+    prev: dict | None = None
+    for point in series:
+        if prev is None:
+            point["decomp_price_gbp"] = None
+            point["decomp_quantity_gbp"] = None
+            point["decomp_dividends_gbp"] = None
+            point["decomp_fx_gbp"] = None
+            point["decomp_total_change_gbp"] = None
+            prev = point
+            continue
+
+        cur_value = _safe_decimal(point.get(value_key))
+        prev_value = _safe_decimal(prev.get(value_key))
+        cur_qty = _safe_decimal(point.get(qty_key))
+        prev_qty = _safe_decimal(prev.get(qty_key))
+        cur_price = _safe_decimal(point.get(price_key))
+        prev_price = _safe_decimal(prev.get(price_key))
+        cur_dividends = _safe_decimal(point.get(cumulative_dividends_key))
+        prev_dividends = _safe_decimal(prev.get(cumulative_dividends_key))
+
+        if (
+            cur_value is None
+            or prev_value is None
+            or cur_qty is None
+            or prev_qty is None
+            or cur_price is None
+            or prev_price is None
+        ):
+            point["decomp_price_gbp"] = None
+            point["decomp_quantity_gbp"] = None
+            point["decomp_dividends_gbp"] = None
+            point["decomp_fx_gbp"] = None
+            point["decomp_total_change_gbp"] = None
+            prev = point
+            continue
+
+        total_change = _q2(cur_value - prev_value)
+        quantity_component = _q2((cur_qty - prev_qty) * prev_price)
+        price_component = _q2((cur_price - prev_price) * prev_qty)
+        dividends_component = _q2(
+            (cur_dividends or Decimal("0")) - (prev_dividends or Decimal("0"))
+        )
+        fx_component = _q2(
+            total_change - quantity_component - price_component - dividends_component
+        )
+
+        point["decomp_price_gbp"] = str(price_component)
+        point["decomp_quantity_gbp"] = str(quantity_component)
+        point["decomp_dividends_gbp"] = str(dividends_component)
+        point["decomp_fx_gbp"] = str(fx_component)
+        point["decomp_total_change_gbp"] = str(total_change)
+        prev = point
+
+
+def _major_shift_rows(
+    *,
+    series: list[dict],
+    limit: int = 12,
+) -> list[dict]:
+    rows: list[dict] = []
+    for point in series:
+        total_change = _safe_decimal(point.get("decomp_total_change_gbp"))
+        if total_change is None:
+            continue
+        rows.append(
+            {
+                "date": point.get("date"),
+                "total_change_gbp": str(_q2(total_change)),
+                "price_component_gbp": point.get("decomp_price_gbp"),
+                "quantity_component_gbp": point.get("decomp_quantity_gbp"),
+                "fx_component_gbp": point.get("decomp_fx_gbp"),
+                "dividends_component_gbp": point.get("decomp_dividends_gbp"),
+            }
+        )
+    rows.sort(
+        key=lambda row: abs(_safe_decimal(row.get("total_change_gbp")) or Decimal("0")),
+        reverse=True,
+    )
+    return rows[: max(limit, 0)]
+
+
 class HistoryService:
 
     @staticmethod
@@ -552,6 +651,14 @@ class HistoryService:
                     ),
                 })
 
+            _append_decomposition_fields(
+                series=price_series,
+                value_key="position_value_gbp",
+                qty_key="held_qty",
+                price_key="price_gbp",
+            )
+            major_shift_rows = _major_shift_rows(series=price_series)
+
             # Lot events for the acquisitions table.
             lot_events = [
                 {
@@ -626,6 +733,7 @@ class HistoryService:
             "currency": currency,
             "exchange": security.exchange,
             "price_series": price_series,
+            "major_shift_rows": major_shift_rows,
             "lot_events": lot_events,
             "summary_stats": stats,
             "has_data": len(price_series) > 0,
@@ -664,7 +772,7 @@ class HistoryService:
             if not securities:
                 return {
                     "has_data": False, "total_series": [], "per_security": [],
-                    "summary_stats": {}, "notes": [], "securities": [],
+                    "summary_stats": {}, "major_shift_rows": [], "notes": [], "securities": [],
                 }
 
             dividend_timeline = DividendService.get_net_dividends_timeline(
@@ -695,7 +803,7 @@ class HistoryService:
             if not sorted_dates:
                 return {
                     "has_data": False, "total_series": [], "per_security": [],
-                    "summary_stats": {}, "notes": [], "securities": [],
+                    "summary_stats": {}, "major_shift_rows": [], "notes": [], "securities": [],
                 }
 
             # Load all lots per security: {security_id: [Lot, ...]}
@@ -816,6 +924,7 @@ class HistoryService:
                 sellable_gain_incomplete = False
                 priced_count = 0
                 held_count = 0
+                held_qty_total = Decimal("0")
                 for sec in securities:
                     qty = qty_held_on(sec.id, d)
                     actual_price = sec_date_price.get(sec.id, {}).get(d)
@@ -824,6 +933,7 @@ class HistoryService:
                         per_sec_series[sec.id].append({"date": d.isoformat(), "value_gbp": None, "price_gbp": price_str})
                         continue
                     held_count += 1
+                    held_qty_total += qty
                     price = price_on_or_before(sec.id, d)
                     if price is not None:
                         value = (qty * price).quantize(_QUANT2, rounding=ROUND_HALF_UP)
@@ -895,6 +1005,16 @@ class HistoryService:
                 total_series.append({
                     "date": d.isoformat(),
                     "total_value_gbp": str(total.quantize(_QUANT2)) if held_count > 0 else None,
+                    "held_qty_total": (
+                        str(held_qty_total.quantize(_QUANT4, rounding=ROUND_HALF_UP))
+                        if held_count > 0
+                        else None
+                    ),
+                    "implied_avg_price_gbp": (
+                        str((total / held_qty_total).quantize(_QUANT4, rounding=ROUND_HALF_UP))
+                        if held_qty_total > Decimal("0")
+                        else None
+                    ),
                     "nonsellable_value_gbp": str(_q2(nonsellable_total_value)) if held_count > 0 else None,
                     "lock_window_active": bool(nonsellable_total_value > Decimal("0")),
                     "sellable_gain_gbp": (
@@ -925,6 +1045,14 @@ class HistoryService:
                     "total_count": held_count,
                     "share_events": share_events,
                 })
+
+            _append_decomposition_fields(
+                series=total_series,
+                value_key="total_value_gbp",
+                qty_key="held_qty_total",
+                price_key="implied_avg_price_gbp",
+            )
+            major_shift_rows = _major_shift_rows(series=total_series)
 
             # Portfolio-level summary stats (30d / 90d / 365d).
             today = date.today()
@@ -981,6 +1109,7 @@ class HistoryService:
         return {
             "has_data": bool(total_series),
             "total_series": total_series,
+            "major_shift_rows": major_shift_rows,
             "per_security": per_security_out,
             "summary_stats": portfolio_stats,
             "notes": [],

@@ -81,6 +81,11 @@ def test_api_history_portfolio_includes_dividend_adjusted_gain_fields(client):
     assert latest["sellable_gain_gbp"] == "20.00"
     assert latest["cumulative_net_dividends_gbp"] == "50.00"
     assert latest["sellable_gain_plus_net_dividends_gbp"] == "70.00"
+    assert latest["decomp_price_gbp"] is not None
+    assert latest["decomp_quantity_gbp"] is not None
+    assert latest["decomp_fx_gbp"] is not None
+    assert latest["decomp_dividends_gbp"] is not None
+    assert payload["major_shift_rows"]
 
     stats = payload["summary_stats"]
     assert stats["estimated_net_dividends_gbp"] == "50.00"
@@ -115,6 +120,11 @@ def test_api_history_security_includes_dividend_adjusted_gain_fields(client):
     assert latest["sellable_gain_gbp"] == "20.00"
     assert latest["cumulative_net_dividends_gbp"] == "50.00"
     assert latest["sellable_gain_plus_net_dividends_gbp"] == "70.00"
+    assert latest["decomp_price_gbp"] is not None
+    assert latest["decomp_quantity_gbp"] is not None
+    assert latest["decomp_fx_gbp"] is not None
+    assert latest["decomp_dividends_gbp"] is not None
+    assert payload["major_shift_rows"]
 
     stats = payload["summary_stats"]
     assert stats["estimated_net_dividends_gbp"] == "50.00"
@@ -133,8 +143,10 @@ def test_history_ui_pages_show_dividend_adjusted_toggle_and_labels(client):
     assert overview.status_code == 200
     assert "Gain + Net Dividends" in overview.text
     assert "data-gain-overlay=\"plus_dividends\"" in overview.text
+    assert "Shift Decomposition" in overview.text
 
     detail = client.get(f"/history/{security_id}")
     assert detail.status_code == 200
     assert "Gain + Net Dividends" in detail.text
     assert "data-gain-overlay=\"plus_dividends\"" in detail.text
+    assert "Shift Decomposition" in detail.text

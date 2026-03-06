@@ -333,6 +333,42 @@
         </div>
       </div>
 
+      <div id="downstream-impact-wrapper" class="row-full" hidden>
+        <div class="derived-summary">
+          <span class="derived-summary__label">Downstream Impact Preview</span>
+          <span id="downstream-impact-headline" class="derived-summary__amount">-</span>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr>
+                  <th>Estimated Position Value Contribution</th>
+                  <td id="downstream-impact-market">-</td>
+                </tr>
+                <tr>
+                  <th>Sellability Impact</th>
+                  <td id="downstream-impact-sellability">-</td>
+                </tr>
+                <tr>
+                  <th>Risk Flags Triggered</th>
+                  <td id="downstream-impact-risk">-</td>
+                </tr>
+                <tr>
+                  <th>Impacted Surfaces</th>
+                  <td>
+                    <a href="/">Portfolio</a>,
+                    <a href="/risk">Risk</a>,
+                    <a href="/reconcile">Reconcile</a>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="derived-summary__caveat form-hint">
+            Preview uses entered inputs and current deterministic scheme rules before save.
+          </p>
+        </div>
+      </div>
+
     </div>
 
     <!-- -- Additional Details (Notes) ----------------------- -->
@@ -521,6 +557,11 @@
   var persistedFxBasis = document.getElementById('persisted-preview-fx-basis');
   var persistedLockFlags = document.getElementById('persisted-preview-lock-flags');
   var persistedNote = document.getElementById('persisted-preview-note');
+  var downstreamWrapper = document.getElementById('downstream-impact-wrapper');
+  var downstreamHeadline = document.getElementById('downstream-impact-headline');
+  var downstreamMarket = document.getElementById('downstream-impact-market');
+  var downstreamSellability = document.getElementById('downstream-impact-sellability');
+  var downstreamRisk = document.getElementById('downstream-impact-risk');
 
   var detailsToggle  = document.getElementById('details-toggle');
   var detailsBody    = document.getElementById('details-body');
@@ -571,6 +612,11 @@
 
   function formatGbp(n) {
     return '\u00a3' + n.toFixed(2);
+  }
+
+  function formatSignedGbp(n) {
+    var sign = n >= 0 ? '+' : '-';
+    return sign + formatGbp(Math.abs(n));
   }
 
   function fxRateToGbp(inputCurrency) {
@@ -779,6 +825,7 @@
     updateDerivedSummary();
     updateCurrencyWorkflow();
     updatePersistedPreview();
+    updateDownstreamImpactPreview();
   }
 
   /* -- Derived Summary ------------------------------------ */
@@ -968,6 +1015,69 @@
     );
   }
 
+  function updateDownstreamImpactPreview() {
+    if (!downstreamWrapper) return;
+
+    var scheme = schemeSel.value;
+    var qty = asNum(inQty.value);
+    if (!(qty > 0)) {
+      downstreamWrapper.hidden = true;
+      return;
+    }
+
+    var inputCurrency = selectedInputCurrency();
+    var fxRate = fxRateToGbp(inputCurrency);
+    var acqPricePerShareGbp = NaN;
+    if (scheme === 'RSU') {
+      var rsuFmv = asNum(inRsuFmv.value);
+      if (!(rsuFmv > 0)) {
+        downstreamWrapper.hidden = true;
+        return;
+      }
+      acqPricePerShareGbp = rsuFmv;
+    } else {
+      var purchaseInput = asNum(inPurchase.value);
+      if (!(purchaseInput > 0) || !(Number.isFinite(fxRate) && fxRate > 0)) {
+        downstreamWrapper.hidden = true;
+        return;
+      }
+      acqPricePerShareGbp = purchaseInput * fxRate;
+    }
+
+    var estMarketImpact = qty * acqPricePerShareGbp;
+    var sellabilityImpact = 'Sellable immediately under current scheme rules.';
+    var riskFlags = [];
+
+    if (scheme === 'RSU') {
+      var vestDate = inRsuVestDate && inRsuVestDate.value ? inRsuVestDate.value : '';
+      sellabilityImpact = vestDate
+        ? ('Locked until vest date ' + vestDate + '.')
+        : 'RSU remains locked until vest date is provided.';
+      riskFlags.push('Adds non-sellable exposure until vest.');
+    } else if (scheme === 'ESPP_PLUS') {
+      var matchedQty = asNum(inMatchedShares.value);
+      if (Number.isFinite(matchedQty) && matchedQty > 0) {
+        var acqDate = inAcqDate && inAcqDate.value ? inAcqDate.value : '';
+        sellabilityImpact = acqDate
+          ? ('Matched-share portion at risk until ' + addDaysIso(acqDate, 183) + '.')
+          : 'Matched-share forfeiture window starts at acquisition date.';
+        riskFlags.push('Introduces forfeiture-linked matched shares.');
+      } else {
+        sellabilityImpact = 'Employee shares are sellable; no matched-share risk entered.';
+      }
+    } else if (scheme === 'ISA') {
+      sellabilityImpact = 'Sellable and ISA-sheltered for disposal tax.';
+    } else if (scheme === 'ESPP') {
+      sellabilityImpact = 'Sellable; may change concentration and taxable wrapper exposure.';
+    }
+
+    downstreamWrapper.hidden = false;
+    downstreamHeadline.textContent = formatSignedGbp(estMarketImpact) + ' estimated gross position impact';
+    downstreamMarket.textContent = formatGbp(estMarketImpact);
+    downstreamSellability.textContent = sellabilityImpact;
+    downstreamRisk.textContent = riskFlags.length ? riskFlags.join(' ') : 'No additional structural flags from current inputs.';
+  }
+
   /* -- Event wiring --------------------------------------- */
 
   schemeSel.addEventListener('change', applySchemeFields);
@@ -991,6 +1101,8 @@
     el.addEventListener('change', updateDerivedSummary);
     el.addEventListener('input', updatePersistedPreview);
     el.addEventListener('change', updatePersistedPreview);
+    el.addEventListener('input', updateDownstreamImpactPreview);
+    el.addEventListener('change', updateDownstreamImpactPreview);
   });
 
   if (inPurchase) {
@@ -998,6 +1110,7 @@
       syncEsppPlusNetPrice(false);
       updateDerivedSummary();
       updatePersistedPreview();
+      updateDownstreamImpactPreview();
     });
   }
 
@@ -1007,10 +1120,12 @@
       syncEsppPlusNetPrice(false);
       updateDerivedSummary();
       updatePersistedPreview();
+      updateDownstreamImpactPreview();
     });
     inQty.addEventListener('change', function () {
       syncMatchedShares(false);
       updatePersistedPreview();
+      updateDownstreamImpactPreview();
     });
   }
 
@@ -1025,6 +1140,7 @@
         setMatchedOverridden(true);
       }
       updatePersistedPreview();
+      updateDownstreamImpactPreview();
     });
   }
 
@@ -1040,22 +1156,29 @@
       }
       updateDerivedSummary();
       updatePersistedPreview();
+      updateDownstreamImpactPreview();
     });
   }
 
   if (inPriceInputCurrency) {
     inPriceInputCurrency.addEventListener('change', updatePersistedPreview);
+    inPriceInputCurrency.addEventListener('change', updateDownstreamImpactPreview);
   }
   if (inAcqDate) {
     inAcqDate.addEventListener('change', updatePersistedPreview);
     inAcqDate.addEventListener('input', updatePersistedPreview);
+    inAcqDate.addEventListener('change', updateDownstreamImpactPreview);
+    inAcqDate.addEventListener('input', updateDownstreamImpactPreview);
   }
   if (inRsuVestDate) {
     inRsuVestDate.addEventListener('change', updatePersistedPreview);
     inRsuVestDate.addEventListener('input', updatePersistedPreview);
+    inRsuVestDate.addEventListener('change', updateDownstreamImpactPreview);
+    inRsuVestDate.addEventListener('input', updateDownstreamImpactPreview);
   }
   if (securitySel) {
     securitySel.addEventListener('change', updatePersistedPreview);
+    securitySel.addEventListener('change', updateDownstreamImpactPreview);
   }
 
   /* -- Initialise ----------------------------------------- */
@@ -1068,6 +1191,7 @@
   applySchemeFields();
   updateCurrencyWorkflow();
   updatePersistedPreview();
+  updateDownstreamImpactPreview();
 
 })();
 </script>

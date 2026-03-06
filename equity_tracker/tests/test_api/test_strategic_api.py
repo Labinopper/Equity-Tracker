@@ -44,8 +44,11 @@ def test_strategic_reconcile_includes_trace_sections(client):
 
     assert "contributing_lot_rows" in body
     assert "recent_audit_rows" in body
+    assert "drift_panel" in body
+    assert "rows" in body["drift_panel"]
     assert body["trace_links"]["contributing_lots"].endswith("#trace-contributing-lots")
     assert body["trace_links"]["audit_mutations"].endswith("#trace-audit-mutations")
+    assert body["trace_links"]["drift_panel"].endswith("#trace-drift-decomposition")
 
     lot_rows = [row for row in body["contributing_lot_rows"] if row["lot_id"] == lot["id"]]
     assert lot_rows
@@ -58,6 +61,7 @@ def test_strategic_reconcile_page_renders_trace_anchors(client):
     resp = client.get("/reconcile")
     assert resp.status_code == 200
     text = resp.text
+    assert 'id="trace-drift-decomposition"' in text
     assert 'id="trace-contributing-lots"' in text
     assert 'id="trace-audit-mutations"' in text
 
@@ -102,7 +106,29 @@ def test_strategic_pages_render(client):
         assert resp.status_code == 200, path
         assert marker in resp.text
 
+    assert "Trend Context" in client.get("/capital-efficiency").text
+    assert "Action Links" in client.get("/capital-efficiency").text
+    assert "Comparison Context" in client.get("/employment-exit").text
+    assert "Action Links" in client.get("/employment-exit").text
+    assert "Trend Context" in client.get("/isa-efficiency").text
+    assert "Action Links" in client.get("/isa-efficiency").text
+    assert "Trend Context" in client.get("/fee-drag").text
+    assert "Action Links" in client.get("/fee-drag").text
+    assert "Trend Context" in client.get("/data-quality").text
+    assert "Action Links" in client.get("/data-quality").text
+    assert "Trend Context" in client.get("/employment-tax-events").text
+    assert "Action Links" in client.get("/employment-tax-events").text
+    assert "Trend Context" in client.get("/basis-timeline").text
+    assert "Action Links" in client.get("/basis-timeline").text
+    assert "Trend Context" in client.get("/insights").text
+    assert "Quick Action" in client.get("/insights").text
+
 
 def test_basis_timeline_lookback_validation(client):
     assert client.get("/api/strategic/basis-timeline?lookback_days=29").status_code == 422
     assert client.get("/api/strategic/basis-timeline?lookback_days=1826").status_code == 422
+
+
+def test_reconcile_lookback_validation(client):
+    assert client.get("/api/strategic/reconcile?lookback_days=6").status_code == 422
+    assert client.get("/api/strategic/reconcile?lookback_days=366").status_code == 422
