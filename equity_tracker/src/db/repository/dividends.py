@@ -24,6 +24,10 @@ class DividendEntryRepository:
         security_id: str,
         dividend_date: date,
         amount_gbp: Decimal,
+        amount_original_ccy: Decimal | None = None,
+        original_currency: str | None = None,
+        fx_rate_to_gbp: Decimal | None = None,
+        fx_rate_source: str | None = None,
         tax_treatment: str = "TAXABLE",
         source: str | None = None,
         notes: str | None = None,
@@ -32,6 +36,12 @@ class DividendEntryRepository:
             security_id=security_id,
             dividend_date=dividend_date,
             amount_gbp=str(amount_gbp),
+            amount_original_ccy=(
+                str(amount_original_ccy) if amount_original_ccy is not None else None
+            ),
+            original_currency=(original_currency or None),
+            fx_rate_to_gbp=(str(fx_rate_to_gbp) if fx_rate_to_gbp is not None else None),
+            fx_rate_source=(fx_rate_source or None),
             tax_treatment=tax_treatment,
             source=source,
             notes=notes,

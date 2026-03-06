@@ -83,8 +83,12 @@ def test_api_analytics_summary_and_portfolio_time_empty_db(client):
     assert "gain_loss_history" in summary["widgets"]
     assert "economic_vs_tax" in summary["widgets"]
     assert "stress_test" in summary["widgets"]
+    assert "fx_attribution" in summary["widgets"]
     assert "forfeiture_at_risk" in summary["widgets"]
     assert "events_timeline" in summary["widgets"]
+    assert "widget_order" in summary
+    assert summary["widgets"]["liquidity_breakdown"]["decision_criticality"] == "Critical"
+    assert summary["widgets"]["liquidity_breakdown"]["decision_context_label"] == "Liquidity Clarity"
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
     assert series_resp.status_code == 200
@@ -120,6 +124,7 @@ def test_api_analytics_endpoints_return_data_when_prices_exist(client):
     assert unrealised_rows[0]["ticker"] == "ANAPI"
     assert unrealised_rows[0]["market_value_gbp"] == "60.00"
     assert len(summary["widgets"]["stress_test"]["rows"]) == 6
+    assert "rows" in summary["widgets"]["fx_attribution"]
     assert summary["widgets"]["events_timeline"]["has_data"] is True
 
     series_resp = client.get("/api/analytics/portfolio-over-time")
@@ -197,8 +202,12 @@ def test_analytics_ui_page_renders_widget_controls_and_table_toggle(client):
     assert "gain-loss-history" in resp.text
     assert "economic-vs-tax" in resp.text
     assert "stress-test" in resp.text
+    assert "fx-attribution" in resp.text
     assert "forfeiture-at-risk" in resp.text
     assert "events-timeline" in resp.text
+    assert "analytics-widget-visibility-table" in resp.text
+    assert "applyPriorityOrder" in resp.text
+    assert "decision_criticality" in resp.text
 
 
 def test_api_analytics_respects_hide_values_setting(client):
@@ -217,6 +226,7 @@ def test_api_analytics_respects_hide_values_setting(client):
     assert summary["widgets"]["scheme_concentration"]["reason"] == "Values hidden by privacy mode."
     assert summary["widgets"]["cgt_year_position"]["hidden"] is True
     assert summary["widgets"]["stress_test"]["hidden"] is True
+    assert summary["widgets"]["fx_attribution"]["hidden"] is True
     assert summary["widgets"]["forfeiture_at_risk"]["hidden"] is True
     assert summary["widgets"]["events_timeline"]["hidden"] is True
 

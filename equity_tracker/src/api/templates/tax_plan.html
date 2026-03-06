@@ -51,7 +51,7 @@
     <span class="stat__value">&pound;{{ realised.net_gain_gbp|money }}</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Remaining AEA <span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    <span class="stat__label"><a href="/glossary#aea">Remaining AEA</a> <span class="metric-tag metric-tag--actionable">Actionable</span></span>
     <span class="stat__value">&pound;{{ realised.remaining_aea_gbp|money }}</span>
   </div>
   <div class="stat">
@@ -121,7 +121,7 @@
     Student loan plan: {{ comp.inputs.student_loan_plan if comp.inputs.student_loan_plan is not none else 'None' }}.
   </p>
   <p class="form-hint">
-    ANI (Adjusted Net Income) = Gross Income &minus; Pension Sacrifice + Other Income. Affects Personal Allowance taper above &pound;100k.
+    <a href="/glossary#ani-adjusted-net-income">ANI (Adjusted Net Income)</a> = Gross Income &minus; Pension Sacrifice + Other Income. Affects Personal Allowance taper above &pound;100k.
     SL = Student Loan repayment.
   </p>
 </div>
@@ -144,7 +144,7 @@
     <span class="stat__value">&pound;{{ comp.comparison.sell_next_with_pension_vs_sell_with_pension_delta_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">ANI (Adj. Net Income) Reduction from Extra Pension <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    <span class="stat__label"><a href="/glossary#ani-adjusted-net-income">ANI (Adj. Net Income)</a> Reduction from Extra Pension <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.ani_reduction_from_extra_pension_gbp|money }}</span>
   </div>
   <div class="stat">

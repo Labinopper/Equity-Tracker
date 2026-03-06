@@ -102,6 +102,8 @@ class ExposureService:
         total_sellable_market = Decimal("0")
         locked_capital = Decimal("0")
         forfeitable_capital = Decimal("0")
+        isa_wrapper_market = Decimal("0")
+        taxable_wrapper_market = Decimal("0")
         unpriced_lot_count = 0
 
         for security_summary in summary.securities:
@@ -117,6 +119,10 @@ class ExposureService:
                     unpriced_lot_count += 1
                     continue
                 lot_mv = _q_money(mv)
+                if (lot_summary.lot.scheme_type or "").upper() == "ISA":
+                    isa_wrapper_market += lot_mv
+                else:
+                    taxable_wrapper_market += lot_mv
 
                 is_forfeitable_match = (
                     lot_summary.forfeiture_risk is not None
@@ -140,6 +146,7 @@ class ExposureService:
         sellable_total_q = _q_money(total_sellable_market)
         locked_q = _q_money(locked_capital)
         forfeitable_q = _q_money(forfeitable_capital)
+        wrapper_total = _q_money(isa_wrapper_market + taxable_wrapper_market)
 
         top_gross_ticker, top_gross_value = _top_bucket(gross_by_ticker)
         top_sellable_ticker, top_sellable_value = _top_bucket(sellable_by_ticker)
@@ -193,6 +200,10 @@ class ExposureService:
             "total_sellable_market_value_gbp": sellable_total_q,
             "locked_capital_gbp": locked_q,
             "forfeitable_capital_gbp": forfeitable_q,
+            "isa_wrapper_market_value_gbp": _q_money(isa_wrapper_market),
+            "taxable_wrapper_market_value_gbp": _q_money(taxable_wrapper_market),
+            "isa_wrapper_pct_of_total": _pct(isa_wrapper_market, wrapper_total),
+            "taxable_wrapper_pct_of_total": _pct(taxable_wrapper_market, wrapper_total),
             "employer_ticker": employer_ticker,
             "employer_market_value_gbp": employer_gross,
             "employer_sellable_market_value_gbp": employer_sellable,

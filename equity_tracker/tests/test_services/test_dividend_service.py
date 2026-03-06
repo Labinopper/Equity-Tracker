@@ -76,3 +76,30 @@ def test_dividend_summary_respects_hide_values_mode(app_context):
     assert payload["hide_values"] is True
     assert payload["entries"] == []
     assert payload["tax_years"] == []
+
+
+def test_dividend_entry_supports_native_currency_with_fx_provenance(app_context):
+    sec = _add_security("DIVUSD")
+
+    created = DividendService.add_dividend_entry(
+        security_id=sec.id,
+        dividend_date=date(2026, 2, 10),
+        amount_original_ccy=Decimal("100.00"),
+        original_currency="USD",
+        fx_rate_to_gbp=Decimal("0.8000"),
+        fx_rate_source="manual_test",
+        tax_treatment="TAXABLE",
+    )
+    assert created["amount_gbp"] == "80.00"
+    assert created["amount_original_ccy"] == "100.00"
+    assert created["original_currency"] == "USD"
+    assert created["fx_rate_to_gbp"] == "0.800000"
+
+    payload = DividendService.get_summary(as_of=date(2026, 2, 24))
+    entry = payload["entries"][0]
+    assert entry["amount_gbp"] == "80.00"
+    assert entry["amount_original_ccy"] == "100.00"
+    assert entry["original_currency"] == "USD"
+    assert entry["fx_rate_to_gbp"] == "0.800000"
+    assert payload["allocation"]["mode"] == "SECURITY_LEVEL"
+    assert payload["allocation"]["rows"][0]["ticker"] == "DIVUSD"

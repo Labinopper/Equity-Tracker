@@ -11,8 +11,11 @@ from ...services.risk_service import (
     RiskConcentrationItem,
     RiskDeployableBreakdown,
     RiskLiquidityBreakdown,
+    RiskOptionalityIndex,
+    RiskOptionalityTimelineBand,
     RiskSummary,
     RiskStressPoint,
+    RiskWrapperAllocation,
 )
 
 
@@ -108,6 +111,70 @@ class EmployerDependenceBreakdownSchema(BaseModel):
         )
 
 
+class RiskWrapperAllocationSchema(BaseModel):
+    isa_market_value_gbp: str
+    taxable_market_value_gbp: str
+    isa_pct_of_total: str
+    taxable_pct_of_total: str
+
+    @classmethod
+    def from_service(cls, value: RiskWrapperAllocation) -> "RiskWrapperAllocationSchema":
+        return cls(
+            isa_market_value_gbp=str(value.isa_market_value_gbp),
+            taxable_market_value_gbp=str(value.taxable_market_value_gbp),
+            isa_pct_of_total=str(value.isa_pct_of_total),
+            taxable_pct_of_total=str(value.taxable_pct_of_total),
+        )
+
+
+class RiskOptionalityTimelineBandSchema(BaseModel):
+    label: str
+    horizon_days: int
+    as_of_date: str
+    sellable_gbp: str
+    locked_gbp: str
+    forfeitable_gbp: str
+    deployable_capital_gbp: str
+    sellable_pct: str
+    locked_pct: str
+    forfeitable_pct: str
+    deployable_pct: str
+
+    @classmethod
+    def from_service(
+        cls, value: RiskOptionalityTimelineBand
+    ) -> "RiskOptionalityTimelineBandSchema":
+        return cls(
+            label=value.label,
+            horizon_days=value.horizon_days,
+            as_of_date=value.as_of_date.isoformat(),
+            sellable_gbp=str(value.sellable_gbp),
+            locked_gbp=str(value.locked_gbp),
+            forfeitable_gbp=str(value.forfeitable_gbp),
+            deployable_capital_gbp=str(value.deployable_capital_gbp),
+            sellable_pct=str(value.sellable_pct),
+            locked_pct=str(value.locked_pct),
+            forfeitable_pct=str(value.forfeitable_pct),
+            deployable_pct=str(value.deployable_pct),
+        )
+
+
+class RiskOptionalityIndexSchema(BaseModel):
+    score: str
+    weights_pct: dict[str, str]
+    components_pct: dict[str, str]
+    notes: list[str]
+
+    @classmethod
+    def from_service(cls, value: RiskOptionalityIndex) -> "RiskOptionalityIndexSchema":
+        return cls(
+            score=str(value.score),
+            weights_pct={key: str(v) for key, v in value.weights_pct.items()},
+            components_pct={key: str(v) for key, v in value.components_pct.items()},
+            notes=list(value.notes),
+        )
+
+
 class RiskSummarySchema(BaseModel):
     generated_at_utc: str
     total_market_value_gbp: str
@@ -118,7 +185,10 @@ class RiskSummarySchema(BaseModel):
     liquidity: RiskLiquidityBreakdownSchema
     deployable: RiskDeployableBreakdownSchema
     employer_dependence: EmployerDependenceBreakdownSchema
+    wrapper_allocation: RiskWrapperAllocationSchema
     stress_points: list[RiskStressPointSchema]
+    optionality_timeline: list[RiskOptionalityTimelineBandSchema]
+    optionality_index: RiskOptionalityIndexSchema
     notes: list[str]
 
     @classmethod
@@ -130,6 +200,10 @@ class RiskSummarySchema(BaseModel):
             raise ValueError("Risk summary deployable breakdown must be populated.")
         if summary.employer_dependence is None:
             raise ValueError("Risk summary employer dependence breakdown must be populated.")
+        if summary.wrapper_allocation is None:
+            raise ValueError("Risk summary wrapper allocation must be populated.")
+        if summary.optionality_index is None:
+            raise ValueError("Risk summary optionality index must be populated.")
         return cls(
             generated_at_utc=summary.generated_at_utc.isoformat(),
             total_market_value_gbp=str(summary.total_market_value_gbp),
@@ -148,9 +222,19 @@ class RiskSummarySchema(BaseModel):
             employer_dependence=EmployerDependenceBreakdownSchema.from_service(
                 summary.employer_dependence
             ),
+            wrapper_allocation=RiskWrapperAllocationSchema.from_service(
+                summary.wrapper_allocation
+            ),
             stress_points=[
                 RiskStressPointSchema.from_service(point)
                 for point in summary.stress_points
             ],
+            optionality_timeline=[
+                RiskOptionalityTimelineBandSchema.from_service(point)
+                for point in summary.optionality_timeline
+            ],
+            optionality_index=RiskOptionalityIndexSchema.from_service(
+                summary.optionality_index
+            ),
             notes=list(summary.notes),
         )

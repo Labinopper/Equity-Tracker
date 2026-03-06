@@ -1,13 +1,21 @@
 # Documentation Index
 
-Primary documentation is now maintained in:
+Last updated: `2026-03-06`
+
+## Source of Truth Files
+
 - `docs/STRATEGIC_DOCUMENTATION.md`
 - `docs/todo.md`
 
-This file is the current source of truth for:
-- Strategic question mapping by page
-- Page-by-page economic model documentation
-- System alignment review
-- Behavioural risk surface
-- Core v1 vs v2 structural recommendations
-- Next-step implementation backlog aligned to stated objectives
+## What Each File Owns
+
+| File | Ownership |
+|---|---|
+| `docs/STRATEGIC_DOCUMENTATION.md` | Strategic question mapping by page; deterministic economic model documentation; system alignment review; behavioural risk surface; structural recommendations. |
+| `docs/todo.md` | Execution-order backlog; implementation status by task ID; delivered/partial/pending stage tracking; acceptance criteria for remaining upgrades. |
+
+## Current Stage Snapshot
+
+- Stages `1`-`8`: complete.
+- Stage `9`: in progress (`T34`, `T41`, `T42`, `T44` complete; `T35` partial).
+- Stage `10`: in progress (`T13`, `T14` complete; `T15`-`T32` pending).

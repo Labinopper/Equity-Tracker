@@ -38,7 +38,7 @@
 
 <div class="stats">
   <div class="stat">
-    <div class="stat__label">Gross Market Value (All Lots) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label"><a href="/glossary#hypothetical-full-liquidation">Gross Market Value (All Lots)</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if sell_all_metrics.gross_market_value_gbp is not none %}
     <div class="stat__value">&pound;{{ sell_all_metrics.gross_market_value_gbp | money }}</div>
     {% else %}
@@ -47,7 +47,7 @@
   </div>
   <div class="stat stat--warning">
     <div class="stat__label">
-      Estimated Employment Tax (Sellable Lots; Sell-All Context)
+      <a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Lots; Sell-All Context)</a>
       <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
       <button class="info-button" aria-label="Estimated Employment Tax explanation">ℹ</button>
       <div class="tooltip">
@@ -65,7 +65,7 @@
   </div>
   <div class="stat stat--gain">
     <div class="stat__label">
-      Hypothetical Net Value (All Lots &ndash; Not Actionable)
+      <a href="/glossary#hypothetical-full-liquidation">Hypothetical Net Value (All Lots &ndash; Not Actionable)</a>
       <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
       <button class="info-button" aria-label="Hypothetical Net Value explanation">ℹ</button>
       <div class="tooltip">
@@ -86,7 +86,7 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total Cost Basis (All Lots) <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis (All Lots)</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ sell_all_metrics.cost_basis_gbp | money }}</div>
   </div>
 </div>

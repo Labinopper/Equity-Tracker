@@ -42,15 +42,41 @@
       value="{{ prev.dividend_date if prev else dividends.as_of_date }}"
     >
 
-    <label for="amount_gbp">Amount (GBP)</label>
+    <label for="amount_original_ccy">Amount (Native)</label>
     <input
-      id="amount_gbp"
+      id="amount_original_ccy"
       type="text"
-      name="amount_gbp"
+      name="amount_original_ccy"
       inputmode="decimal"
       placeholder="0.00"
       required
-      value="{{ prev.amount_gbp if prev else '' }}"
+      value="{{ prev.amount_original_ccy if prev else '' }}"
+    >
+
+    <label for="original_currency">Currency</label>
+    <select id="original_currency" name="original_currency" required>
+      {% set selected_ccy = (prev.original_currency if prev else 'GBP') %}
+      <option value="GBP" {{ 'selected' if selected_ccy == 'GBP' }}>GBP</option>
+      <option value="USD" {{ 'selected' if selected_ccy == 'USD' }}>USD</option>
+      <option value="EUR" {{ 'selected' if selected_ccy == 'EUR' }}>EUR</option>
+    </select>
+
+    <label for="fx_rate_to_gbp">FX Rate to GBP</label>
+    <input
+      id="fx_rate_to_gbp"
+      type="text"
+      name="fx_rate_to_gbp"
+      inputmode="decimal"
+      placeholder="1.000000"
+      value="{{ prev.fx_rate_to_gbp if prev else '' }}"
+    >
+
+    <label for="fx_rate_source">FX Source</label>
+    <input
+      id="fx_rate_source"
+      type="text"
+      name="fx_rate_source"
+      value="{{ prev.fx_rate_source if prev else 'manual' }}"
     >
 
     <label for="tax_treatment">Tax Treatment</label>
@@ -162,6 +188,59 @@
 
 <div class="card">
   <div class="card__header">
+    <h2 class="card__title">Security Allocation (Dividend Attribution)</h2>
+  </div>
+  <p class="muted">Deterministic security-level allocation of dividend flow against currently held capital.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Entries</th>
+          <th class="num">Total Dividends</th>
+          <th class="num">Allocated Tax</th>
+          <th class="num">Allocated Net Dividends</th>
+          <th class="num">Active True Cost</th>
+          <th class="num">Capital at Risk (After Dividends)</th>
+          <th class="num">Economic Gain + Net Dividends</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if dividends.allocation.rows %}
+          {% for row in dividends.allocation.rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td class="num">{{ row.entry_count }}</td>
+            <td class="num">&pound;{{ row.total_dividends_gbp|money }}</td>
+            <td class="num">&pound;{{ row.allocated_estimated_tax_gbp|money }}</td>
+            <td class="num">&pound;{{ row.allocated_net_dividends_gbp|money }}</td>
+            <td class="num">&pound;{{ row.active_true_cost_gbp|money }}</td>
+            <td class="num">&pound;{{ row.capital_at_risk_after_dividends_gbp|money }}</td>
+            <td class="num">&pound;{{ row.economic_gain_plus_net_dividends_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td><strong>Total</strong></td>
+            <td class="num">-</td>
+            <td class="num"><strong>&pound;{{ dividends.allocation.totals.allocated_total_dividends_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ dividends.allocation.totals.allocated_estimated_tax_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ dividends.allocation.totals.allocated_net_dividends_gbp|money }}</strong></td>
+            <td class="num">-</td>
+            <td class="num">-</td>
+            <td class="num">-</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="muted">No dividend allocation data available yet.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
     <h2 class="card__title">Dividend Entries</h2>
   </div>
   <div class="table-wrap">
@@ -172,7 +251,10 @@
           <th>Tax Year</th>
           <th>Security</th>
           <th>Treatment</th>
-          <th class="num">Amount</th>
+          <th class="num">Amount (Native)</th>
+          <th>Currency</th>
+          <th class="num">FX to GBP</th>
+          <th class="num">Amount (GBP)</th>
           <th>Source</th>
           <th>Notes</th>
         </tr>
@@ -190,6 +272,9 @@
             <td>{{ row.tax_year }}</td>
             <td>{{ row.ticker }}</td>
             <td>{{ row.tax_treatment }}</td>
+            <td class="num">{{ row.amount_original_ccy|money }}</td>
+            <td>{{ row.original_currency }}</td>
+            <td class="num">{{ row.fx_rate_to_gbp or '-' }}</td>
             <td class="num">&pound;{{ row.amount_gbp|money }}</td>
             <td>{{ row.source or '-' }}</td>
             <td>{{ row.notes or '-' }}</td>
@@ -197,7 +282,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="7" class="muted">No dividend entries recorded yet.</td>
+            <td colspan="10" class="muted">No dividend entries recorded yet.</td>
           </tr>
         {% endif %}
       </tbody>

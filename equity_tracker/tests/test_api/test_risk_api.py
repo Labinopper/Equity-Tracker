@@ -48,6 +48,9 @@ def test_api_risk_summary_empty_portfolio(client):
     assert body["top_holding_sellable_pct"] == "0.00"
     assert body["deployable"]["deployable_capital_gbp"] == "0.00"
     assert body["employer_dependence"]["ratio_pct"] == "0.00"
+    assert body["wrapper_allocation"]["isa_pct_of_total"] == "0.00"
+    assert len(body["optionality_timeline"]) == 5
+    assert "score" in body["optionality_index"]
     assert len(body["stress_points"]) == 6
 
 
@@ -77,6 +80,8 @@ def test_api_risk_summary_with_priced_holdings(client):
     assert body["top_holding_sellable_pct"] == "100.00"
     assert body["deployable"]["deployable_capital_gbp"] == "200.00"
     assert body["deployable"]["employer_share_of_deployable_pct"] == "0.00"
+    assert body["wrapper_allocation"]["taxable_pct_of_total"] == "100.00"
+    assert body["optionality_timeline"][0]["label"] == "Now"
     assert body["stress_points"][0]["shock_label"] == "-30%"
     assert body["stress_points"][-1]["shock_label"] == "+20%"
 
@@ -85,5 +90,17 @@ def test_risk_ui_page_renders(client):
     resp = client.get("/risk")
     assert resp.status_code == 200
     assert "Risk" in resp.text
+    assert "Optionality Index" in resp.text
+    assert "Future Optionality Timeline" in resp.text
     assert "Top Holdings Concentration" in resp.text
     assert "Stress Test" in resp.text
+
+
+def test_api_risk_summary_accepts_optionality_weight_overrides(client):
+    resp = client.get(
+        "/api/risk/summary?weight_sellability=60&weight_forfeiture=10&weight_concentration=10&weight_isa_ratio=10&weight_config=10"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["optionality_index"]["weights_pct"]["sellability"] == "60.00"
+    assert body["optionality_index"]["weights_pct"]["forfeiture"] == "10.00"

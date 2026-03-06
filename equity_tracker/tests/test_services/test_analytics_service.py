@@ -116,6 +116,7 @@ def test_summary_payload_contains_group_a_widgets_and_unrealised_rows(app_contex
     assert "liquidity_breakdown" in summary["widgets"]
     assert "unrealised_pnl" in summary["widgets"]
     assert "stress_test" in summary["widgets"]
+    assert "fx_attribution" in summary["widgets"]
     assert "forfeiture_at_risk" in summary["widgets"]
     assert "events_timeline" in summary["widgets"]
 
@@ -123,6 +124,21 @@ def test_summary_payload_contains_group_a_widgets_and_unrealised_rows(app_contex
     assert len(unrealised_rows) == 1
     assert unrealised_rows[0]["ticker"] == "ANSUM"
     assert unrealised_rows[0]["market_value_gbp"] == "45.00"
+
+
+def test_summary_payload_adds_widget_decision_metadata_and_priority_order(app_context):
+    sec = _add_security("ANMETA")
+    _add_lot(sec.id, "2")
+    _add_price(sec.id, date(2026, 2, 24), "20.00")
+
+    summary = AnalyticsService.get_summary()
+    widgets = summary["widgets"]
+
+    assert widgets["liquidity_breakdown"]["decision_criticality"] == "Critical"
+    assert widgets["liquidity_breakdown"]["decision_context_label"] == "Liquidity Clarity"
+    assert widgets["liquidity_breakdown"]["priority_rank"] < widgets["unrealised_pnl"]["priority_rank"]
+    assert summary["widget_order"][0] == "liquidity-breakdown"
+    assert "portfolio-value-time" in summary["widget_order"]
 
 
 def test_summary_payload_includes_group_c_and_d_rows(app_context):
@@ -227,6 +243,8 @@ def test_tax_position_payload_contains_group_b_rows_across_tax_years(app_context
 
     years = [row["tax_year"] for row in payload["widgets"]["gain_loss_history"]["rows"]]
     assert years == ["2024-25", "2025-26"]
+    assert payload["widgets"]["cgt_year_position"]["decision_criticality"] == "High"
+    assert payload["widget_order"][0] == "cgt-year-position"
 
 
 def test_tax_position_respects_hide_values_mode(app_context):

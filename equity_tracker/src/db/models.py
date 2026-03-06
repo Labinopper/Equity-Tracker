@@ -523,6 +523,10 @@ class DividendEntry(Base):
     )
     dividend_date: Mapped[date] = mapped_column(Date, nullable=False)
     amount_gbp: Mapped[str] = mapped_column(String(30), nullable=False)
+    amount_original_ccy: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    original_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    fx_rate_to_gbp: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    fx_rate_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     tax_treatment: Mapped[str] = mapped_column(
         String(20), nullable=False, default="TAXABLE"
     )

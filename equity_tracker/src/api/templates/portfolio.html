@@ -25,7 +25,7 @@
 
 <div class="stats">
   <div class="stat stat--gain">
-    <div class="stat__label">Est. Net Liquidity (Sellable) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if portfolio_est_net_liquidity is not none %}
     <div class="stat__value gain">&pound;{{ portfolio_est_net_liquidity | money }}</div>
     {% else %}
@@ -40,8 +40,19 @@
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
+  <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+    <div class="stat__label">Net Gain + Net Dividends <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    {% if portfolio_net_gain_plus_net_dividends is not none %}
+    <div class="stat__value {% if portfolio_net_gain_plus_net_dividends > 0 %}gain{% elif portfolio_net_gain_plus_net_dividends < 0 %}loss{% endif %}">&pound;{% if portfolio_net_gain_plus_net_dividends < 0 %}-{% elif portfolio_net_gain_plus_net_dividends > 0 %}+{% endif %}{{ portfolio_net_gain_plus_net_dividends | abs | money }}</div>
+    {% if estimated_net_dividends_gbp is not none %}
+    <span class="stat-caption">Adds estimated net dividends of &pound;{{ estimated_net_dividends_gbp | money }}.</span>
+    {% endif %}
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="Sellability-locked value excluding forfeitable matched shares.">Locked Capital <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label" title="Sellability-locked value excluding forfeitable matched shares."><a href="/glossary#locked-capital">Locked Capital</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if portfolio_locked_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_locked_value | money }}</div>
     {% else %}
@@ -49,12 +60,22 @@
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="Matched shares inside forfeiture window.">Forfeitable Capital <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label" title="Matched shares inside forfeiture window."><a href="/glossary#forfeitable-capital">Forfeitable Capital</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if portfolio_forfeitable_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_forfeitable_value | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">ISA Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_isa_wrapper_pct_of_total) }}%</div>
+    <span class="stat-caption">&pound;{{ portfolio_isa_wrapper_market_value_gbp | money }} in ISA holdings.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Taxable Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_taxable_wrapper_pct_of_total) }}%</div>
+    <span class="stat-caption">&pound;{{ portfolio_taxable_wrapper_market_value_gbp | money }} outside ISA.</span>
   </div>
   <div class="stat">
     <div class="stat__label">Top Holding Concentration <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
@@ -101,12 +122,12 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total True Cost <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label"><a href="/glossary#true-cost-acquisition">Total True Cost</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
   </div>
   <div class="stat stat--warning">
     <div class="stat__label">
-      Dividend-Adjusted Capital at Risk <span class="metric-tag metric-tag--realised">Realised</span>
+      <a href="/glossary#dividend-adjusted-capital-at-risk">Dividend-Adjusted Capital at Risk</a> <span class="metric-tag metric-tag--realised">Realised</span>
       <button class="info-button" aria-label="Dividend-adjusted capital at risk explanation">ℹ</button>
       <div class="tooltip">
         <div class="tooltip-content">
@@ -124,11 +145,11 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Total Cost Basis <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply.">Estimated Employment Tax (Sellable Only) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if portfolio_sellable_employment_tax is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
     {% else %}

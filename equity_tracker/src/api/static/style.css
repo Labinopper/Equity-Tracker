@@ -918,6 +918,16 @@ tr:hover td.loss {
   font-weight: 600;
 }
 
+.stat__label a {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.14rem;
+}
+
+.stat__label a:hover {
+  color: var(--accent);
+}
+
 .metric-tag {
   display: inline-flex;
   align-items: center;
@@ -1259,6 +1269,19 @@ tr:hover td.loss {
 
 .analytics-focus-row .muted {
   width: 100%;
+}
+
+.analytics-widget-meta {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.analytics-widget-row-meta {
+  margin-top: 0.22rem;
+  font-size: 0.74rem;
 }
 
 .analytics-focus-btn.is-active {

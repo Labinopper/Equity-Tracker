@@ -2269,6 +2269,15 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         db_path=db_path,
         summary=summary,
     )
+    estimated_net_dividends_gbp = capital_stack_snapshot.get("estimated_net_dividends_gbp")
+    portfolio_net_gain_plus_net_dividends: Decimal | None = None
+    if portfolio_net_gain_if_sold is not None and estimated_net_dividends_gbp is not None:
+        try:
+            portfolio_net_gain_plus_net_dividends = _q2(
+                portfolio_net_gain_if_sold + Decimal(str(estimated_net_dividends_gbp))
+            )
+        except Exception:
+            portfolio_net_gain_plus_net_dividends = None
     behavioral_guardrails = _build_behavioral_guardrails(
         summary=summary,
         settings=settings,
@@ -2296,6 +2305,10 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
             "portfolio_locked_value": exposure_snapshot.get("locked_capital_gbp"),
             "portfolio_forfeitable_value": exposure_snapshot.get("forfeitable_capital_gbp"),
+            "portfolio_isa_wrapper_market_value_gbp": exposure_snapshot.get("isa_wrapper_market_value_gbp"),
+            "portfolio_taxable_wrapper_market_value_gbp": exposure_snapshot.get("taxable_wrapper_market_value_gbp"),
+            "portfolio_isa_wrapper_pct_of_total": exposure_snapshot.get("isa_wrapper_pct_of_total"),
+            "portfolio_taxable_wrapper_pct_of_total": exposure_snapshot.get("taxable_wrapper_pct_of_total"),
             "portfolio_top_holding_ticker_gross": exposure_snapshot.get("top_holding_ticker_gross"),
             "portfolio_top_holding_pct_gross": exposure_snapshot.get("top_holding_pct_gross"),
             "portfolio_top_holding_ticker_sellable": exposure_snapshot.get("top_holding_ticker_sellable"),
@@ -2311,10 +2324,11 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "portfolio_employer_income_dependency_proxy_gbp": exposure_snapshot.get("employer_income_dependency_proxy_gbp"),
             "portfolio_employer_dependence_denominator_gbp": exposure_snapshot.get("employer_dependence_denominator_gbp"),
             "portfolio_exposure_notes": exposure_snapshot.get("notes", []),
+            "portfolio_net_gain_plus_net_dividends": portfolio_net_gain_plus_net_dividends,
             "dividend_adjusted_capital_at_risk_gbp": (
                 capital_stack_snapshot.get("dividend_adjusted_capital_at_risk_gbp")
             ),
-            "estimated_net_dividends_gbp": capital_stack_snapshot.get("estimated_net_dividends_gbp"),
+            "estimated_net_dividends_gbp": estimated_net_dividends_gbp,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
             "refresh_diag": refresh_diag,
             "behavioral_guardrails": behavioral_guardrails,

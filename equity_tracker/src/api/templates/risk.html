@@ -14,6 +14,14 @@
     <span class="stat__label">Total Market Value</span>
     <span class="stat__value">&pound;{{ risk_summary.total_market_value_gbp|money }}</span>
   </div>
+  <div class="stat">
+    <span class="stat__label">ISA Wrapper Allocation</span>
+    <span class="stat__value">{{ risk_summary.wrapper_allocation.isa_pct_of_total }}%</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Taxable Wrapper Allocation</span>
+    <span class="stat__value">{{ risk_summary.wrapper_allocation.taxable_pct_of_total }}%</span>
+  </div>
   <div class="stat stat--warning">
     <span class="stat__label">Top Holding (Gross)</span>
     <span class="stat__value">{{ risk_summary.top_holding_pct }}%</span>
@@ -45,6 +53,153 @@
   <div class="stat">
     <span class="stat__label">Employer Dependence Ratio</span>
     <span class="stat__value">{{ risk_summary.employer_dependence.ratio_pct }}%</span>
+  </div>
+  <div class="stat stat--accent">
+    <span class="stat__label">Optionality Index</span>
+    <span class="stat__value">{{ risk_summary.optionality_index.score }} / 100</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Wrapper Allocation Strip</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Wrapper</th>
+          <th class="num">Market Value (GBP)</th>
+          <th class="num">% of Priced Holdings</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ISA (Tax-Sheltered)</td>
+          <td class="num">&pound;{{ risk_summary.wrapper_allocation.isa_market_value_gbp|money }}</td>
+          <td class="num">{{ risk_summary.wrapper_allocation.isa_pct_of_total }}%</td>
+        </tr>
+        <tr>
+          <td>Taxable (Non-ISA)</td>
+          <td class="num">&pound;{{ risk_summary.wrapper_allocation.taxable_market_value_gbp|money }}</td>
+          <td class="num">{{ risk_summary.wrapper_allocation.taxable_pct_of_total }}%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Optionality Index</h2>
+  </div>
+  <p class="muted">Deterministic flexibility score based on sellability, forfeiture, concentration, ISA ratio, and config completeness.</p>
+  <form method="get" action="/risk" class="inline-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="weight_sellability">Sellability Weight (%)</label>
+        <input id="weight_sellability" name="weight_sellability" type="text" inputmode="decimal" value="{{ optionality_weights.sellability if optionality_weights else '' }}">
+      </div>
+      <div class="form-field">
+        <label for="weight_forfeiture">Forfeiture Weight (%)</label>
+        <input id="weight_forfeiture" name="weight_forfeiture" type="text" inputmode="decimal" value="{{ optionality_weights.forfeiture if optionality_weights else '' }}">
+      </div>
+      <div class="form-field">
+        <label for="weight_concentration">Concentration Weight (%)</label>
+        <input id="weight_concentration" name="weight_concentration" type="text" inputmode="decimal" value="{{ optionality_weights.concentration if optionality_weights else '' }}">
+      </div>
+      <div class="form-field">
+        <label for="weight_isa_ratio">ISA Ratio Weight (%)</label>
+        <input id="weight_isa_ratio" name="weight_isa_ratio" type="text" inputmode="decimal" value="{{ optionality_weights.isa_ratio if optionality_weights else '' }}">
+      </div>
+      <div class="form-field">
+        <label for="weight_config">Config Weight (%)</label>
+        <input id="weight_config" name="weight_config" type="text" inputmode="decimal" value="{{ optionality_weights.config if optionality_weights else '' }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-sm">Recalculate Score</button>
+      <a href="/risk" class="btn btn-secondary btn-sm">Reset Weights</a>
+    </div>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th class="num">Component Score (%)</th>
+          <th class="num">Weight (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Sellability</td>
+          <td class="num">{{ risk_summary.optionality_index.components_pct.sellability }}%</td>
+          <td class="num">{{ risk_summary.optionality_index.weights_pct.sellability }}%</td>
+        </tr>
+        <tr>
+          <td>Forfeiture Safety</td>
+          <td class="num">{{ risk_summary.optionality_index.components_pct.forfeiture }}%</td>
+          <td class="num">{{ risk_summary.optionality_index.weights_pct.forfeiture }}%</td>
+        </tr>
+        <tr>
+          <td>Concentration Headroom</td>
+          <td class="num">{{ risk_summary.optionality_index.components_pct.concentration }}%</td>
+          <td class="num">{{ risk_summary.optionality_index.weights_pct.concentration }}%</td>
+        </tr>
+        <tr>
+          <td>ISA Ratio</td>
+          <td class="num">{{ risk_summary.optionality_index.components_pct.isa_ratio }}%</td>
+          <td class="num">{{ risk_summary.optionality_index.weights_pct.isa_ratio }}%</td>
+        </tr>
+        <tr>
+          <td>Configuration Completeness</td>
+          <td class="num">{{ risk_summary.optionality_index.components_pct.config }}%</td>
+          <td class="num">{{ risk_summary.optionality_index.weights_pct.config }}%</td>
+        </tr>
+        <tr>
+          <td><strong>Optionality Index</strong></td>
+          <td class="num"><strong>{{ risk_summary.optionality_index.score }} / 100</strong></td>
+          <td class="num">-</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% if risk_summary.optionality_index.notes %}
+  <p class="muted">{{ risk_summary.optionality_index.notes[0] }}</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Future Optionality Timeline</h2>
+  </div>
+  <p class="muted">Static-valuation timeline using known lock and forfeiture dates only.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Band</th>
+          <th>As Of</th>
+          <th class="num">Sellable %</th>
+          <th class="num">Locked %</th>
+          <th class="num">Forfeitable %</th>
+          <th class="num">Deployable %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for band in risk_summary.optionality_timeline %}
+        <tr>
+          <td>{{ band.label }}</td>
+          <td>{{ band.as_of_date }}</td>
+          <td class="num">{{ band.sellable_pct }}%</td>
+          <td class="num">{{ band.locked_pct }}%</td>
+          <td class="num">{{ band.forfeitable_pct }}%</td>
+          <td class="num">{{ band.deployable_pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

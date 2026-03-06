@@ -6,26 +6,12 @@ Scope guardrails:
 - No buy/sell advice language.
 - Every change must improve at least one of: clarity, risk visibility, retained-wealth realism, hidden drag visibility.
 
-## Progress Update (2026-03-04)
+## Progress Update (2026-03-06)
 
-- Completed implementation: `T01`, `T02`, `T05`.
-- `T02` semantic fix applied: Net Value employment-tax wording now matches implementation (sellable-lot estimate in sell-all context).
-- Tax-input health warning now appears consistently on Portfolio, Net Value, Simulate, and Tax Plan.
-- Stage 2 baseline started: `/sell-plan` UI shipped with deterministic calendar-tranche plan creation and tranche status updates (`planned`/`due`/`executed`/`cancelled`).
-- Calendar linkage shipped: sell-plan tranche events now appear in `/calendar` with deep links and sell-plan filters (`sell_plan_id`, `method`, `status`).
-- Stage 2 core extended: sell-plan constraint engine now enforces sellable-only quantity, lock/forfeiture exclusion, minimum spacing, and daily quantity/notional caps with explicit breach reasons.
-- Stage 2 impact preview shipped: per-tranche deterministic projections now include `gross proceeds`, `employment tax estimate`, `CGT estimate`, `fees`, `net cash`, and cumulative totals.
-- Sell-plan to simulate bridge shipped: tranche rows now open `/simulate` with security/quantity/price prefilled and backlink context to the originating plan.
-- Simulate-first handoff shipped: simulation results now link directly to prefilled sell-plan creation (`security`, `quantity`, `reference price`), with guidance to simulate before planning.
-- Sell-plan lifecycle control added: plans can now be deleted directly from `/sell-plan` with explicit confirmation.
-- Sellability alignment shipped: Sell Plan now follows Simulate sellability semantics for ESPP+ (paid shares included; matched shares included once past forfeiture window).
-- Whole-share MAX behavior shipped in Simulate and Sell Plan (`MAX` floors to full shares, and fractional simulation quantities are blocked in UI flow).
-- Stage 3 shipped: sell-plan method modes (`Calendar Tranches`, `Threshold Bands`, `Limit Ladder`, `Broker Algo TWAP/VWAP`), default `Hybrid De-Risk` profile inputs/rationale, approval gating, and IBKR staging CSV export with deterministic external IDs.
-- Stage 4 shipped: `/cash` multi-currency ledger (BROKER/ISA/BANK), append-only auditable cash entries, and GBP-only ISA transfer workflow with mandatory FX conversion provenance for non-GBP sources.
-- Stage 5 shipped: `/capital-stack` wealth-reality stack now reconciles Gross -> Locked -> Forfeitable -> Hypothetical Liquid -> (Employment Tax + CGT + Fees) -> Net Deployable Today with explicit deterministic formula notes.
-- Dual-cost policy shipped: `True Cost (Acquisition)` remains immutable and `Dividend-Adjusted Capital at Risk` is now surfaced separately (Portfolio + Capital Stack + Glossary), without changing tax-report cost logic.
-- Stage 6 shipped: Portfolio now surfaces top-holding and employer concentration (gross + sellable), split `Locked` vs `Forfeitable` value buckets, deployable-capital metrics including GBP cash sidecar, and deterministic Employer Dependence Ratio with transparent formula components.
-- Stage 7 shipped: Tax Plan now carries projection assumption-quality tags (`Exact` / `Weighted Estimate` / `Unavailable`) across cross-year, compensation, and per-lot blocks; Simulate commit now enforces explicit acknowledgement when employment-tax estimates are unavailable; Transfer now shows deterministic pre-confirm impact (forfeiture qty/value + transfer-time employment tax estimate); Add Lot now includes persisted-equivalent pre-submit preview (cost basis, true cost, FX basis, lock/forfeiture flags); Portfolio now surfaces deterministic behavioural guardrails with local silence controls; Sell Plan now includes adherence/drift governance panel and direct glossary linkage for method scope.
+- Stages `1`-`7` remain complete as previously logged.
+- Stage `8` complete: `T10` glossary deep links, `T11` analytics criticality metadata/order, and `T12` regression lock-in.
+- Stage `9` in progress: `T34`, `T41`, `T42`, and `T44` complete; `T35` partially complete (Portfolio + Dividends done; Per-Scheme/History pending).
+- Stage `10` in progress: `T13` wrapper allocation strip and `T14` FX attribution widget complete; `T15`-`T32` pending.
 
 ## Execution Status (Source of Truth)
 
@@ -38,9 +24,24 @@ Scope guardrails:
 | 5 | `T38`, `T33` | Complete | Capital stack and dual-cost dividend-adjusted capital-at-risk policy are live. |
 | 6 | `T03`, `T04`, `T39`, `T40` | Complete | Portfolio and Risk now show concentration (gross/sellable), locked/forfeitable split, cash-aware deployable metrics, and employer dependence ratio. |
 | 7 | `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` | Complete | Decision-surface hardening and execution governance shipped. |
-| 8 | `T10`, `T11`, `T12` | Next | Cross-surface clarity and regression lock-in. |
-| 9 | `T34`, `T35`, `T41`, `T42`, `T44` | Pending | Dividend attribution and optionality extensions. |
-| 10 | `T13`-`T32` | Pending | Remaining strategic expansion pages/features. |
+| 8 | `T10`, `T11`, `T12` | Complete | Glossary deep-linking, analytics criticality metadata/order, and regression lock-in are live. |
+| 9 | `T34`, `T35`, `T41`, `T42`, `T44` | In Progress | `T34`, `T41`, `T42`, `T44` complete; `T35` partially complete (Portfolio/Dividends done, Per-Scheme/History pending). |
+| 10 | `T13`-`T32` | In Progress | `T13` and `T14` complete; remaining expansion backlog pending. |
+
+## Task Delivery Snapshot (2026-03-06)
+
+| ID | Status | Notes |
+|---|---|---|
+| T10 | Complete | High-risk metric labels now deep-link to glossary anchors. |
+| T11 | Complete | Analytics widgets carry context/criticality metadata and priority order. |
+| T12 | Complete | New tests cover wording/links and deterministic exposure/widget outputs. |
+| T34 | Complete | Security-level dividend allocation with deterministic tax split and reconciliation totals. |
+| T35 | Partial | Portfolio + Dividends surfaces live; Per-Scheme and History integration still pending. |
+| T41 | Complete | Risk optionality timeline bands shipped in service/API/UI. |
+| T42 | Complete | Optionality index shipped with transparent weighted component breakdown. |
+| T44 | Complete | Dividend native-currency input and FX provenance fully supported end-to-end. |
+| T13 | Complete | ISA/taxable wrapper allocation surfaced on Portfolio and Risk. |
+| T14 | Complete | Analytics FX attribution widget shipped and wired into widget governance. |
 
 ## Core v1 (Critical)
 
@@ -130,7 +131,8 @@ Method basis used for scoping (non-advisory):
 
 - These items are intentionally deterministic extensions of existing services/data.
 - None of these items require predictive AI, market timing, or buy/sell advice logic.
-- Prioritize T33, T36, T37, and T38 first (dividend economics + currency cash + deployable-capital reality).
+- Prioritize completion of `T35` first (Per-Scheme/History dividend-adjusted surfaces + reconciliation tests).
+- Then prioritize `T15`, `T16`, `T17`, and `T19` as the next highest-value structural upgrades.
 - Sell execution additions (`T45`-`T53`) are execution-policy tooling, not return forecasting or trade recommendation logic.
 
 ## Execution Order (Source of Truth)
@@ -142,20 +144,13 @@ Method basis used for scoping (non-advisory):
 5. `T38`, `T33` (Completed).
 6. `T03`, `T04`, `T39`, `T40` (Completed).
 7. `T06`, `T07`, `T08`, `T09`, `T43`, `T51`, `T52` (Completed).
-8. `T10`, `T11`, `T12` (Next active stage).
-9. `T34`, `T35`, `T41`, `T42`, `T44`.
-10. `T13`-`T32`.
+8. `T10`, `T11`, `T12` (Completed).
+9. `T34`, `T41`, `T42`, `T44` (Completed) + `T35` (In Progress).
+10. `T13`, `T14` (Completed), then `T15`-`T32` (Pending).
 
-## Definition of Done (Next Step)
+## Definition of Done (Current + Next)
 
-- Core v1 items (T01-T12) merged.
-- Sell execution core (`T45`-`T50`, `T53`) merged.
-- Priority additions T33, T36, T37, and T38 merged.
-- All affected pages explicitly separate actionable vs hypothetical values.
-- Concentration and forfeiture exposure visible from primary decision surfaces.
-- Tax estimation dependencies and assumptions are explicit at point-of-use.
-- Sell-plan outputs are deterministic, auditable, and reconciled to executed transactions.
-- Sell-plan tranches are visible and navigable in `/calendar` with synchronized status.
-- Multi-currency cash and ISA conversion constraints are modelled and auditable.
-- Dividend-adjusted capital-at-risk metric is visible without mutating canonical true cost.
-- Regression coverage updated for all changed calculation displays and labels.
+- Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
+- Partial completion active: Stage 9 is complete except full `T35` rollout into Per-Scheme/History; Stage 10 has `T13` and `T14` complete.
+- Next exit criteria: complete `T35` across Portfolio, Per-Scheme, History, and Security History with reconciliation tests.
+- Next exit criteria: merge selected Stage 10 follow-ons (`T15`/`T16`/`T17` or `T19`) with deterministic test coverage.

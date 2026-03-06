@@ -39,7 +39,11 @@ def test_risk_summary_empty_portfolio_returns_zeroed_metrics(app_context):
     assert summary.scheme_concentration == []
     assert summary.liquidity is not None
     assert summary.liquidity.classified_total_gbp == Decimal("0.00")
+    assert summary.wrapper_allocation is not None
+    assert summary.wrapper_allocation.isa_pct_of_total == Decimal("0.00")
     assert len(summary.stress_points) == 6
+    assert len(summary.optionality_timeline) == 5
+    assert summary.optionality_index is not None
     assert summary.stress_points[0].shock_label == "-30%"
     assert summary.stress_points[-1].shock_label == "+20%"
     assert any("No priced holdings available" in n for n in summary.notes)
@@ -109,6 +113,9 @@ def test_risk_summary_calculates_concentration_liquidity_and_stress(app_context)
     assert summary.liquidity.sellable_pct == Decimal("44.44")
     assert summary.liquidity.locked_pct == Decimal("28.89")
     assert summary.liquidity.at_risk_pct == Decimal("26.67")
+    assert summary.optionality_index is not None
+    assert summary.optionality_timeline[0].label == "Now"
+    assert summary.optionality_timeline[0].forfeitable_pct == Decimal("6.67")
 
     shock_map = {p.shock_label: p.stressed_market_value_gbp for p in summary.stress_points}
     assert shock_map["-30%"] == Decimal("315.00")

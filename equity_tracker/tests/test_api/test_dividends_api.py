@@ -61,6 +61,38 @@ def test_api_dividend_entry_create_and_summary_rows(client):
     assert payload["entries"][0]["tax_treatment"] == "TAXABLE"
 
 
+def test_api_dividend_entry_create_supports_native_currency_and_fx(client):
+    sec_id = _add_security(client, "DIVFX")
+
+    create_resp = client.post(
+        "/api/dividends/entries",
+        json={
+            "security_id": sec_id,
+            "dividend_date": "2026-02-20",
+            "amount_original_ccy": "120.50",
+            "original_currency": "USD",
+            "fx_rate_to_gbp": "0.8000",
+            "fx_rate_source": "manual_test",
+            "tax_treatment": "TAXABLE",
+            "source": "manual",
+            "notes": "fx row",
+        },
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()
+    assert created["amount_gbp"] == "96.40"
+    assert created["amount_original_ccy"] == "120.50"
+    assert created["original_currency"] == "USD"
+    assert created["fx_rate_to_gbp"] == "0.800000"
+
+    summary_resp = client.get("/api/dividends/summary")
+    assert summary_resp.status_code == 200
+    payload = summary_resp.json()
+    assert payload["entries"][0]["ticker"] == "DIVFX"
+    assert payload["entries"][0]["original_currency"] == "USD"
+    assert payload["allocation"]["mode"] == "SECURITY_LEVEL"
+
+
 def test_dividends_ui_add_form_submission(client):
     sec_id = _add_security(client, "DIVFORM")
 

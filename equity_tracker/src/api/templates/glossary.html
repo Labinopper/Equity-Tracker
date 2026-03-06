@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Glossary - Equity Tracker{% endblock %}
 
 {% block content %}
@@ -13,23 +13,23 @@
     <table>
       <tbody>
         <tr>
-          <th style="width:220px">True Cost (Acquisition)</th>
+          <th id="true-cost-acquisition" style="width:220px">True Cost (Acquisition)</th>
           <td>Immutable acquisition-time economic cost used in reporting and economic gain calculations. It is not reduced by later dividends.</td>
         </tr>
         <tr>
-          <th>Dividend-Adjusted Capital at Risk</th>
+          <th id="dividend-adjusted-capital-at-risk">Dividend-Adjusted Capital at Risk</th>
           <td>`True Cost (Acquisition) - Estimated Net Dividends` (floored at zero). Portfolio-level indicator only; does not replace True Cost and does not change tax-report logic.</td>
         </tr>
         <tr>
-          <th>Cost Basis</th>
+          <th id="cost-basis">Cost Basis</th>
           <td>The HMRC-recognised cost base for calculating capital gain on disposal (also called Allowable Cost). May differ from True Cost when acquisition-time tax creates a gap.</td>
         </tr>
         <tr>
-          <th>Allowable Cost</th>
+          <th id="allowable-cost">Allowable Cost</th>
           <td>HMRC term for Cost Basis in CGT self-assessment filing context. Used in the CGT Report.</td>
         </tr>
         <tr>
-          <th>Economic Gain</th>
+          <th id="economic-gain">Economic Gain</th>
           <td>Proceeds minus True Cost. Shows true investment return. May differ from CGT Gain because True Cost and Cost Basis can differ.</td>
         </tr>
         <tr>
@@ -47,16 +47,16 @@
     <table>
       <tbody>
         <tr>
-          <th style="width:220px">Employment Tax</th>
+          <th id="employment-tax" style="width:220px">Employment Tax</th>
           <td>Income Tax (IT) + National Insurance (NI) + Student Loan (SL) on scheme-eligible disposals (RSU, ESPP+). Abbreviated "IT + NI + SL".</td>
         </tr>
         <tr>
-          <th>AEA</th>
-          <td>Annual Exempt Amount &mdash; the CGT tax-free threshold for the year (£3,000 for 2024&ndash;25 onwards). Gains below AEA in a tax year are not subject to CGT.</td>
+          <th id="aea">AEA</th>
+          <td>Annual Exempt Amount &mdash; the CGT tax-free threshold for the year (&pound;3,000 for 2024&ndash;25 onwards). Gains below AEA in a tax year are not subject to CGT.</td>
         </tr>
         <tr>
-          <th>ANI (Adjusted Net Income)</th>
-          <td>Gross Employment Income minus Pension Sacrifice plus Other Income. Determines Personal Allowance taper above £100k. Used in the Tax Plan what-if analysis.</td>
+          <th id="ani-adjusted-net-income">ANI (Adjusted Net Income)</th>
+          <td>Gross Employment Income minus Pension Sacrifice plus Other Income. Determines Personal Allowance taper above &pound;100k. Used in the Tax Plan what-if analysis.</td>
         </tr>
         <tr>
           <th>SL (Student Loan)</th>
@@ -73,19 +73,23 @@
     <table>
       <tbody>
         <tr>
-          <th style="width:220px">Est. Net Liquidity (Sellable)</th>
+          <th id="est-net-liquidity-sellable" style="width:220px">Est. Net Liquidity (Sellable)</th>
           <td>Sum of Net If Sold Today for <strong>sellable rows only</strong>. Locked and forfeiture-restricted lots are excluded. Shown on the Portfolio page.</td>
         </tr>
         <tr>
-          <th>Hypothetical Full Liquidation</th>
+          <th id="hypothetical-full-liquidation">Hypothetical Full Liquidation</th>
           <td>Gross market value across <strong>all lots</strong> minus estimated employment tax from <strong>currently sellable lots</strong>. Shown on the Net Value page in sell-all context. Not directly comparable to Est. Net Liquidity.</td>
         </tr>
         <tr>
-          <th>Blocked/Restricted Value</th>
-          <td>Market value of locked lots (e.g. pre-vest RSU) plus ESPP+ matched-share forfeiture-at-risk value. Cannot be realised until the lock or forfeiture window expires.</td>
+          <th id="locked-capital">Locked Capital</th>
+          <td>Market value of lots that are currently non-sellable due to lock status (for example pre-vest RSU). Excludes forfeitable matched-share value.</td>
         </tr>
         <tr>
-          <th>Forfeiture Window</th>
+          <th id="forfeitable-capital">Forfeitable Capital</th>
+          <td>Market value of ESPP+ matched shares still inside the forfeiture window. Value is at risk if linked employee shares are sold before the window ends.</td>
+        </tr>
+        <tr>
+          <th id="forfeiture-window">Forfeiture Window</th>
           <td>The period after ESPP+ lot acquisition during which selling the paired employee shares forfeits the matched (employer) shares. Badge "(Xd left)" means X days remaining until the window closes and it is safe to sell.</td>
         </tr>
       </tbody>

@@ -29,6 +29,84 @@ from .risk_service import RiskService
 _GBP_Q = Decimal("0.01")
 _TOTAL_LABEL = "Total"
 _DEFAULT_TIMELINE_HORIZON_DAYS = 400
+_DEFAULT_WIDGET_PRIORITY = 999
+_DEFAULT_WIDGET_CRITICALITY = "Supporting"
+_DEFAULT_WIDGET_CONTEXT = "General Insight"
+
+_WIDGET_DECISION_META: dict[str, dict[str, Any]] = {
+    "liquidity-breakdown": {
+        "decision_context_label": "Liquidity Clarity",
+        "decision_criticality": "Critical",
+        "priority_rank": 10,
+        "default_visible": True,
+    },
+    "security-concentration": {
+        "decision_context_label": "Concentration Risk",
+        "decision_criticality": "Critical",
+        "priority_rank": 20,
+        "default_visible": True,
+    },
+    "forfeiture-at-risk": {
+        "decision_context_label": "Forfeiture Risk",
+        "decision_criticality": "Critical",
+        "priority_rank": 30,
+        "default_visible": True,
+    },
+    "cgt-year-position": {
+        "decision_context_label": "Tax Position",
+        "decision_criticality": "High",
+        "priority_rank": 40,
+        "default_visible": True,
+    },
+    "scheme-concentration": {
+        "decision_context_label": "Scheme Structure",
+        "decision_criticality": "High",
+        "priority_rank": 50,
+        "default_visible": True,
+    },
+    "events-timeline": {
+        "decision_context_label": "Timing Constraints",
+        "decision_criticality": "High",
+        "priority_rank": 60,
+        "default_visible": True,
+    },
+    "stress-test": {
+        "decision_context_label": "Downside Stress",
+        "decision_criticality": "High",
+        "priority_rank": 70,
+        "default_visible": False,
+    },
+    "fx-attribution": {
+        "decision_context_label": "FX Exposure",
+        "decision_criticality": "High",
+        "priority_rank": 75,
+        "default_visible": False,
+    },
+    "unrealised-pnl": {
+        "decision_context_label": "P&L Structure",
+        "decision_criticality": "Medium",
+        "priority_rank": 80,
+        "default_visible": True,
+    },
+    "economic-vs-tax": {
+        "decision_context_label": "Economic vs Tax",
+        "decision_criticality": "Medium",
+        "priority_rank": 90,
+        "default_visible": False,
+    },
+    "gain-loss-history": {
+        "decision_context_label": "Tax History",
+        "decision_criticality": "Supporting",
+        "priority_rank": 100,
+        "default_visible": False,
+    },
+    "portfolio-value-time": {
+        "decision_context_label": "Valuation History",
+        "decision_criticality": "Supporting",
+        "priority_rank": 110,
+        "default_visible": True,
+    },
+}
 
 
 def _q_money(value: Decimal) -> Decimal:
@@ -67,6 +145,43 @@ def _hidden_widget(
         "reason": "Values hidden by privacy mode.",
         "rows": [],
     }
+
+
+def _widget_meta(widget_id: str) -> dict[str, Any]:
+    return _WIDGET_DECISION_META.get(
+        widget_id,
+        {
+            "decision_context_label": _DEFAULT_WIDGET_CONTEXT,
+            "decision_criticality": _DEFAULT_WIDGET_CRITICALITY,
+            "priority_rank": _DEFAULT_WIDGET_PRIORITY,
+            "default_visible": False,
+        },
+    )
+
+
+def _with_widget_meta(widget: dict[str, Any]) -> dict[str, Any]:
+    result = dict(widget)
+    widget_id = str(result.get("widget_id") or "")
+    meta = _widget_meta(widget_id)
+    result["decision_context_label"] = str(meta["decision_context_label"])
+    result["decision_criticality"] = str(meta["decision_criticality"])
+    result["priority_rank"] = int(meta["priority_rank"])
+    result["default_visible"] = bool(meta["default_visible"])
+    return result
+
+
+def _with_widget_map_meta(widgets: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {key: _with_widget_meta(widget) for key, widget in widgets.items()}
+
+
+def _widget_order(widgets: dict[str, dict[str, Any]]) -> list[str]:
+    ranked = []
+    for widget in widgets.values():
+        wid = str(widget.get("widget_id") or "")
+        rank = _widget_meta(wid)["priority_rank"]
+        ranked.append((int(rank), wid))
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return [wid for _, wid in ranked if wid]
 
 
 class AnalyticsService:
@@ -211,11 +326,8 @@ class AnalyticsService:
         tax_position = AnalyticsService.get_tax_position(settings=settings)
 
         if hide_values:
-            return {
-                "generated_at_utc": generated_at_utc,
-                "hide_values": True,
-                "focus_groups": AnalyticsService._focus_groups(),
-                "widgets": {
+            widgets = _with_widget_map_meta(
+                {
                     "portfolio_value_time": portfolio_over_time,
                     "scheme_concentration": _hidden_widget(
                         widget_id="scheme-concentration",
@@ -257,6 +369,11 @@ class AnalyticsService:
                         title="Stress Test (Price Shocks)",
                         subtitle="Net liquidation value at hypothetical portfolio price moves.",
                     ),
+                    "fx_attribution": _hidden_widget(
+                        widget_id="fx-attribution",
+                        title="FX Attribution (Native vs FX)",
+                        subtitle="GBP movement split into native-price and FX contributions.",
+                    ),
                     "forfeiture_at_risk": _hidden_widget(
                         widget_id="forfeiture-at-risk",
                         title="Forfeiture-At-Risk Value",
@@ -267,7 +384,14 @@ class AnalyticsService:
                         title="Upcoming Events Timeline",
                         subtitle="Vest, forfeiture-window, and tax-year markers across the event horizon.",
                     ),
-                },
+                }
+            )
+            return {
+                "generated_at_utc": generated_at_utc,
+                "hide_values": True,
+                "focus_groups": AnalyticsService._focus_groups(),
+                "widgets": widgets,
+                "widget_order": _widget_order(widgets),
                 "notes": ["Monetary analytics widgets are hidden while privacy mode is enabled."],
             }
 
@@ -380,18 +504,19 @@ class AnalyticsService:
         forfeiture_widget, forfeiture_notes = AnalyticsService._forfeiture_at_risk_widget(
             portfolio_summary=portfolio_summary
         )
+        fx_widget, fx_notes = AnalyticsService._fx_attribution_widget(
+            portfolio_summary=portfolio_summary
+        )
         timeline_widget, timeline_notes = AnalyticsService._timeline_widget(settings=settings)
 
         notes = list(risk_summary.notes)
         notes.extend(tax_position.get("notes", []))
+        notes.extend(fx_notes)
         notes.extend(forfeiture_notes)
         notes.extend(timeline_notes)
 
-        return {
-            "generated_at_utc": generated_at_utc,
-            "hide_values": hide_values,
-            "focus_groups": AnalyticsService._focus_groups(),
-            "widgets": {
+        widgets = _with_widget_map_meta(
+            {
                 "portfolio_value_time": portfolio_over_time,
                 "scheme_concentration": {
                     "widget_id": "scheme-concentration",
@@ -446,9 +571,18 @@ class AnalyticsService:
                     ),
                     "rows": stress_rows,
                 },
+                "fx_attribution": fx_widget,
                 "forfeiture_at_risk": forfeiture_widget,
                 "events_timeline": timeline_widget,
-            },
+            }
+        )
+
+        return {
+            "generated_at_utc": generated_at_utc,
+            "hide_values": hide_values,
+            "focus_groups": AnalyticsService._focus_groups(),
+            "widgets": widgets,
+            "widget_order": _widget_order(widgets),
             "notes": notes,
         }
 
@@ -553,6 +687,84 @@ class AnalyticsService:
         return widget, notes
 
     @staticmethod
+    def _fx_attribution_widget(
+        *,
+        portfolio_summary,
+    ) -> tuple[dict[str, Any], list[str]]:
+        rows: list[dict[str, Any]] = []
+        notes: list[str] = []
+
+        for security_summary in portfolio_summary.securities:
+            if security_summary.market_value_gbp is None:
+                continue
+            if security_summary.total_quantity <= Decimal("0"):
+                continue
+
+            acquisition_gbp_total = Decimal("0")
+            acquisition_native_total = Decimal("0")
+            for lot_summary in security_summary.active_lots:
+                qty = lot_summary.quantity_remaining
+                acquisition_gbp_total += lot_summary.cost_basis_total_gbp
+                lot = lot_summary.lot
+                acq_native = _to_decimal(lot.acquisition_price_original_ccy)
+                if acq_native is None:
+                    acq_native = _to_decimal(lot.acquisition_price_gbp)
+                if acq_native is None:
+                    continue
+                acquisition_native_total += _q_money(acq_native * qty)
+
+            if acquisition_gbp_total <= Decimal("0") or acquisition_native_total <= Decimal("0"):
+                continue
+
+            current_price_native = _to_decimal(security_summary.current_price_native)
+            if current_price_native is not None:
+                current_native_total = _q_money(current_price_native * security_summary.total_quantity)
+            else:
+                current_native_total = _q_money(Decimal(security_summary.market_value_gbp))
+
+            current_market_value_gbp = _q_money(Decimal(security_summary.market_value_gbp))
+            fx_rate_at_acquisition = acquisition_gbp_total / acquisition_native_total
+            gbp_if_native_move_only = _q_money(current_native_total * fx_rate_at_acquisition)
+            native_move_gbp = _q_money(gbp_if_native_move_only - acquisition_gbp_total)
+            fx_move_gbp = _q_money(current_market_value_gbp - gbp_if_native_move_only)
+            total_change_gbp = _q_money(current_market_value_gbp - acquisition_gbp_total)
+
+            rows.append(
+                {
+                    "security_id": security_summary.security.id,
+                    "ticker": security_summary.security.ticker,
+                    "acquisition_gbp_total": _money_str(_q_money(acquisition_gbp_total)),
+                    "current_market_value_gbp": _money_str(current_market_value_gbp),
+                    "native_move_contribution_gbp": _money_str(native_move_gbp),
+                    "fx_move_contribution_gbp": _money_str(fx_move_gbp),
+                    "total_change_gbp": _money_str(total_change_gbp),
+                    "fx_rate_at_acquisition": str(_q_money(fx_rate_at_acquisition)),
+                }
+            )
+
+        rows.sort(
+            key=lambda row: abs(Decimal(row["fx_move_contribution_gbp"])),
+            reverse=True,
+        )
+        rows = rows[:10]
+
+        if rows:
+            notes.append(
+                "FX attribution uses weighted acquisition FX basis and current native value; no forecast inputs."
+            )
+
+        widget = {
+            "widget_id": "fx-attribution",
+            "title": "FX Attribution (Native vs FX)",
+            "subtitle": "GBP movement split into native-price and FX contributions.",
+            "hidden": False,
+            "has_data": bool(rows),
+            "reason": None if rows else "Insufficient priced holdings to compute FX attribution.",
+            "rows": rows,
+        }
+        return widget, notes
+
+    @staticmethod
     def _timeline_widget(
         *,
         settings: AppSettings | None,
@@ -620,6 +832,7 @@ class AnalyticsService:
                     "scheme-concentration",
                     "security-concentration",
                     "unrealised-pnl",
+                    "fx-attribution",
                 ],
             },
             {
@@ -645,9 +858,8 @@ class AnalyticsService:
         active_tax_year = AnalyticsService._active_tax_year(settings=settings)
 
         if bool(settings and settings.hide_values):
-            return {
-                "active_tax_year": active_tax_year,
-                "widgets": {
+            widgets = _with_widget_map_meta(
+                {
                     "cgt_year_position": _hidden_widget(
                         widget_id="cgt-year-position",
                         title="Tax-Year CGT Position",
@@ -663,7 +875,12 @@ class AnalyticsService:
                         title="Economic vs Tax P&L",
                         subtitle="Net economic gain versus CGT-basis gain by tax year.",
                     ),
-                },
+                }
+            )
+            return {
+                "active_tax_year": active_tax_year,
+                "widgets": widgets,
+                "widget_order": _widget_order(widgets),
                 "notes": ["Tax and returns widgets are hidden while privacy mode is enabled."],
             }
 
@@ -734,9 +951,8 @@ class AnalyticsService:
         if not history_rows:
             notes.append("No disposal history found for gain/loss tax-year charts.")
 
-        return {
-            "active_tax_year": active_tax_year,
-            "widgets": {
+        widgets = _with_widget_map_meta(
+            {
                 "cgt_year_position": {
                     "widget_id": "cgt-year-position",
                     "title": "Tax-Year CGT Position",
@@ -772,7 +988,13 @@ class AnalyticsService:
                     ),
                     "rows": economic_vs_tax_rows,
                 },
-            },
+            }
+        )
+
+        return {
+            "active_tax_year": active_tax_year,
+            "widgets": widgets,
+            "widget_order": _widget_order(widgets),
             "notes": notes,
         }
 

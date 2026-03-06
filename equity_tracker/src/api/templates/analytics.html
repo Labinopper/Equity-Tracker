@@ -31,7 +31,7 @@
     <h2 class="card__title">Widget Visibility</h2>
   </div>
   <div class="table-wrap">
-    <table>
+    <table class="analytics-widget-visibility-table">
       <thead>
         <tr>
           <th>Widget</th>
@@ -116,6 +116,15 @@
           <td>
             <label>
               <input type="checkbox" class="analytics-widget-toggle" data-widget-id="stress-test">
+              Enabled
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td>FX Attribution (Native vs FX)</td>
+          <td>
+            <label>
+              <input type="checkbox" class="analytics-widget-toggle" data-widget-id="fx-attribution">
               Enabled
             </label>
           </td>
@@ -514,6 +523,50 @@
   </div>
 </div>
 
+<div class="card analytics-widget" data-widget-id="fx-attribution">
+  <div class="card__header">
+    <h2 class="card__title">{{ widgets.fx_attribution.title }}</h2>
+  </div>
+  <p class="muted">{{ widgets.fx_attribution.subtitle }}</p>
+  <canvas id="chart-fx-attribution" aria-label="FX attribution chart"></canvas>
+  <p class="muted" data-empty-for="fx-attribution" hidden></p>
+  <button type="button" class="btn btn-secondary btn-sm analytics-table-toggle" data-target-id="table-fx-attribution">
+    Show table
+  </button>
+  <div id="table-fx-attribution" class="table-wrap" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">Acquisition Basis</th>
+          <th class="num">Current Value</th>
+          <th class="num">Native Move</th>
+          <th class="num">FX Move</th>
+          <th class="num">Total Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if widgets.fx_attribution.rows %}
+          {% for row in widgets.fx_attribution.rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td class="num">&pound;{{ row.acquisition_gbp_total|money }}</td>
+            <td class="num">&pound;{{ row.current_market_value_gbp|money }}</td>
+            <td class="num">&pound;{{ row.native_move_contribution_gbp|money }}</td>
+            <td class="num">&pound;{{ row.fx_move_contribution_gbp|money }}</td>
+            <td class="num">&pound;{{ row.total_change_gbp|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="muted">{{ widgets.fx_attribution.reason or "No data available." }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card analytics-widget" data-widget-id="forfeiture-at-risk">
   <div class="card__header">
     <h2 class="card__title">{{ widgets.forfeiture_at_risk.title }}</h2>
@@ -659,19 +712,7 @@
   var chartInstances = {};
   var storageKey = "analytics.widget_visibility.v1";
   var focusStorageKey = "analytics.focus_group.v1";
-  var defaultVisibility = {
-    "portfolio-value-time": true,
-    "scheme-concentration": true,
-    "security-concentration": true,
-    "liquidity-breakdown": true,
-    "unrealised-pnl": true,
-    "cgt-year-position": true,
-    "gain-loss-history": false,
-    "economic-vs-tax": false,
-    "stress-test": false,
-    "forfeiture-at-risk": false,
-    "events-timeline": false
-  };
+  var widgetOrder = Array.isArray(summary.widget_order) ? summary.widget_order : [];
 
   var widgetById = {
     "portfolio-value-time": widgets.portfolio_value_time || {},
@@ -683,9 +724,114 @@
     "gain-loss-history": widgets.gain_loss_history || {},
     "economic-vs-tax": widgets.economic_vs_tax || {},
     "stress-test": widgets.stress_test || {},
+    "fx-attribution": widgets.fx_attribution || {},
     "forfeiture-at-risk": widgets.forfeiture_at_risk || {},
     "events-timeline": widgets.events_timeline || {}
   };
+
+  var defaultVisibility = {};
+  Object.keys(widgetById).forEach(function (widgetId) {
+    var widget = widgetById[widgetId] || {};
+    defaultVisibility[widgetId] = widget.default_visible !== false;
+  });
+
+  function toInt(value, fallback) {
+    var num = Number.parseInt(String(value), 10);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function widgetPriorityRank(widgetId) {
+    var widget = widgetById[widgetId] || {};
+    var rank = toInt(widget.priority_rank, 999);
+    if (rank !== 999) {
+      return rank;
+    }
+    var orderIndex = widgetOrder.indexOf(widgetId);
+    return orderIndex >= 0 ? (1000 + orderIndex) : 9999;
+  }
+
+  function ensureCardMeta(card, widgetId) {
+    var widget = widgetById[widgetId] || {};
+    var header = card.querySelector(".card__header");
+    if (!header) {
+      return;
+    }
+    var existing = header.querySelector(".analytics-widget-meta");
+    if (existing) {
+      existing.remove();
+    }
+    var criticality = String(widget.decision_criticality || "Supporting");
+    var context = String(widget.decision_context_label || "General Insight");
+    var meta = document.createElement("div");
+    meta.className = "analytics-widget-meta";
+    meta.innerHTML = "<span class=\"badge badge-neutral\">" + criticality + "</span> <span class=\"badge badge-sellable\">" + context + "</span>";
+    header.appendChild(meta);
+  }
+
+  function ensureVisibilityRowMeta(row, widgetId) {
+    var widget = widgetById[widgetId] || {};
+    var firstCell = row.querySelector("td");
+    if (!firstCell) {
+      return;
+    }
+    row.dataset.widgetId = widgetId;
+    row.dataset.priorityRank = String(widgetPriorityRank(widgetId));
+    var existing = firstCell.querySelector(".analytics-widget-row-meta");
+    if (existing) {
+      existing.remove();
+    }
+    var meta = document.createElement("div");
+    meta.className = "muted analytics-widget-row-meta";
+    meta.textContent = String(widget.decision_criticality || "Supporting") + " | " + String(widget.decision_context_label || "General Insight");
+    firstCell.appendChild(meta);
+  }
+
+  function applyPriorityOrder() {
+    var grid = document.querySelector(".analytics-widget-grid");
+    if (grid) {
+      var cards = Array.from(grid.querySelectorAll(".analytics-widget[data-widget-id]"));
+      cards.sort(function (a, b) {
+        var rankA = widgetPriorityRank(a.getAttribute("data-widget-id") || "");
+        var rankB = widgetPriorityRank(b.getAttribute("data-widget-id") || "");
+        if (rankA === rankB) {
+          var idA = a.getAttribute("data-widget-id") || "";
+          var idB = b.getAttribute("data-widget-id") || "";
+          return idA.localeCompare(idB);
+        }
+        return rankA - rankB;
+      });
+      cards.forEach(function (card) {
+        var widgetId = card.getAttribute("data-widget-id") || "";
+        card.dataset.priorityRank = String(widgetPriorityRank(widgetId));
+        ensureCardMeta(card, widgetId);
+        grid.appendChild(card);
+      });
+    }
+
+    var visibilityBody = document.querySelector(".analytics-widget-visibility-table tbody");
+    if (visibilityBody) {
+      var rows = Array.from(visibilityBody.querySelectorAll("tr"));
+      rows.forEach(function (row) {
+        var toggle = row.querySelector(".analytics-widget-toggle");
+        if (!toggle) {
+          return;
+        }
+        var widgetId = toggle.getAttribute("data-widget-id") || "";
+        ensureVisibilityRowMeta(row, widgetId);
+      });
+      rows.sort(function (a, b) {
+        var rankA = toInt(a.dataset.priorityRank, 9999);
+        var rankB = toInt(b.dataset.priorityRank, 9999);
+        if (rankA === rankB) {
+          return String(a.dataset.widgetId || "").localeCompare(String(b.dataset.widgetId || ""));
+        }
+        return rankA - rankB;
+      });
+      rows.forEach(function (row) {
+        visibilityBody.appendChild(row);
+      });
+    }
+  }
 
   function toNumber(value) {
     var num = Number(value);
@@ -1207,6 +1353,63 @@
     });
   }
 
+  function renderFxAttribution() {
+    var widget = widgetById["fx-attribution"];
+    if (widget.hidden || !widget.has_data) {
+      setWidgetMessage("fx-attribution", widget.reason || "Insufficient data.");
+      return;
+    }
+    var rows = Array.isArray(widget.rows) ? widget.rows : [];
+    var labels = [];
+    var nativeMoves = [];
+    var fxMoves = [];
+    rows.forEach(function (row) {
+      var nativeMove = toNumber(row.native_move_contribution_gbp);
+      var fxMove = toNumber(row.fx_move_contribution_gbp);
+      if (nativeMove === null || fxMove === null) {
+        return;
+      }
+      labels.push(row.ticker);
+      nativeMoves.push(nativeMove);
+      fxMoves.push(fxMove);
+    });
+    if (!labels.length) {
+      setWidgetMessage("fx-attribution", "Insufficient data.");
+      return;
+    }
+    setWidgetMessage("fx-attribution", "");
+    createChart("fx-attribution", {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Native Move (GBP)",
+            data: nativeMoves,
+            backgroundColor: theme.accent
+          },
+          {
+            label: "FX Move (GBP)",
+            data: fxMoves,
+            backgroundColor: theme.warning
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { stacked: true },
+          y: {
+            stacked: true,
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
+      }
+    });
+  }
+
   function renderForfeitureAtRisk() {
     var widget = widgetById["forfeiture-at-risk"];
     if (widget.hidden || !widget.has_data) {
@@ -1485,6 +1688,7 @@
     state.focusId = "all";
   }
 
+  applyPriorityOrder();
   applyVisibilityAndFocus(state);
 
   renderPortfolioValueTime();
@@ -1496,6 +1700,7 @@
   renderGainLossHistory();
   renderEconomicVsTax();
   renderStressTest();
+  renderFxAttribution();
   renderForfeitureAtRisk();
   renderEventsTimeline();
 
