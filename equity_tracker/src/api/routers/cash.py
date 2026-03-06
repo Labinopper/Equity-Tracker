@@ -67,6 +67,66 @@ def _default_transfer_form(today: date_type) -> dict:
     }
 
 
+def _safe_decimal(raw_value: object) -> Decimal | None:
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return None
+    try:
+        return Decimal(raw)
+    except InvalidOperation:
+        return None
+
+
+def _build_transfer_preview(transfer_form: dict) -> dict:
+    source_currency = str(transfer_form.get("source_currency") or "").strip().upper()
+    source_amount = _safe_decimal(transfer_form.get("source_amount"))
+    fx_rate = _safe_decimal(transfer_form.get("fx_rate"))
+    fx_fee = _safe_decimal(transfer_form.get("fx_fee_gbp")) or Decimal("0")
+    fx_source = str(transfer_form.get("fx_source") or "").strip()
+    entry_date = str(transfer_form.get("entry_date") or "")
+
+    requires_fx = bool(source_currency and source_currency != "GBP")
+    gross_converted_gbp: Decimal | None = None
+    net_transfer_gbp: Decimal | None = None
+    preview_notes: list[str] = []
+
+    if source_amount is None or source_amount <= Decimal("0"):
+        preview_notes.append("Enter a positive source amount to compute transfer preview.")
+    elif requires_fx:
+        if fx_rate is None or fx_rate <= Decimal("0"):
+            preview_notes.append("Non-GBP transfer requires a positive FX rate.")
+        else:
+            gross_converted_gbp = (source_amount * fx_rate).quantize(Decimal("0.01"))
+            net_transfer_gbp = (gross_converted_gbp - fx_fee).quantize(Decimal("0.01"))
+            if net_transfer_gbp <= Decimal("0"):
+                preview_notes.append("FX fee must be lower than converted GBP amount.")
+        if not fx_source:
+            preview_notes.append("Add FX source provenance for non-GBP transfer.")
+    else:
+        net_transfer_gbp = source_amount.quantize(Decimal("0.01"))
+
+    if requires_fx and fx_source:
+        confidence = "High (explicit FX source)"
+    elif requires_fx:
+        confidence = "Missing (FX source required)"
+    else:
+        confidence = "N/A (GBP transfer)"
+
+    return {
+        "entry_date": entry_date,
+        "source_currency": source_currency or "GBP",
+        "source_amount": source_amount,
+        "requires_fx": requires_fx,
+        "fx_rate": fx_rate,
+        "fx_fee_gbp": fx_fee,
+        "fx_source": fx_source,
+        "gross_converted_gbp": gross_converted_gbp,
+        "net_transfer_gbp": net_transfer_gbp,
+        "provenance_confidence": confidence,
+        "notes": preview_notes,
+    }
+
+
 def _render_cash_page(
     *,
     request: Request,
@@ -91,6 +151,7 @@ def _render_cash_page(
         "containers": [CONTAINER_BROKER, "ISA", CONTAINER_BANK],
         "source_containers": [CONTAINER_BROKER, CONTAINER_BANK],
     }
+    context["transfer_preview"] = _build_transfer_preview(context["transfer_form"])
     return templates.TemplateResponse(
         request,
         "cash.html",

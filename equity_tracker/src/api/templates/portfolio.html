@@ -44,7 +44,54 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<div class="stats">
+{% set valuation = portfolio_valuation_basis %}
+<div class="valuation-basis-strip">
+  <div class="valuation-basis-strip__title">Valuation Basis</div>
+  <div class="valuation-basis-strip__items">
+    <span class="valuation-pill">
+      Price as of
+      {% if valuation.price_as_of_latest %}
+      <strong>{{ valuation.price_as_of_latest }}</strong>
+      {% else %}
+      <strong>Unavailable</strong>
+      {% endif %}
+      {% if valuation.price_dates_mixed and valuation.price_as_of_earliest %}
+      <span class="muted">(range starts {{ valuation.price_as_of_earliest }})</span>
+      {% endif %}
+    </span>
+    <span class="valuation-pill">
+      FX as of
+      {% if valuation.fx_as_of %}
+      <strong>{{ valuation.fx_as_of }}</strong>
+      {% else %}
+      <strong>N/A or missing</strong>
+      {% endif %}
+    </span>
+    {% if valuation.stale_price_count > 0 %}
+    <span class="valuation-pill valuation-pill--warning">{{ valuation.stale_price_count }} stale price basis</span>
+    {% else %}
+    <span class="valuation-pill valuation-pill--ok">Price basis fresh</span>
+    {% endif %}
+    {% if valuation.missing_price_count > 0 %}
+    <span class="valuation-pill valuation-pill--warning">{{ valuation.missing_price_count }} missing price basis</span>
+    {% endif %}
+    {% if valuation.fx_required_count > 0 %}
+      {% if valuation.stale_fx_count > 0 %}
+      <span class="valuation-pill valuation-pill--warning">{{ valuation.stale_fx_count }} stale FX basis</span>
+      {% elif valuation.fx_is_stale %}
+      <span class="valuation-pill valuation-pill--warning">FX basis stale</span>
+      {% else %}
+      <span class="valuation-pill valuation-pill--ok">FX basis fresh</span>
+      {% endif %}
+      {% if valuation.missing_fx_count > 0 %}
+      <span class="valuation-pill valuation-pill--warning">{{ valuation.missing_fx_count }} missing FX basis</span>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<h2 class="stats-band-title">Actionable Today</h2>
+<div class="stats stats-band">
   <div class="stat stat--gain">
     <div class="stat__label"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></div>
     {% if portfolio_est_net_liquidity is not none %}
@@ -61,6 +108,30 @@
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
+  <div class="stat stat--accent">
+    <div class="stat__label">Deployable Capital (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__value">&pound;{{ portfolio_deployable_capital_gbp | money }}</div>
+    <span class="stat-caption">Sellable holdings &pound;{{ portfolio_total_sellable_market_value_gbp | money }} + deployable GBP cash &pound;{{ portfolio_deployable_cash_gbp | money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Employer Share of Deployable Capital <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
+    {% if portfolio_employer_ticker %}
+    <span class="stat-caption">{{ portfolio_employer_ticker }} sellable market value over deployable capital pool.</span>
+    {% endif %}
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></div>
+    {% if portfolio_sellable_employment_tax is not none %}
+    <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+</div>
+
+<h2 class="stats-band-title">Hypothetical and Context</h2>
+<div class="stats stats-band">
   <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label">Net Gain + Net Dividends <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if portfolio_net_gain_plus_net_dividends is not none %}
@@ -89,16 +160,6 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">ISA Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_isa_wrapper_pct_of_total) }}%</div>
-    <span class="stat-caption">&pound;{{ portfolio_isa_wrapper_market_value_gbp | money }} in ISA holdings.</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Taxable Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_taxable_wrapper_pct_of_total) }}%</div>
-    <span class="stat-caption">&pound;{{ portfolio_taxable_wrapper_market_value_gbp | money }} outside ISA.</span>
-  </div>
-  <div class="stat">
     <div class="stat__label">Top Holding Concentration <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if portfolio_top_holding_ticker_gross %}
     <div class="stat__value">{{ "%.2f"|format(portfolio_top_holding_pct_gross) }}%</div>
@@ -117,22 +178,20 @@
     <span class="stat-caption"><a href="/settings">Set employer ticker</a> to enable employer concentration metrics.</span>
     {% endif %}
   </div>
-  <div class="stat stat--accent">
-    <div class="stat__label">Deployable Capital (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    <div class="stat__value">&pound;{{ portfolio_deployable_capital_gbp | money }}</div>
-    <span class="stat-caption">Sellable holdings &pound;{{ portfolio_total_sellable_market_value_gbp | money }} + deployable GBP cash &pound;{{ portfolio_deployable_cash_gbp | money }}</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Employer Share of Deployable Capital <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
-    {% if portfolio_employer_ticker %}
-    <span class="stat-caption">{{ portfolio_employer_ticker }} sellable market value over deployable capital pool.</span>
-    {% endif %}
-  </div>
   <div class="stat">
     <div class="stat__label">Employer Dependence Ratio <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     <div class="stat__value">{{ "%.2f"|format(portfolio_employer_dependence_ratio_pct) }}%</div>
     <span class="stat-caption">({% if portfolio_employer_ticker %}{{ portfolio_employer_ticker }} equity{% else %}Employer equity{% endif %} + income proxy &pound;{{ portfolio_employer_income_dependency_proxy_gbp | money }}) / base &pound;{{ portfolio_employer_dependence_denominator_gbp | money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">ISA Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_isa_wrapper_pct_of_total) }}%</div>
+    <span class="stat-caption">&pound;{{ portfolio_isa_wrapper_market_value_gbp | money }} in ISA holdings.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Taxable Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_taxable_wrapper_pct_of_total) }}%</div>
+    <span class="stat-caption">&pound;{{ portfolio_taxable_wrapper_market_value_gbp | money }} outside ISA.</span>
   </div>
   <div class="stat">
     <div class="stat__label">Total Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
@@ -168,14 +227,6 @@
   <div class="stat">
     <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></div>
-    {% if portfolio_sellable_employment_tax is not none %}
-    <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
   </div>
 </div>
 
@@ -215,19 +266,38 @@
 </div>
 {% endif %}
 
-
-{% if summary.fx_as_of or summary.fx_conversion_basis %}
-<div class="alert {% if summary.fx_is_stale %}alert-warning{% else %}alert-info{% endif %} info-compact">
-  {% if summary.fx_is_stale %}Warning: {% endif %}
-  {% if summary.fx_conversion_basis %}{{ summary.fx_conversion_basis }}{% endif %}
-  {% if summary.fx_as_of %}
-  {% if summary.fx_conversion_basis %} {% endif %}FX as of {{ summary.fx_as_of }}
-  {% endif %}
-  {% if summary.fx_is_stale and summary.fx_as_of %}
-  - rate may be stale (>{{ fx_stale_after_minutes }} min old); refresh prices to update.
-  {% endif %}
+<div class="card portfolio-view-controls">
+  <div class="card__header">
+    <h2 class="card__title">Portfolio View Controls</h2>
+  </div>
+  <div class="portfolio-view-controls__body">
+    <div class="portfolio-view-controls__row">
+      <span class="portfolio-view-controls__label">Quick Filters</span>
+      <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn is-active" data-filter="all">All</button>
+      <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="warnings">Warnings</button>
+      <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="locked">Locked</button>
+      <button type="button" class="btn btn-secondary btn-sm portfolio-filter-btn" data-filter="forfeiture">Forfeiture Risk</button>
+    </div>
+    <div class="portfolio-view-controls__row">
+      <label class="portfolio-view-controls__label" for="portfolio-sort">Sort Decision Rows</label>
+      <select id="portfolio-sort">
+        <option value="default">Default Lot Order</option>
+        <option value="net_sell">Net If Sold Today (Desc)</option>
+        <option value="net_hold">Net If Held (Desc)</option>
+        <option value="net_long">Net If Long-Term (Desc)</option>
+        <option value="signal">Decision Signal (Best First)</option>
+      </select>
+      <label class="checkbox-inline">
+        <input id="portfolio-focus-mode" type="checkbox">
+        Focus Mode (Compact Decision-First View)
+      </label>
+    </div>
+    <div id="portfolio-view-help" class="portfolio-view-help" aria-live="polite">
+      <div class="portfolio-view-help__count" id="portfolio-visible-count">0 / 0 rows visible</div>
+      <div class="muted" id="portfolio-help-text">Filter and sort controls apply across all lot rows.</div>
+    </div>
+  </div>
 </div>
-{% endif %}
 
 
 {% if not summary.securities %}
@@ -259,7 +329,7 @@
           {% elif daily.direction == "down" %}
           Down
           {% else %}
-          No change{% if daily.market_status and daily.market_status | lower == "open" %} (market open){% endif %}
+          No Change{% if daily.market_status and daily.market_status | lower == "open" %} (Market Open){% endif %}
           {% endif %}
           {{ "%.2f"|format(daily.percent_change | abs) }}% ({% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }})
         </span>
@@ -320,7 +390,7 @@
         {% if daily.market_status | lower == 'open' %}
           Open
         {% else %}
-          closed{% if daily.market_opens_in %} (opening in {{ daily.market_opens_in }}){% endif %}
+          Closed{% if daily.market_opens_in %} (Opening in {{ daily.market_opens_in }}){% endif %}
         {% endif %}
       </span>
       {% endif %}
@@ -426,9 +496,27 @@
             <th class="num">Qty</th>
             <th class="num">Market Value</th>
             <th class="num">True Cost</th>
-            <th class="decision-zone-head">Net If Sold Today</th>
-            <th class="num">Gain If Sold Today</th>
-            <th class="decision-zone-head">Net If Held (Next Milestone)</th>
+            <th class="decision-zone-head">
+              Net If Sold Today
+              <span class="decision-chip-row">
+                <span class="formula-chip" title="Formula: market value - employment tax estimate - forfeited matched value.">Formula</span>
+                <a class="trace-chip" href="/reconcile#trace-contributing-lots">Trace</a>
+              </span>
+            </th>
+            <th class="num">
+              Gain If Sold Today
+              <span class="decision-chip-row">
+                <span class="formula-chip" title="Formula: net if sold today - paid true cost.">Formula</span>
+                <a class="trace-chip" href="/reconcile#trace-contributing-lots">Trace</a>
+              </span>
+            </th>
+            <th class="decision-zone-head">
+              Net If Held (Next Milestone)
+              <span class="decision-chip-row">
+                <span class="formula-chip" title="Formula: milestone market value - milestone employment tax estimate.">Formula</span>
+                <a class="trace-chip" href="/reconcile#trace-contributing-lots">Trace</a>
+              </span>
+            </th>
             <th class="num">Gain If Held</th>
             <th class="decision-zone-head">Net If Long-Term (5+ Years)</th>
             <th class="num">Gain If Long-Term</th>
@@ -840,6 +928,8 @@
   var filterButtons = document.querySelectorAll(".portfolio-filter-btn[data-filter]");
   var sortSelect = document.getElementById("portfolio-sort");
   var focusToggle = document.getElementById("portfolio-focus-mode");
+  var viewHelpText = document.getElementById("portfolio-help-text");
+  var viewVisibleCount = document.getElementById("portfolio-visible-count");
 
   function loadSecurityVisibilityState() {
     try {
@@ -980,6 +1070,80 @@
     return true;
   }
 
+  function filterLabel(filterKey) {
+    if (filterKey === "warnings") {
+      return "Warnings";
+    }
+    if (filterKey === "locked") {
+      return "Locked";
+    }
+    if (filterKey === "forfeiture") {
+      return "Forfeiture Risk";
+    }
+    return "All Rows";
+  }
+
+  function sortLabel(sortKey) {
+    if (sortKey === "net_sell") {
+      return "Net If Sold Today";
+    }
+    if (sortKey === "net_hold") {
+      return "Net If Held";
+    }
+    if (sortKey === "net_long") {
+      return "Net If Long-Term";
+    }
+    if (sortKey === "signal") {
+      return "Decision Signal";
+    }
+    return "Default Lot Order";
+  }
+
+  function visibleRowCounts() {
+    var visible = 0;
+    var total = 0;
+    var securityBodies = document.querySelectorAll(".security-lots-toggle__body");
+    securityBodies.forEach(function (body) {
+      var desktopRows = Array.from(
+        body.querySelectorAll(".portfolio-position-table tbody tr[data-position-row='1']")
+      );
+      if (desktopRows.length) {
+        desktopRows.forEach(function (row) {
+          total += 1;
+          if (row.style.display !== "none") {
+            visible += 1;
+          }
+        });
+        return;
+      }
+
+      var mobileRows = Array.from(
+        body.querySelectorAll(".portfolio-position-mobile .position-card[data-position-row='1']")
+      );
+      mobileRows.forEach(function (row) {
+        total += 1;
+        if (row.style.display !== "none") {
+          visible += 1;
+        }
+      });
+    });
+    return { visible: visible, total: total };
+  }
+
+  function updateViewControlHelp(prefs) {
+    var counts = visibleRowCounts();
+    if (viewVisibleCount) {
+      viewVisibleCount.textContent =
+        counts.visible + " / " + counts.total + " rows visible";
+    }
+    if (viewHelpText) {
+      viewHelpText.textContent =
+        "Active filter: " + filterLabel(prefs.filter) +
+        " | Sort: " + sortLabel(prefs.sort) +
+        " | Focus mode: " + (prefs.focusMode ? "On" : "Off") + ".";
+    }
+  }
+
   function applyFilterSortToCollection(items, parent, prefs) {
     items.forEach(function (row) {
       var visible = rowMatchesFilter(row, prefs.filter);
@@ -1022,6 +1186,7 @@
         applyFilterSortToCollection(mobileRows, mobileParent, prefs);
       }
     });
+    updateViewControlHelp(prefs);
   }
 
   function wirePortfolioViewControls() {

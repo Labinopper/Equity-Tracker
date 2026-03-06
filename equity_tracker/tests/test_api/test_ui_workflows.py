@@ -633,11 +633,37 @@ def test_portfolio_page_renders_qol_view_controls(client):
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "Portfolio View Controls" not in home.text
-    assert "Quick Filters" not in home.text
-    assert "Sort Decision Rows" not in home.text
-    assert "Focus Mode (compact decision-first view)" not in home.text
+    assert "Portfolio View Controls" in home.text
+    assert "Quick Filters" in home.text
+    assert "Sort Decision Rows" in home.text
+    assert "Focus Mode (Compact Decision-First View)" in home.text
+    assert "portfolio-view-help" in home.text
     assert "portfolio.view_prefs.v1" in home.text
+
+
+def test_portfolio_headline_layout_includes_basis_strip_and_decision_trace_chips(client):
+    sec_id = _add_security(client, ticker="UIBASIS")
+    _add_lot_via_api(client, sec_id, quantity="5", price="10.00")
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date.today(),
+            close_price_original_ccy="12.00",
+            close_price_gbp="12.00",
+            currency="GBP",
+            source="test-ui",
+        )
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "Valuation Basis" in home.text
+    assert "Price as of" in home.text
+    assert "FX as of" in home.text
+    assert "Actionable Today" in home.text
+    assert "Hypothetical and Context" in home.text
+    assert "Formula" in home.text
+    assert "Trace" in home.text
 
 
 def test_portfolio_shows_locked_est_net_reason_for_pre_vest_rsu(client):
@@ -1366,8 +1392,8 @@ def test_portfolio_daily_change_flags_no_change_when_market_open(client, monkeyp
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "No change" in home.text
-    assert "(market open)" in home.text
+    assert "No Change" in home.text
+    assert "(Market Open)" in home.text
 
 
 def test_portfolio_daily_change_shows_market_closed_opening_countdown(client, monkeypatch):
@@ -1411,8 +1437,8 @@ def test_portfolio_daily_change_shows_market_closed_opening_countdown(client, mo
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "closed (opening in" in home.text
-    assert "No change" not in home.text
+    assert "Closed (Opening in" in home.text
+    assert "No Change" not in home.text
 
 
 def test_portfolio_cards_are_collapsible_and_net_panel_shows_top_level_fields(client):
@@ -1845,6 +1871,20 @@ def test_simulate_prefills_latest_market_price(client):
     assert resp.status_code == 200
     assert 'name="price_per_share_gbp"' in resp.text
     assert 'value="123.45"' in resp.text
+    assert 'id="simulate-price-basis"' in resp.text
+
+    sim = client.post(
+        "/simulate",
+        data={
+            "security_id": sec_id,
+            "quantity": "2",
+            "price_per_share_gbp": "123.45",
+            "scheme_type": "",
+        },
+    )
+    assert sim.status_code == 200
+    assert "Disposal price basis:" in sim.text
+    assert "price as of 2026-02-24" in sim.text
 
 
 # ---------------------------------------------------------------------------

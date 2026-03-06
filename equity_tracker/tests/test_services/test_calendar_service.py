@@ -92,11 +92,16 @@ def test_calendar_payload_includes_vest_and_forfeiture_events_with_values(app_co
     assert vest_events[0]["ticker"] == "CALRSU"
     assert vest_events[0]["event_date"] == "2026-03-06"
     assert vest_events[0]["value_at_stake_gbp"] == "200.00"
+    assert vest_events[0]["price_as_of"] == "2026-02-24"
+    assert vest_events[0]["price_is_stale"] is False
+    assert vest_events[0]["fx_basis_note"] == "GBP security (no FX conversion)"
 
     assert len(forfeiture_events) == 1
     assert forfeiture_events[0]["ticker"] == "CALESPP"
     assert forfeiture_events[0]["event_date"] == "2026-03-03"
     assert forfeiture_events[0]["value_at_stake_gbp"] == "30.00"
+    assert forfeiture_events[0]["price_as_of"] == "2026-02-24"
+    assert forfeiture_events[0]["price_is_stale"] is False
 
     assert payload["event_counts"]["vest_dates"] == 1
     assert payload["event_counts"]["forfeiture_windows"] == 1
@@ -123,6 +128,7 @@ def test_calendar_payload_flags_unpriced_events(app_context):
     assert len(vest_events) == 1
     assert vest_events[0]["has_live_value"] is False
     assert vest_events[0]["value_at_stake_gbp"] is None
+    assert vest_events[0]["price_as_of"] is None
     assert any("value-at-stake is unavailable" in note for note in payload["notes"])
 
 

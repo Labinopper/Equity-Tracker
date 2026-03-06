@@ -391,6 +391,13 @@ def _simulate_security_context(summary) -> list[dict]:
                     if ss.current_price_gbp is not None
                     else ""
                 ),
+                "price_as_of": (
+                    ss.price_as_of.isoformat() if ss.price_as_of is not None else ""
+                ),
+                "price_is_stale": bool(ss.price_is_stale),
+                "price_refreshed_at": ss.price_refreshed_at or "",
+                "fx_as_of": ss.fx_as_of or "",
+                "fx_is_stale": bool(ss.fx_is_stale),
                 "available_by_scheme": by_scheme_whole,
             }
         )
@@ -1183,6 +1190,47 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 previous_price_native=previous_native,
             )
     return changes
+
+
+def _portfolio_valuation_basis(summary) -> dict[str, object]:
+    """Build compact valuation-basis metadata for portfolio headline cards."""
+    securities = list(summary.securities or [])
+    total_security_count = len(securities)
+
+    price_dates = [
+        ss.price_as_of for ss in securities if ss.price_as_of is not None
+    ]
+    price_as_of_latest = max(price_dates).isoformat() if price_dates else None
+    price_as_of_earliest = min(price_dates).isoformat() if price_dates else None
+    stale_price_count = sum(
+        1 for ss in securities if ss.price_as_of is not None and ss.price_is_stale
+    )
+    missing_price_count = total_security_count - len(price_dates)
+
+    fx_required = [
+        ss
+        for ss in securities
+        if str(getattr(ss.security, "currency", "") or "").upper() != "GBP"
+    ]
+    fx_required_count = len(fx_required)
+    fx_as_of_count = sum(1 for ss in fx_required if ss.fx_as_of)
+    stale_fx_count = sum(1 for ss in fx_required if ss.fx_as_of and ss.fx_is_stale)
+    missing_fx_count = fx_required_count - fx_as_of_count
+
+    return {
+        "total_security_count": total_security_count,
+        "price_tracked_count": len(price_dates),
+        "price_as_of_latest": price_as_of_latest,
+        "price_as_of_earliest": price_as_of_earliest,
+        "price_dates_mixed": len(set(price_dates)) > 1,
+        "stale_price_count": stale_price_count,
+        "missing_price_count": missing_price_count,
+        "fx_required_count": fx_required_count,
+        "fx_as_of": summary.fx_as_of,
+        "fx_is_stale": summary.fx_is_stale,
+        "stale_fx_count": stale_fx_count,
+        "missing_fx_count": missing_fx_count,
+    }
 
 
 def _has_tax_window(ls: LotSummary) -> bool:
@@ -2561,6 +2609,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "price_stale_after_days": settings.price_stale_after_days if settings else 1,
             "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
             "security_daily_changes": security_daily_changes,
+            "portfolio_valuation_basis": _portfolio_valuation_basis(summary),
             "position_rows_by_security": position_rows_by_security,
             "portfolio_est_net_liquidity": portfolio_est_net_liquidity,
             "portfolio_blocked_restricted_value": portfolio_blocked_restricted_value,
@@ -2778,6 +2827,21 @@ async def net_value(request: Request) -> HTMLResponse:
         settings=settings,
     )
     sell_all_metrics = _build_sell_all_metrics(summary)
+    capital_stack_snapshot = CapitalStackService.get_snapshot(
+        settings=settings,
+        db_path=db_path,
+        summary=summary,
+    )
+    deployable_today_gbp = capital_stack_snapshot.get("net_deployable_today_gbp")
+    net_vs_deployable_delta_gbp: Decimal | None = None
+    if (
+        sell_all_metrics.get("net_value_gbp") is not None
+        and deployable_today_gbp is not None
+    ):
+        net_vs_deployable_delta_gbp = _q2(
+            Decimal(str(sell_all_metrics["net_value_gbp"]))
+            - Decimal(str(deployable_today_gbp))
+        )
     nv_securities = _build_nv_securities(summary)
     nv_rows_by_security = {
         sec_id: [_build_nv_row(row) for row in rows]
@@ -2789,6 +2853,8 @@ async def net_value(request: Request) -> HTMLResponse:
         {
             "request": request,
             "sell_all_metrics": sell_all_metrics,
+            "deployable_today_gbp": deployable_today_gbp,
+            "net_vs_deployable_delta_gbp": net_vs_deployable_delta_gbp,
             "nv_securities": nv_securities,
             "nv_rows_by_security": nv_rows_by_security,
             "settings": settings,

@@ -6,6 +6,7 @@ from decimal import Decimal
 from src.api import _state
 from src.app_context import AppContext
 from src.services.capital_stack_service import CapitalStackService
+from src.services.cash_ledger_service import CashLedgerService
 from src.services.dividend_service import DividendService
 from src.services.portfolio_service import PortfolioService
 from src.settings import AppSettings
@@ -167,3 +168,54 @@ def test_dividend_adjusted_capital_at_risk_uses_separate_metric(client, db_engin
     home = client.get("/")
     assert home.status_code == 200
     assert "Dividend-Adjusted Capital at Risk" in home.text
+
+
+def test_capital_stack_combined_deployable_includes_gbp_cash(client, db_engine):
+    _, db_path = db_engine
+    settings = AppSettings.defaults_for(db_path)
+    settings.default_gross_income = Decimal("60000")
+    settings.default_pension_sacrifice = Decimal("0")
+    settings.default_other_income = Decimal("0")
+    settings.default_student_loan_plan = 2
+    settings.save()
+
+    sec_id = _add_security(client, "CSTACKCASH")
+    _add_lot(
+        client,
+        security_id=sec_id,
+        scheme_type="BROKERAGE",
+        acquisition_date=(date.today() - timedelta(days=90)).isoformat(),
+        quantity="10",
+        price="10.00",
+    )
+    _set_price(sec_id, "20.00")
+
+    CashLedgerService.record_entry(
+        db_path=_state.get_db_path(),
+        entry_date=date.today(),
+        container="BROKER",
+        currency="GBP",
+        amount=Decimal("75.00"),
+        source="test-capital-stack-ui",
+    )
+
+    summary = PortfolioService.get_portfolio_summary(
+        settings=settings,
+        use_live_true_cost=False,
+    )
+    stack = CapitalStackService.get_snapshot(
+        settings=settings,
+        db_path=_state.get_db_path(),
+        summary=summary,
+    )
+
+    assert stack["net_deployable_today_gbp"] is not None
+    expected_combined = (
+        Decimal(str(stack["net_deployable_today_gbp"]))
+        + Decimal(str(stack["gbp_deployable_cash_gbp"]))
+    ).quantize(Decimal("0.01"))
+    assert Decimal(str(stack["combined_deployable_with_cash_gbp"])) == expected_combined
+
+    page = client.get("/capital-stack")
+    assert page.status_code == 200
+    assert "Combined Deployable (Holdings + GBP Cash)" in page.text

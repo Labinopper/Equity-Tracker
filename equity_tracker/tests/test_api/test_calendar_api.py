@@ -74,6 +74,8 @@ def test_api_calendar_events_returns_lot_events_when_present(client):
     assert vest_events[0]["ticker"] == "CALAPI"
     assert vest_events[0]["event_date"] == "2026-03-10"
     assert vest_events[0]["value_at_stake_gbp"] == "100.00"
+    assert vest_events[0]["price_as_of"] == "2026-02-24"
+    assert vest_events[0]["fx_basis_note"] == "GBP security (no FX conversion)"
 
 
 def test_api_calendar_events_rejects_invalid_days(client):
@@ -87,3 +89,4 @@ def test_calendar_ui_page_renders(client):
     assert "Calendar" in resp.text
     assert "Upcoming Events" in resp.text
     assert "Horizon" in resp.text
+    assert "Price/FX Basis" in resp.text

@@ -225,6 +225,11 @@ class CapitalStackService:
                 continue
             gbp_deployable_cash += amount
         gbp_deployable_cash = _q_money(gbp_deployable_cash)
+        combined_deployable_with_cash = (
+            _q_money(net_deployable + gbp_deployable_cash)
+            if net_deployable is not None
+            else None
+        )
 
         notes: list[str] = []
         if missing_price_lot_count > 0:
@@ -274,10 +279,12 @@ class CapitalStackService:
                 "historical_fee_sample_total_gbp": str(fee_model["historical_fee_sample_total_gbp"]),
             },
             "net_deployable_today_gbp": net_deployable,
+            "holdings_net_deployable_today_gbp": net_deployable,
             "true_cost_acquisition_gbp": true_cost_acquisition,
             "estimated_net_dividends_gbp": estimated_net_dividends,
             "dividend_adjusted_capital_at_risk_gbp": dividend_adjusted_capital_at_risk,
             "cash_totals_by_currency": cash_dashboard.get("totals_by_currency", []),
             "gbp_deployable_cash_gbp": gbp_deployable_cash,
+            "combined_deployable_with_cash_gbp": combined_deployable_with_cash,
             "notes": notes,
         }

@@ -25,6 +25,9 @@
           <th>Container</th>
           <th>Currency</th>
           <th class="num">Balance</th>
+          <th>Last Updated</th>
+          <th>Provenance</th>
+          <th>FX Basis</th>
         </tr>
       </thead>
       <tbody>
@@ -37,6 +40,30 @@
             &pound;{{ row.balance | money }}
             {% else %}
             {{ row.currency }} {{ row.balance | money }}
+            {% endif %}
+          </td>
+          <td>
+            {% if row.last_entry_date %}
+            <div>{{ row.last_entry_date }}</div>
+            <div class="muted">{{ row.freshness_text }}</div>
+            <div class="muted">{{ row.last_created_at_utc or '-' }}</div>
+            {% else %}
+            <span class="muted">-</span>
+            {% endif %}
+          </td>
+          <td>
+            <div>{{ row.provenance_confidence }}</div>
+            <div class="muted">Source: {{ row.last_source or '-' }}</div>
+            <div class="muted">Type: {{ row.last_entry_type or '-' }}</div>
+          </td>
+          <td>
+            {% if row.fx_rate or row.fx_source %}
+              {% if row.fx_rate %}<div>Rate {{ row.fx_rate }}</div>{% endif %}
+              {% if row.fx_source %}<div class="muted">{{ row.fx_source }}</div>{% endif %}
+            {% elif row.currency != 'GBP' %}
+            <span class="muted">Missing FX metadata</span>
+            {% else %}
+            <span class="muted">N/A (GBP)</span>
             {% endif %}
           </td>
         </tr>
@@ -153,6 +180,49 @@
         <label for="isa_notes">Notes</label>
         <input id="isa_notes" name="notes" type="text" value="{{ transfer_form.notes }}">
       </div>
+    </div>
+    <div class="edit-summary">
+      <div class="edit-summary__title">Deterministic Transfer Preview</div>
+      <div class="edit-summary__row">
+        Source: {{ transfer_preview.source_currency }}
+        {% if transfer_preview.source_amount is not none %}
+        {{ transfer_preview.source_amount | money }}
+        {% else %}
+        -
+        {% endif %}
+      </div>
+      <div class="edit-summary__row">Requires FX conversion: {{ 'Yes' if transfer_preview.requires_fx else 'No' }}</div>
+      <div class="edit-summary__row">Rate date basis: {{ transfer_preview.entry_date or '-' }}</div>
+      {% if transfer_preview.requires_fx %}
+      <div class="edit-summary__row">
+        FX rate:
+        {% if transfer_preview.fx_rate is not none %}
+        {{ transfer_preview.fx_rate }}
+        {% else %}
+        -
+        {% endif %}
+      </div>
+      <div class="edit-summary__row">FX source: {{ transfer_preview.fx_source or '-' }}</div>
+      {% if transfer_preview.gross_converted_gbp is not none %}
+      <div class="edit-summary__row">Gross converted GBP: &pound;{{ transfer_preview.gross_converted_gbp | money }}</div>
+      {% endif %}
+      {% endif %}
+      <div class="edit-summary__row">
+        Net transfer to ISA (GBP):
+        {% if transfer_preview.net_transfer_gbp is not none %}
+        &pound;{{ transfer_preview.net_transfer_gbp | money }}
+        {% else %}
+        -
+        {% endif %}
+      </div>
+      <div class="edit-summary__row">Provenance confidence: {{ transfer_preview.provenance_confidence }}</div>
+      {% if transfer_preview.notes %}
+      <div class="muted note-small-top">
+        {% for note in transfer_preview.notes %}
+        <div>{{ note }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Record ISA Transfer</button>

@@ -24,9 +24,21 @@
     <div class="stat__value">&pound;{{ stack.gross_market_value_gbp | money }}</div>
   </div>
   <div class="stat stat--gain">
-    <div class="stat__label">Net Deployable Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    {% if stack.net_deployable_today_gbp is not none %}
-    <div class="stat__value gain">&pound;{{ stack.net_deployable_today_gbp | money }}</div>
+    <div class="stat__label">Holdings Net Deployable Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    {% if stack.holdings_net_deployable_today_gbp is not none %}
+    <div class="stat__value gain">&pound;{{ stack.holdings_net_deployable_today_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    {% endif %}
+  </div>
+  <div class="stat stat--accent">
+    <div class="stat__label">Deployable GBP Cash (Broker + Bank) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__value">&pound;{{ stack.gbp_deployable_cash_gbp | money }}</div>
+  </div>
+  <div class="stat stat--gain">
+    <div class="stat__label">Combined Deployable (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    {% if stack.combined_deployable_with_cash_gbp is not none %}
+    <div class="stat__value gain">&pound;{{ stack.combined_deployable_with_cash_gbp | money }}</div>
     {% else %}
     <div class="stat__value muted">Unavailable</div>
     {% endif %}
@@ -133,6 +145,24 @@
           <td>Actionable estimate</td>
           <td>`hypothetical liquid - employment tax - CGT - fees`.</td>
         </tr>
+        <tr>
+          <td>Deployable GBP Cash (BROKER + BANK)</td>
+          <td class="num">&pound;{{ stack.gbp_deployable_cash_gbp | money }}</td>
+          <td>Actionable cash</td>
+          <td>Cash ledger GBP balances across BROKER and BANK containers.</td>
+        </tr>
+        <tr>
+          <td><strong>Combined Deployable (Holdings + GBP Cash)</strong></td>
+          <td class="num">
+            {% if stack.combined_deployable_with_cash_gbp is not none %}
+            <strong>&pound;{{ stack.combined_deployable_with_cash_gbp | money }}</strong>
+            {% else %}
+            <strong class="muted">Unavailable</strong>
+            {% endif %}
+          </td>
+          <td>Actionable combined</td>
+          <td>`holdings net deployable + deployable GBP cash`.</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -144,7 +174,7 @@
 
 <div class="card">
   <div class="card__header">
-    <h2 class="card__title">Cash Sidecar (Not Yet In Stack Formula)</h2>
+    <h2 class="card__title">Cash Balances by Currency</h2>
   </div>
   {% if stack.cash_totals_by_currency %}
   <div class="table-wrap">
@@ -173,7 +203,7 @@
   </div>
   <p class="muted">
     GBP deployable cash (BROKER + BANK): &pound;{{ stack.gbp_deployable_cash_gbp | money }}.
-    Cash integration into cross-surface deployable metrics is tracked separately.
+    Combined deployable total above now includes this cash line deterministically.
   </p>
   {% else %}
   <p class="muted">No cash ledger balances recorded.</p>

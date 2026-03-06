@@ -107,6 +107,26 @@
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
+  <div class="stat stat--accent">
+    <div class="stat__label">Deployable Today (From Capital Stack) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    {% if deployable_today_gbp is not none %}
+    <div class="stat__value">&pound;{{ deployable_today_gbp | money }}</div>
+    <span class="stat-caption"><a href="/capital-stack">Open Capital Stack</a> for full holdings-to-deployable formula.</span>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    <span class="stat-caption"><a href="/capital-stack">Open Capital Stack</a> to inspect missing inputs.</span>
+    {% endif %}
+  </div>
+  <div class="stat {% if net_vs_deployable_delta_gbp is not none and net_vs_deployable_delta_gbp > 0 %}stat--warning{% else %}stat--accent{% endif %}">
+    <div class="stat__label">Net Value vs Deployable Today Delta <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    {% if net_vs_deployable_delta_gbp is not none %}
+    <div class="stat__value {% if net_vs_deployable_delta_gbp > 0 %}warning-text{% endif %}">&pound;{{ net_vs_deployable_delta_gbp | money }}</div>
+    <span class="stat-caption">Represents the non-actionable gap between hypothetical sell-all net and deployable capital today.</span>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    <span class="stat-caption">Delta requires both hypothetical net value and deployable-today estimate.</span>
+    {% endif %}
+  </div>
   <div class="stat">
     <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis (All Lots)</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">&pound;{{ sell_all_metrics.cost_basis_gbp | money }}</div>

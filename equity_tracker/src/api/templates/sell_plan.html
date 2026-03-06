@@ -275,6 +275,68 @@
         </table>
       </div>
       {% endif %}
+      {% set reconcile = plan.reconciliation_panel %}
+      {% if reconcile %}
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr>
+              <th>Planned vs Committed Reconciliation</th>
+              <td>{{ reconcile.status | replace('_', ' ') | title }}</td>
+            </tr>
+            <tr>
+              <th>Planned Quantity</th>
+              <td>{{ reconcile.planned_quantity }}</td>
+            </tr>
+            <tr>
+              <th>Committed Quantity</th>
+              <td>{{ reconcile.committed_quantity }}</td>
+            </tr>
+            <tr>
+              <th>Variance (Committed - Planned)</th>
+              <td>{{ reconcile.variance_quantity }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Date</th>
+              <th class="num">Planned Qty</th>
+              <th class="num">Committed Qty</th>
+              <th class="num">Variance</th>
+              <th>Status</th>
+              <th>Source Links</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in reconcile.rows %}
+            <tr>
+              <td>{{ row.sequence }}</td>
+              <td>{{ row.event_date }}</td>
+              <td class="num">{{ row.planned_quantity }}</td>
+              <td class="num">{{ row.committed_quantity }}</td>
+              <td class="num">{{ row.variance_quantity }}</td>
+              <td>
+                {{ row.effective_status }}
+                {% if row.updated_at_utc %}
+                <div class="muted">{{ row.updated_at_utc }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ row.calendar_link }}">Calendar</a>
+                |
+                <a href="{{ row.simulate_link }}">Simulate</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
       {% if plan.impact_totals %}
       <p class="muted">
         Impact totals (planned model): Gross &pound;{{ plan.impact_totals.gross_proceeds_gbp | money }},

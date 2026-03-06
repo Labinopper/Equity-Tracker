@@ -62,6 +62,7 @@
         <input id="price_per_share_gbp" name="price_per_share_gbp" type="text" required
                placeholder="e.g. 200.00" value="{{ prev.price_per_share_gbp if prev else '' }}">
         <span class="form-hint">Defaults to latest market price when available. You can overwrite it.</span>
+        <span id="simulate-price-basis" class="form-hint">Price basis metadata appears after selecting a security.</span>
       </div>
 
       <div class="form-field">
@@ -99,6 +100,7 @@
 <!-- Result -->
 {% if result %}
 {% set tax_status = employment_tax_status if employment_tax_status else {'applicable': False, 'estimate_available': True, 'ack_required': False} %}
+{% set selected_meta = simulate_meta.get(prev.security_id) if prev and prev.security_id else None %}
 <div class="card card-result">
   <div class="card__header">
     <span class="card__title">Simulation Result</span>
@@ -110,6 +112,31 @@
     </span>
     {% endif %}
   </div>
+
+  {% if selected_meta %}
+  <div class="alert {% if selected_meta.price_is_stale or selected_meta.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
+    Disposal price basis:
+    {% if selected_meta.latest_price_gbp %}
+    latest tracked price &pound;{{ selected_meta.latest_price_gbp }}
+    {% else %}
+    latest tracked price unavailable
+    {% endif %}
+    {% if selected_meta.price_as_of %}
+    | price as of {{ selected_meta.price_as_of }}
+    {% else %}
+    | price as-of unavailable
+    {% endif %}
+    {% if selected_meta.price_is_stale %}
+    | price basis marked stale
+    {% endif %}
+    {% if selected_meta.fx_as_of %}
+    | FX as of {{ selected_meta.fx_as_of }}{% if selected_meta.fx_is_stale %} (stale){% endif %}
+    {% endif %}
+    {% if prev and prev.price_per_share_gbp and selected_meta.latest_price_gbp and prev.price_per_share_gbp != selected_meta.latest_price_gbp %}
+    | using manual disposal-price override
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if prev and prev.security_id and prev.quantity %}
   <div class="form-actions" style="margin-bottom: 0.75rem;">
@@ -451,6 +478,7 @@
   var priceInput = document.getElementById('price_per_share_gbp');
   var maxBtn = document.getElementById('btn-max');
   var qtyHint = document.getElementById('qty-available');
+  var basisHint = document.getElementById('simulate-price-basis');
   var meta = {{ simulate_meta | tojson if simulate_meta else '{}' }};
 
   function decimalOrZero(v) {
@@ -482,6 +510,7 @@
     var s = selectedMeta();
     if (!s) {
       if (qtyHint) qtyHint.textContent = "";
+      if (basisHint) basisHint.textContent = "Price basis metadata appears after selecting a security.";
       return;
     }
 
@@ -494,11 +523,45 @@
         priceInput.dataset.autoFilled = "true";
       }
     }
+    renderPriceBasisHint(s);
+  }
+
+  function renderPriceBasisHint(s) {
+    if (!basisHint) return;
+    if (!s) {
+      basisHint.textContent = "Price basis metadata appears after selecting a security.";
+      return;
+    }
+
+    var parts = [];
+    if (s.latest_price_gbp) {
+      parts.push("Latest tracked price \u00A3" + s.latest_price_gbp);
+    } else {
+      parts.push("Latest tracked price unavailable");
+    }
+    if (s.price_as_of) {
+      parts.push("Price as of " + s.price_as_of + (s.price_is_stale ? " (stale)" : ""));
+    } else {
+      parts.push("Price as-of unavailable");
+    }
+    if (s.fx_as_of) {
+      parts.push("FX as of " + s.fx_as_of + (s.fx_is_stale ? " (stale)" : ""));
+    }
+    if (
+      priceInput &&
+      s.latest_price_gbp &&
+      String(priceInput.value || "").trim() &&
+      String(priceInput.value || "").trim() !== String(s.latest_price_gbp).trim()
+    ) {
+      parts.push("Manual disposal-price override active");
+    }
+    basisHint.textContent = parts.join(" | ");
   }
 
   if (priceInput) {
     priceInput.addEventListener('input', function () {
       priceInput.dataset.autoFilled = "false";
+      renderPriceBasisHint(selectedMeta());
     });
   }
   if (securitySel) {

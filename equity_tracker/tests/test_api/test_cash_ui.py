@@ -8,6 +8,8 @@ def test_cash_page_renders(client):
     assert resp.status_code == 200
     assert "Cash Ledger" in resp.text
     assert "GBP-Only ISA Transfer Workflow" in resp.text
+    assert "Deterministic Transfer Preview" in resp.text
+    assert "Provenance confidence" in resp.text
 
 
 def test_cash_manual_entry_updates_balance(client):
@@ -129,3 +131,4 @@ def test_cash_isa_transfer_non_gbp_converts_then_transfers(client):
     assert "&pound;39.00" in page.text
     assert "FX_CONVERSION_IN" in page.text
     assert "ISA_TRANSFER_IN" in page.text
+    assert "High (explicit FX source)" in page.text

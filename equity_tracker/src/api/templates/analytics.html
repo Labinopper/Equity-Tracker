@@ -154,6 +154,9 @@
     <button type="button" class="btn btn-secondary btn-sm" id="analytics-show-all">Show all widgets</button>
     <button type="button" class="btn btn-secondary btn-sm" id="analytics-reset-defaults">Reset defaults</button>
   </div>
+  <div id="analytics-critical-warning" class="alert alert-warning" hidden>
+    Critical widgets cannot all be hidden. One critical widget has been kept visible.
+  </div>
 </div>
 
 <div class="analytics-widget-grid">
@@ -741,6 +744,14 @@
     var widget = widgetById[widgetId] || {};
     defaultVisibility[widgetId] = widget.default_visible !== false;
   });
+  var criticalWidgetIds = Object.keys(widgetById)
+    .filter(function (widgetId) {
+      var widget = widgetById[widgetId] || {};
+      return String(widget.decision_criticality || "Supporting") === "Critical";
+    })
+    .sort(function (a, b) {
+      return widgetPriorityRank(a) - widgetPriorityRank(b);
+    });
 
   function toInt(value, fallback) {
     var num = Number.parseInt(String(value), 10);
@@ -1639,17 +1650,65 @@
     node.textContent = focus.description || "Focused widget set.";
   }
 
+  function widgetTitle(widgetId) {
+    var widget = widgetById[widgetId] || {};
+    return String(widget.title || widgetId);
+  }
+
+  function applyCriticalFloor(state, allowedByFocus) {
+    if (!criticalWidgetIds.length) {
+      return null;
+    }
+    var hasVisibleCritical = criticalWidgetIds.some(function (widgetId) {
+      var visibleByToggle = state.visibility[widgetId] !== false;
+      var visibleByFocus = !allowedByFocus || allowedByFocus.has(widgetId);
+      return visibleByToggle && visibleByFocus;
+    });
+    if (hasVisibleCritical) {
+      return null;
+    }
+
+    var fallback = null;
+    if (allowedByFocus) {
+      fallback = criticalWidgetIds.find(function (widgetId) {
+        return allowedByFocus.has(widgetId);
+      }) || null;
+    }
+    if (!fallback) {
+      fallback = criticalWidgetIds[0];
+    }
+    state.visibility[fallback] = true;
+    return fallback;
+  }
+
+  function setCriticalWarning(forcedWidgetId) {
+    var warning = document.getElementById("analytics-critical-warning");
+    if (!warning) {
+      return;
+    }
+    if (!forcedWidgetId) {
+      warning.hidden = true;
+      return;
+    }
+    warning.hidden = false;
+    warning.textContent =
+      "Critical widgets cannot all be hidden. Keeping \"" +
+      widgetTitle(forcedWidgetId) +
+      "\" visible.";
+  }
+
   function applyVisibilityAndFocus(state) {
     var focus = focusById(state.focusId);
     var allowedByFocus = null;
     if (focus && Array.isArray(focus.widget_ids)) {
       allowedByFocus = new Set(focus.widget_ids);
     }
+    var forcedCriticalId = applyCriticalFloor(state, allowedByFocus);
 
     document.querySelectorAll(".analytics-widget").forEach(function (card) {
       var widgetId = card.getAttribute("data-widget-id");
       var visibleByToggle = state.visibility[widgetId] !== false;
-      var visibleByFocus = !allowedByFocus || allowedByFocus.has(widgetId);
+      var visibleByFocus = !allowedByFocus || allowedByFocus.has(widgetId) || widgetId === forcedCriticalId;
       card.hidden = !(visibleByToggle && visibleByFocus);
     });
     document.querySelectorAll(".analytics-widget-toggle").forEach(function (toggle) {
@@ -1658,6 +1717,7 @@
     });
     updateFocusButtons(state.focusId);
     updateFocusDescription(state.focusId);
+    setCriticalWarning(forcedCriticalId);
   }
 
   function wireWidgetToggles(state) {

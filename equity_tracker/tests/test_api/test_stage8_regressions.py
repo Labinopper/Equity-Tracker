@@ -25,3 +25,11 @@ def test_net_value_employment_tax_label_keeps_sellable_context(client):
     page = client.get("/net-value")
     assert page.status_code == 200
     assert "Estimated Employment Tax (Sellable Lots; Sell-All Context)" in page.text
+
+
+def test_net_value_surfaces_deployable_delta_and_capital_stack_link(client):
+    page = client.get("/net-value")
+    assert page.status_code == 200
+    assert "Net Value vs Deployable Today Delta" in page.text
+    assert "Deployable Today (From Capital Stack)" in page.text
+    assert 'href="/capital-stack"' in page.text

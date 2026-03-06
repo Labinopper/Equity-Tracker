@@ -245,6 +245,8 @@ def test_sell_plan_shows_impact_preview_when_reference_price_set(client):
     page = client.get(f"/sell-plan?plan_id={plan_id}")
     assert page.status_code == 200
     assert "Impact totals (planned model)" in page.text
+    assert "Planned vs Committed Reconciliation" in page.text
+    assert "Variance (Committed - Planned)" in page.text
     assert "Gross (GBP)" in page.text
     assert "&pound;60.00" in page.text
 

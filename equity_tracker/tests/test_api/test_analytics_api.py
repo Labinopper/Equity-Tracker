@@ -207,6 +207,8 @@ def test_analytics_ui_page_renders_widget_controls_and_table_toggle(client):
     assert "events-timeline" in resp.text
     assert "analytics-widget-visibility-table" in resp.text
     assert "applyPriorityOrder" in resp.text
+    assert "analytics-critical-warning" in resp.text
+    assert "applyCriticalFloor" in resp.text
     assert "decision_criticality" in resp.text
 
 

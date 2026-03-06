@@ -104,6 +104,38 @@ def _entry_amount(entry: dict) -> Decimal:
     return _safe_decimal(entry.get("amount"))
 
 
+def _entry_metadata(entry: dict) -> dict:
+    raw = entry.get("metadata")
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _provenance_confidence(entry: dict) -> str:
+    metadata = _entry_metadata(entry)
+    fx_source = str(metadata.get("fx_source") or "").strip()
+    source = str(entry.get("source") or "").strip()
+    if fx_source:
+        return "High (explicit FX source)"
+    if source and source.lower() not in {"manual", "unknown"}:
+        return "Medium (named source)"
+    return "Low (manual/unspecified)"
+
+
+def _freshness_text(entry_date_raw: str | None) -> str:
+    if not entry_date_raw:
+        return "Unknown"
+    try:
+        entry_date = date_type.fromisoformat(entry_date_raw)
+    except ValueError:
+        return "Unknown"
+
+    age_days = (date_type.today() - entry_date).days
+    if age_days <= 1:
+        return "Fresh (<=1d)"
+    if age_days <= 7:
+        return f"Recent ({age_days}d)"
+    return f"Stale ({age_days}d)"
+
+
 def _balance_map_from_entries(entries: list[dict]) -> dict[str, dict[str, Decimal]]:
     balances: dict[str, dict[str, Decimal]] = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
     for entry in entries:
@@ -218,6 +250,14 @@ class CashLedgerService:
     ) -> dict:
         entries = CashLedgerService.load_entries(db_path)
         balances = _balance_map_from_entries(entries)
+        latest_entry_by_balance: dict[tuple[str, str], dict] = {}
+        for entry in entries:
+            key = (
+                str(entry.get("container") or "").upper(),
+                str(entry.get("currency") or "").upper(),
+            )
+            if key[0] and key[1]:
+                latest_entry_by_balance[key] = entry
 
         balance_rows: list[dict] = []
         totals_by_currency: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -226,11 +266,21 @@ class CashLedgerService:
                 bal = _q_money(balances[container][currency])
                 if bal == Decimal("0"):
                     continue
+                latest = latest_entry_by_balance.get((container, currency), {})
+                latest_meta = _entry_metadata(latest)
                 balance_rows.append(
                     {
                         "container": container,
                         "currency": currency,
                         "balance": str(bal),
+                        "last_entry_date": latest.get("entry_date"),
+                        "last_created_at_utc": latest.get("created_at_utc"),
+                        "last_entry_type": latest.get("entry_type"),
+                        "last_source": latest.get("source"),
+                        "fx_rate": latest_meta.get("fx_rate"),
+                        "fx_source": latest_meta.get("fx_source"),
+                        "provenance_confidence": _provenance_confidence(latest),
+                        "freshness_text": _freshness_text(latest.get("entry_date")),
                     }
                 )
                 totals_by_currency[currency] = _q_money(

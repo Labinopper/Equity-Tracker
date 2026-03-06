@@ -222,6 +222,70 @@ def _build_plan_adherence_panel(
     }
 
 
+def _build_plan_reconciliation_panel(
+    *,
+    plan_id: str,
+    security_id: str,
+    method: str,
+    reference_price_gbp: str | None,
+    tranches: list[dict],
+) -> dict:
+    planned_quantity = Decimal("0")
+    committed_quantity = Decimal("0")
+    rows: list[dict] = []
+
+    for tranche in tranches:
+        qty = _safe_decimal(tranche.get("quantity"))
+        effective_status = str(
+            tranche.get("effective_status") or TRANCHE_STATUS_PLANNED
+        ).upper()
+        committed_qty = qty if effective_status == TRANCHE_STATUS_EXECUTED else Decimal("0")
+        variance_qty = committed_qty - qty
+        planned_quantity += qty
+        committed_quantity += committed_qty
+
+        simulate_link = (
+            f"/simulate?security_id={security_id}"
+            f"&quantity={tranche.get('quantity')}"
+            f"&sell_plan_id={plan_id}"
+            f"&tranche_id={tranche.get('tranche_id')}"
+        )
+        if reference_price_gbp:
+            simulate_link += f"&price_per_share_gbp={reference_price_gbp}"
+
+        rows.append(
+            {
+                "sequence": tranche.get("sequence"),
+                "event_date": tranche.get("event_date"),
+                "planned_quantity": str(qty),
+                "committed_quantity": str(committed_qty),
+                "variance_quantity": str(variance_qty),
+                "effective_status": effective_status,
+                "updated_at_utc": tranche.get("updated_at_utc"),
+                "calendar_link": (
+                    f"/calendar?sell_plan_id={plan_id}&sell_method={method}&sell_status={effective_status}"
+                ),
+                "simulate_link": simulate_link,
+            }
+        )
+
+    total_variance = committed_quantity - planned_quantity
+    if total_variance == Decimal("0"):
+        status = "ALIGNED"
+    elif total_variance < Decimal("0"):
+        status = "UNDER_COMMITTED"
+    else:
+        status = "OVER_COMMITTED"
+
+    return {
+        "status": status,
+        "planned_quantity": str(planned_quantity),
+        "committed_quantity": str(committed_quantity),
+        "variance_quantity": str(total_variance),
+        "rows": rows,
+    }
+
+
 def _default_form_values(
     *,
     today: date_type,
@@ -281,12 +345,20 @@ def _decorate_plan_for_ui(
         tranches=tranches,
         as_of=today,
     )
+    reconciliation_panel = _build_plan_reconciliation_panel(
+        plan_id=str(enriched.get("plan_id") or ""),
+        security_id=str(enriched.get("security_id") or ""),
+        method=method,
+        reference_price_gbp=str(enriched.get("impact_reference_price_gbp") or ""),
+        tranches=tranches,
+    )
     return {
         **enriched,
         "tranches": tranches,
         "method_label": _METHOD_LABELS.get(method, method.replace("_", " ").title()),
         "is_approved": approval == APPROVAL_STATUS_APPROVED,
         "adherence_panel": adherence_panel,
+        "reconciliation_panel": reconciliation_panel,
     }
 
 

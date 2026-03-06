@@ -136,6 +136,23 @@ class CalendarService:
         for security_summary in summary.securities:
             ticker = security_summary.security.ticker
             security_id = security_summary.security.id
+            price_as_of = (
+                security_summary.price_as_of.isoformat()
+                if security_summary.price_as_of is not None
+                else None
+            )
+            price_is_stale = bool(security_summary.price_is_stale)
+            fx_as_of = security_summary.fx_as_of
+            fx_is_stale = bool(security_summary.fx_is_stale)
+            fx_basis_note = (
+                "GBP security (no FX conversion)"
+                if str(security_summary.security.currency or "").upper() == "GBP"
+                else (
+                    "FX basis unavailable"
+                    if not fx_as_of
+                    else None
+                )
+            )
 
             for lot_summary in security_summary.active_lots:
                 lot = lot_summary.lot
@@ -188,6 +205,11 @@ class CalendarService:
                         "quantity": str(lot_summary.quantity_remaining),
                         "value_at_stake_gbp": _money_str(lot_summary.market_value_gbp),
                         "has_live_value": has_live_value,
+                        "price_as_of": price_as_of,
+                        "price_is_stale": price_is_stale,
+                        "fx_as_of": fx_as_of,
+                        "fx_is_stale": fx_is_stale,
+                        "fx_basis_note": fx_basis_note,
                     }
                 )
 
@@ -210,6 +232,11 @@ class CalendarService:
                     "quantity": None,
                     "value_at_stake_gbp": None,
                     "has_live_value": False,
+                    "price_as_of": None,
+                    "price_is_stale": False,
+                    "fx_as_of": None,
+                    "fx_is_stale": False,
+                    "fx_basis_note": None,
                 }
             )
 
@@ -229,11 +256,23 @@ class CalendarService:
                     "quantity": None,
                     "value_at_stake_gbp": None,
                     "has_live_value": False,
+                    "price_as_of": None,
+                    "price_is_stale": False,
+                    "fx_as_of": None,
+                    "fx_is_stale": False,
+                    "fx_basis_note": None,
                 }
             )
 
         if sell_plan_events:
-            events.extend(sell_plan_events)
+            for raw_event in sell_plan_events:
+                event = dict(raw_event)
+                event.setdefault("price_as_of", None)
+                event.setdefault("price_is_stale", False)
+                event.setdefault("fx_as_of", None)
+                event.setdefault("fx_is_stale", False)
+                event.setdefault("fx_basis_note", None)
+                events.append(event)
 
         events.sort(
             key=lambda event: (

@@ -101,6 +101,7 @@
           <th>Scheme</th>
           <th class="num">Qty</th>
           <th class="num">Value at Stake</th>
+          <th>Price/FX Basis</th>
           <th>Action</th>
         </tr>
       </thead>
@@ -135,6 +136,26 @@
               {% endif %}
             </td>
             <td>
+              {% if event.value_at_stake_gbp is not none or event.event_type in ['VEST_DATE', 'FORFEITURE_END'] %}
+                {% if event.price_as_of %}
+                <div class="valuation-pill {% if event.price_is_stale %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+                  Price {{ event.price_as_of }}{% if event.price_is_stale %} (stale){% endif %}
+                </div>
+                {% else %}
+                <div class="valuation-pill valuation-pill--warning">Price basis unavailable</div>
+                {% endif %}
+                {% if event.fx_as_of %}
+                <div class="valuation-pill {% if event.fx_is_stale %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+                  FX {{ event.fx_as_of }}{% if event.fx_is_stale %} (stale){% endif %}
+                </div>
+                {% elif event.fx_basis_note %}
+                <div class="valuation-pill">{{ event.fx_basis_note }}</div>
+                {% endif %}
+              {% else %}
+              <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td>
               {% if event.event_type == 'SELL_TRANCHE' and event.deep_link %}
               <a href="{{ event.deep_link }}">Open Sell Plan</a>
               {% else %}
@@ -145,7 +166,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="8" class="muted">No upcoming events in this horizon.</td>
+            <td colspan="9" class="muted">No upcoming events in this horizon.</td>
           </tr>
         {% endif %}
       </tbody>
