@@ -47,6 +47,7 @@ async def api_run_scenario(
             name=req.name,
             as_of=req.as_of_date,
             price_shock_pct=Decimal(req.price_shock_pct),
+            execution_mode=req.execution_mode,
             legs=[leg.model_dump(mode="python") for leg in req.legs],
             settings=settings,
         )

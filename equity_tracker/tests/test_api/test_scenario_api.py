@@ -37,6 +37,28 @@ def _add_lot(client, security_id: str, quantity: str = "5") -> None:
     assert resp.status_code == 201, resp.text
 
 
+def _add_lot_with_cost(
+    client,
+    security_id: str,
+    *,
+    quantity: str,
+    acquisition_price_gbp: str,
+    acquisition_date: str,
+) -> None:
+    resp = client.post(
+        "/portfolio/lots",
+        json={
+            "security_id": security_id,
+            "scheme_type": "BROKERAGE",
+            "acquisition_date": acquisition_date,
+            "quantity": quantity,
+            "acquisition_price_gbp": acquisition_price_gbp,
+            "true_cost_per_share_gbp": acquisition_price_gbp,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
 def _add_price(security_id: str, price_date: date, close_gbp: str) -> None:
     with AppContext.write_session() as sess:
         PriceRepository(sess).upsert(
@@ -158,3 +180,62 @@ def test_scenario_lab_navigation_link_present_on_home(client):
     simulate_page = client.get("/simulate")
     assert simulate_page.status_code == 200
     assert 'href="/scenario-lab"' in simulate_page.text  # subnav visible within group
+
+
+def test_api_scenario_sequential_mode_changes_fifo_outcome(client):
+    sec_id = _add_security(client, "SCNSEQ")
+    _add_lot_with_cost(
+        client,
+        sec_id,
+        quantity="2",
+        acquisition_price_gbp="10.00",
+        acquisition_date="2025-01-10",
+    )
+    _add_lot_with_cost(
+        client,
+        sec_id,
+        quantity="2",
+        acquisition_price_gbp="20.00",
+        acquisition_date="2025-01-11",
+    )
+    _add_price(sec_id, date(2026, 2, 25), "30.00")
+
+    independent = client.post(
+        "/api/scenarios/run",
+        json={
+            "name": "independent",
+            "execution_mode": "INDEPENDENT",
+            "as_of_date": "2026-02-25",
+            "legs": [
+                {"security_id": sec_id, "quantity": "2"},
+                {"security_id": sec_id, "quantity": "2"},
+            ],
+        },
+    )
+    assert independent.status_code == 200, independent.text
+    independent_payload = independent.json()
+    assert independent_payload["execution_mode"] == "INDEPENDENT"
+    assert independent_payload["legs"][0]["total_cost_basis_gbp"] == "20.00"
+    assert independent_payload["legs"][1]["total_cost_basis_gbp"] == "20.00"
+
+    sequential = client.post(
+        "/api/scenarios/run",
+        json={
+            "name": "sequential",
+            "execution_mode": "SEQUENTIAL",
+            "as_of_date": "2026-02-25",
+            "legs": [
+                {"security_id": sec_id, "quantity": "2"},
+                {"security_id": sec_id, "quantity": "2"},
+            ],
+        },
+    )
+    assert sequential.status_code == 200, sequential.text
+    sequential_payload = sequential.json()
+    assert sequential_payload["execution_mode"] == "SEQUENTIAL"
+    assert sequential_payload["legs"][0]["total_cost_basis_gbp"] == "20.00"
+    assert sequential_payload["legs"][1]["total_cost_basis_gbp"] == "40.00"
+    assert (
+        sequential_payload["totals"]["total_cost_basis_gbp"]
+        != independent_payload["totals"]["total_cost_basis_gbp"]
+    )

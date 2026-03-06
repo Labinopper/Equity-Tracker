@@ -498,6 +498,41 @@ class EmploymentTaxEvent(Base):
 
 
 # ---------------------------------------------------------------------------
+# scenario_snapshots
+# ---------------------------------------------------------------------------
+
+class ScenarioSnapshot(Base):
+    """
+    Persisted Scenario Lab snapshots (input + output payload).
+
+    Enables deterministic scenario history across restarts and reproducible
+    reload/export of prior runs.
+    """
+
+    __tablename__ = "scenario_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "execution_mode IN ('INDEPENDENT','SEQUENTIAL')",
+            name="ck_scenario_snapshots_execution_mode",
+        ),
+        Index("ix_scenario_snapshots_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    execution_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="INDEPENDENT"
+    )
+    price_shock_pct: Mapped[str] = mapped_column(String(30), nullable=False, default="0.00")
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    input_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+
+# ---------------------------------------------------------------------------
 # dividend_entries
 # ---------------------------------------------------------------------------
 

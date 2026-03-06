@@ -3,23 +3,33 @@ ScenarioService - additive Scenario Lab execution and retrieval.
 
 The service provides:
 - Scenario builder context for /scenario-lab.
-- Multi-leg scenario execution via PortfolioService.simulate_disposal().
-- In-memory scenario snapshot storage for /api/scenarios/{id}.
+- Multi-leg scenario execution with independent or sequential leg mode.
+- Persisted scenario snapshot storage for /api/scenarios/{id}.
 """
 
 from __future__ import annotations
 
 import copy
+import dataclasses
+import json
 import uuid
-from collections import OrderedDict
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from threading import Lock
 from typing import Any
 
+from ..app_context import AppContext
+from ..core.lot_engine.fifo import ForfeitureWarning, LotForFIFO, allocate_fifo
 from ..core.tax_engine import tax_year_for_date
+from ..db.repository import LotRepository, ScenarioSnapshotRepository
 from ..settings import AppSettings
-from .portfolio_service import PortfolioService
+from .portfolio_service import (
+    PortfolioService,
+    _build_sip_tax_estimates,
+    _espp_plus_employee_lot_ids,
+    _is_lot_sellable_on,
+    _lot_to_fifo,
+)
 from .report_service import ReportService
 
 _GBP_Q = Decimal("0.01")
@@ -28,9 +38,8 @@ _HUNDRED = Decimal("100")
 _ZERO = Decimal("0")
 _MAX_STORED_SCENARIOS = 100
 _HIDE_REASON = "Values hidden by privacy mode."
-
-_SCENARIO_STORE: OrderedDict[str, dict[str, Any]] = OrderedDict()
-_SCENARIO_STORE_LOCK = Lock()
+_EXECUTION_INDEPENDENT = "INDEPENDENT"
+_EXECUTION_SEQUENTIAL = "SEQUENTIAL"
 
 
 def _q_money(value: Decimal) -> Decimal:
@@ -68,7 +77,7 @@ def _normalize_name(name: str | None, as_of_date: date) -> str:
     return f"Scenario {as_of_date.isoformat()}"
 
 
-def _empty_totals() -> dict[str, str | bool]:
+def _empty_totals() -> dict[str, str | bool | int]:
     return {
         "quantity_requested": "0",
         "quantity_sold": "0",
@@ -87,9 +96,183 @@ def _empty_totals() -> dict[str, str | bool]:
     }
 
 
+def _execution_mode_label(mode: str) -> str:
+    if mode == _EXECUTION_SEQUENTIAL:
+        return "Sequential"
+    return "Independent"
+
+
+def _normalize_execution_mode(mode: str | None) -> str:
+    cleaned = str(mode or "").strip().upper()
+    if cleaned == _EXECUTION_SEQUENTIAL:
+        return _EXECUTION_SEQUENTIAL
+    return _EXECUTION_INDEPENDENT
+
+
+@dataclass
+class _SequentialSecurityState:
+    lots_by_id: dict[str, Any]
+    fifo_template_by_id: dict[str, LotForFIFO]
+    remaining_by_id: dict[str, Decimal]
+    lot_order: list[str]
+    scheme_by_id: dict[str, str]
+
+
+def _state_available_quantity(
+    state: _SequentialSecurityState,
+    *,
+    scheme_type: str | None,
+) -> Decimal:
+    available = Decimal("0")
+    for lot_id in state.lot_order:
+        if scheme_type is not None and state.scheme_by_id.get(lot_id) != scheme_type:
+            continue
+        qty = state.remaining_by_id.get(lot_id, Decimal("0"))
+        if qty > Decimal("0"):
+            available += qty
+    return available
+
+
+def _build_sequential_state(
+    *,
+    security_id: str,
+    as_of_date: date,
+    settings: AppSettings | None,
+) -> _SequentialSecurityState:
+    with AppContext.read_session() as sess:
+        lot_repo = LotRepository(sess)
+        all_lots = lot_repo.get_all_lots_for_security(security_id)
+        espp_plus_employee_ids = _espp_plus_employee_lot_ids(all_lots)
+
+        active_lots = lot_repo.get_active_lots_for_security(security_id)
+        active_lots = [lot for lot in active_lots if _is_lot_sellable_on(lot, as_of_date)]
+
+    lots_by_id: dict[str, Any] = {}
+    fifo_template_by_id: dict[str, LotForFIFO] = {}
+    remaining_by_id: dict[str, Decimal] = {}
+    lot_order: list[str] = []
+    scheme_by_id: dict[str, str] = {}
+
+    for lot in active_lots:
+        fifo_lot = _lot_to_fifo(
+            lot,
+            settings=settings,
+            espp_plus_employee_ids=espp_plus_employee_ids,
+            use_live_true_cost=False,
+        )
+        lots_by_id[lot.id] = lot
+        fifo_template_by_id[lot.id] = fifo_lot
+        remaining_by_id[lot.id] = Decimal(fifo_lot.quantity_remaining)
+        lot_order.append(lot.id)
+        scheme_by_id[lot.id] = str(lot.scheme_type or "").upper()
+
+    return _SequentialSecurityState(
+        lots_by_id=lots_by_id,
+        fifo_template_by_id=fifo_template_by_id,
+        remaining_by_id=remaining_by_id,
+        lot_order=lot_order,
+        scheme_by_id=scheme_by_id,
+    )
+
+
+def _build_forfeiture_warnings_from_state(
+    *,
+    state: _SequentialSecurityState,
+    sold_lot_ids: set[str],
+    disposal_price_gbp: Decimal,
+    disposal_date: date,
+) -> list[ForfeitureWarning]:
+    warnings: list[ForfeitureWarning] = []
+    for lot_id, lot in state.lots_by_id.items():
+        if str(lot.scheme_type or "").upper() != "ESPP_PLUS":
+            continue
+        if lot.matching_lot_id not in sold_lot_ids:
+            continue
+        qty = state.remaining_by_id.get(lot_id, Decimal("0"))
+        if qty <= Decimal("0"):
+            continue
+        end = lot.forfeiture_period_end or (lot.acquisition_date + timedelta(days=183))
+        if disposal_date >= end:
+            continue
+        warnings.append(
+            ForfeitureWarning(
+                lot_id=lot.id,
+                acquisition_date=lot.acquisition_date,
+                forfeiture_end_date=end,
+                days_remaining=(end - disposal_date).days,
+                quantity_at_risk=qty,
+                value_at_risk_gbp=_q_money(qty * disposal_price_gbp),
+                linked_partnership_lot_id=lot.matching_lot_id,
+            )
+        )
+    return warnings
+
+
+def _simulate_disposal_sequential(
+    *,
+    state: _SequentialSecurityState,
+    quantity: Decimal,
+    price_per_share_gbp: Decimal,
+    scheme_type: str | None,
+    as_of_date: date,
+    settings: AppSettings | None,
+):
+    fifo_lots: list[LotForFIFO] = []
+    for lot_id in state.lot_order:
+        if scheme_type is not None and state.scheme_by_id.get(lot_id) != scheme_type:
+            continue
+        remaining = state.remaining_by_id.get(lot_id, Decimal("0"))
+        if remaining <= Decimal("0"):
+            continue
+        template = state.fifo_template_by_id[lot_id]
+        fifo_lots.append(dataclasses.replace(template, quantity_remaining=remaining))
+
+    if not fifo_lots:
+        raise ValueError("No sellable lots available for the selected leg.")
+
+    fifo_result = allocate_fifo(
+        fifo_lots,
+        quantity_to_sell=quantity,
+        disposal_price_gbp=price_per_share_gbp,
+    )
+    sold_lot_ids = {allocation.lot_id for allocation in fifo_result.allocations}
+    forfeiture_warnings = _build_forfeiture_warnings_from_state(
+        state=state,
+        sold_lot_ids=sold_lot_ids,
+        disposal_price_gbp=price_per_share_gbp,
+        disposal_date=as_of_date,
+    )
+    sip_tax_estimates, total_employment_tax = _build_sip_tax_estimates(
+        state.lots_by_id,
+        fifo_result.allocations,
+        price_per_share_gbp,
+        as_of_date,
+        settings,
+    )
+    total_forfeiture_value = sum(
+        (warning.value_at_risk_gbp for warning in forfeiture_warnings),
+        Decimal("0"),
+    )
+    result = dataclasses.replace(
+        fifo_result,
+        forfeiture_warnings=tuple(forfeiture_warnings),
+        total_forfeiture_value_gbp=total_forfeiture_value,
+        sip_tax_estimates=tuple(sip_tax_estimates),
+        total_sip_employment_tax_gbp=total_employment_tax,
+    )
+
+    for allocation in result.allocations:
+        current_remaining = state.remaining_by_id.get(allocation.lot_id, Decimal("0"))
+        state.remaining_by_id[allocation.lot_id] = max(
+            Decimal("0"),
+            current_remaining - allocation.quantity_allocated,
+        )
+    return result
+
+
 class ScenarioService:
     """
-    Read/write scenario service with in-process storage.
+    Read/write scenario service with persisted snapshot storage.
     """
 
     @staticmethod
@@ -171,7 +354,10 @@ class ScenarioService:
             notes.append("No sellable lots are currently available for scenario planning.")
         else:
             notes.append(
-                "Scenario legs run independently using current FIFO state and are aggregated."
+                "Independent mode runs each leg against current FIFO state without consuming prior legs."
+            )
+            notes.append(
+                "Sequential mode consumes FIFO allocations leg-by-leg to model order-sensitive outcomes."
             )
         notes.append(
             "Scenario Lab is a non-destructive planning surface; no disposals are committed."
@@ -191,6 +377,7 @@ class ScenarioService:
             "recent_scenarios": ScenarioService.list_scenarios(settings=settings),
             "defaults": {
                 "price_shock_pct": "0.00",
+                "execution_mode": _EXECUTION_INDEPENDENT,
             },
             "notes": notes,
         }
@@ -203,6 +390,7 @@ class ScenarioService:
         as_of: date | None = None,
         name: str | None = None,
         price_shock_pct: Decimal = Decimal("0"),
+        execution_mode: str = _EXECUTION_INDEPENDENT,
     ) -> dict[str, Any]:
         """
         Execute a multi-leg scenario and store a retrievable snapshot.
@@ -212,6 +400,7 @@ class ScenarioService:
 
         as_of_date = as_of or date.today()
         shock_pct = _q_pct(price_shock_pct)
+        mode = _normalize_execution_mode(execution_mode)
         scenario_id = str(uuid.uuid4())
         scenario_name = _normalize_name(name, as_of_date)
         created_at = _now_utc_iso()
@@ -221,9 +410,7 @@ class ScenarioService:
             as_of=as_of_date,
         )
         hide_values = bool(builder_context["hide_values"])
-        security_context = {
-            row["id"]: row for row in builder_context["securities"]
-        }
+        security_context = {row["id"]: row for row in builder_context["securities"]}
 
         if hide_values:
             hidden_payload = {
@@ -232,6 +419,7 @@ class ScenarioService:
                 "as_of_date": as_of_date.isoformat(),
                 "created_at_utc": created_at,
                 "price_shock_pct": str(shock_pct),
+                "execution_mode": mode,
                 "hide_values": True,
                 "hidden_reason": _HIDE_REASON,
                 "legs": [
@@ -251,7 +439,14 @@ class ScenarioService:
                 },
                 "notes": [_HIDE_REASON],
             }
-            ScenarioService._store(hidden_payload)
+            ScenarioService._store(
+                hidden_payload,
+                input_snapshot={
+                    "legs": legs,
+                    "price_shock_pct": str(shock_pct),
+                    "execution_mode": mode,
+                },
+            )
             return hidden_payload
 
         aggregate_quantity_requested = Decimal("0")
@@ -267,6 +462,7 @@ class ScenarioService:
         aggregate_allocation_count = 0
         has_shortfall = False
         legs_with_forfeiture_warning = 0
+        sequential_state_by_security: dict[str, _SequentialSecurityState] = {}
 
         leg_payloads: list[dict[str, Any]] = []
         for idx, leg in enumerate(legs, start=1):
@@ -288,16 +484,28 @@ class ScenarioService:
                 else None
             )
 
-            if scheme_type is None:
-                available_qty = Decimal(security_row["available_quantity"])
+            if mode == _EXECUTION_SEQUENTIAL:
+                state = sequential_state_by_security.get(security_id)
+                if state is None:
+                    state = _build_sequential_state(
+                        security_id=security_id,
+                        as_of_date=as_of_date,
+                        settings=settings,
+                    )
+                    sequential_state_by_security[security_id] = state
+                available_qty = _state_available_quantity(state, scheme_type=scheme_type)
             else:
-                available_qty = Decimal(
-                    security_row["available_by_scheme"].get(scheme_type, "0")
-                )
+                if scheme_type is None:
+                    available_qty = Decimal(security_row["available_quantity"])
+                else:
+                    available_qty = Decimal(
+                        security_row["available_by_scheme"].get(scheme_type, "0")
+                    )
+
             if quantity > available_qty:
                 raise ValueError(
                     f"Leg {idx} quantity ({quantity}) exceeds available ({available_qty}) "
-                    f"for {security_row['ticker']}."
+                    f"for {security_row['ticker']} in {mode.lower()} mode."
                 )
 
             price_override = leg.get("price_per_share_gbp")
@@ -315,15 +523,25 @@ class ScenarioService:
                 input_price_source = "manual"
 
             shocked_price_gbp = _apply_price_shock(input_price_gbp, shock_pct)
-            simulation = PortfolioService.simulate_disposal(
-                security_id=security_id,
-                quantity=quantity,
-                price_per_share_gbp=shocked_price_gbp,
-                scheme_type=scheme_type,
-                as_of_date=as_of_date,
-                settings=settings,
-                use_live_true_cost=False,
-            )
+            if mode == _EXECUTION_SEQUENTIAL:
+                simulation = _simulate_disposal_sequential(
+                    state=state,
+                    quantity=quantity,
+                    price_per_share_gbp=shocked_price_gbp,
+                    scheme_type=scheme_type,
+                    as_of_date=as_of_date,
+                    settings=settings,
+                )
+            else:
+                simulation = PortfolioService.simulate_disposal(
+                    security_id=security_id,
+                    quantity=quantity,
+                    price_per_share_gbp=shocked_price_gbp,
+                    scheme_type=scheme_type,
+                    as_of_date=as_of_date,
+                    settings=settings,
+                    use_live_true_cost=False,
+                )
 
             allocation_tax_map = {
                 estimate.lot_id: estimate.est_total_employment_tax_gbp
@@ -424,6 +642,15 @@ class ScenarioService:
         next_year_cgt = ReportService.cgt_summary(next_tax_year)
 
         notes: list[str] = []
+        notes.append(f"Execution mode: {_execution_mode_label(mode)}.")
+        if mode == _EXECUTION_INDEPENDENT:
+            notes.append(
+                "Independent mode does not consume prior leg allocations."
+            )
+        else:
+            notes.append(
+                "Sequential mode consumes each leg's FIFO allocations before the next leg."
+            )
         if shock_pct != _ZERO:
             notes.append(
                 f"Price shock of {shock_pct}% applied uniformly to all leg prices."
@@ -447,6 +674,7 @@ class ScenarioService:
             "as_of_date": as_of_date.isoformat(),
             "created_at_utc": created_at,
             "price_shock_pct": str(shock_pct),
+            "execution_mode": mode,
             "hide_values": False,
             "legs": leg_payloads,
             "totals": {
@@ -480,7 +708,14 @@ class ScenarioService:
             "notes": notes,
         }
 
-        ScenarioService._store(payload)
+        ScenarioService._store(
+            payload,
+            input_snapshot={
+                "legs": legs,
+                "price_shock_pct": str(shock_pct),
+                "execution_mode": mode,
+            },
+        )
         return payload
 
     @staticmethod
@@ -492,12 +727,16 @@ class ScenarioService:
         """
         Return a stored scenario payload by ID.
         """
-        with _SCENARIO_STORE_LOCK:
-            payload = _SCENARIO_STORE.get(scenario_id)
-            if payload is None:
+        with AppContext.read_session() as sess:
+            repo = ScenarioSnapshotRepository(sess)
+            row = repo.get_by_id(scenario_id)
+            if row is None:
                 return None
-            snapshot = copy.deepcopy(payload)
-
+            try:
+                payload = json.loads(row.payload_json)
+            except json.JSONDecodeError:
+                return None
+        snapshot = copy.deepcopy(payload)
         if bool(settings and settings.hide_values):
             return ScenarioService._hide_payload(snapshot)
         return snapshot
@@ -511,24 +750,59 @@ class ScenarioService:
         """
         Return recent scenario summaries, newest first.
         """
-        with _SCENARIO_STORE_LOCK:
-            values = list(_SCENARIO_STORE.values())[-max(limit, 0):]
-        values.reverse()
+        with AppContext.read_session() as sess:
+            repo = ScenarioSnapshotRepository(sess)
+            rows = repo.list_recent(limit=max(limit, 0))
 
         hide_values = bool(settings and settings.hide_values)
-        return [
-            ScenarioService._summary_row(payload, hide_values=hide_values)
-            for payload in values
-        ]
+        summaries: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row.payload_json)
+            except json.JSONDecodeError:
+                continue
+            summaries.append(
+                ScenarioService._summary_row(payload, hide_values=hide_values)
+            )
+        return summaries
 
     @staticmethod
-    def _store(payload: dict[str, Any]) -> None:
-        scenario_id = payload["scenario_id"]
-        with _SCENARIO_STORE_LOCK:
-            _SCENARIO_STORE[scenario_id] = copy.deepcopy(payload)
-            _SCENARIO_STORE.move_to_end(scenario_id)
-            while len(_SCENARIO_STORE) > _MAX_STORED_SCENARIOS:
-                _SCENARIO_STORE.popitem(last=False)
+    def _store(
+        payload: dict[str, Any],
+        *,
+        input_snapshot: dict[str, Any] | None = None,
+    ) -> None:
+        scenario_id = str(payload["scenario_id"])
+        as_of_raw = str(payload["as_of_date"])
+        mode = _normalize_execution_mode(payload.get("execution_mode"))
+        payload_json = json.dumps(
+            payload,
+            sort_keys=True,
+            ensure_ascii=True,
+            default=str,
+        )
+        input_json = (
+            json.dumps(
+                input_snapshot,
+                sort_keys=True,
+                ensure_ascii=True,
+                default=str,
+            )
+            if input_snapshot is not None
+            else None
+        )
+        with AppContext.write_session() as sess:
+            repo = ScenarioSnapshotRepository(sess)
+            repo.upsert(
+                snapshot_id=scenario_id,
+                name=str(payload.get("name") or scenario_id),
+                as_of_date=date.fromisoformat(as_of_raw),
+                execution_mode=mode,
+                price_shock_pct=str(payload.get("price_shock_pct", "0.00")),
+                payload_json=payload_json,
+                input_snapshot_json=input_json,
+            )
+            repo.trim(max_rows=_MAX_STORED_SCENARIOS)
 
     @staticmethod
     def _summary_row(
@@ -537,6 +811,7 @@ class ScenarioService:
         hide_values: bool,
     ) -> dict[str, Any]:
         totals = payload.get("totals") or _empty_totals()
+        mode = _normalize_execution_mode(payload.get("execution_mode"))
         if hide_values:
             return {
                 "scenario_id": payload["scenario_id"],
@@ -544,6 +819,7 @@ class ScenarioService:
                 "as_of_date": payload["as_of_date"],
                 "created_at_utc": payload["created_at_utc"],
                 "price_shock_pct": payload.get("price_shock_pct", "0.00"),
+                "execution_mode": mode,
                 "legs_count": int(totals.get("legs_count", 0)),
                 "has_shortfall": bool(totals.get("has_shortfall", False)),
                 "hide_values": True,
@@ -556,6 +832,7 @@ class ScenarioService:
             "as_of_date": payload["as_of_date"],
             "created_at_utc": payload["created_at_utc"],
             "price_shock_pct": payload.get("price_shock_pct", "0.00"),
+            "execution_mode": mode,
             "legs_count": int(totals.get("legs_count", 0)),
             "has_shortfall": bool(totals.get("has_shortfall", False)),
             "total_proceeds_gbp": totals.get("total_proceeds_gbp", "0.00"),
@@ -595,6 +872,7 @@ class ScenarioService:
             "as_of_date": payload["as_of_date"],
             "created_at_utc": payload["created_at_utc"],
             "price_shock_pct": payload.get("price_shock_pct", "0.00"),
+            "execution_mode": _normalize_execution_mode(payload.get("execution_mode")),
             "hide_values": True,
             "hidden_reason": _HIDE_REASON,
             "legs": hidden_legs,

@@ -77,6 +77,10 @@ class ScenarioRunRequest(BaseModel):
         le=Decimal("500"),
         description="Percent shock applied to each leg price.",
     )
+    execution_mode: str = Field(
+        "INDEPENDENT",
+        description="Leg execution mode: INDEPENDENT or SEQUENTIAL.",
+    )
     legs: list[ScenarioLegRequest] = Field(
         ...,
         min_length=1,
@@ -90,3 +94,11 @@ class ScenarioRunRequest(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+    @field_validator("execution_mode")
+    @classmethod
+    def normalize_execution_mode(cls, value: str) -> str:
+        cleaned = str(value or "").strip().upper()
+        if cleaned not in {"INDEPENDENT", "SEQUENTIAL"}:
+            raise ValueError("execution_mode must be INDEPENDENT or SEQUENTIAL.")
+        return cleaned

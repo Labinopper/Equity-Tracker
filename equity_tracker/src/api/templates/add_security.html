@@ -117,6 +117,9 @@
           <span class="form-hint">Decimal places for share quantities (0 = whole shares).</span>
         </div>
       </div>
+      <p id="manual-quality-warning" class="form-hint" style="color: var(--warning-text-color, #d18616);" hidden>
+        Provide at least one disambiguator: Exchange or ISIN.
+      </p>
     </div>
 
     <div class="form-actions">
@@ -162,6 +165,7 @@
   const mIsin        = document.getElementById("m-isin");
   const mExchange    = document.getElementById("m-exchange");
   const mUnitsPrecision = document.getElementById("m-units-precision");
+  const manualQualityWarning = document.getElementById("manual-quality-warning");
 
   /* Catalogue units precision input */
   const catUnitsPrecision = document.getElementById("units_precision");
@@ -343,9 +347,14 @@
 
     /* Validate submit readiness */
     function checkReady() {
-      submitBtn.disabled = !(mTicker.value.trim() && mName.value.trim() && mCurrency.value.trim());
+      const hasCore = Boolean(mTicker.value.trim() && mName.value.trim() && mCurrency.value.trim());
+      const hasDisambiguator = Boolean(mExchange.value.trim() || mIsin.value.trim());
+      submitBtn.disabled = !hasCore;
+      if (manualQualityWarning) {
+        manualQualityWarning.hidden = hasDisambiguator || !hasCore;
+      }
     }
-    [mTicker, mName, mCurrency].forEach(function (el) {
+    [mTicker, mName, mCurrency, mExchange, mIsin].forEach(function (el) {
       el.removeEventListener("input", checkReady);
       el.addEventListener("input", checkReady);
     });

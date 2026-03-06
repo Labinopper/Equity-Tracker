@@ -46,6 +46,14 @@
         >
         <span class="form-hint">Applied uniformly to each leg price: <strong id="price-shock-value">0%</strong></span>
       </div>
+      <div class="form-field">
+        <label for="scenario-execution-mode">Execution Mode</label>
+        <select id="scenario-execution-mode" name="execution_mode">
+          <option value="INDEPENDENT">Independent</option>
+          <option value="SEQUENTIAL">Sequential</option>
+        </select>
+        <span class="form-hint">Sequential mode consumes FIFO allocations leg-by-leg.</span>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -102,6 +110,10 @@
     <div class="stat">
       <span class="stat__label">Shortfall</span>
       <span class="stat__value" id="scenario-total-shortfall">-</span>
+    </div>
+    <div class="stat">
+      <span class="stat__label">Execution Mode</span>
+      <span class="stat__value" id="scenario-total-execution-mode">-</span>
     </div>
   </div>
 
@@ -186,6 +198,7 @@
         <tr>
           <th>Name</th>
           <th>As-Of</th>
+          <th>Mode</th>
           <th class="num">Legs</th>
           <th class="num">Price Shock</th>
           <th class="num">Net After Tax</th>
@@ -195,7 +208,7 @@
       </thead>
       <tbody id="scenario-recent-body">
         <tr>
-          <td colspan="7" class="muted">No scenarios run yet.</td>
+          <td colspan="8" class="muted">No scenarios run yet.</td>
         </tr>
       </tbody>
     </table>
@@ -247,6 +260,7 @@
   var runForm = document.getElementById("scenario-run-form");
   var shockSlider = document.getElementById("price-shock-slider");
   var shockValue = document.getElementById("price-shock-value");
+  var executionModeSelect = document.getElementById("scenario-execution-mode");
   var errorBox = document.getElementById("scenario-error");
   var resultCard = document.getElementById("scenario-result-card");
 
@@ -477,6 +491,7 @@
       as_of_date: payload.as_of_date,
       created_at_utc: payload.created_at_utc,
       price_shock_pct: payload.price_shock_pct || "0.00",
+      execution_mode: payload.execution_mode || "INDEPENDENT",
       legs_count: Number(totals.legs_count || (Array.isArray(payload.legs) ? payload.legs.length : 0)),
       has_shortfall: Boolean(totals.has_shortfall),
       total_net_after_employment_tax_gbp: totals.total_net_after_employment_tax_gbp || "0.00",
@@ -495,15 +510,17 @@
 
   function renderRecentScenariosTable() {
     if (!recentSummaries.length) {
-      recentBody.innerHTML = '<tr><td colspan="7" class="muted">No scenarios run yet.</td></tr>';
+      recentBody.innerHTML = '<tr><td colspan="8" class="muted">No scenarios run yet.</td></tr>';
       return;
     }
     var html = [];
     recentSummaries.forEach(function (row) {
+      var mode = row.execution_mode === "SEQUENTIAL" ? "Sequential" : "Independent";
       html.push(
         "<tr>" +
           "<td>" + row.name + "</td>" +
           "<td>" + (row.as_of_date || "-") + "</td>" +
+          "<td>" + mode + "</td>" +
           '<td class="num">' + String(row.legs_count || 0) + "</td>" +
           '<td class="num">' + (row.price_shock_pct || "0.00") + "%</td>" +
           '<td class="num">' + (row.hide_values ? "-" : formatMoney(row.total_net_after_employment_tax_gbp)) + "</td>" +
@@ -519,10 +536,11 @@
     function buildOptions(selectedId) {
       var opts = ['<option value="">-- select --</option>'];
       recentSummaries.forEach(function (row) {
+        var mode = row.execution_mode === "SEQUENTIAL" ? "Sequential" : "Independent";
         var selected = row.scenario_id === selectedId ? ' selected' : "";
         opts.push(
           '<option value="' + row.scenario_id + '"' + selected + ">" +
-          row.name + " (" + row.as_of_date + ")" +
+          row.name + " (" + row.as_of_date + ", " + mode + ")" +
           "</option>"
         );
       });
@@ -558,6 +576,8 @@
     document.getElementById("scenario-total-tax").textContent = formatMoney(totals.total_employment_tax_gbp);
     document.getElementById("scenario-total-forfeiture").textContent = formatMoney(totals.total_forfeiture_value_gbp);
     document.getElementById("scenario-total-shortfall").textContent = String(totals.shortfall || "0");
+    document.getElementById("scenario-total-execution-mode").textContent =
+      payload.execution_mode === "SEQUENTIAL" ? "Sequential" : "Independent";
 
     var legsBodyResult = document.getElementById("scenario-leg-results-body");
     var legRows = Array.isArray(payload.legs) ? payload.legs : [];
@@ -799,6 +819,7 @@
         name: document.getElementById("scenario-name").value.trim() || null,
         as_of_date: document.getElementById("scenario-as-of-date").value || null,
         price_shock_pct: String(readShockPct()),
+        execution_mode: executionModeSelect ? executionModeSelect.value : "INDEPENDENT",
         legs: legs
       };
 
@@ -840,6 +861,10 @@
   compareBtn.addEventListener("click", runComparison);
   exportJsonBtn.addEventListener("click", exportCurrentScenarioJson);
   exportCsvBtn.addEventListener("click", exportCurrentScenarioCsv);
+
+  if (executionModeSelect && context.defaults && context.defaults.execution_mode) {
+    executionModeSelect.value = context.defaults.execution_mode;
+  }
 
   renderRecentScenariosTable();
   renderCompareSelects();

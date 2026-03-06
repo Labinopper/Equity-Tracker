@@ -1560,6 +1560,19 @@ class PortfolioService:
         Returns the persisted Security (detached from session after commit).
         Caller should NOT modify the returned object.
         """
+        ticker_clean = (ticker or "").strip().upper()
+        name_clean = (name or "").strip()
+        currency_clean = (currency or "").strip().upper()
+        isin_clean = (isin or "").strip().upper() or None
+        exchange_clean = (exchange or "").strip().upper() or None
+
+        if not ticker_clean:
+            raise ValueError("ticker is required.")
+        if not name_clean:
+            raise ValueError("name is required.")
+        if len(currency_clean) != 3 or not currency_clean.isalpha():
+            raise ValueError("currency must be a 3-letter ISO code.")
+
         if not is_manual_override and catalog_id is None:
             raise ValueError(
                 "catalog_id is required unless is_manual_override=True. "
@@ -1568,15 +1581,34 @@ class PortfolioService:
             )
 
         with AppContext.write_session() as sess:
-            repo  = SecurityRepository(sess)
+            repo = SecurityRepository(sess)
             audit = AuditRepository(sess)
 
+            for existing in repo.list_all():
+                existing_ticker = str(existing.ticker or "").strip().upper()
+                existing_currency = str(existing.currency or "").strip().upper()
+                existing_isin = (existing.isin or "").strip().upper()
+                if existing_ticker == ticker_clean and existing_currency == currency_clean:
+                    raise ValueError(
+                        f"Security {ticker_clean} ({currency_clean}) already exists."
+                    )
+                if existing_ticker == ticker_clean and existing_currency != currency_clean:
+                    raise ValueError(
+                        f"Ticker {ticker_clean} already exists with currency "
+                        f"{existing_currency}; add ISIN/exchange disambiguation."
+                    )
+                if isin_clean and existing_isin and isin_clean == existing_isin:
+                    raise ValueError(
+                        f"ISIN {isin_clean} is already linked to ticker "
+                        f"{existing_ticker} ({existing_currency})."
+                    )
+
             security = Security(
-                ticker=ticker,
-                name=name,
-                currency=currency,
-                isin=isin,
-                exchange=exchange,
+                ticker=ticker_clean,
+                name=name_clean,
+                currency=currency_clean,
+                isin=isin_clean,
+                exchange=exchange_clean,
                 units_precision=units_precision,
                 catalog_id=catalog_id,
                 is_manual_override=is_manual_override,
@@ -1589,11 +1621,11 @@ class PortfolioService:
                 table_name="securities",
                 record_id=security.id,
                 new_values={
-                    "ticker": ticker,
-                    "name": name,
-                    "currency": currency,
-                    "isin": str(isin),
-                    "exchange": str(exchange),
+                    "ticker": ticker_clean,
+                    "name": name_clean,
+                    "currency": currency_clean,
+                    "isin": str(isin_clean),
+                    "exchange": str(exchange_clean),
                     "units_precision": str(units_precision),
                     "catalog_id": str(catalog_id),
                     "is_manual_override": str(is_manual_override),

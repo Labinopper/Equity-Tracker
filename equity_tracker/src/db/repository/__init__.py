@@ -23,6 +23,7 @@ from .disposals import DisposalRepository
 from .employment_tax_events import EmploymentTaxEventRepository
 from .lots import LotRepository
 from .prices import PriceRepository
+from .scenario_snapshots import ScenarioSnapshotRepository
 from .securities import SecurityRepository
 from .transactions import TransactionRepository
 
@@ -34,6 +35,7 @@ __all__ = [
     "EmploymentTaxEventRepository",
     "LotRepository",
     "PriceRepository",
+    "ScenarioSnapshotRepository",
     "SecurityRepository",
     "TransactionRepository",
 ]
