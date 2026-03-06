@@ -113,7 +113,7 @@
     <div class="card__header security-history-card__header">
       <h2 class="card__title">Portfolio Value</h2>
     </div>
-    <p class="muted">Total GBP value over time.</p>
+    <p class="muted">Total GBP value over time. Shaded bands mark periods where part of value was non-sellable.</p>
     {% if total_series | length == 0 %}
     <p class="muted" id="portfolio-chart-empty">No price history available.</p>
     {% else %}
@@ -131,7 +131,7 @@
         <button type="button" class="btn btn-secondary btn-sm gain-overlay-btn" data-gain-overlay="plus_dividends">+ Net Dividends</button>
       </div>
     </div>
-    <p class="muted">Toggle baseline gain vs dividend-adjusted gain using cumulative net dividends through each date.</p>
+    <p class="muted">Toggle baseline gain vs dividend-adjusted gain using cumulative net dividends through each date. Shading marks non-sellable periods.</p>
     {% if total_series | length == 0 %}
     <p class="muted">No price history available.</p>
     {% else %}
@@ -317,10 +317,61 @@
     return Array.isArray(point && point.share_events) && point.share_events.length > 0;
   }
 
-  function eventPointRadii(filtered, size) {
-    return filtered.map(function (p) {
-      return hasShareEvent(p) ? size : 0;
+  function hasLockWindow(point) {
+    if (!point) return false;
+    if (point.lock_window_active === true) return true;
+    var nonsellable = toNum(point.nonsellable_value_gbp);
+    return nonsellable !== null && nonsellable > 0;
+  }
+
+  function lockRanges(filtered) {
+    var ranges = [];
+    var start = null;
+    filtered.forEach(function (point, idx) {
+      if (hasLockWindow(point)) {
+        if (start === null) {
+          start = idx;
+        }
+        return;
+      }
+      if (start !== null) {
+        ranges.push({ start: start, end: idx - 1 });
+        start = null;
+      }
     });
+    if (start !== null) {
+      ranges.push({ start: start, end: filtered.length - 1 });
+    }
+    return ranges;
+  }
+
+  function pointRadiiWithLock(filtered, eventSize, lockSize) {
+    return filtered.map(function (p) {
+      if (hasShareEvent(p)) return eventSize;
+      if (hasLockWindow(p)) return lockSize;
+      return 0;
+    });
+  }
+
+  function eventPointRadii(filtered, size) {
+    return pointRadiiWithLock(filtered, size, 0);
+  }
+
+  function pointColorsWithLock(filtered, baseColor, eventColor) {
+    return filtered.map(function (p) {
+      if (hasShareEvent(p)) return eventColor;
+      if (hasLockWindow(p)) return theme.warning;
+      return baseColor;
+    });
+  }
+
+  function buildLockWindowLines(point) {
+    if (!hasLockWindow(point)) return [];
+    var nonsellable = toNum(point.nonsellable_value_gbp);
+    if (nonsellable === null || hideValues) {
+      return ["Lock window active (non-sellable value present)."];
+    }
+    return ["Lock window active: non-sellable value " + formatMoney(nonsellable)];
   }
 
   function aggregateActivity(point) {
@@ -402,6 +453,33 @@
     return formatDateTickLabel(label, labels.length);
   }
 
+  var lockWindowShadePlugin = {
+    id: "lockWindowShade",
+    beforeDatasetsDraw: function (chart, _args, pluginOptions) {
+      if (!pluginOptions || !Array.isArray(pluginOptions.ranges) || !pluginOptions.ranges.length) {
+        return;
+      }
+      var xScale = chart.scales && chart.scales.x;
+      var area = chart.chartArea;
+      if (!xScale || !area) return;
+      var ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = pluginOptions.color || "rgba(240, 160, 48, 0.08)";
+      pluginOptions.ranges.forEach(function (range) {
+        var left = xScale.getPixelForValue(range.start);
+        var right = xScale.getPixelForValue(range.end);
+        if (!Number.isFinite(left) || !Number.isFinite(right)) return;
+        var x = Math.min(left, right) - 4;
+        var width = Math.abs(right - left) + 8;
+        ctx.fillRect(x, area.top, Math.max(1, width), area.bottom - area.top);
+      });
+      ctx.restore();
+    }
+  };
+  if (typeof Chart !== "undefined") {
+    Chart.register(lockWindowShadePlugin);
+  }
+
   function buildShareEventLines(point) {
     if (!point || !Array.isArray(point.share_events)) return [];
     var lines = [];
@@ -445,10 +523,9 @@
     var values = filtered.map(function (p) {
       return hideValues ? null : toNum(p.total_value_gbp);
     });
-    var pointRadii = eventPointRadii(filtered, 4);
-    var pointColors = filtered.map(function (p) {
-      return hasShareEvent(p) ? theme.gain : theme.accent;
-    });
+    var pointRadii = pointRadiiWithLock(filtered, 4, 2);
+    var pointColors = pointColorsWithLock(filtered, theme.accent, theme.gain);
+    var ranges = lockRanges(filtered);
 
     var canvas = document.getElementById("chart-portfolio-history");
     if (!canvas || typeof Chart === "undefined") return;
@@ -460,6 +537,10 @@
       portfolioChart.data.datasets[0].pointBackgroundColor = pointColors;
       portfolioChart.data.datasets[0].pointBorderColor = pointColors;
       portfolioChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      portfolioChart.options.plugins.lockWindowShade = {
+        ranges: ranges,
+        color: "rgba(240, 160, 48, 0.09)"
+      };
       portfolioChart.update();
       return;
     }
@@ -500,6 +581,10 @@
           }
         },
         plugins: {
+          lockWindowShade: {
+            ranges: ranges,
+            color: "rgba(240, 160, 48, 0.09)"
+          },
           tooltip: {
             enabled: true,
             callbacks: {
@@ -509,7 +594,8 @@
               afterBody: function (ctxArr) {
                 var idx = ctxArr[0] && ctxArr[0].dataIndex;
                 if (idx === undefined) return [];
-                return buildShareEventLines(portfolioFilteredRef[idx]);
+                var lines = buildShareEventLines(portfolioFilteredRef[idx]);
+                return lines.concat(buildLockWindowLines(portfolioFilteredRef[idx]));
               }
             }
           }
@@ -533,8 +619,9 @@
     var values = filtered.map(function (p) {
       return hideValues ? null : toNum(p[gainKey]);
     });
-    var pointRadii = eventPointRadii(filtered, 4);
-    var pointColors = filtered.map(function () { return theme.gain; });
+    var pointRadii = pointRadiiWithLock(filtered, 4, 2);
+    var pointColors = pointColorsWithLock(filtered, theme.gain, theme.gain);
+    var ranges = lockRanges(filtered);
 
     var canvas = document.getElementById("chart-gain-history");
     if (!canvas || typeof Chart === "undefined") return;
@@ -547,6 +634,10 @@
       gainChart.data.datasets[0].pointBackgroundColor = pointColors;
       gainChart.data.datasets[0].pointBorderColor = pointColors;
       gainChart.options.scales.x.ticks.maxTicksLimit = maxDateTicks(labels.length);
+      gainChart.options.plugins.lockWindowShade = {
+        ranges: ranges,
+        color: "rgba(240, 160, 48, 0.09)"
+      };
       gainChart.update();
       return;
     }
@@ -597,6 +688,10 @@
           }
         },
         plugins: {
+          lockWindowShade: {
+            ranges: ranges,
+            color: "rgba(240, 160, 48, 0.09)"
+          },
           tooltip: {
             enabled: true,
             callbacks: {
@@ -608,7 +703,8 @@
               afterBody: function (ctxArr) {
                 var idx = ctxArr[0] && ctxArr[0].dataIndex;
                 if (idx === undefined) return [];
-                return buildShareEventLines(gainFilteredRef[idx]);
+                var lines = buildShareEventLines(gainFilteredRef[idx]);
+                return lines.concat(buildLockWindowLines(gainFilteredRef[idx]));
               }
             }
           }

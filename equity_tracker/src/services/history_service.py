@@ -527,6 +527,7 @@ class HistoryService:
                     "nonsellable_qty": str(nonsellable_qty.quantize(_QUANT4, rounding=ROUND_HALF_UP)),
                     "sellable_value_gbp": str(sellable_value) if sellable_value is not None else None,
                     "nonsellable_value_gbp": str(nonsellable_value) if nonsellable_value is not None else None,
+                    "lock_window_active": bool(nonsellable_qty > 0),
                     "sellable_gain_gbp": (
                         str(sellable_gain_out)
                         if sellable_gain_out is not None
@@ -810,6 +811,7 @@ class HistoryService:
 
             for d in sorted_dates:
                 total = Decimal("0")
+                nonsellable_total_value = Decimal("0")
                 sellable_gain = Decimal("0")
                 sellable_gain_incomplete = False
                 priced_count = 0
@@ -832,10 +834,9 @@ class HistoryService:
                         # Gain If Sold Today: portfolio-aligned per-lot net economic gain
                         # for sellable holdings at date D.
                         sec_lots = lots_by_security.get(sec.id, [])
+                        sec_nonsellable_value = Decimal("0")
                         for lot in sec_lots:
                             if lot.acquisition_date > d:
-                                continue
-                            if not _is_lot_sellable_on(lot, d):
                                 continue
                             lot_remaining = _safe_decimal(lot.quantity_remaining) or Decimal("0")
                             lot_future = sum(
@@ -843,6 +844,9 @@ class HistoryService:
                             )
                             lot_qty = max(Decimal("0"), lot_remaining + lot_future)
                             if lot_qty <= 0:
+                                continue
+                            if not _is_lot_sellable_on(lot, d):
+                                sec_nonsellable_value += _q2(lot_qty * price)
                                 continue
                             lot_gain = _lot_sell_now_economic_gain(
                                 lot=lot,
@@ -855,6 +859,7 @@ class HistoryService:
                                 sellable_gain_incomplete = True
                                 break
                             sellable_gain += lot_gain
+                        nonsellable_total_value += _q2(sec_nonsellable_value)
                         if sellable_gain_incomplete:
                             continue
                     else:
@@ -890,6 +895,8 @@ class HistoryService:
                 total_series.append({
                     "date": d.isoformat(),
                     "total_value_gbp": str(total.quantize(_QUANT2)) if held_count > 0 else None,
+                    "nonsellable_value_gbp": str(_q2(nonsellable_total_value)) if held_count > 0 else None,
+                    "lock_window_active": bool(nonsellable_total_value > Decimal("0")),
                     "sellable_gain_gbp": (
                         None
                         if sellable_gain_incomplete or priced_count == 0

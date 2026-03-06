@@ -87,6 +87,8 @@ async def update_settings(
     settings.default_other_income = req.default_other_income
     settings.employer_income_dependency_pct = req.employer_income_dependency_pct
     settings.employer_ticker = req.employer_ticker.strip().upper()
+    settings.concentration_top_holding_alert_pct = req.concentration_top_holding_alert_pct
+    settings.concentration_employer_alert_pct = req.concentration_employer_alert_pct
     settings.default_tax_year = req.default_tax_year
     settings.show_exhausted_lots = req.show_exhausted_lots
     settings.hide_values = req.hide_values

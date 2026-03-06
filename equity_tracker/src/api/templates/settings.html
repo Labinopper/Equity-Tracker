@@ -68,6 +68,22 @@
       </div>
 
       <div class="form-field">
+        <label for="concentration_top_holding_alert_pct">Top Holding Alert Threshold (%)</label>
+        <input id="concentration_top_holding_alert_pct" name="concentration_top_holding_alert_pct" type="number"
+               min="0" max="100" step="0.01"
+               value="{{ settings.concentration_top_holding_alert_pct if settings else '50' }}">
+        <span class="form-hint">Triggers concentration guardrails when top holding gross share exceeds this threshold.</span>
+      </div>
+
+      <div class="form-field">
+        <label for="concentration_employer_alert_pct">Employer Exposure Alert Threshold (%)</label>
+        <input id="concentration_employer_alert_pct" name="concentration_employer_alert_pct" type="number"
+               min="0" max="100" step="0.01"
+               value="{{ settings.concentration_employer_alert_pct if settings else '40' }}">
+        <span class="form-hint">Triggers concentration guardrails when employer gross exposure exceeds this threshold.</span>
+      </div>
+
+      <div class="form-field">
         <label for="default_tax_year">Default Tax Year</label>
         <select id="default_tax_year" name="default_tax_year">
           {% for y in tax_years %}

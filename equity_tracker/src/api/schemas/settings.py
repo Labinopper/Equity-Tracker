@@ -2,7 +2,7 @@
 Pydantic schemas for the /api/settings endpoint.
 
 AppSettings stores all monetary values as Decimal; responses expose them as
-strings (consistent with the rest of the API).  Requests accept Decimal,
+strings (consistent with the rest of the API). Requests accept Decimal,
 which Pydantic v2 coerces from JSON numbers or strings.
 """
 
@@ -14,14 +14,16 @@ from pydantic import BaseModel, Field
 
 
 class SettingsSchema(BaseModel):
-    """Current user settings — all monetary values as decimal strings."""
+    """Current user settings - all monetary values as decimal strings."""
 
-    default_gross_income: str        # Decimal → str
-    default_pension_sacrifice: str   # Decimal → str
+    default_gross_income: str
+    default_pension_sacrifice: str
     default_student_loan_plan: int | None
-    default_other_income: str        # Decimal → str
+    default_other_income: str
     employer_income_dependency_pct: str
     employer_ticker: str
+    concentration_top_holding_alert_pct: str
+    concentration_employer_alert_pct: str
     default_tax_year: str
     show_exhausted_lots: bool
     hide_values: bool
@@ -29,7 +31,7 @@ class SettingsSchema(BaseModel):
     fx_stale_after_minutes: int
 
     @classmethod
-    def from_app_settings(cls, s) -> "SettingsSchema":  # s: AppSettings
+    def from_app_settings(cls, s) -> "SettingsSchema":
         return cls(
             default_gross_income=str(s.default_gross_income),
             default_pension_sacrifice=str(s.default_pension_sacrifice),
@@ -37,6 +39,8 @@ class SettingsSchema(BaseModel):
             default_other_income=str(s.default_other_income),
             employer_income_dependency_pct=str(s.employer_income_dependency_pct),
             employer_ticker=s.employer_ticker,
+            concentration_top_holding_alert_pct=str(s.concentration_top_holding_alert_pct),
+            concentration_employer_alert_pct=str(s.concentration_employer_alert_pct),
             default_tax_year=s.default_tax_year,
             show_exhausted_lots=s.show_exhausted_lots,
             hide_values=s.hide_values,
@@ -49,9 +53,9 @@ class UpdateSettingsRequest(BaseModel):
     """
     Full settings replacement body for PUT /api/settings.
 
-    All fields required — this is a PUT (full replacement), not a PATCH.
-    Pydantic v2 coerces Decimal from JSON strings (``"80000.00"``) or
-    numbers (``80000``).  Use strings for maximum precision.
+    All fields required - this is a PUT (full replacement), not a PATCH.
+    Pydantic v2 coerces Decimal from JSON strings ("80000.00") or
+    numbers (80000). Use strings for maximum precision.
     """
 
     default_gross_income: Decimal = Field(
@@ -71,6 +75,18 @@ class UpdateSettingsRequest(BaseModel):
     employer_ticker: str = Field(
         "",
         description="Optional employer ticker used for concentration and dependence metrics.",
+    )
+    concentration_top_holding_alert_pct: Decimal = Field(
+        Decimal("50"),
+        ge=0,
+        le=100,
+        description="Alert threshold for top-holding concentration as percent of gross market value.",
+    )
+    concentration_employer_alert_pct: Decimal = Field(
+        Decimal("40"),
+        ge=0,
+        le=100,
+        description="Alert threshold for employer exposure as percent of gross market value.",
     )
     default_tax_year: str = Field(
         ..., description="Default tax year shown in reports, e.g. '2024-25'"
@@ -93,6 +109,8 @@ class UpdateSettingsRequest(BaseModel):
                 "default_other_income": "0.00",
                 "employer_income_dependency_pct": "0.00",
                 "employer_ticker": "IBM",
+                "concentration_top_holding_alert_pct": "50.00",
+                "concentration_employer_alert_pct": "40.00",
                 "default_tax_year": "2024-25",
                 "show_exhausted_lots": False,
                 "hide_values": False,

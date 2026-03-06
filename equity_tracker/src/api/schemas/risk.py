@@ -4,15 +4,20 @@ Schemas for risk endpoints.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from pydantic import BaseModel
 
 from ...services.risk_service import (
     EmployerDependenceBreakdown,
+    RiskConcentrationGuardrail,
     RiskConcentrationItem,
     RiskDeployableBreakdown,
+    RiskForfeitureHeatmapRow,
     RiskLiquidityBreakdown,
     RiskOptionalityIndex,
     RiskOptionalityTimelineBand,
+    RiskRebalanceFriction,
     RiskSummary,
     RiskStressPoint,
     RiskWrapperAllocation,
@@ -175,6 +180,86 @@ class RiskOptionalityIndexSchema(BaseModel):
         )
 
 
+class RiskConcentrationGuardrailSchema(BaseModel):
+    guardrail_id: str
+    label: str
+    threshold_pct: str
+    actual_pct: str
+    breach_pct: str
+    status: str
+    message: str
+
+    @classmethod
+    def from_service(
+        cls, value: RiskConcentrationGuardrail
+    ) -> "RiskConcentrationGuardrailSchema":
+        return cls(
+            guardrail_id=value.guardrail_id,
+            label=value.label,
+            threshold_pct=str(value.threshold_pct),
+            actual_pct=str(value.actual_pct),
+            breach_pct=str(value.breach_pct),
+            status=value.status,
+            message=value.message,
+        )
+
+
+class RiskForfeitureHeatmapRowSchema(BaseModel):
+    security_id: str
+    ticker: str
+    bucket_0_30_gbp: str
+    bucket_31_90_gbp: str
+    bucket_91_183_gbp: str
+    bucket_over_183_gbp: str
+    total_value_gbp: str
+    lot_count: int
+
+    @classmethod
+    def from_service(
+        cls, value: RiskForfeitureHeatmapRow
+    ) -> "RiskForfeitureHeatmapRowSchema":
+        return cls(
+            security_id=value.security_id,
+            ticker=value.ticker,
+            bucket_0_30_gbp=str(value.bucket_0_30_gbp),
+            bucket_31_90_gbp=str(value.bucket_31_90_gbp),
+            bucket_91_183_gbp=str(value.bucket_91_183_gbp),
+            bucket_over_183_gbp=str(value.bucket_over_183_gbp),
+            total_value_gbp=str(value.total_value_gbp),
+            lot_count=value.lot_count,
+        )
+
+
+class RiskRebalanceFrictionSchema(BaseModel):
+    available: bool
+    employer_ticker: str | None
+    target_pct: str
+    current_pct: str
+    reduction_required_gbp: str
+    reduction_possible_gbp: str
+    lock_barrier_gbp: str
+    estimated_employment_tax_gbp: str
+    implied_tax_rate_pct: str
+    post_reduction_pct: str
+    note: str | None
+
+    @classmethod
+    def from_service(cls, value: RiskRebalanceFriction) -> "RiskRebalanceFrictionSchema":
+        return cls(
+            available=value.available,
+            employer_ticker=value.employer_ticker,
+            target_pct=str(value.target_pct),
+            current_pct=str(value.current_pct),
+            reduction_required_gbp=str(value.reduction_required_gbp),
+            reduction_possible_gbp=str(value.reduction_possible_gbp),
+            lock_barrier_gbp=str(value.lock_barrier_gbp),
+            estimated_employment_tax_gbp=str(value.estimated_employment_tax_gbp),
+            implied_tax_rate_pct=str(value.implied_tax_rate_pct),
+            post_reduction_pct=str(value.post_reduction_pct),
+            note=value.note,
+        )
+
+
 class RiskSummarySchema(BaseModel):
     generated_at_utc: str
     total_market_value_gbp: str
@@ -189,6 +274,10 @@ class RiskSummarySchema(BaseModel):
     stress_points: list[RiskStressPointSchema]
     optionality_timeline: list[RiskOptionalityTimelineBandSchema]
     optionality_index: RiskOptionalityIndexSchema
+    concentration_guardrails: list[RiskConcentrationGuardrailSchema]
+    forfeiture_heatmap_rows: list[RiskForfeitureHeatmapRowSchema]
+    forfeiture_heatmap_totals: dict[str, str]
+    rebalance_friction: RiskRebalanceFrictionSchema
     notes: list[str]
 
     @classmethod
@@ -235,6 +324,34 @@ class RiskSummarySchema(BaseModel):
             ],
             optionality_index=RiskOptionalityIndexSchema.from_service(
                 summary.optionality_index
+            ),
+            concentration_guardrails=[
+                RiskConcentrationGuardrailSchema.from_service(row)
+                for row in summary.concentration_guardrails
+            ],
+            forfeiture_heatmap_rows=[
+                RiskForfeitureHeatmapRowSchema.from_service(row)
+                for row in summary.forfeiture_heatmap_rows
+            ],
+            forfeiture_heatmap_totals={
+                key: str(value) for key, value in summary.forfeiture_heatmap_totals.items()
+            },
+            rebalance_friction=RiskRebalanceFrictionSchema.from_service(
+                summary.rebalance_friction
+                if summary.rebalance_friction is not None
+                else RiskRebalanceFriction(
+                    available=False,
+                    employer_ticker=None,
+                    target_pct=Decimal("0.00"),
+                    current_pct=Decimal("0.00"),
+                    reduction_required_gbp=Decimal("0.00"),
+                    reduction_possible_gbp=Decimal("0.00"),
+                    lock_barrier_gbp=Decimal("0.00"),
+                    estimated_employment_tax_gbp=Decimal("0.00"),
+                    implied_tax_rate_pct=Decimal("0.00"),
+                    post_reduction_pct=Decimal("0.00"),
+                    note="Unavailable.",
+                )
             ),
             notes=list(summary.notes),
         )

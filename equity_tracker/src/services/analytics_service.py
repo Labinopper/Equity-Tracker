@@ -593,11 +593,19 @@ class AnalyticsService:
     ) -> tuple[dict[str, Any], list[str]]:
         rows: list[dict[str, Any]] = []
         total_value = Decimal("0")
+        total_bucket_0_30 = Decimal("0")
+        total_bucket_31_90 = Decimal("0")
+        total_bucket_91_183 = Decimal("0")
+        total_bucket_over_183 = Decimal("0")
         total_lot_count = 0
         unpriced_lot_count = 0
 
         for security_summary in portfolio_summary.securities:
             security_value = Decimal("0")
+            security_bucket_0_30 = Decimal("0")
+            security_bucket_31_90 = Decimal("0")
+            security_bucket_91_183 = Decimal("0")
+            security_bucket_over_183 = Decimal("0")
             security_lot_count = 0
             security_unpriced = 0
             earliest_release_days: int | None = None
@@ -625,6 +633,18 @@ class AnalyticsService:
                 lot_value = _q_money(Decimal(lot_summary.market_value_gbp))
                 security_value += lot_value
                 total_value += lot_value
+                if risk.days_remaining <= 30:
+                    security_bucket_0_30 += lot_value
+                    total_bucket_0_30 += lot_value
+                elif risk.days_remaining <= 90:
+                    security_bucket_31_90 += lot_value
+                    total_bucket_31_90 += lot_value
+                elif risk.days_remaining <= 183:
+                    security_bucket_91_183 += lot_value
+                    total_bucket_91_183 += lot_value
+                else:
+                    security_bucket_over_183 += lot_value
+                    total_bucket_over_183 += lot_value
 
             if security_lot_count == 0:
                 continue
@@ -637,6 +657,10 @@ class AnalyticsService:
                     "value_at_risk_gbp": _money_str(security_value),
                     "pct_of_total": "0.00",
                     "earliest_release_days": earliest_release_days,
+                    "bucket_0_30_gbp": _money_str(security_bucket_0_30),
+                    "bucket_31_90_gbp": _money_str(security_bucket_31_90),
+                    "bucket_91_183_gbp": _money_str(security_bucket_91_183),
+                    "bucket_over_183_gbp": _money_str(security_bucket_over_183),
                     "unpriced_lot_count": security_unpriced,
                 }
             )
@@ -666,8 +690,8 @@ class AnalyticsService:
 
         widget = {
             "widget_id": "forfeiture-at-risk",
-            "title": "Forfeiture-At-Risk Value",
-            "subtitle": "Current matched-share value still inside ESPP+ forfeiture windows.",
+            "title": "Forfeiture Heatmap",
+            "subtitle": "Security-by-bucket ESPP+ matched-share value still inside forfeiture windows.",
             "hidden": False,
             "has_data": bool(rows) and total_value > Decimal("0"),
             "reason": (
@@ -681,6 +705,10 @@ class AnalyticsService:
             ),
             "rows": rows,
             "total_value_at_risk_gbp": _money_str(total_value),
+            "total_bucket_0_30_gbp": _money_str(total_bucket_0_30),
+            "total_bucket_31_90_gbp": _money_str(total_bucket_31_90),
+            "total_bucket_91_183_gbp": _money_str(total_bucket_91_183),
+            "total_bucket_over_183_gbp": _money_str(total_bucket_over_183),
             "total_lot_count": total_lot_count,
             "unpriced_lot_count": unpriced_lot_count,
         }

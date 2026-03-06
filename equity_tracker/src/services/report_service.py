@@ -337,6 +337,7 @@ class ReportService:
     @staticmethod
     def audit_log(
         table_name: str | None = None,
+        record_id: str | None = None,
         since: datetime | None = None,
     ) -> list[AuditLog]:
         """
@@ -344,6 +345,7 @@ class ReportService:
 
         Args:
             table_name: Optional filter by table (e.g. "lots", "transactions").
+            record_id : Optional filter by exact record id.
             since     : Optional datetime — only return entries on/after this UTC time.
 
         Returns a list of AuditLog ORM objects (detached after session close;
@@ -351,4 +353,8 @@ class ReportService:
         """
         with AppContext.read_session() as sess:
             audit = AuditRepository(sess)
-            return audit.list_all(table_name=table_name, since=since)
+            return audit.list_all(
+                table_name=table_name,
+                record_id=record_id,
+                since=since,
+            )

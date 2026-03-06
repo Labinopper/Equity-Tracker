@@ -65,6 +65,11 @@
         <a href="/simulate" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'simulate' }}">Simulate</a>
         <a href="/cgt"      class="topbar__tab{{ ' topbar__tab--active' if active_group == 'reports' }}">Reports</a>
         <a href="/history"  class="topbar__tab{{ ' topbar__tab--active' if _is_history }}">History</a>
+        <a href="/risk#alert-center" class="topbar__tab">
+          Alerts{% if alert_center and alert_center.total and alert_center.total > 0 %}
+          <span class="topbar__alert-count">{{ alert_center.total }}</span>
+          {% endif %}
+        </a>
         <a href="/settings" class="topbar__tab topbar__tab--settings{{ ' topbar__tab--active' if active_group == 'settings' }}">Settings</a>
       </nav>
       {% if hide_values %}
@@ -109,6 +114,22 @@
 
       {% endif %}
     </nav>
+    {% endif %}
+    {% if alert_center and alert_center.total and alert_center.total > 0 %}
+    <div class="alert-center-bar" aria-label="Alert center">
+      <div class="alert-center-bar__title">Alert Center</div>
+      <div class="alert-center-bar__items">
+        {% for alert in alert_center.alerts[:3] %}
+        <a
+          href="{{ alert.href or '/risk#alert-center' }}"
+          class="alert-center-pill alert-center-pill--{{ alert.severity or 'info' }}"
+        >
+          <strong>{{ alert.title }}</strong>: {{ alert.message }}
+        </a>
+        {% endfor %}
+      </div>
+      <a href="/risk#alert-center" class="alert-center-bar__all">View all ({{ alert_center.total }})</a>
+    </div>
     {% endif %}
 
   </header>

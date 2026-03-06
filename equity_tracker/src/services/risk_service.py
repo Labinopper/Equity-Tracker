@@ -7,10 +7,12 @@ outputs without mutating any portfolio/tax/FIFO state.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
+from .alert_service import AlertService
 from .exposure_service import ExposureService
 from .portfolio_service import PortfolioService
 from ..settings import AppSettings
@@ -196,6 +198,44 @@ class RiskOptionalityIndex:
 
 
 @dataclass(frozen=True)
+class RiskConcentrationGuardrail:
+    guardrail_id: str
+    label: str
+    threshold_pct: Decimal
+    actual_pct: Decimal
+    breach_pct: Decimal
+    status: str
+    message: str
+
+
+@dataclass(frozen=True)
+class RiskForfeitureHeatmapRow:
+    security_id: str
+    ticker: str
+    bucket_0_30_gbp: Decimal
+    bucket_31_90_gbp: Decimal
+    bucket_91_183_gbp: Decimal
+    bucket_over_183_gbp: Decimal
+    total_value_gbp: Decimal
+    lot_count: int
+
+
+@dataclass(frozen=True)
+class RiskRebalanceFriction:
+    available: bool
+    employer_ticker: str | None
+    target_pct: Decimal
+    current_pct: Decimal
+    reduction_required_gbp: Decimal
+    reduction_possible_gbp: Decimal
+    lock_barrier_gbp: Decimal
+    estimated_employment_tax_gbp: Decimal
+    implied_tax_rate_pct: Decimal
+    post_reduction_pct: Decimal
+    note: str | None = None
+
+
+@dataclass(frozen=True)
 class RiskSummary:
     generated_at_utc: datetime
     total_market_value_gbp: Decimal
@@ -210,6 +250,10 @@ class RiskSummary:
     stress_points: list[RiskStressPoint] = field(default_factory=list)
     optionality_timeline: list[RiskOptionalityTimelineBand] = field(default_factory=list)
     optionality_index: RiskOptionalityIndex | None = None
+    concentration_guardrails: list[RiskConcentrationGuardrail] = field(default_factory=list)
+    forfeiture_heatmap_rows: list[RiskForfeitureHeatmapRow] = field(default_factory=list)
+    forfeiture_heatmap_totals: dict[str, Decimal] = field(default_factory=dict)
+    rebalance_friction: RiskRebalanceFriction | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -485,6 +529,227 @@ class RiskService:
             notes=optionality_notes,
         )
 
+        alert_thresholds = AlertService.concentration_thresholds(settings)
+        top_threshold_pct = _q_pct(alert_thresholds.get("top_holding_pct", Decimal("50")))
+        employer_threshold_pct = _q_pct(alert_thresholds.get("employer_pct", Decimal("40")))
+        employer_pct_of_gross = _q_pct(
+            Decimal(str(exposure.get("employer_pct_of_gross", Decimal("0"))))
+        )
+
+        concentration_guardrails: list[RiskConcentrationGuardrail] = []
+
+        def _guardrail_row(
+            *,
+            guardrail_id: str,
+            label: str,
+            threshold_pct: Decimal,
+            actual_pct: Decimal,
+        ) -> RiskConcentrationGuardrail:
+            breach = _q_pct(max(Decimal("0"), actual_pct - threshold_pct))
+            is_breach = actual_pct > threshold_pct
+            return RiskConcentrationGuardrail(
+                guardrail_id=guardrail_id,
+                label=label,
+                threshold_pct=_q_pct(threshold_pct),
+                actual_pct=_q_pct(actual_pct),
+                breach_pct=breach,
+                status="BREACH" if is_breach else "OK",
+                message=(
+                    f"{label}: {actual_pct}% vs threshold {threshold_pct}%."
+                    if is_breach
+                    else f"{label}: {actual_pct}% is within threshold {threshold_pct}%."
+                ),
+            )
+
+        concentration_guardrails.append(
+            _guardrail_row(
+                guardrail_id="top_holding_gross",
+                label="Top Holding (Gross)",
+                threshold_pct=top_threshold_pct,
+                actual_pct=top_holding_pct,
+            )
+        )
+        concentration_guardrails.append(
+            _guardrail_row(
+                guardrail_id="top_holding_sellable",
+                label="Top Holding (Sellable Pool)",
+                threshold_pct=top_threshold_pct,
+                actual_pct=_q_pct(Decimal(str(exposure["top_holding_pct_sellable"]))),
+            )
+        )
+        concentration_guardrails.append(
+            _guardrail_row(
+                guardrail_id="employer_exposure_gross",
+                label=(
+                    f"Employer Exposure ({exposure.get('employer_ticker')})"
+                    if exposure.get("employer_ticker")
+                    else "Employer Exposure (Unconfigured)"
+                ),
+                threshold_pct=employer_threshold_pct,
+                actual_pct=employer_pct_of_gross,
+            )
+        )
+
+        forfeiture_heatmap_map: dict[str, dict[str, Decimal | int | str]] = defaultdict(
+            lambda: {
+                "security_id": "",
+                "ticker": "",
+                "bucket_0_30_gbp": Decimal("0"),
+                "bucket_31_90_gbp": Decimal("0"),
+                "bucket_91_183_gbp": Decimal("0"),
+                "bucket_over_183_gbp": Decimal("0"),
+                "lot_count": 0,
+            }
+        )
+
+        for security_summary in summary.securities:
+            for lot_summary in security_summary.active_lots:
+                risk = lot_summary.forfeiture_risk
+                lot = lot_summary.lot
+                if (
+                    risk is None
+                    or not risk.in_window
+                    or (lot.scheme_type or "").upper() != "ESPP_PLUS"
+                    or lot.matching_lot_id is None
+                ):
+                    continue
+                row = forfeiture_heatmap_map[security_summary.security.id]
+                row["security_id"] = security_summary.security.id
+                row["ticker"] = security_summary.security.ticker
+                row["lot_count"] = int(row["lot_count"]) + 1
+                value = (
+                    _q_money(Decimal(lot_summary.market_value_gbp))
+                    if lot_summary.market_value_gbp is not None
+                    else Decimal("0")
+                )
+                if risk.days_remaining <= 30:
+                    row["bucket_0_30_gbp"] = Decimal(row["bucket_0_30_gbp"]) + value
+                elif risk.days_remaining <= 90:
+                    row["bucket_31_90_gbp"] = Decimal(row["bucket_31_90_gbp"]) + value
+                elif risk.days_remaining <= 183:
+                    row["bucket_91_183_gbp"] = Decimal(row["bucket_91_183_gbp"]) + value
+                else:
+                    row["bucket_over_183_gbp"] = Decimal(row["bucket_over_183_gbp"]) + value
+
+        forfeiture_heatmap_rows: list[RiskForfeitureHeatmapRow] = []
+        totals_0_30 = Decimal("0")
+        totals_31_90 = Decimal("0")
+        totals_91_183 = Decimal("0")
+        totals_over_183 = Decimal("0")
+        for item in forfeiture_heatmap_map.values():
+            bucket_0_30 = _q_money(Decimal(item["bucket_0_30_gbp"]))
+            bucket_31_90 = _q_money(Decimal(item["bucket_31_90_gbp"]))
+            bucket_91_183 = _q_money(Decimal(item["bucket_91_183_gbp"]))
+            bucket_over_183 = _q_money(Decimal(item["bucket_over_183_gbp"]))
+            total_row = _q_money(bucket_0_30 + bucket_31_90 + bucket_91_183 + bucket_over_183)
+            totals_0_30 += bucket_0_30
+            totals_31_90 += bucket_31_90
+            totals_91_183 += bucket_91_183
+            totals_over_183 += bucket_over_183
+            forfeiture_heatmap_rows.append(
+                RiskForfeitureHeatmapRow(
+                    security_id=str(item["security_id"]),
+                    ticker=str(item["ticker"]),
+                    bucket_0_30_gbp=bucket_0_30,
+                    bucket_31_90_gbp=bucket_31_90,
+                    bucket_91_183_gbp=bucket_91_183,
+                    bucket_over_183_gbp=bucket_over_183,
+                    total_value_gbp=total_row,
+                    lot_count=int(item["lot_count"]),
+                )
+            )
+        forfeiture_heatmap_rows.sort(
+            key=lambda row: (row.total_value_gbp, row.lot_count, row.ticker),
+            reverse=True,
+        )
+        forfeiture_heatmap_totals = {
+            "bucket_0_30_gbp": _q_money(totals_0_30),
+            "bucket_31_90_gbp": _q_money(totals_31_90),
+            "bucket_91_183_gbp": _q_money(totals_91_183),
+            "bucket_over_183_gbp": _q_money(totals_over_183),
+            "total_value_gbp": _q_money(
+                totals_0_30 + totals_31_90 + totals_91_183 + totals_over_183
+            ),
+        }
+
+        employer_ticker = str(exposure.get("employer_ticker") or "").strip().upper() or None
+        employer_market_value = _q_money(
+            Decimal(str(exposure.get("employer_market_value_gbp", Decimal("0"))))
+        )
+        employer_sellable_market_value = _q_money(
+            Decimal(str(exposure.get("employer_sellable_market_value_gbp", Decimal("0"))))
+        )
+        target_pct = employer_threshold_pct
+        target_value = _q_money(total_market_value * (target_pct / Decimal("100")))
+        reduction_required = (
+            _q_money(max(Decimal("0"), employer_market_value - target_value))
+            if total_market_value > Decimal("0")
+            else Decimal("0")
+        )
+        reduction_possible = _q_money(
+            min(reduction_required, employer_sellable_market_value)
+        )
+        lock_barrier = _q_money(max(Decimal("0"), reduction_required - reduction_possible))
+
+        employer_sellable_tax = Decimal("0")
+        employer_sellable_tax_base = Decimal("0")
+        if employer_ticker is not None:
+            for security_summary in summary.securities:
+                if (security_summary.security.ticker or "").strip().upper() != employer_ticker:
+                    continue
+                for lot_summary in security_summary.active_lots:
+                    if lot_summary.market_value_gbp is None:
+                        continue
+                    status = (lot_summary.sellability_status or "SELLABLE").upper()
+                    if status == "LOCKED":
+                        continue
+                    if (
+                        lot_summary.forfeiture_risk is not None
+                        and lot_summary.forfeiture_risk.in_window
+                        and lot_summary.lot.matching_lot_id is not None
+                    ):
+                        continue
+                    employer_sellable_tax_base += _q_money(
+                        Decimal(lot_summary.market_value_gbp)
+                    )
+                    if lot_summary.est_employment_tax_on_lot_gbp is not None:
+                        employer_sellable_tax += _q_money(
+                            Decimal(lot_summary.est_employment_tax_on_lot_gbp)
+                        )
+
+        implied_tax_rate_pct = _pct(
+            _q_money(employer_sellable_tax),
+            _q_money(employer_sellable_tax_base),
+        )
+        estimated_tax_on_possible_reduction = _q_money(
+            reduction_possible * (implied_tax_rate_pct / Decimal("100"))
+        )
+        post_reduction_pct = _pct(
+            _q_money(max(Decimal("0"), employer_market_value - reduction_possible)),
+            total_market_value,
+        )
+        friction_note: str | None = None
+        if employer_ticker is None:
+            friction_note = "Employer ticker is not configured in Settings."
+        elif reduction_required <= Decimal("0"):
+            friction_note = "Current employer exposure is already within the configured threshold."
+        elif reduction_possible <= Decimal("0"):
+            friction_note = "No currently sellable employer lots are available for de-risking."
+
+        rebalance_friction = RiskRebalanceFriction(
+            available=bool(employer_ticker),
+            employer_ticker=employer_ticker,
+            target_pct=target_pct,
+            current_pct=employer_pct_of_gross,
+            reduction_required_gbp=reduction_required,
+            reduction_possible_gbp=reduction_possible,
+            lock_barrier_gbp=lock_barrier,
+            estimated_employment_tax_gbp=estimated_tax_on_possible_reduction,
+            implied_tax_rate_pct=implied_tax_rate_pct,
+            post_reduction_pct=post_reduction_pct,
+            note=friction_note,
+        )
+
         return RiskSummary(
             generated_at_utc=datetime.now(timezone.utc),
             total_market_value_gbp=total_market_value,
@@ -501,5 +766,9 @@ class RiskService:
             stress_points=stress_points,
             optionality_timeline=timeline,
             optionality_index=optionality_index,
+            concentration_guardrails=concentration_guardrails,
+            forfeiture_heatmap_rows=forfeiture_heatmap_rows,
+            forfeiture_heatmap_totals=forfeiture_heatmap_totals,
+            rebalance_friction=rebalance_friction,
             notes=notes,
         )

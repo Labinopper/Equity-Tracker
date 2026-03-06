@@ -582,10 +582,12 @@
       <thead>
         <tr>
           <th>Security</th>
+          <th class="num">0-30d</th>
+          <th class="num">31-90d</th>
+          <th class="num">91-183d</th>
+          <th class="num">&gt;183d</th>
+          <th class="num">Total</th>
           <th class="num">Matched Lots</th>
-          <th class="num">Value at Risk</th>
-          <th class="num">% of Total</th>
-          <th class="num">Earliest Release</th>
         </tr>
       </thead>
       <tbody>
@@ -593,21 +595,26 @@
           {% for row in widgets.forfeiture_at_risk.rows %}
           <tr>
             <td>{{ row.ticker }}</td>
+            <td class="num">&pound;{{ row.bucket_0_30_gbp|money }}</td>
+            <td class="num">&pound;{{ row.bucket_31_90_gbp|money }}</td>
+            <td class="num">&pound;{{ row.bucket_91_183_gbp|money }}</td>
+            <td class="num">&pound;{{ row.bucket_over_183_gbp|money }}</td>
+            <td class="num"><strong>&pound;{{ row.value_at_risk_gbp|money }}</strong></td>
             <td class="num">{{ row.lot_count }}</td>
-            <td class="num">&pound;{{ row.value_at_risk_gbp|money }}</td>
-            <td class="num">{{ row.pct_of_total }}%</td>
-            <td class="num">
-              {% if row.earliest_release_days is not none %}
-              {{ row.earliest_release_days }}d
-              {% else %}
-              -
-              {% endif %}
-            </td>
           </tr>
           {% endfor %}
+          <tr>
+            <td><strong>Total</strong></td>
+            <td class="num"><strong>&pound;{{ widgets.forfeiture_at_risk.total_bucket_0_30_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ widgets.forfeiture_at_risk.total_bucket_31_90_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ widgets.forfeiture_at_risk.total_bucket_91_183_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ widgets.forfeiture_at_risk.total_bucket_over_183_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ widgets.forfeiture_at_risk.total_value_at_risk_gbp|money }}</strong></td>
+            <td class="num"><strong>{{ widgets.forfeiture_at_risk.total_lot_count }}</strong></td>
+          </tr>
         {% else %}
           <tr>
-            <td colspan="5" class="muted">{{ widgets.forfeiture_at_risk.reason or "No data available." }}</td>
+            <td colspan="7" class="muted">{{ widgets.forfeiture_at_risk.reason or "No data available." }}</td>
           </tr>
         {% endif %}
       </tbody>
@@ -1418,14 +1425,23 @@
     }
     var rows = Array.isArray(widget.rows) ? widget.rows : [];
     var labels = [];
-    var values = [];
+    var bucket0_30 = [];
+    var bucket31_90 = [];
+    var bucket91_183 = [];
+    var bucketOver183 = [];
     rows.forEach(function (row) {
-      var value = toNumber(row.value_at_risk_gbp);
-      if (value === null || value <= 0) {
+      var v0_30 = toNumber(row.bucket_0_30_gbp) || 0;
+      var v31_90 = toNumber(row.bucket_31_90_gbp) || 0;
+      var v91_183 = toNumber(row.bucket_91_183_gbp) || 0;
+      var vover = toNumber(row.bucket_over_183_gbp) || 0;
+      if ((v0_30 + v31_90 + v91_183 + vover) <= 0) {
         return;
       }
       labels.push(row.ticker);
-      values.push(value);
+      bucket0_30.push(v0_30);
+      bucket31_90.push(v31_90);
+      bucket91_183.push(v91_183);
+      bucketOver183.push(vover);
     });
     if (!labels.length) {
       setWidgetMessage("forfeiture-at-risk", "Insufficient data.");
@@ -1433,19 +1449,43 @@
     }
     setWidgetMessage("forfeiture-at-risk", "");
     createChart("forfeiture-at-risk", {
-      type: "doughnut",
+      type: "bar",
       data: {
         labels: labels,
         datasets: [
           {
-            label: "Forfeiture-At-Risk",
-            data: values,
-            backgroundColor: [theme.warning, theme.loss, theme.accent, theme.gain, "#4ac9ff", "#a082dc"]
-          }
+            label: "0-30d",
+            data: bucket0_30,
+            backgroundColor: "rgba(240, 56, 79, 0.65)"
+          },
+          {
+            label: "31-90d",
+            data: bucket31_90,
+            backgroundColor: "rgba(240, 160, 48, 0.65)"
+          },
+          {
+            label: "91-183d",
+            data: bucket91_183,
+            backgroundColor: "rgba(61, 120, 240, 0.65)"
+          },
+          {
+            label: ">183d",
+            data: bucketOver183,
+            backgroundColor: "rgba(0, 209, 140, 0.55)"
+          },
         ]
       },
       options: {
-        responsive: true
+        responsive: true,
+        scales: {
+          x: { stacked: true },
+          y: {
+            stacked: true,
+            ticks: {
+              callback: function (value) { return formatMoney(value); }
+            }
+          }
+        }
       }
     });
   }

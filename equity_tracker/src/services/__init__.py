@@ -31,6 +31,7 @@ from .report_service import (
 )
 from .validation_report_service import ValidationReportService
 from .strategic_service import StrategicService
+from .alert_service import AlertService
 
 __all__ = [
     # PortfolioService
@@ -47,4 +48,5 @@ __all__ = [
     # Validation report
     "ValidationReportService",
     "StrategicService",
+    "AlertService",
 ]

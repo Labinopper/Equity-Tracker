@@ -15,7 +15,9 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 
 from . import _state
+from ..app_context import AppContext
 from ..settings import AppSettings
+from ..services.alert_service import AlertService
 
 _BASE_DIR = Path(__file__).parent
 
@@ -31,9 +33,21 @@ def _is_hide_values_enabled() -> bool:
 
 
 def _global_template_context(_request) -> dict[str, bool | str]:
+    alert_center = {"total": 0, "alerts": [], "thresholds": {}}
+    db_path = _state.get_db_path()
+    if db_path is not None and AppContext.is_initialized():
+        try:
+            settings = AppSettings.load(db_path)
+            alert_center = AlertService.get_alert_center(
+                settings=settings,
+                db_path=db_path,
+            )
+        except Exception:
+            alert_center = {"total": 0, "alerts": [], "thresholds": {}}
     return {
         "hide_values": _is_hide_values_enabled(),
         "logout_url": "/auth/logout",
+        "alert_center": alert_center,
     }
 
 

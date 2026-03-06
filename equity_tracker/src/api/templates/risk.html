@@ -60,6 +60,183 @@
   </div>
 </div>
 
+<div class="card" id="alert-center">
+  <div class="card__header">
+    <h2 class="card__title">Alert Center</h2>
+  </div>
+  {% if alert_center and alert_center.alerts %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Alert</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alert_center.alerts %}
+        <tr>
+          <td>
+            <span class="badge {% if alert.severity == 'warning' %}badge-warning{% else %}badge-neutral{% endif %}">
+              {{ (alert.severity or 'info') | upper }}
+            </span>
+          </td>
+          <td>
+            <div><strong>{{ alert.title }}</strong></div>
+            <div class="muted">{{ alert.message }}</div>
+          </td>
+          <td><a href="{{ alert.href or '/risk' }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No active deterministic alerts.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="concentration-guardrails">
+  <div class="card__header">
+    <h2 class="card__title">Concentration Guardrails</h2>
+  </div>
+  <p class="muted">Thresholds are configured in Settings and evaluated deterministically against current gross and sellable exposure.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Guardrail</th>
+          <th class="num">Actual %</th>
+          <th class="num">Threshold %</th>
+          <th class="num">Breach %</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in risk_summary.concentration_guardrails %}
+        <tr>
+          <td>
+            <div>{{ row.label }}</div>
+            <div class="muted">{{ row.message }}</div>
+          </td>
+          <td class="num">{{ row.actual_pct }}%</td>
+          <td class="num">{{ row.threshold_pct }}%</td>
+          <td class="num">{{ row.breach_pct }}%</td>
+          <td>
+            <span class="badge {% if row.status == 'BREACH' %}badge-warning{% else %}badge-sellable{% endif %}">
+              {{ row.status }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Forfeiture Heatmap</h2>
+  </div>
+  <p class="muted">Security by time-bucket view of ESPP+ matched-share value still inside forfeiture windows.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security</th>
+          <th class="num">0-30d</th>
+          <th class="num">31-90d</th>
+          <th class="num">91-183d</th>
+          <th class="num">&gt;183d</th>
+          <th class="num">Total</th>
+          <th class="num">Matched Lots</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if risk_summary.forfeiture_heatmap_rows %}
+          {% for row in risk_summary.forfeiture_heatmap_rows %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td class="num">&pound;{{ row.bucket_0_30_gbp|money }}</td>
+            <td class="num">&pound;{{ row.bucket_31_90_gbp|money }}</td>
+            <td class="num">&pound;{{ row.bucket_91_183_gbp|money }}</td>
+            <td class="num">&pound;{{ row.bucket_over_183_gbp|money }}</td>
+            <td class="num"><strong>&pound;{{ row.total_value_gbp|money }}</strong></td>
+            <td class="num">{{ row.lot_count }}</td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td><strong>Total</strong></td>
+            <td class="num"><strong>&pound;{{ risk_summary.forfeiture_heatmap_totals.bucket_0_30_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ risk_summary.forfeiture_heatmap_totals.bucket_31_90_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ risk_summary.forfeiture_heatmap_totals.bucket_91_183_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ risk_summary.forfeiture_heatmap_totals.bucket_over_183_gbp|money }}</strong></td>
+            <td class="num"><strong>&pound;{{ risk_summary.forfeiture_heatmap_totals.total_value_gbp|money }}</strong></td>
+            <td class="num">-</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="muted">No in-window ESPP+ matched-share forfeiture value.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Rebalance Friction (Deterministic)</h2>
+  </div>
+  <p class="muted">Quantifies concentration reduction constrained by currently sellable employer lots and current tax assumptions.</p>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Employer Ticker</th>
+          <td>{{ risk_summary.rebalance_friction.employer_ticker or 'Unconfigured' }}</td>
+        </tr>
+        <tr>
+          <th>Current Employer Gross Exposure</th>
+          <td>{{ risk_summary.rebalance_friction.current_pct }}%</td>
+        </tr>
+        <tr>
+          <th>Target Exposure Threshold</th>
+          <td>{{ risk_summary.rebalance_friction.target_pct }}%</td>
+        </tr>
+        <tr>
+          <th>Reduction Required (Gross Value)</th>
+          <td>&pound;{{ risk_summary.rebalance_friction.reduction_required_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Reduction Possible Today (Sellable Employer Lots)</th>
+          <td>&pound;{{ risk_summary.rebalance_friction.reduction_possible_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Lock/Forfeiture Barrier</th>
+          <td>&pound;{{ risk_summary.rebalance_friction.lock_barrier_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Estimated Employment Tax on Possible Reduction</th>
+          <td>&pound;{{ risk_summary.rebalance_friction.estimated_employment_tax_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Implied Tax Rate on Sellable Employer Lots</th>
+          <td>{{ risk_summary.rebalance_friction.implied_tax_rate_pct }}%</td>
+        </tr>
+        <tr>
+          <th>Post-Reduction Employer Exposure</th>
+          <td>{{ risk_summary.rebalance_friction.post_reduction_pct }}%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% if risk_summary.rebalance_friction.note %}
+  <p class="muted">{{ risk_summary.rebalance_friction.note }}</p>
+  {% endif %}
+</div>
+
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Wrapper Allocation Strip</h2>

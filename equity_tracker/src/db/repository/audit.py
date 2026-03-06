@@ -111,6 +111,7 @@ class AuditRepository:
     def list_all(
         self,
         table_name: str | None = None,
+        record_id: str | None = None,
         since: datetime | None = None,
     ) -> list[AuditLog]:
         """
@@ -125,6 +126,8 @@ class AuditRepository:
         stmt = select(AuditLog).order_by(AuditLog.changed_at.desc())
         if table_name is not None:
             stmt = stmt.where(AuditLog.table_name == table_name)
+        if record_id is not None:
+            stmt = stmt.where(AuditLog.record_id == record_id)
         if since is not None:
             stmt = stmt.where(AuditLog.changed_at >= since)
         return list(self._s.execute(stmt).scalars())

@@ -43,6 +43,8 @@ class AppSettings:
     default_other_income: Decimal
     employer_income_dependency_pct: Decimal
     employer_ticker: str
+    concentration_top_holding_alert_pct: Decimal
+    concentration_employer_alert_pct: Decimal
 
     # ── UI preferences ──────────────────────────────────────────────────────
     default_tax_year: str
@@ -59,6 +61,8 @@ class AppSettings:
         self.default_other_income = Decimal("0")
         self.employer_income_dependency_pct = Decimal("0")
         self.employer_ticker = ""
+        self.concentration_top_holding_alert_pct = Decimal("50")
+        self.concentration_employer_alert_pct = Decimal("40")
 
         # UI defaults
         self.default_tax_year = "2024-25"
@@ -117,6 +121,8 @@ class AppSettings:
             "default_other_income": str(self.default_other_income),
             "employer_income_dependency_pct": str(self.employer_income_dependency_pct),
             "employer_ticker": self.employer_ticker,
+            "concentration_top_holding_alert_pct": str(self.concentration_top_holding_alert_pct),
+            "concentration_employer_alert_pct": str(self.concentration_employer_alert_pct),
             "default_tax_year": self.default_tax_year,
             "show_exhausted_lots": self.show_exhausted_lots,
             "hide_values": self.hide_values,
@@ -154,6 +160,20 @@ class AppSettings:
             self.employer_income_dependency_pct = raw_pct
         if "employer_ticker" in data:
             self.employer_ticker = str(data["employer_ticker"] or "").strip().upper()
+        if "concentration_top_holding_alert_pct" in data:
+            raw_top = _dec(data["concentration_top_holding_alert_pct"])
+            if raw_top < Decimal("0"):
+                raw_top = Decimal("0")
+            if raw_top > Decimal("100"):
+                raw_top = Decimal("100")
+            self.concentration_top_holding_alert_pct = raw_top
+        if "concentration_employer_alert_pct" in data:
+            raw_employer = _dec(data["concentration_employer_alert_pct"])
+            if raw_employer < Decimal("0"):
+                raw_employer = Decimal("0")
+            if raw_employer > Decimal("100"):
+                raw_employer = Decimal("100")
+            self.concentration_employer_alert_pct = raw_employer
         if "default_tax_year" in data:
             self.default_tax_year = str(data["default_tax_year"])
         if "show_exhausted_lots" in data:

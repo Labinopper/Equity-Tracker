@@ -136,6 +136,8 @@ _GUARDRAIL_ISA_UNDERUTILISATION_MAX_RATIO_PCT = Decimal("25")
 _GUARDRAIL_ISA_UNDERUTILISATION_MIN_TAXABLE_GBP = Decimal("5000")
 _GUARDRAIL_DRAG_ESCALATION_PCT_OF_INCOME = Decimal("10")
 _GUARDRAIL_FORFEITURE_IMMINENCE_DAYS = 183
+_GUARDRAIL_CONCENTRATION_TOP_PCT_DEFAULT = Decimal("50")
+_GUARDRAIL_CONCENTRATION_EMPLOYER_PCT_DEFAULT = Decimal("40")
 
 
 @dataclass
@@ -632,6 +634,86 @@ def _build_behavioral_guardrails(
     forfeitable_capital_gbp: Decimal | None,
 ) -> list[dict[str, str]]:
     warnings: list[dict[str, str]] = []
+
+    security_gross_by_ticker: dict[str, Decimal] = {}
+    total_gross_market = Decimal("0")
+    for security_summary in summary.securities:
+        if security_summary.market_value_gbp is None:
+            continue
+        ticker = (security_summary.security.ticker or "").strip().upper()
+        value = security_summary.market_value_gbp
+        total_gross_market += value
+        security_gross_by_ticker[ticker] = (
+            security_gross_by_ticker.get(ticker, Decimal("0")) + value
+        )
+
+    if total_gross_market > Decimal("0") and security_gross_by_ticker:
+        top_ticker, top_value = max(
+            security_gross_by_ticker.items(),
+            key=lambda item: item[1],
+        )
+        top_pct = (
+            top_value / total_gross_market * Decimal("100")
+        ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        top_threshold = _GUARDRAIL_CONCENTRATION_TOP_PCT_DEFAULT
+        if settings is not None:
+            try:
+                top_threshold = Decimal(
+                    getattr(
+                        settings,
+                        "concentration_top_holding_alert_pct",
+                        _GUARDRAIL_CONCENTRATION_TOP_PCT_DEFAULT,
+                    )
+                )
+            except (TypeError, ValueError, InvalidOperation):
+                top_threshold = _GUARDRAIL_CONCENTRATION_TOP_PCT_DEFAULT
+            top_threshold = max(Decimal("0"), min(Decimal("100"), top_threshold))
+        if top_pct > top_threshold:
+            warnings.append(
+                {
+                    "id": "concentration_top_holding",
+                    "severity": "warning",
+                    "title": "Top-holding concentration breach",
+                    "message": (
+                        f"{top_ticker} is {top_pct}% of gross market value "
+                        f"(threshold {top_threshold}%)."
+                    ),
+                }
+            )
+
+    employer_ticker = (
+        (settings.employer_ticker if settings is not None else "") or ""
+    ).strip().upper()
+    if employer_ticker and total_gross_market > Decimal("0"):
+        employer_value = security_gross_by_ticker.get(employer_ticker, Decimal("0"))
+        employer_pct = (
+            employer_value / total_gross_market * Decimal("100")
+        ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        employer_threshold = _GUARDRAIL_CONCENTRATION_EMPLOYER_PCT_DEFAULT
+        if settings is not None:
+            try:
+                employer_threshold = Decimal(
+                    getattr(
+                        settings,
+                        "concentration_employer_alert_pct",
+                        _GUARDRAIL_CONCENTRATION_EMPLOYER_PCT_DEFAULT,
+                    )
+                )
+            except (TypeError, ValueError, InvalidOperation):
+                employer_threshold = _GUARDRAIL_CONCENTRATION_EMPLOYER_PCT_DEFAULT
+            employer_threshold = max(Decimal("0"), min(Decimal("100"), employer_threshold))
+        if employer_pct > employer_threshold:
+            warnings.append(
+                {
+                    "id": "concentration_employer",
+                    "severity": "warning",
+                    "title": "Employer concentration breach",
+                    "message": (
+                        f"{employer_ticker} exposure is {employer_pct}% of gross market value "
+                        f"(threshold {employer_threshold}%)."
+                    ),
+                }
+            )
 
     gross_market_value = summary.total_market_value_gbp
     deployable = deployable_capital_gbp or Decimal("0")
@@ -4151,6 +4233,8 @@ async def settings_submit(
     default_other_income: str = Form("0"),
     employer_income_dependency_pct: str = Form("0"),
     employer_ticker: str = Form(""),
+    concentration_top_holding_alert_pct: str = Form("50"),
+    concentration_employer_alert_pct: str = Form("40"),
     default_tax_year: str = Form(...),
     price_stale_after_days: str = Form("1"),
     fx_stale_after_minutes: str = Form("10"),
@@ -4168,6 +4252,8 @@ async def settings_submit(
         pension = Decimal(default_pension_sacrifice or "0")
         other = Decimal(default_other_income or "0")
         income_dependency_pct = Decimal(employer_income_dependency_pct or "0")
+        top_holding_alert_pct = Decimal(concentration_top_holding_alert_pct or "50")
+        employer_alert_pct = Decimal(concentration_employer_alert_pct or "40")
         employer_ticker_clean = (employer_ticker or "").strip().upper()
         plan: int | None = int(default_student_loan_plan) if default_student_loan_plan else None
         price_stale_days = int(price_stale_after_days or "1")
@@ -4193,6 +4279,20 @@ async def settings_submit(
             error="Employer income dependency must be between 0 and 100.",
             status_code=422,
         )
+    if top_holding_alert_pct < Decimal("0") or top_holding_alert_pct > Decimal("100"):
+        return _render_settings_page(
+            request,
+            db_path,
+            error="Top-holding concentration alert threshold must be between 0 and 100.",
+            status_code=422,
+        )
+    if employer_alert_pct < Decimal("0") or employer_alert_pct > Decimal("100"):
+        return _render_settings_page(
+            request,
+            db_path,
+            error="Employer concentration alert threshold must be between 0 and 100.",
+            status_code=422,
+        )
 
     settings = AppSettings.load(db_path)
     settings.default_gross_income = gross
@@ -4201,6 +4301,8 @@ async def settings_submit(
     settings.default_other_income = other
     settings.employer_income_dependency_pct = income_dependency_pct
     settings.employer_ticker = employer_ticker_clean
+    settings.concentration_top_holding_alert_pct = top_holding_alert_pct
+    settings.concentration_employer_alert_pct = employer_alert_pct
     settings.default_tax_year = default_tax_year
     settings.price_stale_after_days = price_stale_days
     settings.fx_stale_after_minutes = fx_stale_minutes

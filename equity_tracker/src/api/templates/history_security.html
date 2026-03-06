@@ -107,7 +107,7 @@
       </div>
     </div>
     <p class="muted">
-      Solid line: daily close price (GBP). Dashed line: weighted-average true cost of holdings over time.
+      Solid line: daily close price (GBP). Dashed line: weighted-average true cost of holdings over time. Shaded bands indicate non-sellable lock windows.
     </p>
     <div class="security-history-chart-wrap security-history-chart-wrap--main">
       <canvas id="chart-security-price" aria-label="{{ history_data.ticker }} price and true cost history"></canvas>
@@ -122,7 +122,7 @@
         <button type="button" class="btn btn-secondary btn-sm gain-overlay-btn" data-gain-overlay="plus_dividends">+ Net Dividends</button>
       </div>
     </div>
-    <p class="muted">Toggle baseline gain vs dividend-adjusted gain using cumulative net dividends through each date.</p>
+    <p class="muted">Toggle baseline gain vs dividend-adjusted gain using cumulative net dividends through each date. Shaded bands indicate non-sellable lock windows.</p>
     <div class="security-history-chart-wrap">
       <canvas id="chart-security-gain" aria-label="{{ history_data.ticker }} gain if sold today"></canvas>
     </div>
@@ -364,6 +364,59 @@
     return (toNum(point.purchased_qty) || 0) > 0 || (toNum(point.sold_qty) || 0) > 0;
   }
 
+  function hasLockWindow(point) {
+    if (!point) return false;
+    if (point.lock_window_active === true) return true;
+    var nonsellableQty = toNum(point.nonsellable_qty);
+    if (nonsellableQty !== null && nonsellableQty > 0) return true;
+    var nonsellableValue = toNum(point.nonsellable_value_gbp);
+    return nonsellableValue !== null && nonsellableValue > 0;
+  }
+
+  function lockRanges(filtered) {
+    var ranges = [];
+    var start = null;
+    filtered.forEach(function (point, idx) {
+      if (hasLockWindow(point)) {
+        if (start === null) start = idx;
+        return;
+      }
+      if (start !== null) {
+        ranges.push({ start: start, end: idx - 1 });
+        start = null;
+      }
+    });
+    if (start !== null) {
+      ranges.push({ start: start, end: filtered.length - 1 });
+    }
+    return ranges;
+  }
+
+  function pointRadiiWithLock(filtered, eventRadius, lockRadius) {
+    return filtered.map(function (p) {
+      if (hasShareEvent(p)) return eventRadius;
+      if (hasLockWindow(p)) return lockRadius;
+      return 0;
+    });
+  }
+
+  function pointColorsWithLock(filtered, baseColor, eventColor) {
+    return filtered.map(function (p) {
+      if (hasShareEvent(p)) return eventColor;
+      if (hasLockWindow(p)) return theme.warning;
+      return baseColor;
+    });
+  }
+
+  function buildLockWindowLines(point) {
+    if (!hasLockWindow(point)) return [];
+    var nonsellableValue = toNum(point.nonsellable_value_gbp);
+    if (nonsellableValue === null || hideValues) {
+      return ["Lock window active (non-sellable shares present)."];
+    }
+    return ["Lock window active: non-sellable value " + formatMoney(nonsellableValue)];
+  }
+
   function eventPointRadii(filtered, radius) {
     return filtered.map(function (p) { return hasShareEvent(p) ? radius : 0; });
   }
@@ -388,6 +441,33 @@
       data: data,
       options: options
     });
+  }
+
+  var lockWindowShadePlugin = {
+    id: "lockWindowShade",
+    beforeDatasetsDraw: function (chart, _args, pluginOptions) {
+      if (!pluginOptions || !Array.isArray(pluginOptions.ranges) || !pluginOptions.ranges.length) {
+        return;
+      }
+      var xScale = chart.scales && chart.scales.x;
+      var area = chart.chartArea;
+      if (!xScale || !area) return;
+      var ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = pluginOptions.color || "rgba(240, 160, 48, 0.08)";
+      pluginOptions.ranges.forEach(function (range) {
+        var left = xScale.getPixelForValue(range.start);
+        var right = xScale.getPixelForValue(range.end);
+        if (!Number.isFinite(left) || !Number.isFinite(right)) return;
+        var x = Math.min(left, right) - 4;
+        var width = Math.abs(right - left) + 8;
+        ctx.fillRect(x, area.top, Math.max(1, width), area.bottom - area.top);
+      });
+      ctx.restore();
+    }
+  };
+  if (typeof Chart !== "undefined") {
+    Chart.register(lockWindowShadePlugin);
   }
 
   function drawdownSeries(filtered) {
@@ -440,8 +520,9 @@
   function renderPriceChart(filtered) {
     var labels = filtered.map(function (p) { return p.date; });
     var priceValues = filtered.map(function (p) { return hideValues ? null : toNum(p.price_gbp); });
-    var pointR = eventPointRadii(filtered, 4);
-    var pointC = eventPointColors(filtered, theme.accent, theme.gain);
+    var pointR = pointRadiiWithLock(filtered, 4, 2);
+    var pointC = pointColorsWithLock(filtered, theme.accent, theme.gain);
+    var ranges = lockRanges(filtered);
 
     var datasets = [{
       label: "Price (GBP)",
@@ -484,10 +565,15 @@
       function (ctxArr) {
         var idx = ctxArr[0] && ctxArr[0].dataIndex;
         if (idx === undefined) return [];
-        return buildShareEventLines(filtered[idx]);
+        var lines = buildShareEventLines(filtered[idx]);
+        return lines.concat(buildLockWindowLines(filtered[idx]));
       },
       false
     );
+    options.plugins.lockWindowShade = {
+      ranges: ranges,
+      color: "rgba(240, 160, 48, 0.09)"
+    };
 
     upsertChart("price", "chart-security-price", "line", { labels: labels, datasets: datasets }, options);
   }
@@ -501,7 +587,8 @@
       ? "Gain If Sold + Net Dividends (GBP)"
       : "Gain If Sold (GBP)";
     var values = filtered.map(function (p) { return hideValues ? null : toNum(p[gainKey]); });
-    var pointR = eventPointRadii(filtered, 4);
+    var pointR = pointRadiiWithLock(filtered, 4, 2);
+    var ranges = lockRanges(filtered);
 
     var options = baseLineOptions(
       labels,
@@ -514,10 +601,15 @@
       function (ctxArr) {
         var idx = ctxArr[0] && ctxArr[0].dataIndex;
         if (idx === undefined) return [];
-        return buildShareEventLines(filtered[idx]);
+        var lines = buildShareEventLines(filtered[idx]);
+        return lines.concat(buildLockWindowLines(filtered[idx]));
       },
       false
     );
+    options.plugins.lockWindowShade = {
+      ranges: ranges,
+      color: "rgba(240, 160, 48, 0.09)"
+    };
 
     upsertChart("gain", "chart-security-gain", "line", {
       labels: labels,
