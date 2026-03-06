@@ -1,5 +1,9 @@
 # Strategic Question Table
 
+Last updated: `2026-03-06`
+
+Execution mode: refinement and hardening only. New feature-expansion tracks are documented but deferred.
+
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
@@ -94,7 +98,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: Concentration, liquidity split, wrapper allocation, deployable breakdown, employer dependence ratio, optionality timeline bands (`Now`/`6m`/`1y`/`3y`/`5y`), and optionality index with adjustable transparent weights.
 3. Illusion vs Reality Risks: Score can be over-trusted if users ignore component table.
 4. Decision Support Role: Risk salience and optionality tracking.
-5. Structural Improvements: Add threshold-based concentration guardrail overlays (`T20`).
+5. Structural Improvements: Add trend-over-time overlays for guardrail breaches and optionality shifts so persistent risk is separated from transient spikes.
 
 ## Analytics (`/analytics`)
 1. Purpose: Cross-system monitoring with decision-critical ordering.
@@ -115,14 +119,14 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: Deterministic scenario legs with aggregated net/economic/tax outputs and comparisons, currently non-sequential by default.
 3. Illusion vs Reality Risks: Independent-leg mode can be mistaken for execution-order realistic.
 4. Decision Support Role: Structured scenario comparison before execution.
-5. Structural Improvements: Implement sequential-leg mode (`T15`).
+5. Structural Improvements: Add per-leg trace links to `/reconcile` and scenario-template reuse for recurring what-if workflows.
 
 ## History (`/history`) and Security History (`/history/{security_id}`)
 1. Purpose: Time-series structural context.
 2. Economic Model Behind the Page: Reconstructed holdings, gain-if-sold series, price/cost overlays, and security-specific progression.
 3. Illusion vs Reality Risks: Chart narratives can encourage recency bias and hide non-sellable windows.
 4. Decision Support Role: Forensic trend/context review, not prediction.
-5. Structural Improvements: Add lock-window shading (`T16`) and source-level decomposition (price vs quantity vs dividends).
+5. Structural Improvements: Expand source-level decomposition overlays (price vs quantity vs dividends vs FX) for major value shifts.
 
 ## Reports (`/cgt`, `/economic-gain`, `/dividends`)
 1. Purpose: Realised tax/economic reporting plus dividend drag/provenance.
@@ -187,3 +191,104 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 1. Add broader strategic API/UI regression suite for all Stage-10 pages.
 2. Add reconciliation delta tolerance tests across representative portfolio states.
 3. Add UX friction checks for trace flows (Portfolio/Net Value/Tax Plan -> Reconcile -> Audit record).
+
+# Portfolio Refinement Focus (Current Template)
+
+## PR1: Actionable-First Visual Hierarchy
+1. Objective Gap: Actionable and hypothetical cards still compete in a single dense band.
+2. Refinement: Split top cards into `Actionable Today` first, then `Hypothetical / Context` second.
+3. Expected Outcome: Lower gross/hypothetical anchoring and faster decision flow for near-term actions.
+
+## PR2: Explicit Valuation Basis Stamp
+1. Objective Gap: Refresh diagnostics show process state but not a clear valuation basis for top metrics.
+2. Refinement: Add top-level `Valuation Basis` strip (`price as of`, `FX as of`, stale flags) above headline cards.
+3. Expected Outcome: Improved deterministic trust and reduced stale-data misinterpretation.
+
+## PR3: Persistent Guardrail State
+1. Objective Gap: Guardrail dismissals are local-browser only.
+2. Refinement: Backed by persisted, auditable server-side alert lifecycle with expiry semantics.
+3. Expected Outcome: Cross-session/device consistency and reduced silent risk masking.
+
+## PR4: Formula and Trace Clarity
+1. Objective Gap: View-control formula language is generic and not deeply connected to metric semantics.
+2. Refinement: Add compact formula chips linking directly to glossary and reconcile anchors per decision metric.
+3. Expected Outcome: Stronger explainability and lower ambiguity in interpretation.
+
+## PR5: Terminology and State Wording Consistency
+1. Objective Gap: Minor label/state inconsistencies (`Open`/`closed`, similar semantic terms across sections).
+2. Refinement: Standardize status capitalization and wording map for decision rows, badges, and tooltips.
+3. Expected Outcome: Cleaner cognitive model and lower UI-friction during fast review.
+
+# Individual Page Effectiveness Assessment (2026-03-06)
+
+Legend: `H` = high objective alignment, `M` = moderate alignment (useful but with notable gap), `L` = low alignment.
+
+| Page | Effectiveness | Objective-Aligned Assessment | Documented Refinement |
+|---|---|---|---|
+| Portfolio (`/`) | H | Strong actionable/hypothetical tagging, concentration and guardrail coverage, trace links, and model scope disclosure. | Keep actionable cards visually first; add persistent guardrail lifecycle and valuation-basis strip. |
+| Net Value (`/net-value`) | M | Good theoretical framing and warnings, but still easy to anchor on gross headline numbers. | Add explicit `Net Value vs Deployable Today` delta card with direct link to `/capital-stack`. |
+| Capital Stack (`/capital-stack`) | H | Clear deterministic formula chain from gross to deployable; strongest liquidity-illusion countermeasure. | Integrate cash sidecar directly into primary formula output or add explicit combined total card. |
+| Cash (`/cash`) | H | Operationally strong with append-only ledger and GBP-only ISA transfer controls. | Add per-balance freshness/provenance badges and pre-submit transfer impact summary row. |
+| Sell Plan (`/sell-plan`) | H | Comprehensive deterministic planner with constraints, adherence, and export. | Add direct reconciliation to committed disposals and variance explanation by tranche. |
+| Simulate Disposal (`/simulate`) | H | Strong pre-commit FIFO/tax/forfeiture preview with acknowledgement gating. | Show price provenance (`price as of`, stale status) beside price input and results header. |
+| Per Scheme (`/per-scheme`) | H | Useful scheme decomposition across current and historic economics. | Add drill-through from scheme totals to contributing securities/lots and reconcile anchors. |
+| Tax Plan (`/tax-plan`) | H | High-value timing/ANI/CGT surface with assumption-quality badges. | Add one-click scenario import from Scenario Lab and explicit stale-data impact callout. |
+| Risk (`/risk`) | H | Strong structural risk visibility (guardrails, optionality, forfeiture heatmap, friction). | Add trend-over-time for optionality/guardrail breaches to separate transient vs persistent risk. |
+| Analytics (`/analytics`) | M | Rich coverage, but widget hiding can suppress critical signals. | Add non-hideable minimum critical widget set and warning when critical widgets are hidden. |
+| Calendar (`/calendar`) | M | Good event timing and sell-plan integration; value-at-stake can look overly certain. | Add row-level price/FX freshness badges and event provenance tooltips. |
+| Scenario Lab (`/scenario-lab`) | H | Strong deterministic what-if engine with comparison and persistence hooks. | Add per-leg trace links to `/reconcile` and saved scenario templates for repeat workflows. |
+| History (`/history`) | H | Robust trend reconstruction and non-sellable shading. | Add decomposition view (`price`, `quantity`, `dividends`, `FX`) for major value shifts. |
+| Security History (`/history/{security_id}`) | H | Good single-name forensic detail across price/cost/liquidity evolution. | Add explicit native-vs-FX contribution breakdown for each selected date window. |
+| CGT Report (`/cgt`) | H | Clear realised CGT summary and filing-oriented detail. | Add assumption-quality indicator for `include tax due` path and link to missing setting fields. |
+| Economic Gain Report (`/economic-gain`) | M | Clear realised true-cost economics but limited comparative context. | Add side-by-side `CGT basis vs Economic basis` delta column per disposal. |
+| Dividends (`/dividends`) | H | Good tax-treatment split, FX provenance fields, and allocation layer. | Separate `actual vs forecast` totals visually and attach FX-source quality badges. |
+| Insights (`/insights`) | M | Useful strategic-page hub, currently mostly navigational. | Add maturity/status badges and top active alerts to prioritize where to start. |
+| Capital Efficiency (`/capital-efficiency`) | M | Useful snapshot of structural drag components. | Add drag trend chart and previous-window delta for each component. |
+| Employment Exit (`/employment-exit`) | M | Strong deterministic snapshot for one exit date/shock pair. | Add matrix view (date x shock) and baseline comparison mode. |
+| ISA Efficiency (`/isa-efficiency`) | M | Clear point-in-time wrapper and headroom lens. | Add headroom burn-down timeline and contribution source ledger linkage. |
+| Fee Drag (`/fee-drag`) | M | Clear ledger and tax-year totals for fees vs proceeds/economic result. | Add outlier detection and grouping by execution method/source where available. |
+| Data Quality (`/data-quality`) | H | Strong diagnostics and impact-by-surface framing. | Add direct remediation links (refresh prices, settings, missing data source). |
+| Employment Tax Events (`/employment-tax-events`) | M | Useful event trail but limited traceability back to source records. | Add links to source lot/disposal/audit rows and provenance columns. |
+| Reconcile (`/reconcile`) | H | Strong cross-surface explanation and trace sections. | Add snapshot-to-snapshot drift decomposition (`price`, `FX`, `quantity`, `settings`). |
+| Basis Timeline (`/basis-timeline`) | M | Good tabular attribution but low visual salience. | Add charted timeline and top-contributor summary cards. |
+| Audit Log (`/audit`) | H | Strong append-only transparency with table/record filtering. | Add structured JSON diff highlighter and date-range filters. |
+| Add Lot (`/portfolio/add-lot`) | H | Strong input workflow with derived/persisted preview and FX workflow context. | Add explicit `records to be created` preview (including matched lot creation effects). |
+| Transfer Lot (`/portfolio/transfer-lot`) | H | Strong transfer impact panel and rule transparency. | Add before/after custody map and tax-estimate confidence badge in confirmation block. |
+| Edit Lot (`/portfolio/edit-lot`) | H | Controlled correction flow with confirmation summary. | Add field-level diff against current values and downstream impact hints before save. |
+| Add Security (`/portfolio/add-security`) | H | Strong catalog search + manual override + quality guardrails. | Add duplicate/conflict resolver view when symbol-currency collisions are detected. |
+| Settings (`/settings`) | H | Core assumption controls are clear and complete for deterministic outputs. | Add assumption-completeness score and list of currently constrained pages. |
+| Glossary (`/glossary`) | H | Strong deterministic term clarity and execution-method scope coverage. | Add reverse links from each term to pages using the term most heavily. |
+| Login (`/auth/login`) | M | Secure minimal auth surface with explicit one-time-code flow. | Add generic rate-limit guidance text and lockout countdown (without leaking sensitive detail). |
+| Locked (`locked.html`) | M | Clear locked-state messaging and recovery endpoint reference. | Add contextual diagnostics (which env/input is missing) and actionable recovery checklist. |
+
+# Deferred Additional Features (Not in Active Scope)
+
+These are capability expansions, not page-polish refinements. Keep parked until the active refinement backlog is closed.
+
+## AF1: Global As-of Mode (Cross-Surface)
+1. Scope: One shared `as_of` selector for Portfolio, Net Value, Risk, Calendar, Scenario Lab, and exports.
+2. Why Separate: Adds new cross-surface time-travel capability rather than modifying one page.
+
+## AF2: Event Provenance Everywhere
+1. Scope: Standardized row-level provenance badges (`price as of`, `FX as of`, staleness) across Calendar, Risk, and strategic event tables.
+2. Why Separate: Introduces a shared provenance framework component.
+
+## AF3: Reconcile Drift Snapshot Engine
+1. Scope: Compare current snapshot to prior snapshot and decompose delta by cause (`price`, `FX`, `qty`, `settings`, `transactions`).
+2. Why Separate: Adds new temporal comparison capability and persistence requirements.
+
+## AF4: Server-Persisted Alert Lifecycle
+1. Scope: Cross-device alert state (`active`, `snoozed`, `dismissed-until-condition-change`) with audit trail.
+2. Why Separate: Requires server model/state transitions beyond UI behavior.
+
+## AF5: Decision Brief Export Pack
+1. Scope: Deterministic export bundle combining selected page metrics, assumptions, and trace links in PDF/JSON.
+2. Why Separate: Adds a new reporting/output surface, not a page refinement.
+
+## AF6: Guided Weekly Review Workflow
+1. Scope: Cross-page checklist flow (`Portfolio -> Risk -> Calendar -> Reconcile`) with completion state and saved notes.
+2. Why Separate: Adds orchestrated workflow behavior spanning multiple pages.
+
+## AF7: Deterministic Notification Digest
+1. Scope: Optional digest for threshold breaches, stale-data risks, and upcoming forfeiture/tax events.
+2. Why Separate: Adds delivery/notification subsystem.

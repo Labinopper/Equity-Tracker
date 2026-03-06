@@ -6,6 +6,11 @@ Scope guardrails:
 - No buy/sell advice language.
 - Every change must improve at least one of: clarity, risk visibility, retained-wealth realism, hidden drag visibility.
 
+Execution mode (`2026-03-06`):
+- Refinement and hardening only.
+- Active implementation scope: `T58`-`T79`.
+- Deferred (not active): `T54`-`T57`, `T80`-`T82`.
+
 ## Progress Update (2026-03-06)
 
 - Stages `1`-`7` remain complete as previously logged.
@@ -13,6 +18,14 @@ Scope guardrails:
 - Stage `9` complete: `T34`, `T35`, `T41`, `T42`, and `T44` are now fully shipped.
 - Stage `10` complete: `T13`-`T32` shipped, including strategic pages, sequential/persisted Scenario Lab, lock-window history overlays, and cross-page traceability.
 - Regression hardening pass completed for strategic surfaces: API/page smoke coverage and boundary validation added.
+
+## Active Refinement Queue (Current)
+
+| Wave | Scope | Status | Exit Criteria |
+|---|---|---|---|
+| Wave A (P1) | `T58`-`T69` | Ready | Portfolio and page-level clarity refinements merged with deterministic regression updates where behaviour/labels change. |
+| Wave B (P2) | `T70`-`T77` | Queued | Traceability, decomposition, and input-integrity refinements merged with cross-surface reconciliation checks. |
+| Wave C (P3) | `T78`-`T79` | Queued | Glossary reverse-linking and operational messaging refinements merged without scope expansion. |
 
 ## Execution Status (Source of Truth)
 
@@ -54,7 +67,7 @@ Scope guardrails:
 | T30 | Complete | `/basis-timeline` exposes native-vs-FX basis attribution timeline. |
 | T32 | Complete | Model Scope cards standardized across Portfolio, Net Value, Tax Plan, and Scenario Lab. |
 
-## Core v1 (Critical)
+## Core v1 (Critical, Delivered Archive)
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -71,7 +84,7 @@ Scope guardrails:
 | T11 | P1 | M | Major | Add widget context labels in Analytics and default sort/prioritization by decision criticality. | Risk awareness | Mixed widgets no longer appear context-equivalent. |
 | T12 | P1 | M | Major | Add regression tests for new liquidity/tax wording and concentration/forfeiture top-card calculations. | Determinism and correctness | CI includes assertions for all new core v1 semantics. |
 
-## Priority Additions (Dividend Economics + Multi-Currency Cash)
+## Priority Additions (Dividend Economics + Multi-Currency Cash, Delivered Archive)
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -88,7 +101,7 @@ Scope guardrails:
 | T43 | P1 | S | Minor | Add rule-based behavioural guardrails: liquidity illusion warning, ISA underutilization warning, drag escalation warning, forfeiture imminence warning. | Bias reduction and risk salience | Warnings trigger deterministically from thresholds and can be configured or silenced. |
 | T44 | P1 | M | Major | Extend dividends to support original currency + FX basis (not GBP-only input), preserving conversion provenance per entry. | FX and dividend realism | Dividend entries accept native currency amount and store FX metadata while keeping GBP-report compatibility. |
 
-## Priority Additions (Deterministic Sell Execution / Trickle Sell)
+## Priority Additions (Deterministic Sell Execution / Trickle Sell, Delivered Archive)
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -108,7 +121,7 @@ Method basis used for scoping (non-advisory):
 - Fidelity rebalancing methods (calendar, threshold, hybrid).
 - Investopedia scale-out concept (staggered exits).
 
-## v2 Strategic Upgrade (Material)
+## v2 Strategic Upgrade (Material, Delivered Archive)
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -119,7 +132,7 @@ Method basis used for scoping (non-advisory):
 | T17 | P2 | M | Major | Add audit-to-surface trace links (from key totals to contributing lots and recent audit mutations). | Transparency and trust | User can trace a number to source rows and change history in <=3 clicks. |
 | T18 | P2 | S | Minor | Add Add Security data-quality checks (duplicate symbol+currency conflicts, required metadata warnings). | Data integrity | Invalid/ambiguous instrument setup is blocked or warned before save. |
 
-## Missing Scope Expansion (Feasible, Objective-Aligned)
+## Missing Scope Expansion (Feasible, Objective-Aligned, Delivered Archive)
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -162,4 +175,58 @@ Method basis used for scoping (non-advisory):
 
 - Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
 - Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
-- Next exit criteria: broaden integration coverage for strategic pages and complete remaining non-Stage-10 backlog in priority order.
+- Next exit criteria: close refinement backlog `T58`-`T79` with regression coverage for changed semantics, labels, traces, and reconciliation pathways.
+- Feature expansion backlog remains deferred until refinement closure.
+
+## Deferred Feature Backlog (Post-Refinement, Not Active)
+
+| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
+|---|---|---|---|---|---|---|
+| T54 | P2 | M | Major | Add global `as_of` date mode across Portfolio, Net Value, Risk, Calendar, and Scenario Lab payloads/routes. | Clarity, deterministic comparability | A single selected date produces consistent lock/forfeiture/tax context across all major pages and exports. |
+| T55 | P2 | M | Major | Add event-level provenance badges (price date, FX date, stale flags) in Calendar and Risk event rows. | Data-quality visibility, decision reliability | Every value-at-stake event row shows provenance/freshness metadata without leaving the page. |
+| T56 | P2 | M | Major | Add `/reconcile` drift explainer comparing current vs prior snapshot deltas by cause (price, FX, quantity, settings/audit). | Transparency, behavioural risk reduction | Users can trace a headline delta to deterministic components and linked audit rows in <=3 clicks. |
+| T57 | P2 | S | Minor | Add persisted alert lifecycle (server-side dismiss/snooze states with deterministic expiry semantics). | Risk salience, cross-session consistency | Alert state survives browser reset/device changes and is auditable by state transition. |
+
+## Portfolio Template Refinements
+
+| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
+|---|---|---|---|---|---|---|
+| T58 | P1 | M | Major | Reorder Portfolio top cards into two explicit bands: `Actionable Today` first, `Hypothetical/Context` second. | Liquidity realism, behavioural bias reduction | First visible band contains deployable/net-liquidity/employment-tax action metrics only; hypothetical context is visually secondary. |
+| T59 | P1 | S | Minor | Add top-level `Valuation Basis` strip on Portfolio (`price as of`, `FX as of`, stale-state badges). | Clarity, decision reliability | Every headline card is preceded by deterministic basis timestamps and freshness status in a single compact strip. |
+| T60 | P2 | S | Minor | Add metric-level formula chips and trace links for key decision columns (`Net If Sold`, `Gain If Sold`, `Net If Held`). | Transparency, terminology clarity | Users can open formula basis and reconcile trace from each key decision metric in <=2 clicks. |
+| T61 | P3 | S | Minor | Standardize wording/capitalization for market-state and decision badges (`Open`/`Closed`, `Sellable`, `Locked`, etc.). | Clarity, UX friction reduction | Status labels are consistent across table, mobile cards, and tooltips with no mixed-case drift. |
+| T62 | P2 | M | Major | Move Portfolio view-control semantics from generic text to deterministic control help panel tied to active filters/sort. | Clarity, risk visibility | Control panel shows active filter/sort impact and affected-row count; text is specific to current selection. |
+
+## Page-by-Page Refinement Backlog (Post Assessment 2026-03-06)
+
+Reference: `docs/STRATEGIC_DOCUMENTATION.md` section `Individual Page Effectiveness Assessment (2026-03-06)`.
+
+| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
+|---|---|---|---|---|---|---|
+| T63 | P1 | S | Minor | Add explicit `Net Value vs Deployable Today` delta card + link from `/net-value` to `/capital-stack`. | Liquidity clarity | Net Value page surfaces non-actionable gap in one visible stat. |
+| T64 | P1 | M | Major | Integrate cash sidecar into main `/capital-stack` output or add standardized combined-total card. | Deployable realism | Holdings deployable and cash deployable totals reconcile in one formula path. |
+| T65 | P1 | M | Major | Add balance-level freshness/provenance metadata to `/cash` rows and transfer previews. | FX clarity, data trust | Every non-GBP affecting action shows FX/date/source confidence. |
+| T66 | P1 | M | Major | Add planned-vs-committed reconciliation panel to `/sell-plan` tranches. | Execution discipline | Tranche-level variance is explainable with deterministic source links. |
+| T67 | P1 | S | Minor | Add disposal-price provenance/staleness badge to `/simulate` input/result surfaces. | False precision reduction | Simulate output always states price basis and freshness. |
+| T68 | P1 | M | Major | Enforce non-hideable critical widget floor in `/analytics` visibility controls. | Risk visibility | Critical widgets cannot all be hidden at once; user sees deterministic warning. |
+| T69 | P1 | M | Major | Add event-level price/FX freshness badges in `/calendar` event rows. | Data-quality visibility | Each value-at-stake row includes provenance/freshness fields. |
+| T70 | P2 | M | Major | Add `/scenario-lab` per-leg trace links to `/reconcile` and scenario template save/load presets. | Transparency | Scenario result rows open deterministic trace paths in <=2 clicks. |
+| T71 | P2 | M | Major | Add decomposition overlays (`price`, `FX`, `quantity`, `dividends`) to `/history` and `/history/{security_id}`. | Causal clarity | Major time-series shifts are decomposed into deterministic components. |
+| T72 | P2 | M | Major | Add reporting comparison refinements: `/cgt` assumption badges, `/economic-gain` CGT delta column, `/dividends` actual-vs-forecast split. | Tax clarity | Report pages expose basis differences and estimate quality directly in tables/stats. |
+| T73 | P2 | M | Major | Improve strategic utilities (`/insights`, `/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/basis-timeline`) with trend context and direct action links. | Decision flow, clarity | Each strategic page adds at least one trend/comparison + one fix/deep-link action. |
+| T74 | P2 | M | Major | Extend `/reconcile` with prior-snapshot drift decomposition panel. | Cross-page trust | Delta causes are broken down by price/FX/quantity/settings/transactions. |
+| T75 | P2 | S | Minor | Add structured diff highlighting and date-range filters to `/audit`. | Traceability | Users can isolate meaningful field-level changes without raw JSON scanning. |
+| T76 | P2 | M | Major | Add downstream-impact previews to `/portfolio/add-lot`, `/portfolio/edit-lot`, `/portfolio/transfer-lot`, and conflict-resolution helper to `/portfolio/add-security`. | Input integrity | Users see affected totals/risk flags before commit on all mutation forms. |
+| T77 | P2 | S | Minor | Add settings completeness and constrained-surface checklist to `/settings`. | Assumption transparency | Settings page lists which outputs are currently estimate-constrained. |
+| T78 | P3 | S | Minor | Add reverse-link map from `/glossary` terms to primary consuming pages. | Terminology clarity | Each glossary anchor shows at least one source page link. |
+| T79 | P3 | S | Minor | Improve operational messaging for `/auth/login` and `locked.html` (rate-limit help, recovery checklist). | Operational trust | Users receive actionable next steps without exposing sensitive auth internals. |
+
+## Deferred Feature Candidates (Separate Track, Not Active)
+
+These are capability expansions, not page refinements. Keep parked until the active refinement queue is complete.
+
+| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
+|---|---|---|---|---|---|---|
+| T80 | P2 | M | Major | Add deterministic decision-brief export pack (selected metrics + assumptions + trace links) from major surfaces. | Transparency, auditability | Export artifact includes reproducible inputs/metadata and deep links to traces. |
+| T81 | P2 | M | Major | Add guided weekly review workflow spanning Portfolio, Risk, Calendar, and Reconcile with completion notes. | Behavioural discipline | Workflow state persists and can be resumed without reconfiguration. |
+| T82 | P2 | M | Major | Add deterministic notification digest for threshold breaches, stale data, and upcoming forfeiture/tax events. | Risk salience | Digest entries are generated exclusively from existing deterministic rules/state. |

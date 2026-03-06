@@ -19,3 +19,9 @@ Last updated: `2026-03-06`
 - Stages `1`-`8`: complete.
 - Stage `9`: complete (`T34`, `T35`, `T41`, `T42`, `T44`).
 - Stage `10`: complete (`T13`-`T32` shipped).
+
+## Current Execution Mode
+
+- Refinement-only pass is active (effective `2026-03-06`).
+- No net-new feature build is in active scope until in-process refinements are closed.
+- Active implementation source: `docs/todo.md` sections `Portfolio Template Refinements` and `Page-by-Page Refinement Backlog (Post Assessment 2026-03-06)`.
