@@ -12,6 +12,7 @@ Scope guardrails:
 - Stage `8` complete: `T10` glossary deep links, `T11` analytics criticality metadata/order, and `T12` regression lock-in.
 - Stage `9` complete: `T34`, `T35`, `T41`, `T42`, and `T44` are now fully shipped.
 - Stage `10` complete: `T13`-`T32` shipped, including strategic pages, sequential/persisted Scenario Lab, lock-window history overlays, and cross-page traceability.
+- Regression hardening pass completed for strategic surfaces: API/page smoke coverage and boundary validation added.
 
 ## Execution Status (Source of Truth)
 

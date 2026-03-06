@@ -60,3 +60,49 @@ def test_strategic_reconcile_page_renders_trace_anchors(client):
     text = resp.text
     assert 'id="trace-contributing-lots"' in text
     assert 'id="trace-audit-mutations"' in text
+
+
+def test_strategic_api_endpoints_smoke(client):
+    _ = _add_security(client, "SSTAGE")
+
+    cases = [
+        ("/api/strategic/capital-efficiency", {"components", "total_structural_drag_gbp"}),
+        ("/api/strategic/employment-exit", {"rows", "totals", "exit_date"}),
+        ("/api/strategic/isa-efficiency", {"active_tax_year", "isa_ratio_pct"}),
+        ("/api/strategic/fee-drag", {"totals", "tax_year_rows", "transaction_rows"}),
+        ("/api/strategic/data-quality", {"summary", "impact_rows", "tax_plan_freshness"}),
+        ("/api/strategic/employment-tax-events", {"tax_year_rows", "event_rows"}),
+        ("/api/strategic/reconcile", {"components", "trace_links"}),
+        ("/api/strategic/basis-timeline", {"date_rows", "security_rows"}),
+    ]
+
+    for path, required_keys in cases:
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        body = resp.json()
+        for key in required_keys:
+            assert key in body, f"{path} missing key: {key}"
+
+
+def test_strategic_pages_render(client):
+    pages = [
+        ("/insights", "Insights"),
+        ("/capital-efficiency", "Capital Efficiency"),
+        ("/employment-exit", "Employment Exit"),
+        ("/isa-efficiency", "ISA Efficiency"),
+        ("/fee-drag", "Fee Drag"),
+        ("/data-quality", "Data Quality"),
+        ("/employment-tax-events", "Employment Tax Events"),
+        ("/reconcile", "Cross-Page Reconciliation"),
+        ("/basis-timeline", "Price/FX Basis Timeline"),
+    ]
+
+    for path, marker in pages:
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        assert marker in resp.text
+
+
+def test_basis_timeline_lookback_validation(client):
+    assert client.get("/api/strategic/basis-timeline?lookback_days=29").status_code == 422
+    assert client.get("/api/strategic/basis-timeline?lookback_days=1826").status_code == 422
