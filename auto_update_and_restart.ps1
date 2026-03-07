@@ -40,9 +40,9 @@ function Get-ListenPid {
     return $null
 }
 
-function Is-TrackerProcess([int]$pid) {
+function Is-TrackerProcess([int]$processId) {
     try {
-        $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $pid"
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $processId"
         if ($null -eq $proc) { return $false }
         $cmd = [string]$proc.CommandLine
         return ($cmd -match "run_api\.py") -and ($cmd -match "equity_tracker")
@@ -56,17 +56,17 @@ function Stop-TrackerProcess {
     if (Test-Path $pidFile) {
         $raw = (Get-Content -Raw $pidFile).Trim()
         if ($raw -match "^\d+$") {
-            $pid = [int]$raw
-            if (Is-TrackerProcess -pid $pid) {
-                Write-Log "Stopping tracked process PID $pid"
-                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            $trackedProcessId = [int]$raw
+            if (Is-TrackerProcess -processId $trackedProcessId) {
+                Write-Log "Stopping tracked process PID $trackedProcessId"
+                Stop-Process -Id $trackedProcessId -Force -ErrorAction SilentlyContinue
             }
         }
         Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
     }
 
     $listenPid = Get-ListenPid
-    if ($null -ne $listenPid -and (Is-TrackerProcess -pid $listenPid)) {
+    if ($null -ne $listenPid -and (Is-TrackerProcess -processId $listenPid)) {
         Write-Log "Stopping listener process PID $listenPid"
         Stop-Process -Id $listenPid -Force -ErrorAction SilentlyContinue
     }
