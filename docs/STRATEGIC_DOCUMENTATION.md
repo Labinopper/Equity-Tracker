@@ -2,7 +2,7 @@
 
 Last updated: `2026-03-07`
 
-Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance and expansion updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, pension tracking/projection, weekly review workflow, notification digest, and allocation planner); no tracked post-closure expansion items remain pending.
+Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance and expansion updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, pension tracking/projection, weekly review workflow, notification digest, allocation planner, and hosted internal-network deployment); no tracked post-closure expansion items remain pending.
 
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
 
@@ -20,6 +20,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 10. Weekly review workflow is now live at `/weekly-review`, with persisted step notes and resumable review context spanning Portfolio, Risk, Calendar, and Reconcile.
 11. Notification digest is now live at `/notification-digest`, generated only from deterministic alert-center and calendar state.
 12. Allocation planner is now live at `/allocation-planner`, supporting user-defined candidate universes and before/after concentration, FX, wrapper, and friction deltas.
+13. The application now runs on a hosted server and is reachable internally across the user's network, rather than being limited to the original machine.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
 |---|---|---|---|---|---|---|---|---|---|---|
