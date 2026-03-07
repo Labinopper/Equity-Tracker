@@ -81,9 +81,18 @@ def test_api_risk_summary_with_priced_holdings(client):
     assert body["deployable"]["deployable_capital_gbp"] == "200.00"
     assert body["deployable"]["employer_share_of_deployable_pct"] == "0.00"
     assert body["wrapper_allocation"]["taxable_pct_of_total"] == "100.00"
+    assert body["valuation_basis"]["price_as_of_latest"] == "2026-02-24"
+    assert body["valuation_basis"]["price_tracked_count"] == 1
+    assert body["valuation_basis"]["fx_basis_note"] == "GBP-only holdings (no FX conversion)"
     assert body["optionality_timeline"][0]["label"] == "Now"
     assert body["stress_points"][0]["shock_label"] == "-30%"
     assert body["stress_points"][-1]["shock_label"] == "+20%"
+
+    page = client.get("/risk")
+    assert page.status_code == 200
+    assert "Price/FX Basis" in page.text
+    assert "Price 2026-02-24" in page.text
+    assert "GBP-only holdings (no FX conversion)" in page.text
 
 
 def test_risk_ui_page_renders(client):

@@ -14,6 +14,8 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 4. Dividend cash auto-post now writes FX metadata (`fx_rate`, `fx_source`) on cash entries to improve provenance clarity.
 5. Portfolio page no longer shows `Portfolio View Controls`; `Model Scope` is now collapsed by default.
 6. Pension page is now live at `/pension` with append-only contribution tracking, deterministic return scenarios, retirement-target comparison, and tracked-wealth context.
+7. Calendar and Risk now show row-level price/FX provenance badges for event-driven or time-band rows that depend on current valuation basis.
+8. `/reconcile` now shows explicit drift cause buckets with explained vs residual change and direct trace links into basis timeline or filtered audit windows.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -108,7 +110,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: Concentration, liquidity split, wrapper allocation, deployable breakdown, employer dependence ratio, optionality timeline bands (`Now`/`6m`/`1y`/`3y`/`5y`), and optionality index with adjustable transparent weights.
 3. Illusion vs Reality Risks: Score can be over-trusted if users ignore component table.
 4. Decision Support Role: Risk salience and optionality tracking.
-5. Structural Improvements: Add trend-over-time overlays for guardrail breaches and optionality shifts so persistent risk is separated from transient spikes.
+5. Structural Improvements: Event-row valuation provenance is now live; next material upgrade is trend-over-time overlays for guardrail breaches and optionality shifts so persistent risk is separated from transient spikes.
 
 ## Analytics (`/analytics`)
 1. Purpose: Cross-system monitoring with decision-critical ordering.
@@ -122,7 +124,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Economic Model Behind the Page: Vest, forfeiture, tax-year boundary, and sell-plan tranche events with filtering and deep links.
 3. Illusion vs Reality Risks: Event value-at-stake may be treated as guaranteed if pricing becomes stale.
 4. Decision Support Role: Execution timing and forfeiture avoidance awareness.
-5. Structural Improvements: Add explicit stale-price badge directly in event rows.
+5. Structural Improvements: Row-level valuation provenance is now live; next improvement should expand event provenance further into other strategic event tables where value-at-stake is shown.
 
 ## Scenario Lab (`/scenario-lab`)
 1. Purpose: Multi-leg disposal what-if composition.
@@ -211,7 +213,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 
 ## v2 Strategic Upgrade
 1. Maintain reconciliation delta-tolerance fixtures across representative portfolio states as formulas evolve.
-2. Extend the same regression discipline to future shared-foundation features (`as_of`, provenance badges, drift explainers) once they ship.
+2. Maintain the same regression discipline on shipped shared-foundation features (`as_of`, provenance badges, drift explainers) as those contracts evolve.
 3. Keep improving trace destinations so filtered audit/reconcile workflows stay high-context even as new record types are added.
 
 Backlog mirror and delivered-post-closure state: logged in `docs/todo.md`.
@@ -273,7 +275,7 @@ Legend: `H` = high objective alignment, `M` = moderate alignment (useful but wit
 | Fee Drag (`/fee-drag`) | M | Clear ledger and tax-year totals for fees vs proceeds/economic result. | Add outlier detection and grouping by execution method/source where available. |
 | Data Quality (`/data-quality`) | H | Strong diagnostics and impact-by-surface framing. | Add direct remediation links (refresh prices, settings, missing data source). |
 | Employment Tax Events (`/employment-tax-events`) | M | Useful event trail but limited traceability back to source records. | Add links to source lot/disposal/audit rows and provenance columns. |
-| Reconcile (`/reconcile`) | H | Strong cross-surface explanation and trace sections. | Add snapshot-to-snapshot drift decomposition (`price`, `FX`, `quantity`, `settings`). |
+| Reconcile (`/reconcile`) | H | Strong cross-surface explanation and trace sections, now with explicit drift buckets and direct trace links. | Keep tightening audit/basis-timeline destinations as new mutation categories are introduced. |
 | Basis Timeline (`/basis-timeline`) | M | Good tabular attribution but low visual salience. | Add charted timeline and top-contributor summary cards. |
 | Pension (`/pension`) | H | Strong deterministic retirement-planning baseline with append-only inputs, explicit assumptions, and tracked-wealth context. | Add richer timeline visualization and optional assumption-history trace if the surface expands further. |
 | Audit Log (`/audit`) | H | Strong append-only transparency with table/record filtering. | Add structured JSON diff highlighter and date-range filters. |
@@ -289,14 +291,6 @@ Legend: `H` = high objective alignment, `M` = moderate alignment (useful but wit
 # Deferred Additional Features (Not in Active Scope)
 
 These are capability expansions, not page-polish refinements. Active refinement backlog is closed; keep parked until explicit reprioritization.
-
-## AF2: Event Provenance Everywhere
-1. Scope: Standardized row-level provenance badges (`price as of`, `FX as of`, staleness) across Calendar, Risk, and strategic event tables.
-2. Why Separate: Introduces a shared provenance framework component.
-
-## AF3: Reconcile Drift Snapshot Engine
-1. Scope: Compare current snapshot to prior snapshot and decompose delta by cause (`price`, `FX`, `qty`, `settings`, `transactions`).
-2. Why Separate: Adds new temporal comparison capability and persistence requirements.
 
 ## AF5: Decision Brief Export Pack
 1. Scope: Deterministic export bundle combining selected page metrics, assumptions, and trace links in PDF/JSON.

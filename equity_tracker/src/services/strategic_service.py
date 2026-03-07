@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlencode
 
 from sqlalchemy import select
 
@@ -75,6 +76,27 @@ def _best_price_rows(rows: list[PriceHistory]) -> dict[tuple[str, date], PriceHi
         if row_ts >= cur_ts:
             best[key] = row
     return best
+
+
+def _audit_window_href(
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    table_name: str | None = None,
+) -> str:
+    params: list[tuple[str, str]] = []
+    if table_name:
+        params.append(("table_name", table_name))
+    if date_from:
+        params.append(("date_from", date_from))
+    if date_to:
+        params.append(("date_to", date_to))
+    return f"/audit?{urlencode(params)}" if params else "/audit"
+
+
+def _basis_timeline_href(*, lookback_days: int) -> str:
+    bounded = max(30, min(int(lookback_days), 1825))
+    return f"/basis-timeline?lookback_days={bounded}"
 
 
 def _model_scope_map() -> dict[str, dict[str, list[str]]]:
@@ -663,6 +685,7 @@ class StrategicService:
         residual = _q_money(total_change - explained_change)
 
         prior_date_raw = str(prior_row.get("date") or "")
+        current_date_raw = str(current_row.get("date") or "")
         try:
             prior_date = date.fromisoformat(prior_date_raw)
             since_dt = datetime.combine(prior_date, datetime.min.time())
@@ -675,6 +698,7 @@ class StrategicService:
             "quantity": 0,
             "transactions": 0,
             "settings": 0,
+            "other_audit": 0,
         }
         if since_dt is not None:
             for entry in ReportService.audit_log(since=since_dt):
@@ -687,54 +711,86 @@ class StrategicService:
                     mutation_counts["transactions"] += 1
                 elif table_name in {"settings", "app_settings"}:
                     mutation_counts["settings"] += 1
+                else:
+                    mutation_counts["other_audit"] += 1
+
+        audit_window_href = _audit_window_href(
+            date_from=prior_date_raw or None,
+            date_to=current_date_raw or None,
+        )
+        basis_timeline_href = _basis_timeline_href(lookback_days=lookback)
+        settings_audit_count = mutation_counts["settings"] + mutation_counts["other_audit"]
 
         return {
             "has_data": True,
             "lookback_days": lookback,
             "prior_date": prior_date_raw or None,
-            "current_date": current_row.get("date"),
+            "current_date": current_date_raw or None,
             "total_change_gbp": str(total_change),
+            "explained_change_gbp": str(explained_change),
+            "residual_gbp": str(residual),
+            "audit_window_href": audit_window_href,
             "rows": [
                 {
                     "cause": "Price",
                     "amount_gbp": str(price_component),
                     "detail": "Daily price move at prior-day quantity basis.",
                     "mutation_count": mutation_counts["price_fx"],
+                    "trace_href": basis_timeline_href,
+                    "trace_label": "Open basis timeline",
                 },
                 {
                     "cause": "FX",
                     "amount_gbp": str(fx_component),
                     "detail": "Residual FX move after price/quantity/dividend effects.",
                     "mutation_count": mutation_counts["price_fx"],
+                    "trace_href": basis_timeline_href,
+                    "trace_label": "Open basis timeline",
                 },
                 {
                     "cause": "Quantity",
                     "amount_gbp": str(quantity_component),
                     "detail": "Quantity changes at prior-day price (buy/sell/transfer effect).",
                     "mutation_count": mutation_counts["quantity"],
+                    "trace_href": _audit_window_href(
+                        table_name="lots",
+                        date_from=prior_date_raw or None,
+                        date_to=current_date_raw or None,
+                    ),
+                    "trace_label": "Open lot audit window",
                 },
                 {
                     "cause": "Transactions",
                     "amount_gbp": str(transaction_component),
                     "detail": "Cashflow component from dividend-ledger deltas in the interval.",
                     "mutation_count": mutation_counts["transactions"],
+                    "trace_href": audit_window_href,
+                    "trace_label": "Open audit window",
                 },
                 {
-                    "cause": "Settings",
+                    "cause": "Settings / Audit",
                     "amount_gbp": str(settings_component),
-                    "detail": "No deterministic settings-value reprice is applied in this panel.",
-                    "mutation_count": mutation_counts["settings"],
+                    "detail": (
+                        "Assumption or metadata mutations in the window are counted here; "
+                        "no deterministic settings-value reprice is applied in this panel."
+                    ),
+                    "mutation_count": settings_audit_count,
+                    "trace_href": audit_window_href,
+                    "trace_label": "Open audit window",
                 },
                 {
                     "cause": "Residual",
                     "amount_gbp": str(residual),
                     "detail": "Rounding remainder after component aggregation.",
                     "mutation_count": 0,
+                    "trace_href": "/history",
+                    "trace_label": "Open history",
                 },
             ],
             "notes": [
                 "Drift components are aggregated from portfolio-history decomposition rows.",
-                "Settings impact is shown as mutation count; value-effect remains zero without a deterministic replay engine.",
+                "Price and FX trace links open the basis timeline; quantity and audit-context rows open the filtered audit window.",
+                "Settings impact is shown as mutation count only; value-effect remains zero without a deterministic replay engine.",
             ],
         }
 

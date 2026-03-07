@@ -52,6 +52,8 @@
       <tbody>
         <tr><th>Window</th><td>{{ payload.drift_panel.prior_date }} to {{ payload.drift_panel.current_date }}</td></tr>
         <tr><th>Total Value Change</th><td class="num">&pound;{{ payload.drift_panel.total_change_gbp|money }}</td></tr>
+        <tr><th>Explained Change</th><td class="num">&pound;{{ payload.drift_panel.explained_change_gbp|money }}</td></tr>
+        <tr><th>Residual</th><td class="num">&pound;{{ payload.drift_panel.residual_gbp|money }}</td></tr>
       </tbody>
     </table>
   </div>
@@ -63,6 +65,7 @@
           <th class="num">Drift</th>
           <th class="num">Mutations</th>
           <th>Detail</th>
+          <th>Trace</th>
         </tr>
       </thead>
       <tbody>
@@ -72,6 +75,13 @@
           <td class="num">&pound;{{ row.amount_gbp|money }}</td>
           <td class="num">{{ row.mutation_count }}</td>
           <td>{{ row.detail }}</td>
+          <td>
+            {% if row.trace_href %}
+            <a href="{{ row.trace_href }}">{{ row.trace_label or 'Open trace' }}</a>
+            {% else %}
+            <span class="muted">-</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

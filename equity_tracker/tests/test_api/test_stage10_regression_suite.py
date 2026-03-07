@@ -292,6 +292,18 @@ def test_reconcile_lookback_query_changes_drift_window_in_api_and_page(client):
     assert short_payload["drift_panel"]["has_data"] is True
     assert short_payload["drift_panel"]["lookback_days"] == 7
     assert short_payload["drift_panel"]["prior_date"] == (today - timedelta(days=20)).isoformat()
+    assert short_payload["drift_panel"]["explained_change_gbp"] == "15.00"
+    rows_by_cause = {
+        row["cause"]: row for row in short_payload["drift_panel"]["rows"]
+    }
+    assert rows_by_cause["Price"]["trace_href"] == "/basis-timeline?lookback_days=30"
+    assert rows_by_cause["Price"]["trace_label"] == "Open basis timeline"
+    assert rows_by_cause["Quantity"]["trace_href"].startswith(
+        f"/audit?table_name=lots&date_from={(today - timedelta(days=20)).isoformat()}&date_to={today.isoformat()}"
+    )
+    assert rows_by_cause["Settings / Audit"]["trace_href"].startswith(
+        f"/audit?date_from={(today - timedelta(days=20)).isoformat()}&date_to={today.isoformat()}"
+    )
     assert long_payload["drift_panel"]["lookback_days"] == 60
     assert long_payload["drift_panel"]["prior_date"] == (today - timedelta(days=90)).isoformat()
 
@@ -300,6 +312,9 @@ def test_reconcile_lookback_query_changes_drift_window_in_api_and_page(client):
     text = page.text
     assert 'value="7"' in text
     assert f"{(today - timedelta(days=20)).isoformat()} to {today.isoformat()}" in text
+    assert "Explained Change" in text
+    assert 'href="/basis-timeline?lookback_days=30"' in text
+    assert "Open lot audit window" in text
 
 
 def test_basis_timeline_lookback_filters_rows_in_api_and_page(client):

@@ -71,6 +71,8 @@
   </div>
 </div>
 
+{% set valuation = risk_summary.valuation_basis %}
+
 <div class="card" id="alert-center">
   <div class="card__header">
     <h2 class="card__title">Alert Center</h2>
@@ -85,6 +87,7 @@
         <tr>
           <th>Severity</th>
           <th>Alert</th>
+          <th>Price/FX Basis</th>
           <th>Action</th>
         </tr>
       </thead>
@@ -99,6 +102,26 @@
           <td>
             <div><strong>{{ alert.title }}</strong></div>
             <div class="muted">{{ alert.message }}</div>
+          </td>
+          <td>
+            {% if valuation.price_as_of_latest %}
+            <div class="valuation-pill {% if valuation.stale_price_count > 0 or valuation.missing_price_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+              Price {{ valuation.price_as_of_latest }}{% if valuation.price_dates_mixed and valuation.price_as_of_earliest %} (range starts {{ valuation.price_as_of_earliest }}){% endif %}
+            </div>
+            {% else %}
+            <div class="valuation-pill valuation-pill--warning">Price basis unavailable</div>
+            {% endif %}
+            {% if valuation.fx_required_count > 0 %}
+              {% if valuation.fx_as_of_latest %}
+              <div class="valuation-pill {% if valuation.stale_fx_count > 0 or valuation.missing_fx_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+                FX {{ valuation.fx_as_of_latest }}{% if valuation.fx_dates_mixed and valuation.fx_as_of_earliest %} (range starts {{ valuation.fx_as_of_earliest }}){% endif %}
+              </div>
+              {% else %}
+              <div class="valuation-pill valuation-pill--warning">FX basis unavailable</div>
+              {% endif %}
+            {% elif valuation.fx_basis_note %}
+            <div class="valuation-pill">{{ valuation.fx_basis_note }}</div>
+            {% endif %}
           </td>
           <td>
             <div class="form-actions">
@@ -134,6 +157,7 @@
         <tr>
           <th>State</th>
           <th>Suppressed Alert</th>
+          <th>Price/FX Basis</th>
           <th>Hidden Until</th>
           <th>Action</th>
         </tr>
@@ -147,6 +171,26 @@
           <td>
             <div><strong>{{ alert.title }}</strong></div>
             <div class="muted">{{ alert.message }}</div>
+          </td>
+          <td>
+            {% if valuation.price_as_of_latest %}
+            <div class="valuation-pill {% if valuation.stale_price_count > 0 or valuation.missing_price_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+              Price {{ valuation.price_as_of_latest }}{% if valuation.price_dates_mixed and valuation.price_as_of_earliest %} (range starts {{ valuation.price_as_of_earliest }}){% endif %}
+            </div>
+            {% else %}
+            <div class="valuation-pill valuation-pill--warning">Price basis unavailable</div>
+            {% endif %}
+            {% if valuation.fx_required_count > 0 %}
+              {% if valuation.fx_as_of_latest %}
+              <div class="valuation-pill {% if valuation.stale_fx_count > 0 or valuation.missing_fx_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+                FX {{ valuation.fx_as_of_latest }}{% if valuation.fx_dates_mixed and valuation.fx_as_of_earliest %} (range starts {{ valuation.fx_as_of_earliest }}){% endif %}
+              </div>
+              {% else %}
+              <div class="valuation-pill valuation-pill--warning">FX basis unavailable</div>
+              {% endif %}
+            {% elif valuation.fx_basis_note %}
+            <div class="valuation-pill">{{ valuation.fx_basis_note }}</div>
+            {% endif %}
           </td>
           <td>
             {% if alert.suppressed_until_iso %}
@@ -441,6 +485,7 @@
           <th class="num">Locked %</th>
           <th class="num">Forfeitable %</th>
           <th class="num">Deployable %</th>
+          <th>Price/FX Basis</th>
         </tr>
       </thead>
       <tbody>
@@ -452,6 +497,26 @@
           <td class="num">{{ band.locked_pct }}%</td>
           <td class="num">{{ band.forfeitable_pct }}%</td>
           <td class="num">{{ band.deployable_pct }}%</td>
+          <td>
+            {% if valuation.price_as_of_latest %}
+            <div class="valuation-pill {% if valuation.stale_price_count > 0 or valuation.missing_price_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+              Price {{ valuation.price_as_of_latest }}{% if valuation.price_dates_mixed and valuation.price_as_of_earliest %} (range starts {{ valuation.price_as_of_earliest }}){% endif %}
+            </div>
+            {% else %}
+            <div class="valuation-pill valuation-pill--warning">Price basis unavailable</div>
+            {% endif %}
+            {% if valuation.fx_required_count > 0 %}
+              {% if valuation.fx_as_of_latest %}
+              <div class="valuation-pill {% if valuation.stale_fx_count > 0 or valuation.missing_fx_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+                FX {{ valuation.fx_as_of_latest }}{% if valuation.fx_dates_mixed and valuation.fx_as_of_earliest %} (range starts {{ valuation.fx_as_of_earliest }}){% endif %}
+              </div>
+              {% else %}
+              <div class="valuation-pill valuation-pill--warning">FX basis unavailable</div>
+              {% endif %}
+            {% elif valuation.fx_basis_note %}
+            <div class="valuation-pill">{{ valuation.fx_basis_note }}</div>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

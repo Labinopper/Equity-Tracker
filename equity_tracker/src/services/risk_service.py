@@ -120,6 +120,56 @@ def _optionality_config_score(settings: AppSettings | None) -> Decimal:
     return _q_pct((Decimal(passed) / Decimal(len(checks))) * Decimal("100"))
 
 
+def _build_valuation_basis(summary) -> "RiskValuationBasis":
+    securities = list(summary.securities or [])
+    total_security_count = len(securities)
+
+    price_dates = [ss.price_as_of for ss in securities if ss.price_as_of is not None]
+    price_as_of_latest = max(price_dates).isoformat() if price_dates else None
+    price_as_of_earliest = min(price_dates).isoformat() if price_dates else None
+    stale_price_count = sum(
+        1 for ss in securities if ss.price_as_of is not None and ss.price_is_stale
+    )
+    missing_price_count = total_security_count - len(price_dates)
+
+    fx_required = [
+        ss
+        for ss in securities
+        if str(getattr(ss.security, "currency", "") or "").upper() != "GBP"
+    ]
+    fx_required_count = len(fx_required)
+    fx_rows = [str(ss.fx_as_of) for ss in fx_required if ss.fx_as_of]
+    fx_as_of_latest = max(fx_rows) if fx_rows else None
+    fx_as_of_earliest = min(fx_rows) if fx_rows else None
+    stale_fx_count = sum(1 for ss in fx_required if ss.fx_as_of and ss.fx_is_stale)
+    missing_fx_count = fx_required_count - len(fx_rows)
+
+    if fx_required_count <= 0:
+        fx_basis_note = "GBP-only holdings (no FX conversion)"
+    elif missing_fx_count > 0:
+        fx_basis_note = "FX basis incomplete for part of the priced set."
+    else:
+        fx_basis_note = None
+
+    return RiskValuationBasis(
+        total_security_count=total_security_count,
+        price_tracked_count=len(price_dates),
+        price_as_of_latest=price_as_of_latest,
+        price_as_of_earliest=price_as_of_earliest,
+        price_dates_mixed=len(set(price_dates)) > 1,
+        stale_price_count=stale_price_count,
+        missing_price_count=missing_price_count,
+        fx_required_count=fx_required_count,
+        fx_as_of_count=len(fx_rows),
+        fx_as_of_latest=fx_as_of_latest,
+        fx_as_of_earliest=fx_as_of_earliest,
+        fx_dates_mixed=len(set(fx_rows)) > 1,
+        stale_fx_count=stale_fx_count,
+        missing_fx_count=missing_fx_count,
+        fx_basis_note=fx_basis_note,
+    )
+
+
 @dataclass(frozen=True)
 class RiskConcentrationItem:
     key: str
@@ -172,6 +222,25 @@ class RiskWrapperAllocation:
     taxable_market_value_gbp: Decimal
     isa_pct_of_total: Decimal
     taxable_pct_of_total: Decimal
+
+
+@dataclass(frozen=True)
+class RiskValuationBasis:
+    total_security_count: int
+    price_tracked_count: int
+    price_as_of_latest: str | None
+    price_as_of_earliest: str | None
+    price_dates_mixed: bool
+    stale_price_count: int
+    missing_price_count: int
+    fx_required_count: int
+    fx_as_of_count: int
+    fx_as_of_latest: str | None
+    fx_as_of_earliest: str | None
+    fx_dates_mixed: bool
+    stale_fx_count: int
+    missing_fx_count: int
+    fx_basis_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -248,6 +317,7 @@ class RiskSummary:
     deployable: RiskDeployableBreakdown | None = None
     employer_dependence: EmployerDependenceBreakdown | None = None
     wrapper_allocation: RiskWrapperAllocation | None = None
+    valuation_basis: RiskValuationBasis | None = None
     stress_points: list[RiskStressPoint] = field(default_factory=list)
     optionality_timeline: list[RiskOptionalityTimelineBand] = field(default_factory=list)
     optionality_index: RiskOptionalityIndex | None = None
@@ -383,6 +453,7 @@ class RiskService:
             isa_pct_of_total=_pct(isa_market_value, wrapper_total),
             taxable_pct_of_total=_pct(taxable_market_value, wrapper_total),
         )
+        valuation_basis = _build_valuation_basis(summary)
 
         stress_points = [
             RiskStressPoint(
@@ -770,6 +841,7 @@ class RiskService:
             deployable=deployable,
             employer_dependence=employer_dependence,
             wrapper_allocation=wrapper_allocation,
+            valuation_basis=valuation_basis,
             stress_points=stress_points,
             optionality_timeline=timeline,
             optionality_index=optionality_index,

@@ -11,7 +11,7 @@ Scope guardrails:
 Execution mode (`2026-03-07`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
-- Current prioritization source: remaining shared-foundation, workflow, and hardening candidates after pension delivery and Stage-10 route hardening.
+- Current prioritization source: remaining workflow and product-expansion candidates after pension delivery, shared-foundation completion, and Stage-10 route hardening.
 
 ## Current Status
 
@@ -19,6 +19,7 @@ Execution mode (`2026-03-07`):
 - Refinement Waves `A`-`C` are complete.
 - `2026-03-07` maintenance updates are live: lot-first dividends input, hidden dividend maintenance controls, deployable cash FX conversion to GBP-equivalent, dividend cash FX metadata persistence, and Portfolio UI simplification.
 - `2026-03-07` pension page is live: append-only contribution ledger, deterministic projection scenarios, retirement-target lens, and tracked-wealth context.
+- `2026-03-07` shared foundation upgrades are live: `as_of` mode, Risk/Calendar provenance badges, reconcile drift trace links, and persisted alert lifecycle.
 - Strategic hardening items `T84`-`T89` are complete and under regression coverage.
 - Detailed delivery history and the pre-tidy backlog snapshot now live in `docs/todo_archive.md`.
 
@@ -39,8 +40,7 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. Shared foundations and remaining platform expansion: `T55`-`T56`.
-2. Workflow and QoL expansion: `T80`-`T82`, `T90`.
+1. Workflow and QoL expansion: `T80`-`T82`, `T90`.
 
 ## Definition of Done (Current + Next)
 
@@ -48,8 +48,9 @@ Execution mode (`2026-03-07`):
 - Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
 - Refinement backlog closure achieved: `T58`-`T79` complete with regression coverage for changed semantics, labels, traces, reconciliation pathways, and operational messaging.
 - Pension domain (`T83`) is live with deterministic assumptions, timeline projections, and append-only contribution tracking.
+- Shared foundation upgrades `T54`-`T57` are now live across the core strategic surfaces.
 - Deferred hardening coverage now includes `T84`-`T89`.
-- Remaining work is limited to deferred foundation, workflow, product-expansion, and hardening candidates.
+- Remaining work is limited to deferred workflow and product-expansion candidates.
 - If any shipped scope is reopened, use `docs/todo_archive.md` for the historical acceptance criteria and archived task detail.
 
 ## Deferred Backlog (Current Source of Truth)
@@ -65,13 +66,8 @@ Execution mode (`2026-03-07`):
 - `T87`: broader strategic API/UI regression suite for Stage-10 pages, seeded route states, and representative filter/query combinations.
 - `T88`: cross-surface delta-tolerance fixtures for price, FX, quantity, and settings changes.
 - `T89`: UX-friction regression checks for `Portfolio/Net Value/Tax Plan -> Reconcile -> Audit`, including visible filter context on audit destinations.
-
-### Shared Foundation Candidates
-
-| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
-|---|---|---|---|---|---|---|
-| T55 | P2 | M | Major | Add event-level provenance badges (price date, FX date, stale flags) in Calendar and Risk event rows. | Data-quality visibility, decision reliability | Every value-at-stake event row shows provenance/freshness metadata without leaving the page. |
-| T56 | P2 | M | Major | Add `/reconcile` drift explainer comparing current vs prior snapshot deltas by cause (price, FX, quantity, settings/audit). | Transparency, behavioural risk reduction | Users can trace a headline delta to deterministic components and linked audit rows in <=3 clicks. |
+- `T55`: event-level provenance badges are now live in Calendar and Risk event rows, including row-visible price/FX freshness context.
+- `T56`: `/reconcile` drift explainer now exposes explicit cause buckets, explained vs residual change, and direct trace links into basis-timeline or filtered audit windows.
 
 ### Product Expansion Candidates
 

@@ -20,6 +20,7 @@ from ...services.risk_service import (
     RiskRebalanceFriction,
     RiskSummary,
     RiskStressPoint,
+    RiskValuationBasis,
     RiskWrapperAllocation,
 )
 
@@ -129,6 +130,44 @@ class RiskWrapperAllocationSchema(BaseModel):
             taxable_market_value_gbp=str(value.taxable_market_value_gbp),
             isa_pct_of_total=str(value.isa_pct_of_total),
             taxable_pct_of_total=str(value.taxable_pct_of_total),
+        )
+
+
+class RiskValuationBasisSchema(BaseModel):
+    total_security_count: int
+    price_tracked_count: int
+    price_as_of_latest: str | None
+    price_as_of_earliest: str | None
+    price_dates_mixed: bool
+    stale_price_count: int
+    missing_price_count: int
+    fx_required_count: int
+    fx_as_of_count: int
+    fx_as_of_latest: str | None
+    fx_as_of_earliest: str | None
+    fx_dates_mixed: bool
+    stale_fx_count: int
+    missing_fx_count: int
+    fx_basis_note: str | None
+
+    @classmethod
+    def from_service(cls, value: RiskValuationBasis) -> "RiskValuationBasisSchema":
+        return cls(
+            total_security_count=value.total_security_count,
+            price_tracked_count=value.price_tracked_count,
+            price_as_of_latest=value.price_as_of_latest,
+            price_as_of_earliest=value.price_as_of_earliest,
+            price_dates_mixed=value.price_dates_mixed,
+            stale_price_count=value.stale_price_count,
+            missing_price_count=value.missing_price_count,
+            fx_required_count=value.fx_required_count,
+            fx_as_of_count=value.fx_as_of_count,
+            fx_as_of_latest=value.fx_as_of_latest,
+            fx_as_of_earliest=value.fx_as_of_earliest,
+            fx_dates_mixed=value.fx_dates_mixed,
+            stale_fx_count=value.stale_fx_count,
+            missing_fx_count=value.missing_fx_count,
+            fx_basis_note=value.fx_basis_note,
         )
 
 
@@ -272,6 +311,7 @@ class RiskSummarySchema(BaseModel):
     deployable: RiskDeployableBreakdownSchema
     employer_dependence: EmployerDependenceBreakdownSchema
     wrapper_allocation: RiskWrapperAllocationSchema
+    valuation_basis: RiskValuationBasisSchema
     stress_points: list[RiskStressPointSchema]
     optionality_timeline: list[RiskOptionalityTimelineBandSchema]
     optionality_index: RiskOptionalityIndexSchema
@@ -292,6 +332,8 @@ class RiskSummarySchema(BaseModel):
             raise ValueError("Risk summary employer dependence breakdown must be populated.")
         if summary.wrapper_allocation is None:
             raise ValueError("Risk summary wrapper allocation must be populated.")
+        if summary.valuation_basis is None:
+            raise ValueError("Risk summary valuation basis must be populated.")
         if summary.optionality_index is None:
             raise ValueError("Risk summary optionality index must be populated.")
         return cls(
@@ -315,6 +357,9 @@ class RiskSummarySchema(BaseModel):
             ),
             wrapper_allocation=RiskWrapperAllocationSchema.from_service(
                 summary.wrapper_allocation
+            ),
+            valuation_basis=RiskValuationBasisSchema.from_service(
+                summary.valuation_basis
             ),
             stress_points=[
                 RiskStressPointSchema.from_service(point)
