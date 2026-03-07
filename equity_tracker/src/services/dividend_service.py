@@ -11,7 +11,8 @@ No changes to existing portfolio/tax engines.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+import json
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
@@ -20,6 +21,7 @@ from ..core.tax_engine import calculate_dividend_tax, get_bands, tax_year_for_da
 from ..core.tax_engine.income_tax import personal_allowance
 from ..db.repository import DividendEntryRepository, SecurityRepository
 from ..settings import AppSettings
+from .fx_service import FxService
 from .portfolio_service import PortfolioService
 
 _GBP_Q = Decimal("0.01")
@@ -27,6 +29,7 @@ _PCT_Q = Decimal("0.01")
 _FX_Q = Decimal("0.000001")
 _VALID_TREATMENTS = frozenset({"TAXABLE", "ISA_EXEMPT"})
 _GBP = "GBP"
+_IBKR_META_PREFIX = "IBKR_META:"
 
 
 def _q_money(value: Decimal) -> Decimal:
@@ -52,6 +55,179 @@ def _to_decimal(value: object) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return None
+
+
+def _to_decimal_or_zero(value: object) -> Decimal:
+    parsed = _to_decimal(value)
+    return parsed if parsed is not None else Decimal("0")
+
+
+def _decimal_to_plain_str(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return format(value, "f")
+
+
+def _quantity_str(value: Decimal) -> str:
+    plain = format(value, "f")
+    trimmed = plain.rstrip("0").rstrip(".")
+    return trimmed or "0"
+
+
+def _append_ibkr_meta(notes: str | None, metadata: dict[str, object] | None) -> str | None:
+    compact: dict[str, str] = {}
+    for key, raw_value in (metadata or {}).items():
+        if raw_value is None:
+            continue
+        if isinstance(raw_value, str):
+            cleaned = raw_value.strip()
+            if not cleaned:
+                continue
+            compact[key] = cleaned
+            continue
+        if isinstance(raw_value, Decimal):
+            compact[key] = _decimal_to_plain_str(raw_value) or ""
+            continue
+        compact[key] = str(raw_value)
+
+    clean_notes = (notes or "").strip()
+    if not compact:
+        return clean_notes or None
+
+    payload = f"{_IBKR_META_PREFIX}{json.dumps(compact, sort_keys=True, separators=(',', ':'))}"
+    if clean_notes:
+        return f"{payload}\n{clean_notes}"
+    return payload
+
+
+def _extract_ibkr_meta(notes: str | None) -> tuple[dict[str, object], str | None]:
+    if notes is None:
+        return {}, None
+    text = notes.strip()
+    if not text:
+        return {}, None
+    lines = text.splitlines()
+    if not lines:
+        return {}, None
+    header = lines[0].strip()
+    if not header.startswith(_IBKR_META_PREFIX):
+        return {}, text
+
+    raw_payload = header[len(_IBKR_META_PREFIX) :].strip()
+    try:
+        parsed = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        return {}, text
+    if not isinstance(parsed, dict):
+        parsed = {}
+
+    body = "\n".join(lines[1:]).strip()
+    return parsed, (body or None)
+
+
+def _resolve_cash_components(
+    *,
+    amount_gbp: Decimal,
+    amount_original: Decimal,
+    fx_rate_to_gbp: Decimal | None,
+    ib_meta: dict[str, object],
+) -> dict[str, Decimal]:
+    tax_withheld_original = _q_money(
+        max(Decimal("0"), _to_decimal_or_zero(ib_meta.get("tax_withheld_original_ccy")))
+    )
+    fee_original = _q_money(max(Decimal("0"), _to_decimal_or_zero(ib_meta.get("fee_original_ccy"))))
+
+    gross_original = _to_decimal(ib_meta.get("gross_amount_original_ccy"))
+    if gross_original is None or gross_original <= Decimal("0"):
+        gross_original = amount_original
+    gross_original = _q_money(gross_original)
+
+    net_original = _to_decimal(ib_meta.get("net_amount_original_ccy"))
+    if net_original is None or net_original <= Decimal("0"):
+        derived_net = _q_money(gross_original - tax_withheld_original - fee_original)
+        net_original = derived_net if derived_net > Decimal("0") else gross_original
+    net_original = _q_money(net_original)
+
+    resolved_fx = fx_rate_to_gbp
+    if resolved_fx is None:
+        if amount_original > Decimal("0"):
+            resolved_fx = _q_fx(amount_gbp / amount_original)
+        else:
+            resolved_fx = Decimal("1.000000")
+    resolved_fx = _q_fx(resolved_fx)
+
+    gross_gbp = _q_money(gross_original * resolved_fx)
+    net_gbp = _q_money(net_original * resolved_fx)
+    tax_withheld_gbp = _q_money(tax_withheld_original * resolved_fx)
+    fee_gbp = _q_money(fee_original * resolved_fx)
+
+    return {
+        "gross_original": gross_original,
+        "net_original": net_original,
+        "tax_withheld_original": tax_withheld_original,
+        "fee_original": fee_original,
+        "gross_gbp": gross_gbp,
+        "net_gbp": net_gbp,
+        "tax_withheld_gbp": tax_withheld_gbp,
+        "fee_gbp": fee_gbp,
+    }
+
+
+def _auto_fx_rate_to_gbp(
+    *,
+    from_currency: str,
+    dividend_date: date,
+) -> tuple[Decimal, str]:
+    """
+    Resolve a GBP conversion rate for a dividend date.
+
+    Priority:
+    1) yfinance historical daily close on/before dividend_date.
+    2) FxService live/provider fallback.
+    """
+    symbol = f"{from_currency}GBP=X"
+    try:
+        import yfinance as yf  # noqa: PLC0415
+
+        hist = yf.Ticker(symbol).history(
+            start=(dividend_date - timedelta(days=7)).isoformat(),
+            end=(dividend_date + timedelta(days=1)).isoformat(),
+            interval="1d",
+            auto_adjust=False,
+            actions=False,
+        )
+        if hist is not None and not hist.empty and "Close" in hist.columns:
+            close_series = hist["Close"].dropna()
+            if not close_series.empty:
+                dated_rows: list[tuple[date, Decimal]] = []
+                for idx, close_value in close_series.items():
+                    try:
+                        quote_date = idx.date()
+                    except Exception:
+                        continue
+                    try:
+                        quote_rate = Decimal(str(close_value))
+                    except (InvalidOperation, TypeError, ValueError):
+                        continue
+                    if quote_rate > Decimal("0"):
+                        dated_rows.append((quote_date, quote_rate))
+                dated_rows.sort(key=lambda row: row[0])
+                eligible = [row for row in dated_rows if row[0] <= dividend_date]
+                chosen = eligible[-1] if eligible else dated_rows[-1] if dated_rows else None
+                if chosen is not None:
+                    return _q_fx(chosen[1]), f"auto_yfinance:{chosen[0].isoformat()}"
+    except Exception:
+        pass
+
+    try:
+        quote = FxService.get_rate(from_currency, "GBP")
+        return _q_fx(quote.rate), f"auto_{quote.source}:{quote.as_of or dividend_date.isoformat()}"
+    except Exception as exc:
+        raise ValueError(
+            "Could not auto-resolve FX rate for "
+            f"{from_currency}->GBP on {dividend_date.isoformat()}. "
+            "Provide fx_rate_to_gbp or amount_gbp."
+        ) from exc
 
 
 def _normalize_currency(value: str | None) -> str:
@@ -84,6 +260,81 @@ class DividendService:
     """
     Read/write service for manual dividend records and dashboard summaries.
     """
+
+    @staticmethod
+    def append_ibkr_metadata_to_notes(
+        *,
+        notes: str | None,
+        metadata: dict[str, object] | None,
+    ) -> str | None:
+        return _append_ibkr_meta(notes, metadata)
+
+    @staticmethod
+    def extract_ibkr_metadata_from_notes(
+        *,
+        notes: str | None,
+    ) -> tuple[dict[str, object], str | None]:
+        return _extract_ibkr_meta(notes)
+
+    @staticmethod
+    def relink_dividend_entry_lots(
+        *,
+        entry_id: str,
+        security_id: str,
+        lot_ids: list[str],
+        lot_group: str | None = None,
+        linked_lot_quantity: str | None = None,
+    ) -> dict[str, str]:
+        normalized_lot_ids: list[str] = []
+        seen: set[str] = set()
+        for raw_lot_id in lot_ids:
+            cleaned = str(raw_lot_id or "").strip()
+            if not cleaned or cleaned in seen:
+                continue
+            normalized_lot_ids.append(cleaned)
+            seen.add(cleaned)
+        if not normalized_lot_ids:
+            raise ValueError("Select at least one lot to relink the dividend entry.")
+
+        expected_security_id = str(security_id or "").strip()
+        if not expected_security_id:
+            raise ValueError("security_id is required for dividend relinking.")
+
+        with AppContext.write_session() as sess:
+            div_repo = DividendEntryRepository(sess)
+            sec_repo = SecurityRepository(sess)
+            entry = div_repo.get_by_id(entry_id)
+            if entry is None:
+                raise KeyError(f"Dividend entry not found: {entry_id!r}")
+            if str(entry.security_id) != expected_security_id:
+                raise ValueError(
+                    "Selected lots do not belong to the same security as the dividend entry."
+                )
+
+            existing_meta, clean_notes = _extract_ibkr_meta(entry.notes)
+            merged_meta = dict(existing_meta)
+            merged_meta["lot_ids"] = ",".join(normalized_lot_ids)
+            merged_meta["lot_count"] = str(len(normalized_lot_ids))
+
+            normalized_group = (lot_group or "").strip().upper()
+            if normalized_group and normalized_group != "ALL":
+                merged_meta["lot_group"] = normalized_group
+            else:
+                merged_meta.pop("lot_group", None)
+
+            linked_qty = _to_decimal(linked_lot_quantity)
+            if linked_qty is not None and linked_qty > Decimal("0"):
+                merged_meta["linked_lot_quantity"] = _decimal_to_plain_str(linked_qty)
+
+            entry.notes = _append_ibkr_meta(clean_notes, merged_meta)
+            sec = sec_repo.require_by_id(entry.security_id)
+            sess.flush()
+            return {
+                "id": entry.id,
+                "security_id": entry.security_id,
+                "ticker": sec.ticker,
+                "lot_ids": ",".join(normalized_lot_ids),
+            }
 
     @staticmethod
     def add_dividend_entry(
@@ -133,10 +384,16 @@ class DividendService:
                 )
             if normalized_fx_rate is None:
                 if normalized_amount_gbp is None:
-                    raise ValueError(
-                        "Non-GBP dividends require fx_rate_to_gbp or amount_gbp for conversion."
+                    auto_rate, auto_source = _auto_fx_rate_to_gbp(
+                        from_currency=normalized_currency,
+                        dividend_date=dividend_date,
                     )
-                normalized_fx_rate = _q_fx(normalized_amount_gbp / normalized_amount_original)
+                    normalized_fx_rate = auto_rate
+                    normalized_fx_source = normalized_fx_source or auto_source
+                else:
+                    normalized_fx_rate = _q_fx(
+                        normalized_amount_gbp / normalized_amount_original
+                    )
             if normalized_amount_gbp is None:
                 normalized_amount_gbp = _q_money(normalized_amount_original * normalized_fx_rate)
             normalized_fx_source = normalized_fx_source or "manual_conversion"
@@ -186,7 +443,7 @@ class DividendService:
         as_of: date | None = None,
     ) -> dict[str, Any]:
         as_of_date = as_of or date.today()
-        generated_at_utc = datetime.now(timezone.utc).isoformat()
+        generated_at_utc = datetime.now(UTC).isoformat()
 
         with AppContext.read_session() as sess:
             sec_repo = SecurityRepository(sess)
@@ -195,10 +452,130 @@ class DividendService:
             entries = div_repo.list_all()
 
         security_map = {sec.id: sec for sec in securities}
-        security_options = [
-            {"id": sec.id, "ticker": sec.ticker, "name": sec.name}
-            for sec in sorted(securities, key=lambda s: (s.ticker, s.id))
+        portfolio_summary = PortfolioService.get_portfolio_summary(
+            settings=settings,
+            use_live_true_cost=False,
+        )
+
+        active_schemes_by_security: dict[str, set[str]] = {}
+        for sec_summary in portfolio_summary.securities:
+            scheme_types = {
+                ls.lot.scheme_type
+                for ls in sec_summary.active_lots
+                if ls.quantity_remaining > Decimal("0")
+            }
+            if scheme_types:
+                active_schemes_by_security[sec_summary.security.id] = scheme_types
+
+        security_options = []
+        for sec in sorted(securities, key=lambda s: (s.ticker, s.id)):
+            scheme_types = sorted(active_schemes_by_security.get(sec.id, set()))
+            has_isa_lot = "ISA" in scheme_types
+            has_taxable_lot = any(scheme != "ISA" for scheme in scheme_types)
+            security_options.append(
+                {
+                    "id": sec.id,
+                    "ticker": sec.ticker,
+                    "name": sec.name,
+                    "currency": _normalize_currency(sec.currency),
+                    "dividend_reminder_date": (
+                        sec.dividend_reminder_date.isoformat()
+                        if sec.dividend_reminder_date is not None
+                        else ""
+                    ),
+                    "scheme_types": scheme_types,
+                    "has_isa_lot": has_isa_lot,
+                    "has_taxable_lot": has_taxable_lot,
+                }
+            )
+
+        active_lot_options: list[dict[str, str]] = []
+        for sec_summary in sorted(
+            portfolio_summary.securities,
+            key=lambda row: (row.security.ticker, row.security.id),
+        ):
+            sec = sec_summary.security
+            sec_currency = _normalize_currency(sec.currency)
+            for lot_summary in sorted(
+                sec_summary.active_lots,
+                key=lambda row: (row.lot.acquisition_date, row.lot.id),
+            ):
+                if lot_summary.quantity_remaining <= Decimal("0"):
+                    continue
+                lot = lot_summary.lot
+                qty = lot_summary.quantity_remaining
+                active_lot_options.append(
+                    {
+                        "id": lot.id,
+                        "security_id": sec.id,
+                        "ticker": sec.ticker,
+                        "security_name": sec.name,
+                        "scheme_type": lot.scheme_type,
+                        "currency": sec_currency,
+                        "quantity_remaining": _quantity_str(qty),
+                        "acquisition_date": lot.acquisition_date.isoformat(),
+                        "label": (
+                            f"{sec.ticker} | {lot.scheme_type} | "
+                            f"{_quantity_str(qty)} sh | {lot.acquisition_date.isoformat()}"
+                        ),
+                    }
+                )
+
+        currency_options = sorted(
+            {
+                "GBP",
+                "USD",
+                "EUR",
+                *[_normalize_currency(sec.currency) for sec in securities],
+            }
+        )
+
+        unique_schemes = sorted(
+            {
+                scheme
+                for schemes in active_schemes_by_security.values()
+                for scheme in schemes
+            }
+        )
+        has_isa_group = any("ISA" in schemes for schemes in active_schemes_by_security.values())
+        has_taxable_group = any(
+            any(scheme != "ISA" for scheme in schemes)
+            for schemes in active_schemes_by_security.values()
+        )
+        lot_group_options: list[dict[str, str]] = [
+            {
+                "id": "ALL",
+                "label": "All Holdings",
+                "default_tax_treatment": "TAXABLE",
+            }
         ]
+        if has_isa_group:
+            lot_group_options.append(
+                {
+                    "id": "ISA_ONLY",
+                    "label": "ISA Lots",
+                    "default_tax_treatment": "ISA_EXEMPT",
+                }
+            )
+        if has_taxable_group:
+            lot_group_options.append(
+                {
+                    "id": "TAXABLE_ONLY",
+                    "label": "Taxable Lots",
+                    "default_tax_treatment": "TAXABLE",
+                }
+            )
+        for scheme in unique_schemes:
+            label = "ESPP+ Lots" if scheme == "ESPP_PLUS" else f"{scheme} Lots"
+            lot_group_options.append(
+                {
+                    "id": f"SCHEME:{scheme}",
+                    "label": label,
+                    "default_tax_treatment": (
+                        "ISA_EXEMPT" if scheme == "ISA" else "TAXABLE"
+                    ),
+                }
+            )
 
         hide_values = bool(settings and settings.hide_values)
         if hide_values:
@@ -207,6 +584,9 @@ class DividendService:
                 "as_of_date": as_of_date.isoformat(),
                 "hide_values": True,
                 "security_options": security_options,
+                "active_lot_options": active_lot_options,
+                "lot_group_options": lot_group_options,
+                "currency_options": currency_options,
                 "summary": {
                     "trailing_12m_total_gbp": None,
                     "forecast_12m_total_gbp": None,
@@ -215,6 +595,13 @@ class DividendService:
                     "actual_entry_count": None,
                     "forecast_entry_count": None,
                     "all_time_total_gbp": None,
+                    "actual_gross_dividends_gbp": None,
+                    "actual_withholding_tax_gbp": None,
+                    "actual_fees_gbp": None,
+                    "actual_net_paid_gbp": None,
+                    "actual_withholding_drag_pct": None,
+                    "actual_rows_with_ib_detail": None,
+                    "actual_rows_with_withholding": None,
                     "estimated_tax_gbp": None,
                     "estimated_net_dividends_gbp": None,
                     "tax_drag_pct": None,
@@ -247,6 +634,12 @@ class DividendService:
         forecast_entry_total = Decimal("0")
         actual_entry_count = 0
         forecast_entry_count = 0
+        actual_gross_dividends = Decimal("0")
+        actual_withholding_tax = Decimal("0")
+        actual_fees = Decimal("0")
+        actual_net_paid = Decimal("0")
+        actual_rows_with_ib_detail = 0
+        actual_rows_with_withholding = 0
 
         buckets: dict[str, dict[str, Decimal | int]] = {}
         security_buckets: dict[str, dict[str, Decimal | int | str]] = {}
@@ -278,6 +671,28 @@ class DividendService:
             if fx_rate_to_gbp is not None:
                 fx_rate_to_gbp = _q_fx(fx_rate_to_gbp)
 
+            ib_meta, cleaned_notes = _extract_ibkr_meta(entry.notes)
+            lot_ids_raw = str(ib_meta.get("lot_ids") or "").strip()
+            lot_id_values = [
+                lot_id.strip()
+                for lot_id in lot_ids_raw.split(",")
+                if lot_id and lot_id.strip()
+            ]
+            cash_components = _resolve_cash_components(
+                amount_gbp=amount,
+                amount_original=amount_original,
+                fx_rate_to_gbp=fx_rate_to_gbp,
+                ib_meta=ib_meta,
+            )
+            gross_original = cash_components["gross_original"]
+            net_original = cash_components["net_original"]
+            tax_withheld_original = cash_components["tax_withheld_original"]
+            fee_original = cash_components["fee_original"]
+            gross_gbp = cash_components["gross_gbp"]
+            net_gbp = cash_components["net_gbp"]
+            tax_withheld_gbp = cash_components["tax_withheld_gbp"]
+            fee_gbp = cash_components["fee_gbp"]
+
             all_time_total += amount
             if is_taxable:
                 all_time_taxable += amount
@@ -291,6 +706,14 @@ class DividendService:
             if entry.dividend_date <= as_of_date:
                 actual_to_date_total += amount
                 actual_entry_count += 1
+                actual_gross_dividends += gross_gbp
+                actual_withholding_tax += tax_withheld_gbp
+                actual_fees += fee_gbp
+                actual_net_paid += net_gbp
+                if ib_meta:
+                    actual_rows_with_ib_detail += 1
+                if tax_withheld_original > Decimal("0"):
+                    actual_rows_with_withholding += 1
             else:
                 forecast_entry_total += amount
                 forecast_entry_count += 1
@@ -350,12 +773,29 @@ class DividendService:
                     "tax_year": tax_year,
                     "amount_gbp": _money_str(amount),
                     "amount_original_ccy": _money_str(amount_original),
+                    "gross_amount_original_ccy": _money_str(gross_original),
+                    "tax_withheld_original_ccy": _money_str(tax_withheld_original),
+                    "fee_original_ccy": _money_str(fee_original),
+                    "net_amount_original_ccy": _money_str(net_original),
                     "original_currency": original_currency,
                     "fx_rate_to_gbp": str(fx_rate_to_gbp) if fx_rate_to_gbp is not None else None,
                     "fx_rate_source": entry.fx_rate_source,
+                    "gross_amount_gbp": _money_str(gross_gbp),
+                    "tax_withheld_gbp": _money_str(tax_withheld_gbp),
+                    "fee_gbp": _money_str(fee_gbp),
+                    "net_amount_gbp": _money_str(net_gbp),
+                    "quantity": ib_meta.get("quantity"),
+                    "gross_rate_original_ccy": ib_meta.get("gross_rate_original_ccy"),
+                    "ex_date": ib_meta.get("ex_date"),
+                    "ib_code": ib_meta.get("ib_code"),
+                    "lot_group": ib_meta.get("lot_group"),
+                    "lot_ids": lot_id_values,
+                    "lot_link_count": len(lot_id_values),
+                    "has_lot_links": bool(lot_id_values),
+                    "linked_lot_quantity": ib_meta.get("linked_lot_quantity"),
                     "tax_treatment": treatment,
                     "source": entry.source,
-                    "notes": entry.notes,
+                    "notes": cleaned_notes,
                     "is_forecast": entry.dividend_date > as_of_date,
                 }
             )
@@ -381,7 +821,11 @@ class DividendService:
             estimated_tax_total += tax_result.total_dividend_tax
 
             taxable_by_security = taxable_by_security_by_year.get(tax_year, {})
-            if taxable_by_security and taxable > Decimal("0") and tax_result.total_dividend_tax > Decimal("0"):
+            if (
+                taxable_by_security
+                and taxable > Decimal("0")
+                and tax_result.total_dividend_tax > Decimal("0")
+            ):
                 allocated_sum = Decimal("0")
                 ranked = sorted(
                     taxable_by_security.items(),
@@ -428,11 +872,16 @@ class DividendService:
             if all_time_taxable > Decimal("0")
             else Decimal("0.00")
         )
-
-        portfolio_summary = PortfolioService.get_portfolio_summary(
-            settings=settings,
-            use_live_true_cost=False,
+        actual_gross_dividends = _q_money(actual_gross_dividends)
+        actual_withholding_tax = _q_money(actual_withholding_tax)
+        actual_fees = _q_money(actual_fees)
+        actual_net_paid = _q_money(actual_net_paid)
+        actual_withholding_drag_pct = (
+            _q_pct((actual_withholding_tax / actual_gross_dividends) * Decimal("100"))
+            if actual_gross_dividends > Decimal("0")
+            else Decimal("0.00")
         )
+
         active_true_cost_by_security = {
             ss.security.id: _q_money(Decimal(ss.total_true_cost_gbp))
             for ss in portfolio_summary.securities
@@ -516,7 +965,16 @@ class DividendService:
             notes.append("ISA-exempt dividend flow is tracked separately from taxable flow.")
         if allocation_rows:
             notes.append(
-                "Security-level dividend allocation reconciles entry totals to current held capital."
+                "Security-level dividend allocation reconciles entry totals to "
+                "current held capital."
+            )
+        if actual_entry_count > 0 and actual_rows_with_ib_detail == 0:
+            notes.append(
+                "Cash payout stats use gross amount when withholding fields are not provided."
+            )
+        if actual_entry_count > 0 and actual_rows_with_withholding == 0:
+            notes.append(
+                "No withholding tax rows logged yet; add tax withheld to match broker payout slips."
             )
 
         return {
@@ -524,6 +982,9 @@ class DividendService:
             "as_of_date": as_of_date.isoformat(),
             "hide_values": False,
             "security_options": security_options,
+            "active_lot_options": active_lot_options,
+            "lot_group_options": lot_group_options,
+            "currency_options": currency_options,
             "summary": {
                 "trailing_12m_total_gbp": _money_str(trailing_total),
                 "forecast_12m_total_gbp": _money_str(forecast_total),
@@ -534,6 +995,13 @@ class DividendService:
                 "all_time_total_gbp": _money_str(all_time_total),
                 "all_time_taxable_dividends_gbp": _money_str(all_time_taxable),
                 "all_time_isa_exempt_dividends_gbp": _money_str(all_time_isa),
+                "actual_gross_dividends_gbp": _money_str(actual_gross_dividends),
+                "actual_withholding_tax_gbp": _money_str(actual_withholding_tax),
+                "actual_fees_gbp": _money_str(actual_fees),
+                "actual_net_paid_gbp": _money_str(actual_net_paid),
+                "actual_withholding_drag_pct": str(actual_withholding_drag_pct),
+                "actual_rows_with_ib_detail": actual_rows_with_ib_detail,
+                "actual_rows_with_withholding": actual_rows_with_withholding,
                 "estimated_tax_gbp": _money_str(estimated_tax_total),
                 "estimated_net_dividends_gbp": _money_str(estimated_net_total),
                 "tax_drag_pct": str(tax_drag_pct),
@@ -549,8 +1017,10 @@ class DividendService:
                     "allocated_net_dividends_gbp": _money_str(allocated_net_dividends),
                 },
                 "notes": [
-                    "Allocated estimated tax uses tax-year taxable-dividend proportions by security.",
-                    "Capital at risk after dividends = max(0, active true cost - allocated net dividends).",
+                    "Allocated estimated tax uses tax-year taxable-dividend "
+                    "proportions by security.",
+                    "Capital at risk after dividends = max(0, active true cost "
+                    "- allocated net dividends).",
                 ],
             },
             "notes": notes,

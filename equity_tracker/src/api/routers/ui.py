@@ -34,6 +34,7 @@ is not open, the locked.html page is returned instead.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date as date_type
@@ -42,7 +43,7 @@ from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -55,8 +56,19 @@ from ...core.tax_engine import (
     tax_year_for_date,
 )
 from ...core.tax_engine.context import TaxContext
-from ...db.models import Lot, LotDisposal, PriceTickerSnapshot, Transaction
-from ...db.repository import LotRepository, PriceRepository, SecurityRepository
+from ...db.models import (
+    Lot,
+    LotDisposal,
+    PortfolioGuardrailStateEvent,
+    PriceTickerSnapshot,
+    Transaction,
+)
+from ...db.repository import (
+    AuditRepository,
+    LotRepository,
+    PriceRepository,
+    SecurityRepository,
+)
 from ...services.fx_service import FxService
 from ...services.ibkr_price_service import IbkrPriceService
 from ...services.capital_stack_service import CapitalStackService
@@ -138,6 +150,7 @@ _GUARDRAIL_DRAG_ESCALATION_PCT_OF_INCOME = Decimal("10")
 _GUARDRAIL_FORFEITURE_IMMINENCE_DAYS = 183
 _GUARDRAIL_CONCENTRATION_TOP_PCT_DEFAULT = Decimal("50")
 _GUARDRAIL_CONCENTRATION_EMPLOYER_PCT_DEFAULT = Decimal("40")
+_GUARDRAIL_DISMISS_MAX_DAYS = 30
 
 
 @dataclass
@@ -826,6 +839,94 @@ def _build_behavioral_guardrails(
     return warnings
 
 
+def _guardrail_condition_hash(guardrail: dict[str, str]) -> str:
+    payload = "|".join(
+        [
+            str(guardrail.get("id") or ""),
+            str(guardrail.get("severity") or ""),
+            str(guardrail.get("title") or ""),
+            str(guardrail.get("message") or ""),
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _annotate_guardrails_with_hash(
+    guardrails: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    annotated: list[dict[str, str]] = []
+    for guardrail in guardrails:
+        enriched = dict(guardrail)
+        enriched["condition_hash"] = _guardrail_condition_hash(guardrail)
+        annotated.append(enriched)
+    return annotated
+
+
+def _latest_guardrail_state_by_id(
+    guardrail_ids: set[str],
+) -> dict[str, PortfolioGuardrailStateEvent]:
+    if not guardrail_ids:
+        return {}
+    with AppContext.read_session() as sess:
+        rows = list(
+            sess.scalars(
+                select(PortfolioGuardrailStateEvent)
+                .where(PortfolioGuardrailStateEvent.guardrail_id.in_(guardrail_ids))
+                .order_by(
+                    PortfolioGuardrailStateEvent.guardrail_id.asc(),
+                    PortfolioGuardrailStateEvent.changed_at.desc(),
+                )
+            ).all()
+        )
+    latest: dict[str, PortfolioGuardrailStateEvent] = {}
+    for row in rows:
+        if row.guardrail_id in latest:
+            continue
+        latest[row.guardrail_id] = row
+    return latest
+
+
+def _guardrail_is_suppressed(
+    guardrail: dict[str, str],
+    state_row: PortfolioGuardrailStateEvent | None,
+    *,
+    now_utc: datetime,
+) -> bool:
+    if state_row is None or state_row.state != "DISMISSED":
+        return False
+    if state_row.condition_hash and state_row.condition_hash != guardrail.get("condition_hash"):
+        return False
+    if state_row.dismiss_until is None:
+        return True
+    dismiss_until_utc = _to_utc_aware(state_row.dismiss_until)
+    return dismiss_until_utc > now_utc
+
+
+def _apply_guardrail_visibility_persistence(
+    guardrails: list[dict[str, str]],
+    *,
+    now_utc: datetime,
+) -> tuple[list[dict[str, str]], int]:
+    annotated = _annotate_guardrails_with_hash(guardrails)
+    latest_rows = _latest_guardrail_state_by_id(
+        {
+            str(guardrail.get("id") or "").strip()
+            for guardrail in annotated
+            if str(guardrail.get("id") or "").strip()
+        }
+    )
+    visible: list[dict[str, str]] = []
+    hidden_count = 0
+    for guardrail in annotated:
+        guardrail_id = str(guardrail.get("id") or "").strip()
+        state_row = latest_rows.get(guardrail_id)
+        if _guardrail_is_suppressed(guardrail, state_row, now_utc=now_utc):
+            hidden_count += 1
+            continue
+        visible.append(guardrail)
+    return visible, hidden_count
+
+
 def _price_row_gbp_value(price_row) -> Decimal | None:
     """Return a GBP Decimal value from a PriceHistory row."""
     raw = price_row.close_price_gbp or price_row.close_price_original_ccy
@@ -1226,6 +1327,7 @@ def _portfolio_valuation_basis(summary) -> dict[str, object]:
         "stale_price_count": stale_price_count,
         "missing_price_count": missing_price_count,
         "fx_required_count": fx_required_count,
+        "fx_as_of_count": fx_as_of_count,
         "fx_as_of": summary.fx_as_of,
         "fx_is_stale": summary.fx_is_stale,
         "stale_fx_count": stale_fx_count,
@@ -2586,7 +2688,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             )
         except Exception:
             portfolio_net_gain_plus_net_dividends = None
-    behavioral_guardrails = _build_behavioral_guardrails(
+    behavioral_guardrails_raw = _build_behavioral_guardrails(
         summary=summary,
         settings=settings,
         position_rows_by_security=position_rows_by_security,
@@ -2594,7 +2696,16 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         sellable_employment_tax_gbp=portfolio_sellable_employment_tax,
         forfeitable_capital_gbp=exposure_snapshot.get("forfeitable_capital_gbp"),
     )
-    today = _utc_now().date()
+    now_utc = _utc_now()
+    behavioral_guardrails, behavioral_guardrails_hidden_count = (
+        _apply_guardrail_visibility_persistence(
+            behavioral_guardrails_raw,
+            now_utc=now_utc,
+        )
+    )
+    behavioral_guardrails_total_count = len(behavioral_guardrails_raw)
+    behavioral_guardrails_active_count = len(behavioral_guardrails)
+    today = now_utc.date()
     return templates.TemplateResponse(
         request,
         "portfolio.html",
@@ -2641,9 +2752,81 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
             "refresh_diag": refresh_diag,
             "behavioral_guardrails": behavioral_guardrails,
+            "behavioral_guardrails_active_count": behavioral_guardrails_active_count,
+            "behavioral_guardrails_hidden_count": behavioral_guardrails_hidden_count,
+            "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
+            "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
             "today": today,
             **_flash(msg),
         },
+    )
+
+
+@router.post("/portfolio/guardrails/dismiss", include_in_schema=False)
+async def dismiss_portfolio_guardrail(request: Request) -> JSONResponse:
+    if _is_locked():
+        return JSONResponse(
+            {"ok": False, "message": "Database is locked."},
+            status_code=423,
+        )
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(
+            {"ok": False, "message": "Invalid JSON payload."},
+            status_code=400,
+        )
+
+    guardrail_id = str(payload.get("guardrail_id") or "").strip()
+    condition_hash = str(payload.get("condition_hash") or "").strip()
+    if not guardrail_id or not condition_hash:
+        return JSONResponse(
+            {
+                "ok": False,
+                "message": "guardrail_id and condition_hash are required.",
+            },
+            status_code=400,
+        )
+
+    now_utc = _utc_now()
+    dismiss_until = now_utc + timedelta(days=_GUARDRAIL_DISMISS_MAX_DAYS)
+    with AppContext.write_session() as sess:
+        event = PortfolioGuardrailStateEvent(
+            guardrail_id=guardrail_id,
+            state="DISMISSED",
+            condition_hash=condition_hash,
+            dismiss_until=dismiss_until,
+            source="portfolio_ui",
+            notes=(
+                "Dismissed from portfolio page; auto-reactivates on condition-hash "
+                "change or expiry."
+            ),
+        )
+        sess.add(event)
+        sess.flush()
+        AuditRepository(sess).log_insert(
+            table_name="portfolio_guardrail_state_events",
+            record_id=event.id,
+            new_values={
+                "guardrail_id": event.guardrail_id,
+                "state": event.state,
+                "condition_hash": event.condition_hash,
+                "dismiss_until": event.dismiss_until.isoformat()
+                if event.dismiss_until
+                else None,
+                "source": event.source,
+            },
+            notes="Portfolio guardrail lifecycle update.",
+        )
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "guardrail_id": guardrail_id,
+            "dismiss_until": dismiss_until.isoformat(),
+            "policy": "until_condition_change_or_expiry",
+            "max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
+        }
     )
 
 
@@ -2971,6 +3154,7 @@ async def add_security_submit(
     isin: str = Form(""),
     exchange: str = Form(""),
     units_precision: int = Form(0),
+    dividend_reminder_date: str = Form(""),
     catalog_id: str = Form(""),
     is_manual_override: str = Form("false"),
 ) -> HTMLResponse:
@@ -2981,6 +3165,12 @@ async def add_security_submit(
     _is_manual  = is_manual_override.strip().lower() == "true"
 
     try:
+        reminder_date_raw = (dividend_reminder_date or "").strip()
+        reminder_date = (
+            date_type.fromisoformat(reminder_date_raw)
+            if reminder_date_raw
+            else None
+        )
         PortfolioService.add_security(
             ticker=ticker.strip().upper(),
             name=name.strip(),
@@ -2988,6 +3178,7 @@ async def add_security_submit(
             isin=isin.strip() or None,
             exchange=exchange.strip() or None,
             units_precision=units_precision,
+            dividend_reminder_date=reminder_date,
             catalog_id=_catalog_id,
             is_manual_override=_is_manual,
         )
@@ -3011,6 +3202,7 @@ async def add_security_submit(
                     "isin": isin,
                     "exchange": exchange,
                     "units_precision": units_precision,
+                    "dividend_reminder_date": dividend_reminder_date,
                     "catalog_id": catalog_id,
                     "is_manual_override": _is_manual,
                 },
@@ -4559,6 +4751,17 @@ def _settings_completeness_payload(
     )
     checks.append(
         {
+            "label": "ESPP Monthly Reminder Day",
+            "ok": bool(
+                settings is not None
+                and settings.monthly_espp_input_reminder_day >= 1
+                and settings.monthly_espp_input_reminder_day <= 28
+            ),
+            "detail": "Calendar monthly reminder day is valid when enabled.",
+        }
+    )
+    checks.append(
+        {
             "label": "Concentration Guardrails",
             "ok": bool(
                 settings is not None
@@ -4661,6 +4864,8 @@ async def settings_submit(
     default_tax_year: str = Form(...),
     price_stale_after_days: str = Form("1"),
     fx_stale_after_minutes: str = Form("10"),
+    monthly_espp_input_reminder_enabled: str = Form(""),
+    monthly_espp_input_reminder_day: str = Form("1"),
     show_exhausted_lots: str = Form(""),
     hide_values: str = Form(""),
 ) -> HTMLResponse:
@@ -4681,6 +4886,7 @@ async def settings_submit(
         plan: int | None = int(default_student_loan_plan) if default_student_loan_plan else None
         price_stale_days = int(price_stale_after_days or "1")
         fx_stale_minutes = int(fx_stale_after_minutes or "10")
+        monthly_reminder_day = int(monthly_espp_input_reminder_day or "1")
     except (ValueError, InvalidOperation) as exc:
         return _render_settings_page(
             request,
@@ -4693,6 +4899,13 @@ async def settings_submit(
             request,
             db_path,
             error="Staleness thresholds must be zero or greater.",
+            status_code=422,
+        )
+    if monthly_reminder_day < 1 or monthly_reminder_day > 28:
+        return _render_settings_page(
+            request,
+            db_path,
+            error="Monthly ESPP reminder day must be between 1 and 28.",
             status_code=422,
         )
     if income_dependency_pct < Decimal("0") or income_dependency_pct > Decimal("100"):
@@ -4729,6 +4942,10 @@ async def settings_submit(
     settings.default_tax_year = default_tax_year
     settings.price_stale_after_days = price_stale_days
     settings.fx_stale_after_minutes = fx_stale_minutes
+    settings.monthly_espp_input_reminder_enabled = (
+        monthly_espp_input_reminder_enabled.lower() in ("on", "true", "1", "yes")
+    )
+    settings.monthly_espp_input_reminder_day = monthly_reminder_day
     settings.show_exhausted_lots = show_exhausted_lots.lower() in ("on", "true", "1", "yes")
     settings.hide_values = hide_values.lower() in ("on", "true", "1", "yes")
     settings.save()

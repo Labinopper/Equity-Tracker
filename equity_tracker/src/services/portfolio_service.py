@@ -1549,6 +1549,7 @@ class PortfolioService:
         isin: str | None = None,
         exchange: str | None = None,
         units_precision: int = 0,
+        dividend_reminder_date: date | None = None,
         catalog_id: str | None = None,
         is_manual_override: bool = False,
     ) -> Security:
@@ -1562,6 +1563,8 @@ class PortfolioService:
             isin                : Optional ISIN identifier.
             exchange            : Optional exchange code (e.g. "NASDAQ").
             units_precision     : Decimal places for quantity (0 = whole shares).
+            dividend_reminder_date: Optional annual reminder anchor date for
+                                    dividend check/logging workflows.
             catalog_id          : FK to security_catalog.id (Phase S).
             is_manual_override  : True if user bypassed the catalogue lookup.
 
@@ -1622,6 +1625,7 @@ class PortfolioService:
                 isin=isin_clean,
                 exchange=exchange_clean,
                 units_precision=units_precision,
+                dividend_reminder_date=dividend_reminder_date,
                 catalog_id=catalog_id,
                 is_manual_override=is_manual_override,
             )
@@ -1639,11 +1643,32 @@ class PortfolioService:
                     "isin": str(isin_clean),
                     "exchange": str(exchange_clean),
                     "units_precision": str(units_precision),
+                    "dividend_reminder_date": str(dividend_reminder_date),
                     "catalog_id": str(catalog_id),
                     "is_manual_override": str(is_manual_override),
                 },
             )
 
+        return security
+
+    @staticmethod
+    def set_security_dividend_reminder_date(
+        *,
+        security_id: str,
+        dividend_reminder_date: date | None,
+    ) -> Security:
+        """
+        Update (or clear) the annual dividend reminder date for one security.
+        """
+        with AppContext.write_session() as sess:
+            repo = SecurityRepository(sess)
+            audit = AuditRepository(sess)
+            security = repo.require_by_id(security_id)
+            repo.update(
+                security,
+                dividend_reminder_date=dividend_reminder_date,
+                audit=audit,
+            )
         return security
 
     @staticmethod

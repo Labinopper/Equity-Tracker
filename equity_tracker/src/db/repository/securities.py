@@ -4,11 +4,15 @@ SecurityRepository — CRUD for the securities table.
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Security, _utcnow
 from .audit import AuditRepository
+
+_UNSET = object()
 
 
 class SecurityRepository:
@@ -50,6 +54,7 @@ class SecurityRepository:
         isin: str | None = None,
         exchange: str | None = None,
         units_precision: int | None = None,
+        dividend_reminder_date: date | None | object = _UNSET,
         audit: AuditRepository | None = None,
     ) -> Security:
         """
@@ -87,6 +92,14 @@ class SecurityRepository:
             old_values["units_precision"] = str(security.units_precision)
             new_values["units_precision"] = str(units_precision)
             security.units_precision = units_precision
+
+        if (
+            dividend_reminder_date is not _UNSET
+            and dividend_reminder_date != security.dividend_reminder_date
+        ):
+            old_values["dividend_reminder_date"] = str(security.dividend_reminder_date)
+            new_values["dividend_reminder_date"] = str(dividend_reminder_date)
+            security.dividend_reminder_date = dividend_reminder_date
 
         if new_values:
             security.updated_at = _utcnow()

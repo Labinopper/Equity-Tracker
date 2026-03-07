@@ -109,6 +109,36 @@ def test_dividend_entry_supports_native_currency_with_fx_provenance(app_context)
     assert payload["allocation"]["rows"][0]["ticker"] == "DIVUSD"
 
 
+def test_dividend_entry_auto_resolves_fx_when_non_gbp_rate_missing(app_context, monkeypatch):
+    sec = _add_security("DIVAUTO")
+
+    def _fake_auto_fx(*, from_currency: str, dividend_date: date):
+        assert from_currency == "USD"
+        assert dividend_date == date(2026, 2, 12)
+        return Decimal("0.800000"), "auto_test:2026-02-12"
+
+    monkeypatch.setattr(
+        "src.services.dividend_service._auto_fx_rate_to_gbp",
+        _fake_auto_fx,
+    )
+
+    created = DividendService.add_dividend_entry(
+        security_id=sec.id,
+        dividend_date=date(2026, 2, 12),
+        amount_original_ccy=Decimal("10.00"),
+        original_currency="USD",
+        tax_treatment="TAXABLE",
+    )
+    assert created["amount_gbp"] == "8.00"
+    assert created["fx_rate_to_gbp"] == "0.800000"
+    assert created["fx_rate_source"] == "auto_test:2026-02-12"
+
+    payload = DividendService.get_summary(as_of=date(2026, 2, 24))
+    entry = payload["entries"][0]
+    assert entry["fx_rate_to_gbp"] == "0.800000"
+    assert entry["fx_rate_source"] == "auto_test:2026-02-12"
+
+
 def test_net_dividend_timeline_returns_cumulative_portfolio_and_security_maps(app_context):
     sec_a = _add_security("DIVTL1")
     sec_b = _add_security("DIVTL2")

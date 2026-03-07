@@ -95,6 +95,7 @@ async def add_security(
             isin=req.isin,
             exchange=req.exchange,
             units_precision=req.units_precision,
+            dividend_reminder_date=req.dividend_reminder_date,
             catalog_id=req.catalog_id,
             is_manual_override=req.is_manual_override,
         )

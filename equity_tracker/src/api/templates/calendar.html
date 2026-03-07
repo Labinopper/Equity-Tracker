@@ -6,7 +6,7 @@
 <div class="page-title">
   <div>
     <h1>Calendar</h1>
-    <p class="muted">Upcoming vest, forfeiture, sell-plan tranche, and tax-year events with value-at-stake context.</p>
+    <p class="muted">Upcoming vest, forfeiture, reminder, guardrail, sell-plan tranche, and tax-year events with value-at-stake context.</p>
   </div>
   <div class="page-actions">
     <form method="get" action="/calendar" class="filter-bar inline-form">
@@ -75,6 +75,16 @@
     {% endif %}
   </div>
   <div class="stat">
+    <span class="stat__label">{{ countdowns.next_reminder.label }}</span>
+    {% if countdowns.next_reminder.days_until is not none %}
+    <span class="stat__value">{{ countdowns.next_reminder.days_until }}d</span>
+    <span class="stat-caption">{{ countdowns.next_reminder.event_date }}</span>
+    {% else %}
+    <span class="stat__value muted">-</span>
+    <span class="stat-caption">No upcoming reminders</span>
+    {% endif %}
+  </div>
+  <div class="stat">
     <span class="stat__label">{{ countdowns.next_tax_year_end.label }}</span>
     <span class="stat__value">{{ countdowns.next_tax_year_end.days_until }}d</span>
     <span class="stat-caption">{{ countdowns.next_tax_year_end.event_date }}</span>
@@ -129,14 +139,14 @@
             <td class="num">
               {% if event.value_at_stake_gbp is not none %}
               &pound;{{ event.value_at_stake_gbp|money }}
-              {% elif event.event_type in ['VEST_DATE', 'FORFEITURE_END'] %}
+              {% elif event.event_type in ['VEST_DATE', 'FORFEITURE_END', 'ESPP_TRANSFER_GUARDRAIL', 'ESPP_PLUS_LONG_HOLD_GUARDRAIL'] %}
               <span class="muted">Unavailable</span>
               {% else %}
               <span class="muted">-</span>
               {% endif %}
             </td>
             <td>
-              {% if event.value_at_stake_gbp is not none or event.event_type in ['VEST_DATE', 'FORFEITURE_END'] %}
+              {% if event.value_at_stake_gbp is not none or event.event_type in ['VEST_DATE', 'FORFEITURE_END', 'ESPP_TRANSFER_GUARDRAIL', 'ESPP_PLUS_LONG_HOLD_GUARDRAIL'] %}
                 {% if event.price_as_of %}
                 <div class="valuation-pill {% if event.price_is_stale %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
                   Price {{ event.price_as_of }}{% if event.price_is_stale %} (stale){% endif %}
@@ -156,8 +166,8 @@
               {% endif %}
             </td>
             <td>
-              {% if event.event_type == 'SELL_TRANCHE' and event.deep_link %}
-              <a href="{{ event.deep_link }}">Open Sell Plan</a>
+              {% if event.deep_link %}
+              <a href="{{ event.deep_link }}">{{ event.action_label or 'Open' }}</a>
               {% else %}
               <span class="muted">-</span>
               {% endif %}

@@ -2,7 +2,12 @@
 {% block title %}Add Lot - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>Add Lot</h1></div>
+<div class="page-title">
+  <h1>Add Lot</h1>
+  <div class="page-actions">
+    <a href="/dividends#add-dividend" class="btn btn-secondary btn-sm">+ Dividend</a>
+  </div>
+</div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>

@@ -13,7 +13,7 @@ No writes are performed.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from ..settings import AppSettings
@@ -28,13 +28,30 @@ _EVENT_FORFEITURE_END = "FORFEITURE_END"
 _EVENT_SELL_TRANCHE = "SELL_TRANCHE"
 _EVENT_TAX_YEAR_END = "TAX_YEAR_END"
 _EVENT_TAX_YEAR_START = "TAX_YEAR_START"
+_EVENT_DIVIDEND_REMINDER = "DIVIDEND_REMINDER"
+_EVENT_MONTHLY_INPUT_REMINDER = "MONTHLY_INPUT_REMINDER"
+_EVENT_ESPP_TRANSFER_GUARDRAIL = "ESPP_TRANSFER_GUARDRAIL"
+_EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL = "ESPP_PLUS_LONG_HOLD_GUARDRAIL"
+
+_EVENT_REMINDERS = frozenset(
+    {
+        _EVENT_DIVIDEND_REMINDER,
+        _EVENT_MONTHLY_INPUT_REMINDER,
+        _EVENT_ESPP_TRANSFER_GUARDRAIL,
+        _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL,
+    }
+)
 
 _EVENT_PRIORITY: dict[str, int] = {
     _EVENT_FORFEITURE_END: 0,
-    _EVENT_VEST_DATE: 1,
-    _EVENT_SELL_TRANCHE: 2,
-    _EVENT_TAX_YEAR_END: 3,
-    _EVENT_TAX_YEAR_START: 4,
+    _EVENT_ESPP_TRANSFER_GUARDRAIL: 1,
+    _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL: 2,
+    _EVENT_VEST_DATE: 3,
+    _EVENT_DIVIDEND_REMINDER: 4,
+    _EVENT_MONTHLY_INPUT_REMINDER: 5,
+    _EVENT_SELL_TRANCHE: 6,
+    _EVENT_TAX_YEAR_END: 7,
+    _EVENT_TAX_YEAR_START: 8,
 }
 
 
@@ -63,6 +80,46 @@ def _next_tax_year_end(as_of: date) -> date:
     return date(as_of.year, 4, 5)
 
 
+def _next_annual_occurrence(*, anchor: date, as_of: date) -> date:
+    try:
+        candidate = date(as_of.year, anchor.month, anchor.day)
+    except ValueError:
+        candidate = date(as_of.year, 2, 28)
+    if candidate < as_of:
+        try:
+            candidate = date(as_of.year + 1, anchor.month, anchor.day)
+        except ValueError:
+            candidate = date(as_of.year + 1, 2, 28)
+    return candidate
+
+
+def _next_monthly_occurrence(*, day: int, as_of: date) -> date:
+    clamped_day = max(1, min(28, day))
+    candidate = date(as_of.year, as_of.month, clamped_day)
+    if candidate >= as_of:
+        return candidate
+    if as_of.month == 12:
+        return date(as_of.year + 1, 1, clamped_day)
+    return date(as_of.year, as_of.month + 1, clamped_day)
+
+
+def _add_years_safe(value: date, years: int) -> date:
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        # 29 Feb -> 28 Feb on non-leap years.
+        return value.replace(month=2, day=28, year=value.year + years)
+
+
+def _quantity_str(value: Decimal) -> str:
+    if value == value.to_integral_value(rounding=ROUND_FLOOR):
+        return str(int(value))
+    text = format(value.normalize(), "f")
+    if "." in text:
+        return text.rstrip("0").rstrip(".")
+    return text
+
+
 def _countdown_from_event(*, label: str, event: dict[str, Any] | None) -> dict[str, Any]:
     if event is None:
         return {
@@ -84,6 +141,7 @@ def _event_type_counts(events: list[dict[str, Any]]) -> dict[str, int]:
     forfeiture = 0
     sell_tranches = 0
     tax = 0
+    reminders = 0
     for event in events:
         event_type = event["event_type"]
         if event_type == _EVENT_VEST_DATE:
@@ -94,12 +152,15 @@ def _event_type_counts(events: list[dict[str, Any]]) -> dict[str, int]:
             sell_tranches += 1
         elif event_type in (_EVENT_TAX_YEAR_END, _EVENT_TAX_YEAR_START):
             tax += 1
+        elif event_type in _EVENT_REMINDERS:
+            reminders += 1
     return {
         "total": len(events),
         "vest_dates": vest,
         "forfeiture_windows": forfeiture,
         "sell_tranches": sell_tranches,
         "tax_markers": tax,
+        "reminders": reminders,
     }
 
 
@@ -202,7 +263,7 @@ class CalendarService:
                         "ticker": ticker,
                         "scheme_type": lot.scheme_type,
                         "lot_id": lot.id,
-                        "quantity": str(lot_summary.quantity_remaining),
+                        "quantity": _quantity_str(lot_summary.quantity_remaining),
                         "value_at_stake_gbp": _money_str(lot_summary.market_value_gbp),
                         "has_live_value": has_live_value,
                         "price_as_of": price_as_of,
@@ -210,11 +271,189 @@ class CalendarService:
                         "fx_as_of": fx_as_of,
                         "fx_is_stale": fx_is_stale,
                         "fx_basis_note": fx_basis_note,
+                        "deep_link": None,
+                        "action_label": None,
+                    }
+                )
+
+            dividend_anchor = security_summary.security.dividend_reminder_date
+            if dividend_anchor is not None:
+                dividend_event_date = _next_annual_occurrence(
+                    anchor=dividend_anchor,
+                    as_of=as_of_date,
+                )
+                if _in_horizon(dividend_event_date, as_of=as_of_date, horizon_days=horizon_days):
+                    events.append(
+                        {
+                            "event_id": (
+                                f"security:{security_id}:"
+                                f"{_EVENT_DIVIDEND_REMINDER.lower()}:"
+                                f"{dividend_event_date.isoformat()}"
+                            ),
+                            "event_type": _EVENT_DIVIDEND_REMINDER,
+                            "event_date": dividend_event_date.isoformat(),
+                            "days_until": _days_until(dividend_event_date, as_of_date),
+                            "title": f"{ticker}: Dividend reminder",
+                            "subtitle": "Check broker payout and log via Dividends.",
+                            "security_id": security_id,
+                            "ticker": ticker,
+                            "scheme_type": None,
+                            "lot_id": None,
+                            "quantity": None,
+                            "value_at_stake_gbp": None,
+                            "has_live_value": False,
+                            "price_as_of": None,
+                            "price_is_stale": False,
+                            "fx_as_of": None,
+                            "fx_is_stale": False,
+                            "fx_basis_note": None,
+                            "deep_link": "/dividends#add-dividend",
+                            "action_label": "Open Dividends",
+                        }
+                    )
+
+            espp_total_qty = sum(
+                (
+                    lot_summary.quantity_remaining
+                    for lot_summary in security_summary.active_lots
+                    if lot_summary.lot.scheme_type == "ESPP"
+                ),
+                Decimal("0"),
+            )
+            espp_whole_qty = espp_total_qty.to_integral_value(rounding=ROUND_FLOOR)
+            if espp_whole_qty > Decimal("1"):
+                espp_value = (
+                    security_summary.current_price_gbp * espp_whole_qty
+                    if security_summary.current_price_gbp is not None
+                    else None
+                )
+                has_live_value = espp_value is not None
+                if not has_live_value:
+                    unpriced_value_events += 1
+                events.append(
+                    {
+                        "event_id": f"security:{security_id}:{_EVENT_ESPP_TRANSFER_GUARDRAIL.lower()}",
+                        "event_type": _EVENT_ESPP_TRANSFER_GUARDRAIL,
+                        "event_date": as_of_date.isoformat(),
+                        "days_until": 0,
+                        "title": f"{ticker}: ESPP transfer guardrail",
+                        "subtitle": (
+                            "More than 1 whole ESPP share available; "
+                            "review transfer to BROKERAGE."
+                        ),
+                        "security_id": security_id,
+                        "ticker": ticker,
+                        "scheme_type": "ESPP",
+                        "lot_id": None,
+                        "quantity": _quantity_str(espp_whole_qty),
+                        "value_at_stake_gbp": _money_str(espp_value),
+                        "has_live_value": has_live_value,
+                        "price_as_of": price_as_of,
+                        "price_is_stale": price_is_stale,
+                        "fx_as_of": fx_as_of,
+                        "fx_is_stale": fx_is_stale,
+                        "fx_basis_note": fx_basis_note,
+                        "deep_link": "/portfolio/transfer-lot",
+                        "action_label": "Open Transfer",
+                    }
+                )
+
+            aged_espp_plus_qty = Decimal("0")
+            aged_lot_count = 0
+            first_five_year_date: date | None = None
+            for lot_summary in security_summary.active_lots:
+                if lot_summary.lot.scheme_type != "ESPP_PLUS":
+                    continue
+                five_year_date = _add_years_safe(lot_summary.lot.acquisition_date, 5)
+                if as_of_date < five_year_date:
+                    continue
+                aged_espp_plus_qty += lot_summary.quantity_remaining
+                aged_lot_count += 1
+                if first_five_year_date is None or five_year_date < first_five_year_date:
+                    first_five_year_date = five_year_date
+
+            if aged_espp_plus_qty > Decimal("0"):
+                aged_espp_plus_value = (
+                    security_summary.current_price_gbp * aged_espp_plus_qty
+                    if security_summary.current_price_gbp is not None
+                    else None
+                )
+                has_live_value = aged_espp_plus_value is not None
+                if not has_live_value:
+                    unpriced_value_events += 1
+                age_note = (
+                    f" (first crossed 5y on {first_five_year_date.isoformat()})."
+                    if first_five_year_date is not None
+                    else "."
+                )
+                events.append(
+                    {
+                        "event_id": (
+                            f"security:{security_id}:"
+                            f"{_EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL.lower()}"
+                        ),
+                        "event_type": _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL,
+                        "event_date": as_of_date.isoformat(),
+                        "days_until": 0,
+                        "title": f"{ticker}: ESPP+ 5-year guardrail",
+                        "subtitle": (
+                            f"{aged_lot_count} ESPP+ lot(s) are older than 5 years; "
+                            f"review transfer to BROKERAGE{age_note}"
+                        ),
+                        "security_id": security_id,
+                        "ticker": ticker,
+                        "scheme_type": "ESPP_PLUS",
+                        "lot_id": None,
+                        "quantity": _quantity_str(aged_espp_plus_qty),
+                        "value_at_stake_gbp": _money_str(aged_espp_plus_value),
+                        "has_live_value": has_live_value,
+                        "price_as_of": price_as_of,
+                        "price_is_stale": price_is_stale,
+                        "fx_as_of": fx_as_of,
+                        "fx_is_stale": fx_is_stale,
+                        "fx_basis_note": fx_basis_note,
+                        "deep_link": "/portfolio/transfer-lot",
+                        "action_label": "Open Transfer",
                     }
                 )
 
         tax_year_end = _next_tax_year_end(as_of_date)
         tax_year_start = tax_year_end + timedelta(days=1)
+
+        if settings is not None and bool(
+            getattr(settings, "monthly_espp_input_reminder_enabled", False)
+        ):
+            reminder_day = int(getattr(settings, "monthly_espp_input_reminder_day", 1))
+            monthly_event_date = _next_monthly_occurrence(day=reminder_day, as_of=as_of_date)
+            if _in_horizon(monthly_event_date, as_of=as_of_date, horizon_days=horizon_days):
+                events.append(
+                    {
+                        "event_id": (
+                            "global:"
+                            f"{_EVENT_MONTHLY_INPUT_REMINDER.lower()}:"
+                            f"{monthly_event_date.isoformat()}"
+                        ),
+                        "event_type": _EVENT_MONTHLY_INPUT_REMINDER,
+                        "event_date": monthly_event_date.isoformat(),
+                        "days_until": _days_until(monthly_event_date, as_of_date),
+                        "title": "Monthly ESPP/ESPP+ input reminder",
+                        "subtitle": "Record this month's ESPP and ESPP+ purchases.",
+                        "security_id": None,
+                        "ticker": None,
+                        "scheme_type": "ESPP/ESPP_PLUS",
+                        "lot_id": None,
+                        "quantity": None,
+                        "value_at_stake_gbp": None,
+                        "has_live_value": False,
+                        "price_as_of": None,
+                        "price_is_stale": False,
+                        "fx_as_of": None,
+                        "fx_is_stale": False,
+                        "fx_basis_note": None,
+                        "deep_link": "/portfolio/add-lot",
+                        "action_label": "Open Add Lot",
+                    }
+                )
 
         if _in_horizon(tax_year_end, as_of=as_of_date, horizon_days=horizon_days):
             events.append(
@@ -237,6 +476,8 @@ class CalendarService:
                     "fx_as_of": None,
                     "fx_is_stale": False,
                     "fx_basis_note": None,
+                    "deep_link": None,
+                    "action_label": None,
                 }
             )
 
@@ -261,6 +502,8 @@ class CalendarService:
                     "fx_as_of": None,
                     "fx_is_stale": False,
                     "fx_basis_note": None,
+                    "deep_link": None,
+                    "action_label": None,
                 }
             )
 
@@ -272,6 +515,8 @@ class CalendarService:
                 event.setdefault("fx_as_of", None)
                 event.setdefault("fx_is_stale", False)
                 event.setdefault("fx_basis_note", None)
+                event.setdefault("deep_link", None)
+                event.setdefault("action_label", None)
                 events.append(event)
 
         events.sort(
@@ -295,6 +540,10 @@ class CalendarService:
             (event for event in events if event["event_type"] == _EVENT_SELL_TRANCHE),
             None,
         )
+        next_reminder = next(
+            (event for event in events if event["event_type"] in _EVENT_REMINDERS),
+            None,
+        )
 
         countdowns = {
             "next_vest": _countdown_from_event(label="Vest Date", event=next_vest),
@@ -305,6 +554,10 @@ class CalendarService:
             "next_sell_tranche": _countdown_from_event(
                 label="Sell Tranche",
                 event=next_sell_tranche,
+            ),
+            "next_reminder": _countdown_from_event(
+                label="Reminder",
+                event=next_reminder,
             ),
             "next_tax_year_end": {
                 "label": "UK Tax-Year End",

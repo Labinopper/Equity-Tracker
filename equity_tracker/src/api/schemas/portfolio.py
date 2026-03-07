@@ -39,6 +39,7 @@ class SecuritySchema(BaseModel):
     isin: str | None = None
     exchange: str | None = None
     units_precision: int
+    dividend_reminder_date: date | None = None
 
     @classmethod
     def from_orm(cls, sec: Security) -> "SecuritySchema":
@@ -50,6 +51,7 @@ class SecuritySchema(BaseModel):
             isin=sec.isin,
             exchange=sec.exchange,
             units_precision=sec.units_precision,
+            dividend_reminder_date=sec.dividend_reminder_date,
         )
 
 
@@ -280,6 +282,12 @@ class AddSecurityRequest(BaseModel):
     isin: str | None = Field(None, max_length=12)
     exchange: str | None = Field(None, max_length=20)
     units_precision: int = Field(0, ge=0, le=10)
+    dividend_reminder_date: date | None = Field(
+        None,
+        description=(
+            "Optional annual reminder anchor date for dividend check/input."
+        ),
+    )
     catalog_id: str | None = Field(
         None, description="UUID of the security_catalog entry (Phase S)."
     )
@@ -312,6 +320,7 @@ class AddSecurityRequest(BaseModel):
                 "isin": "US0378331005",
                 "exchange": "NASDAQ",
                 "units_precision": 0,
+                "dividend_reminder_date": "2026-03-10",
             }
         }
     }

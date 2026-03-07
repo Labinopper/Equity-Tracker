@@ -52,6 +52,8 @@ class AppSettings:
     hide_values: bool
     price_stale_after_days: int
     fx_stale_after_minutes: int
+    monthly_espp_input_reminder_enabled: bool
+    monthly_espp_input_reminder_day: int
 
     def __init__(self) -> None:
         # Income defaults — all zero so the user must enter their own figures
@@ -70,6 +72,8 @@ class AppSettings:
         self.hide_values = False
         self.price_stale_after_days = 1
         self.fx_stale_after_minutes = 10
+        self.monthly_espp_input_reminder_enabled = False
+        self.monthly_espp_input_reminder_day = 1
 
         # Internal — set by load(), not serialized under this name
         self._settings_path: Path = Path("settings.json")
@@ -128,6 +132,8 @@ class AppSettings:
             "hide_values": self.hide_values,
             "price_stale_after_days": self.price_stale_after_days,
             "fx_stale_after_minutes": self.fx_stale_after_minutes,
+            "monthly_espp_input_reminder_enabled": self.monthly_espp_input_reminder_enabled,
+            "monthly_espp_input_reminder_day": self.monthly_espp_input_reminder_day,
         }
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -184,6 +190,17 @@ class AppSettings:
             self.price_stale_after_days = max(0, _safe_int(data["price_stale_after_days"], 1))
         if "fx_stale_after_minutes" in data:
             self.fx_stale_after_minutes = max(0, _safe_int(data["fx_stale_after_minutes"], 10))
+        if "monthly_espp_input_reminder_enabled" in data:
+            self.monthly_espp_input_reminder_enabled = bool(
+                data["monthly_espp_input_reminder_enabled"]
+            )
+        if "monthly_espp_input_reminder_day" in data:
+            raw_day = _safe_int(data["monthly_espp_input_reminder_day"], 1)
+            if raw_day < 1:
+                raw_day = 1
+            if raw_day > 28:
+                raw_day = 28
+            self.monthly_espp_input_reminder_day = raw_day
 
 
 # ── Module helpers ───────────────────────────────────────────────────────────

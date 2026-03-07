@@ -7,15 +7,17 @@ import pytest
 
 from src.app_context import AppContext
 from src.db.repository.prices import PriceRepository
+from src.settings import AppSettings
 from src.services.calendar_service import CalendarService
 from src.services.portfolio_service import PortfolioService
 
 
-def _add_security(ticker: str):
+def _add_security(ticker: str, *, dividend_reminder_date: date | None = None):
     return PortfolioService.add_security(
         ticker=ticker,
         name=f"{ticker} Calendar Co",
         currency="GBP",
+        dividend_reminder_date=dividend_reminder_date,
         is_manual_override=True,
     )
 
@@ -130,6 +132,92 @@ def test_calendar_payload_flags_unpriced_events(app_context):
     assert vest_events[0]["value_at_stake_gbp"] is None
     assert vest_events[0]["price_as_of"] is None
     assert any("value-at-stake is unavailable" in note for note in payload["notes"])
+
+
+def test_calendar_payload_includes_dividend_and_monthly_reminders(app_context):
+    as_of = date(2026, 2, 24)
+    _add_security("CALDIV", dividend_reminder_date=date(2025, 3, 5))
+
+    settings = AppSettings()
+    settings.monthly_espp_input_reminder_enabled = True
+    settings.monthly_espp_input_reminder_day = 15
+
+    payload = CalendarService.get_events_payload(
+        as_of=as_of,
+        horizon_days=60,
+        settings=settings,
+    )
+
+    dividend_events = [
+        e for e in payload["events"] if e["event_type"] == "DIVIDEND_REMINDER"
+    ]
+    monthly_events = [
+        e for e in payload["events"] if e["event_type"] == "MONTHLY_INPUT_REMINDER"
+    ]
+
+    assert len(dividend_events) == 1
+    assert dividend_events[0]["ticker"] == "CALDIV"
+    assert dividend_events[0]["event_date"] == "2026-03-05"
+    assert dividend_events[0]["deep_link"] == "/dividends#add-dividend"
+
+    assert len(monthly_events) == 1
+    assert monthly_events[0]["event_date"] == "2026-03-15"
+    assert monthly_events[0]["deep_link"] == "/portfolio/add-lot"
+
+    assert payload["countdowns"]["next_reminder"]["event_date"] == "2026-03-05"
+    assert payload["event_counts"]["reminders"] >= 2
+
+
+def test_calendar_payload_includes_espp_transfer_guardrail_events(app_context):
+    as_of = date(2026, 2, 24)
+    sec = _add_security("CALESPPGR")
+    PortfolioService.add_lot(
+        security_id=sec.id,
+        scheme_type="ESPP",
+        acquisition_date=as_of - timedelta(days=10),
+        quantity=Decimal("2.40"),
+        acquisition_price_gbp=Decimal("8.00"),
+        true_cost_per_share_gbp=Decimal("8.00"),
+    )
+    _add_price(sec.id, as_of, "11.00")
+
+    payload = CalendarService.get_events_payload(as_of=as_of, horizon_days=30)
+    guardrails = [
+        e for e in payload["events"] if e["event_type"] == "ESPP_TRANSFER_GUARDRAIL"
+    ]
+
+    assert len(guardrails) == 1
+    assert guardrails[0]["ticker"] == "CALESPPGR"
+    assert guardrails[0]["quantity"] == "2"
+    assert guardrails[0]["value_at_stake_gbp"] == "22.00"
+    assert guardrails[0]["deep_link"] == "/portfolio/transfer-lot"
+
+
+def test_calendar_payload_includes_espp_plus_five_year_guardrail_events(app_context):
+    as_of = date(2026, 2, 24)
+    sec = _add_security("CALES5Y")
+    PortfolioService.add_lot(
+        security_id=sec.id,
+        scheme_type="ESPP_PLUS",
+        acquisition_date=date(2020, 2, 20),
+        quantity=Decimal("3"),
+        acquisition_price_gbp=Decimal("9.00"),
+        true_cost_per_share_gbp=Decimal("7.00"),
+    )
+    _add_price(sec.id, as_of, "12.00")
+
+    payload = CalendarService.get_events_payload(as_of=as_of, horizon_days=30)
+    guardrails = [
+        e
+        for e in payload["events"]
+        if e["event_type"] == "ESPP_PLUS_LONG_HOLD_GUARDRAIL"
+    ]
+
+    assert len(guardrails) == 1
+    assert guardrails[0]["ticker"] == "CALES5Y"
+    assert guardrails[0]["quantity"] == "3"
+    assert guardrails[0]["value_at_stake_gbp"] == "36.00"
+    assert guardrails[0]["deep_link"] == "/portfolio/transfer-lot"
 
 
 @pytest.mark.parametrize("horizon_days", [0, 1461])

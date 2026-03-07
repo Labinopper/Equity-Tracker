@@ -688,21 +688,34 @@ tr:hover td { background: var(--bg-hover); }
   background: var(--bg-card-alt);
 }
 
-.portfolio-position-table th:first-child,
-.portfolio-position-table td:first-child {
+.portfolio-position-table .pin-left {
   position: sticky;
-  left: 0;
   z-index: 2;
   background: var(--bg-card);
 }
 
-.portfolio-position-table thead th:first-child {
-  z-index: 4;
+.portfolio-position-table thead .pin-left {
+  z-index: 5;
   background: var(--bg-card-alt);
 }
 
-.portfolio-position-table tbody tr:hover td:first-child {
+.portfolio-position-table tbody tr:hover .pin-left {
   background: var(--bg-hover);
+}
+
+.portfolio-position-table .pin-left-date {
+  left: 0;
+  min-width: 6.5rem;
+}
+
+.portfolio-position-table .pin-left-scheme {
+  left: 6.5rem;
+  min-width: 7.25rem;
+}
+
+.portfolio-position-table .pin-left-status {
+  left: 13.75rem;
+  min-width: 10.75rem;
 }
 
 .position-scheme-cell {
@@ -741,6 +754,43 @@ tr:hover td { background: var(--bg-hover); }
   border-left: 1px solid var(--border);
   background: rgba(61, 120, 240, 0.05);
   position: relative;
+}
+
+.portfolio-position-table .decision-pin {
+  position: sticky;
+  z-index: 2;
+  box-shadow: -1px 0 0 var(--border);
+}
+
+.portfolio-position-table tbody .decision-pin {
+  background: var(--bg-card);
+}
+
+.portfolio-position-table tbody .decision-zone.decision-pin {
+  background: rgba(61, 120, 240, 0.08);
+}
+
+.portfolio-position-table thead .decision-pin {
+  z-index: 5;
+  background: var(--bg-card-alt);
+}
+
+.portfolio-position-table tbody tr:hover .decision-pin {
+  background: var(--bg-hover);
+}
+
+.portfolio-position-table tbody tr:hover .decision-zone.decision-pin {
+  background: rgba(61, 120, 240, 0.14);
+}
+
+.portfolio-position-table .decision-pin-secondary {
+  right: 0;
+  min-width: 8.8rem;
+}
+
+.portfolio-position-table .decision-pin-primary {
+  right: 8.8rem;
+  min-width: 10rem;
 }
 
 .portfolio-position-table .decision-zone-head,
@@ -1099,6 +1149,13 @@ tr:hover td.loss {
   font-weight: 700;
 }
 
+.stats-band-subtitle {
+  margin: -0.18rem 0 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
 .stats-band {
   margin-bottom: 1rem;
 }
@@ -1116,8 +1173,21 @@ tr:hover td.loss {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-muted);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.28rem;
   font-weight: 700;
+}
+
+.valuation-basis-strip__meta {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+  margin-bottom: 0.45rem;
+}
+
+.valuation-basis-strip__meta a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.14rem;
 }
 
 .valuation-basis-strip__items {
@@ -1155,6 +1225,12 @@ tr:hover td.loss {
   border-color: rgba(0, 209, 140, 0.38);
   color: var(--gain);
   background: rgba(0, 209, 140, 0.1);
+}
+
+.valuation-pill--neutral {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: rgba(120, 140, 160, 0.12);
 }
 
 /* -- Forms ---------------------------------------------- */
@@ -1524,6 +1600,41 @@ tr:hover td.loss {
 
 .page-title h1 { margin: 0; }
 
+.guardrail-count-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  color: var(--text-heading);
+  background: var(--bg-card-alt);
+  text-decoration: none;
+}
+
+.guardrail-count-pill strong {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.guardrail-count-pill__meta {
+  color: var(--text-muted);
+  font-size: 0.69rem;
+}
+
+.guardrail-count-pill--warning {
+  border-color: rgba(240, 160, 48, 0.42);
+  background: rgba(240, 160, 48, 0.12);
+  color: var(--warning);
+}
+
+.guardrail-count-pill--ok {
+  border-color: rgba(0, 209, 140, 0.35);
+  background: rgba(0, 209, 140, 0.08);
+  color: var(--gain);
+}
+
 .analytics-focus-row {
   display: flex;
   flex-wrap: wrap;
@@ -1619,6 +1730,91 @@ tr:hover td.loss {
 }
 
 .inline-form { margin: 0; }
+
+.dividends-page-title {
+  margin-bottom: 1rem;
+}
+
+.dividends-add-shell {
+  padding: 0.85rem 1.1rem 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.dividends-add-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.dividends-ib-paste {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card-alt);
+  padding: 0.65rem 0.75rem;
+}
+
+.dividends-ib-paste label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dividends-ib-paste__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dividends-ib-paste__row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.dividends-form-grid,
+.dividends-cash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.65rem 0.9rem;
+}
+
+.dividends-cash-grid {
+  border-top: 1px dashed var(--border);
+  padding-top: 0.7rem;
+}
+
+.dividends-derived {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card-alt);
+  padding: 0.26rem 0.65rem;
+  width: fit-content;
+}
+
+.dividends-derived strong {
+  font-family: var(--font-mono);
+  color: var(--text-heading);
+  font-size: 0.86rem;
+}
+
+.dividends-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
 
 .refresh-countdown-chip {
   display: inline-flex;
@@ -2441,6 +2637,7 @@ tr:hover td.loss {
   .security-meta { gap: 0.75rem; }
   .refresh-diagnostics { margin-top: 0; }
   .page-title { align-items: flex-start; }
+  .guardrail-count-pill { margin-top: 0.15rem; }
   .page-actions { width: 100%; }
   .portfolio-view-controls__body { padding: 0.75rem 0.85rem 0.9rem; }
   .portfolio-view-controls__row { align-items: flex-start; }
@@ -2464,6 +2661,15 @@ tr:hover td.loss {
   .topbar__divider { display: none; }
   .topbar__brand { font-size: 0.85rem; }
   .stats .stat { min-width: 100%; }
+  .dividends-ib-paste__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dividends-derived {
+    width: 100%;
+    justify-content: space-between;
+    border-radius: var(--radius);
+  }
   .topbar__tab { padding: 0 0.45rem; font-size: 0.73rem; }
   .subnav__link { padding: 0 0.5rem; font-size: 0.72rem; }
   .alert-center-pill {

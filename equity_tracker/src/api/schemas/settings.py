@@ -29,6 +29,8 @@ class SettingsSchema(BaseModel):
     hide_values: bool
     price_stale_after_days: int
     fx_stale_after_minutes: int
+    monthly_espp_input_reminder_enabled: bool
+    monthly_espp_input_reminder_day: int
 
     @classmethod
     def from_app_settings(cls, s) -> "SettingsSchema":
@@ -46,6 +48,8 @@ class SettingsSchema(BaseModel):
             hide_values=s.hide_values,
             price_stale_after_days=s.price_stale_after_days,
             fx_stale_after_minutes=s.fx_stale_after_minutes,
+            monthly_espp_input_reminder_enabled=s.monthly_espp_input_reminder_enabled,
+            monthly_espp_input_reminder_day=s.monthly_espp_input_reminder_day,
         )
 
 
@@ -99,6 +103,20 @@ class UpdateSettingsRequest(BaseModel):
     fx_stale_after_minutes: int = Field(
         10, ge=0, description="FX staleness threshold in minutes for dashboard warnings."
     )
+    monthly_espp_input_reminder_enabled: bool = Field(
+        False,
+        description=(
+            "Enable a monthly calendar reminder to input ESPP/ESPP+ purchases."
+        ),
+    )
+    monthly_espp_input_reminder_day: int = Field(
+        1,
+        ge=1,
+        le=28,
+        description=(
+            "Day of month for ESPP/ESPP+ input reminder (1-28)."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -116,6 +134,8 @@ class UpdateSettingsRequest(BaseModel):
                 "hide_values": False,
                 "price_stale_after_days": 1,
                 "fx_stale_after_minutes": 10,
+                "monthly_espp_input_reminder_enabled": False,
+                "monthly_espp_input_reminder_day": 1,
             }
         }
     }

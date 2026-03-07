@@ -94,6 +94,8 @@ async def update_settings(
     settings.hide_values = req.hide_values
     settings.price_stale_after_days = req.price_stale_after_days
     settings.fx_stale_after_minutes = req.fx_stale_after_minutes
+    settings.monthly_espp_input_reminder_enabled = req.monthly_espp_input_reminder_enabled
+    settings.monthly_espp_input_reminder_day = req.monthly_espp_input_reminder_day
 
     settings.save()
     return SettingsSchema.from_app_settings(settings)

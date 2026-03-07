@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -617,7 +618,7 @@ def test_portfolio_shows_est_net_proceeds_reason_when_price_missing(client):
     assert "Est. Net Proceeds unavailable: no live price available." in home.text
 
 
-def test_portfolio_page_renders_qol_view_controls(client):
+def test_portfolio_page_hides_view_controls_and_collapses_model_scope_by_default(client):
     sec_id = _add_security(client, ticker="UIQOLCTRL")
     _add_lot_via_api(client, sec_id, quantity="5", price="10.00")
 
@@ -633,12 +634,15 @@ def test_portfolio_page_renders_qol_view_controls(client):
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "Portfolio View Controls" in home.text
-    assert "Quick Filters" in home.text
-    assert "Sort Decision Rows" in home.text
-    assert "Focus Mode (Compact Decision-First View)" in home.text
-    assert "portfolio-view-help" in home.text
-    assert "portfolio.view_prefs.v1" in home.text
+    assert "Portfolio View Controls" not in home.text
+    assert "Quick Filters" not in home.text
+    assert "Sort Decision Rows" not in home.text
+    assert "Focus Mode (Compact Decision-First View)" not in home.text
+    assert "Model Scope" in home.text
+    assert re.search(
+        r"<details(?![^>]*\bopen\b)[^>]*>\s*<summary class=\"card__header\">\s*<h2 class=\"card__title\">Model Scope",
+        home.text,
+    )
 
 
 def test_portfolio_headline_layout_includes_basis_strip_and_decision_trace_chips(client):
@@ -661,9 +665,52 @@ def test_portfolio_headline_layout_includes_basis_strip_and_decision_trace_chips
     assert "Price as of" in home.text
     assert "FX as of" in home.text
     assert "Actionable Today" in home.text
-    assert "Hypothetical and Context" in home.text
+    assert "Risk and Context" in home.text
+    assert "Cost Basis Context" in home.text
     assert "Formula" in home.text
     assert "Trace" in home.text
+
+
+def test_portfolio_guardrail_dismiss_persists_server_side(client):
+    sec_id = _add_security(client, ticker="UIGRDIS")
+    _add_lot_via_api(client, sec_id, quantity="1", price="10.00")
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date.today(),
+            close_price_original_ccy="12.00",
+            close_price_gbp="12.00",
+            currency="GBP",
+            source="test-ui",
+        )
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "Top-holding concentration breach" in home.text
+
+    match = re.search(
+        r'data-guardrail-id="concentration_top_holding"[^>]*data-guardrail-hash="([^"]+)"',
+        home.text,
+    )
+    assert match is not None
+    condition_hash = match.group(1)
+
+    dismiss = client.post(
+        "/portfolio/guardrails/dismiss",
+        json={
+            "guardrail_id": "concentration_top_holding",
+            "condition_hash": condition_hash,
+        },
+    )
+    assert dismiss.status_code == 200, dismiss.text
+    payload = dismiss.json()
+    assert payload["ok"] is True
+    assert payload["guardrail_id"] == "concentration_top_holding"
+
+    refreshed = client.get("/")
+    assert refreshed.status_code == 200
+    assert "Top-holding concentration breach" not in refreshed.text
 
 
 def test_portfolio_shows_locked_est_net_reason_for_pre_vest_rsu(client):

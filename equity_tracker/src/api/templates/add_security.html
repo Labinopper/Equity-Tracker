@@ -143,6 +143,13 @@
       </p>
     </div>
 
+    <div class="form-field">
+      <label for="dividend_reminder_date">Dividend Reminder Date (optional)</label>
+      <input id="dividend_reminder_date" name="dividend_reminder_date" type="date"
+             value="{{ prev.dividend_reminder_date if prev else '' }}">
+      <span class="form-hint">Used for annual Calendar reminders to check and log dividend payments.</span>
+    </div>
+
     <div class="form-actions">
       <button type="submit" class="btn btn-primary" id="submit-btn" disabled>Add Security</button>
       <a href="/" class="btn btn-secondary">Cancel</a>

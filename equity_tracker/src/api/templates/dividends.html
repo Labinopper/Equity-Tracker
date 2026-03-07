@@ -2,10 +2,14 @@
 {% block title %}Dividends - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title">
+<div class="page-title dividends-page-title">
   <div>
     <h1>Dividends</h1>
-    <p class="muted">Track dividend flow, estimated tax drag, and net return context in GBP.</p>
+    <p class="muted">Track what is paid out vs withheld, while keeping tax-report totals and allocation context.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/portfolio/add-lot" class="btn btn-secondary btn-sm">+ Lot</a>
   </div>
 </div>
 
@@ -15,17 +19,319 @@
 
 <p class="muted">As of {{ dividends.as_of_date }}. Generated {{ dividends.generated_at_utc }}.</p>
 
-<div class="card">
+<div class="card card--highlight" id="add-dividend">
   <div class="card__header">
     <h2 class="card__title">Add Dividend</h2>
   </div>
-  <form method="post" action="/dividends/add" class="inline-form">
-    <label for="security_id">Security</label>
-    <select id="security_id" name="security_id" required>
+  <div class="dividends-add-shell">
+    <p class="muted">
+      Recommended: keep gross, withheld tax, and net payout if available from IB. If you only care about cash-in, enter net payout and leave tax blank.
+    </p>
+
+    <form method="post" action="/dividends/add" class="inline-form dividends-add-form">
+      <div class="dividends-ib-paste">
+        <label for="ib_row">IB Statement Row (Optional)</label>
+        <div class="dividends-ib-paste__row">
+          <input
+            id="ib_row"
+            type="text"
+            name="ib_row"
+            placeholder="IBM[TAB]2026-02-09[TAB]2026-02-10[TAB]2026-03-10..."
+            value="{{ prev.ib_row if prev else '' }}"
+          >
+          <button type="button" class="btn btn-secondary btn-sm" id="parse-ib-row-btn">Parse IB Row</button>
+        </div>
+        <span class="form-hint">Paste one stock row from the IB dividend export (tab-separated columns).</span>
+      </div>
+
+      <div class="dividends-form-grid">
+        <div class="form-field">
+          <label for="lot_ids">Lots</label>
+          <select id="lot_ids" name="lot_ids" multiple size="6">
+            {% set selected_lot_ids = (prev.lot_ids if prev and prev.lot_ids else []) %}
+            {% for lot in dividends.active_lot_options %}
+            <option
+              value="{{ lot.id }}"
+              data-security-id="{{ lot.security_id }}"
+              data-currency="{{ lot.currency }}"
+              data-scheme-type="{{ lot.scheme_type }}"
+              data-quantity="{{ lot.quantity_remaining }}"
+              {{ 'selected' if lot.id in selected_lot_ids }}
+            >
+              {{ lot.label }}
+            </option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Select one or more active lots (same security). Security/currency/group autofill from this choice.</span>
+          <span class="form-hint" id="lot-selection-status"></span>
+        </div>
+
+        <div class="form-field">
+          <label for="lot_group">Lot Group</label>
+          <select id="lot_group" name="lot_group">
+            {% set selected_group = prev.lot_group if prev else 'ALL' %}
+            {% for group in dividends.lot_group_options %}
+            <option
+              value="{{ group.id }}"
+              data-default-tax="{{ group.default_tax_treatment }}"
+              {{ 'selected' if selected_group == group.id }}
+            >
+              {{ group.label }}
+            </option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Autofilled from lots. You can adjust manually if needed.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="security_id">Security *</label>
+          <select id="security_id" name="security_id" required>
+            <option value="">Select security</option>
+            {% for security in dividends.security_options %}
+            <option
+              value="{{ security.id }}"
+              data-ticker="{{ security.ticker }}"
+              data-currency="{{ security.currency }}"
+              data-reminder-date="{{ security.dividend_reminder_date or '' }}"
+              data-scheme-types="{{ security.scheme_types | join(',') }}"
+              data-has-isa-lot="{{ 'true' if security.has_isa_lot else 'false' }}"
+              data-has-taxable-lot="{{ 'true' if security.has_taxable_lot else 'false' }}"
+              {{ 'selected' if prev and prev.security_id == security.id }}
+            >
+              {{ security.ticker }} - {{ security.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="dividend_date">Pay Date (Stored as Dividend Date) *</label>
+          <input
+            id="dividend_date"
+            type="date"
+            name="dividend_date"
+            required
+            value="{{ prev.dividend_date if prev else dividends.as_of_date }}"
+          >
+        </div>
+
+        <div class="form-field">
+          <label for="ex_date">Ex Date</label>
+          <input
+            id="ex_date"
+            type="date"
+            name="ex_date"
+            value="{{ prev.ex_date if prev else '' }}"
+          >
+        </div>
+
+        <div class="form-field">
+          <label for="original_currency">Currency *</label>
+          <select id="original_currency" name="original_currency" required>
+            {% set selected_ccy = (prev.original_currency if prev else 'GBP') %}
+            {% for ccy in dividends.currency_options %}
+            <option value="{{ ccy }}" {{ 'selected' if selected_ccy == ccy }}>{{ ccy }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="fx_rate_to_gbp">FX Rate to GBP</label>
+          <input
+            id="fx_rate_to_gbp"
+            type="text"
+            name="fx_rate_to_gbp"
+            inputmode="decimal"
+            placeholder="0.790000"
+            value="{{ prev.fx_rate_to_gbp if prev else '' }}"
+          >
+          <span class="form-hint">Required for non-GBP entries unless GBP amount is supplied directly.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="fx_rate_source">FX Source</label>
+          <input
+            id="fx_rate_source"
+            type="text"
+            name="fx_rate_source"
+            value="{{ prev.fx_rate_source if prev else 'manual' }}"
+          >
+        </div>
+
+        <div class="form-field">
+          <label for="tax_treatment">Tax Treatment</label>
+          <select id="tax_treatment" name="tax_treatment" required>
+            {% for treatment in tax_treatments %}
+            <option
+              value="{{ treatment }}"
+              {{ 'selected' if (prev and prev.tax_treatment == treatment) or (not prev and treatment == 'TAXABLE') }}
+            >
+              {{ treatment }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="source">Source</label>
+          <input
+            id="source"
+            type="text"
+            name="source"
+            value="{{ prev.source if prev else 'ibkr_manual' }}"
+          >
+        </div>
+
+        <div class="form-field">
+          <label for="cash_container">Post Cash To</label>
+          <select id="cash_container" name="cash_container">
+            {% set selected_cash_container = (prev.cash_container if prev else 'BROKER') %}
+            {% for container in cash_containers %}
+            <option value="{{ container }}" {{ 'selected' if selected_cash_container == container }}>
+              {% if container == 'NONE' %}Do Not Post{% else %}{{ container }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Defaults to BROKER. Change to ISA/BANK or Do Not Post.</span>
+        </div>
+      </div>
+
+      <div class="dividends-cash-grid">
+        <div class="form-field">
+          <label for="net_amount_original_ccy">Net Paid (Native)</label>
+          <input
+            id="net_amount_original_ccy"
+            type="text"
+            name="net_amount_original_ccy"
+            inputmode="decimal"
+            placeholder="2.86"
+            value="{{ prev.net_amount_original_ccy if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="tax_withheld_original_ccy">Tax Withheld (Native)</label>
+          <input
+            id="tax_withheld_original_ccy"
+            type="text"
+            name="tax_withheld_original_ccy"
+            inputmode="decimal"
+            placeholder="0.50"
+            value="{{ prev.tax_withheld_original_ccy if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="fee_original_ccy">Fee (Native)</label>
+          <input
+            id="fee_original_ccy"
+            type="text"
+            name="fee_original_ccy"
+            inputmode="decimal"
+            placeholder="0.00"
+            value="{{ prev.fee_original_ccy if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="gross_amount_original_ccy">Gross Amount (Native)</label>
+          <input
+            id="gross_amount_original_ccy"
+            type="text"
+            name="gross_amount_original_ccy"
+            inputmode="decimal"
+            placeholder="3.36"
+            value="{{ prev.gross_amount_original_ccy if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="amount_gbp">Amount (GBP)</label>
+          <input
+            id="amount_gbp"
+            type="text"
+            name="amount_gbp"
+            inputmode="decimal"
+            placeholder="2.10"
+            value="{{ prev.amount_gbp if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="quantity">Quantity</label>
+          <input
+            id="quantity"
+            type="text"
+            name="quantity"
+            inputmode="decimal"
+            placeholder="2"
+            value="{{ prev.quantity if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="gross_rate_original_ccy">Gross Rate / Share</label>
+          <input
+            id="gross_rate_original_ccy"
+            type="text"
+            name="gross_rate_original_ccy"
+            inputmode="decimal"
+            placeholder="1.68"
+            value="{{ prev.gross_rate_original_ccy if prev else '' }}"
+          >
+        </div>
+        <div class="form-field">
+          <label for="ib_code">IB Code</label>
+          <input
+            id="ib_code"
+            type="text"
+            name="ib_code"
+            placeholder="Po"
+            value="{{ prev.ib_code if prev else '' }}"
+          >
+        </div>
+      </div>
+
+      <div class="dividends-derived">
+        <span class="muted">Resolved gross amount (native):</span>
+        <strong id="resolved-gross-value">-</strong>
+      </div>
+
+      <div class="form-field">
+        <label for="notes">Notes</label>
+        <input
+          id="notes"
+          type="text"
+          name="notes"
+          value="{{ prev.notes if prev else '' }}"
+        >
+      </div>
+
+      <input type="hidden" name="amount_original_ccy" value="{{ prev.amount_original_ccy if prev else '' }}">
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Entry</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Maintenance Tools Hidden</h2>
+  </div>
+  <p class="muted">
+    One-time historical maintenance actions (cash backfill and dividend relink) are intentionally hidden from the UI to reduce accidental rewrites of past records.
+  </p>
+  <span class="form-hint">The backend endpoints remain available for controlled recovery/migration work if needed later.</span>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Security Dividend Reminder</h2>
+  </div>
+  <form method="post" action="/dividends/reminder" class="inline-form">
+    <label for="reminder_security_id">Security</label>
+    <select id="reminder_security_id" name="security_id" required>
       <option value="">Select security</option>
       {% for security in dividends.security_options %}
       <option
         value="{{ security.id }}"
+        data-reminder-date="{{ security.dividend_reminder_date or '' }}"
         {{ 'selected' if prev and prev.security_id == security.id }}
       >
         {{ security.ticker }} - {{ security.name }}
@@ -33,82 +339,17 @@
       {% endfor %}
     </select>
 
-    <label for="dividend_date">Dividend Date</label>
+    <label for="reminder_dividend_reminder_date">Reminder Date</label>
     <input
-      id="dividend_date"
+      id="reminder_dividend_reminder_date"
       type="date"
-      name="dividend_date"
-      required
-      value="{{ prev.dividend_date if prev else dividends.as_of_date }}"
+      name="dividend_reminder_date"
+      value="{{ prev.dividend_reminder_date if prev else '' }}"
     >
 
-    <label for="amount_original_ccy">Amount (Native)</label>
-    <input
-      id="amount_original_ccy"
-      type="text"
-      name="amount_original_ccy"
-      inputmode="decimal"
-      placeholder="0.00"
-      required
-      value="{{ prev.amount_original_ccy if prev else '' }}"
-    >
-
-    <label for="original_currency">Currency</label>
-    <select id="original_currency" name="original_currency" required>
-      {% set selected_ccy = (prev.original_currency if prev else 'GBP') %}
-      <option value="GBP" {{ 'selected' if selected_ccy == 'GBP' }}>GBP</option>
-      <option value="USD" {{ 'selected' if selected_ccy == 'USD' }}>USD</option>
-      <option value="EUR" {{ 'selected' if selected_ccy == 'EUR' }}>EUR</option>
-    </select>
-
-    <label for="fx_rate_to_gbp">FX Rate to GBP</label>
-    <input
-      id="fx_rate_to_gbp"
-      type="text"
-      name="fx_rate_to_gbp"
-      inputmode="decimal"
-      placeholder="1.000000"
-      value="{{ prev.fx_rate_to_gbp if prev else '' }}"
-    >
-
-    <label for="fx_rate_source">FX Source</label>
-    <input
-      id="fx_rate_source"
-      type="text"
-      name="fx_rate_source"
-      value="{{ prev.fx_rate_source if prev else 'manual' }}"
-    >
-
-    <label for="tax_treatment">Tax Treatment</label>
-    <select id="tax_treatment" name="tax_treatment" required>
-      {% for treatment in tax_treatments %}
-      <option
-        value="{{ treatment }}"
-        {{ 'selected' if (prev and prev.tax_treatment == treatment) or (not prev and treatment == 'TAXABLE') }}
-      >
-        {{ treatment }}
-      </option>
-      {% endfor %}
-    </select>
-
-    <label for="source">Source</label>
-    <input
-      id="source"
-      type="text"
-      name="source"
-      value="{{ prev.source if prev else 'manual' }}"
-    >
-
-    <label for="notes">Notes</label>
-    <input
-      id="notes"
-      type="text"
-      name="notes"
-      value="{{ prev.notes if prev else '' }}"
-    >
-
-    <button type="submit" class="btn btn-primary">Add Entry</button>
+    <button type="submit" class="btn btn-secondary btn-sm">Save Reminder</button>
   </form>
+  <span class="form-hint">Leave date blank and save to clear.</span>
 </div>
 
 {% if dividends.hide_values %}
@@ -119,10 +360,21 @@
   <p class="muted">Dividend values are hidden while privacy mode is enabled.</p>
 </div>
 {% else %}
-<div class="stats">
+<div class="dividends-stats-grid">
   <div class="stat stat--accent">
-    <span class="stat__label">Trailing 12M Dividends</span>
-    <span class="stat__value">&pound;{{ dividends.summary.trailing_12m_total_gbp|money }}</span>
+    <span class="stat__label">Actual Net Paid Out</span>
+    <span class="stat__value">&pound;{{ dividends.summary.actual_net_paid_gbp|money }}</span>
+    <span class="stat-caption">{{ dividends.summary.actual_entry_count or 0 }} entry(ies) through {{ dividends.as_of_date }}.</span>
+  </div>
+  <div class="stat stat--warning">
+    <span class="stat__label">Withholding Tax Logged</span>
+    <span class="stat__value">&pound;{{ dividends.summary.actual_withholding_tax_gbp|money }}</span>
+    <span class="stat-caption">{{ dividends.summary.actual_withholding_drag_pct }}% of logged gross.</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Actual Gross Dividends</span>
+    <span class="stat__value">&pound;{{ dividends.summary.actual_gross_dividends_gbp|money }}</span>
+    <span class="stat-caption">Fees logged: &pound;{{ dividends.summary.actual_fees_gbp|money }}.</span>
   </div>
   <div class="stat">
     <span class="stat__label">Forecast 12M Dividends</span>
@@ -135,10 +387,6 @@
   <div class="stat">
     <span class="stat__label">Estimated Net Dividends</span>
     <span class="stat__value">&pound;{{ dividends.summary.estimated_net_dividends_gbp|money }}</span>
-  </div>
-  <div class="stat">
-    <span class="stat__label">Tax Drag</span>
-    <span class="stat__value">{{ dividends.summary.tax_drag_pct }}%</span>
   </div>
 </div>
 
@@ -269,14 +517,20 @@
     <table>
       <thead>
         <tr>
-          <th>Date</th>
+          <th>Pay Date</th>
+          <th>Ex Date</th>
           <th>Tax Year</th>
           <th>Security</th>
+          <th>Group</th>
+          <th>Lot Link</th>
           <th>Treatment</th>
-          <th class="num">Amount (Native)</th>
+          <th class="num">Gross (Native)</th>
+          <th class="num">Tax (Native)</th>
+          <th class="num">Net (Native)</th>
           <th>Currency</th>
           <th class="num">FX to GBP</th>
-          <th class="num">Amount (GBP)</th>
+          <th class="num">Gross (GBP)</th>
+          <th class="num">Net (GBP)</th>
           <th>Source</th>
           <th>Notes</th>
         </tr>
@@ -291,20 +545,26 @@
               <div class="muted">Forecast</div>
               {% endif %}
             </td>
+            <td>{{ row.ex_date or '-' }}</td>
             <td>{{ row.tax_year }}</td>
             <td>{{ row.ticker }}</td>
+            <td>{{ row.lot_group or '-' }}</td>
+            <td>{% if row.has_lot_links %}{{ row.lot_link_count }} lot(s){% else %}-{% endif %}</td>
             <td>{{ row.tax_treatment }}</td>
-            <td class="num">{{ row.amount_original_ccy|money }}</td>
+            <td class="num">{{ row.gross_amount_original_ccy|money }}</td>
+            <td class="num">{{ row.tax_withheld_original_ccy|money }}</td>
+            <td class="num">{{ row.net_amount_original_ccy|money }}</td>
             <td>{{ row.original_currency }}</td>
             <td class="num">{{ row.fx_rate_to_gbp or '-' }}</td>
-            <td class="num">&pound;{{ row.amount_gbp|money }}</td>
+            <td class="num">&pound;{{ row.gross_amount_gbp|money }}</td>
+            <td class="num">&pound;{{ row.net_amount_gbp|money }}</td>
             <td>{{ row.source or '-' }}</td>
             <td>{{ row.notes or '-' }}</td>
           </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="10" class="muted">No dividend entries recorded yet.</td>
+            <td colspan="16" class="muted">No dividend entries recorded yet.</td>
           </tr>
         {% endif %}
       </tbody>
@@ -331,4 +591,313 @@
   </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  var form = document.querySelector(".dividends-add-form");
+  if (!form) return;
+
+  var lotIdsSelect = document.getElementById("lot_ids");
+  var lotSelectionStatus = document.getElementById("lot-selection-status");
+  var lotGroup = document.getElementById("lot_group");
+  var securitySelect = document.getElementById("security_id");
+  var currencySelect = document.getElementById("original_currency");
+  var taxTreatmentSelect = document.getElementById("tax_treatment");
+  var netInput = document.getElementById("net_amount_original_ccy");
+  var taxInput = document.getElementById("tax_withheld_original_ccy");
+  var feeInput = document.getElementById("fee_original_ccy");
+  var grossInput = document.getElementById("gross_amount_original_ccy");
+  var resolvedGross = document.getElementById("resolved-gross-value");
+  var parseIbRowBtn = document.getElementById("parse-ib-row-btn");
+  var ibRowInput = document.getElementById("ib_row");
+  var reminderSecuritySelect = document.getElementById("reminder_security_id");
+  var reminderDateInput = document.getElementById("reminder_dividend_reminder_date");
+  var dateInput = document.getElementById("dividend_date");
+  var exDateInput = document.getElementById("ex_date");
+  var quantityInput = document.getElementById("quantity");
+  var grossRateInput = document.getElementById("gross_rate_original_ccy");
+  var ibCodeInput = document.getElementById("ib_code");
+  var sourceInput = document.getElementById("source");
+
+  function parseDecimal(raw) {
+    if (!raw) return null;
+    var cleaned = String(raw).trim().replace(/,/g, "");
+    if (!cleaned) return null;
+    var value = Number(cleaned);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function setSelectValue(selectEl, value) {
+    if (!selectEl || !value) return false;
+    for (var i = 0; i < selectEl.options.length; i++) {
+      if (selectEl.options[i].value === value) {
+        selectEl.value = value;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function selectedLotOptions() {
+    if (!lotIdsSelect) return [];
+    var selected = [];
+    for (var i = 0; i < lotIdsSelect.options.length; i++) {
+      if (lotIdsSelect.options[i].selected) {
+        selected.push(lotIdsSelect.options[i]);
+      }
+    }
+    return selected;
+  }
+
+  function applyLotSelectionDefaults() {
+    var selectedLots = selectedLotOptions();
+    if (!selectedLots.length) {
+      if (lotSelectionStatus) {
+        lotSelectionStatus.textContent = "";
+      }
+      return;
+    }
+
+    var securityMap = {};
+    var currencyMap = {};
+    var schemeMap = {};
+    var quantityTotal = 0;
+
+    for (var i = 0; i < selectedLots.length; i++) {
+      var lotOption = selectedLots[i];
+      var securityId = (lotOption.dataset.securityId || "").trim();
+      var currency = (lotOption.dataset.currency || "").trim().toUpperCase();
+      var schemeType = (lotOption.dataset.schemeType || "").trim().toUpperCase();
+      var qty = parseDecimal(lotOption.dataset.quantity || "");
+      if (securityId) securityMap[securityId] = true;
+      if (currency) currencyMap[currency] = true;
+      if (schemeType) schemeMap[schemeType] = true;
+      if (qty !== null && qty > 0) quantityTotal += qty;
+    }
+
+    var securityIds = Object.keys(securityMap);
+    var currencies = Object.keys(currencyMap);
+    var schemes = Object.keys(schemeMap);
+
+    if (securityIds.length !== 1) {
+      if (lotSelectionStatus) {
+        lotSelectionStatus.textContent = "Select lots from one security only.";
+      }
+      return;
+    }
+
+    if (lotSelectionStatus) {
+      lotSelectionStatus.textContent =
+        "Selected " + selectedLots.length + " lot(s), " + quantityTotal.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + " shares.";
+    }
+
+    setSelectValue(securitySelect, securityIds[0]);
+    if (currencies.length === 1) {
+      setSelectValue(currencySelect, currencies[0]);
+    }
+
+    var targetGroup = "ALL";
+    if (schemes.length === 1) {
+      targetGroup = "SCHEME:" + schemes[0];
+    } else {
+      var hasIsa = schemes.indexOf("ISA") >= 0;
+      if (!hasIsa) {
+        targetGroup = "TAXABLE_ONLY";
+      }
+    }
+    setSelectValue(lotGroup, targetGroup);
+    filterSecuritiesByGroup();
+    applyGroupTaxDefault();
+    applySecurityCurrencyDefault();
+    if (quantityInput && (!quantityInput.value || !quantityInput.value.trim())) {
+      quantityInput.value = quantityTotal > 0
+        ? quantityTotal.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")
+        : "";
+    }
+  }
+
+  function updateResolvedGross() {
+    var gross = parseDecimal(grossInput ? grossInput.value : "");
+    var net = parseDecimal(netInput ? netInput.value : "");
+    var tax = parseDecimal(taxInput ? taxInput.value : "") || 0;
+    var fee = parseDecimal(feeInput ? feeInput.value : "") || 0;
+    var resolved = null;
+    if (gross !== null && gross > 0) {
+      resolved = gross;
+    } else if (net !== null && net > 0) {
+      resolved = net + tax + fee;
+    }
+    resolvedGross.textContent = resolved !== null ? resolved.toFixed(2) : "-";
+  }
+
+  function groupMatchesOption(groupValue, option) {
+    if (!groupValue || groupValue === "ALL") return true;
+    var schemes = (option.dataset.schemeTypes || "").split(",").filter(Boolean);
+    if (groupValue === "ISA_ONLY") {
+      return option.dataset.hasIsaLot === "true";
+    }
+    if (groupValue === "TAXABLE_ONLY") {
+      return option.dataset.hasTaxableLot === "true";
+    }
+    if (groupValue.indexOf("SCHEME:") === 0) {
+      var scheme = groupValue.split(":")[1];
+      return schemes.indexOf(scheme) >= 0;
+    }
+    return true;
+  }
+
+  function filterSecuritiesByGroup() {
+    if (!lotGroup || !securitySelect) return;
+    var selected = securitySelect.value;
+    var groupValue = lotGroup.value || "ALL";
+    var hasSelectedVisible = false;
+    for (var i = 0; i < securitySelect.options.length; i++) {
+      var option = securitySelect.options[i];
+      if (!option.value) {
+        option.hidden = false;
+        continue;
+      }
+      var visible = groupMatchesOption(groupValue, option);
+      option.hidden = !visible;
+      if (visible && option.value === selected) {
+        hasSelectedVisible = true;
+      }
+    }
+    if (!hasSelectedVisible) {
+      securitySelect.value = "";
+    }
+  }
+
+  function applyGroupTaxDefault() {
+    if (!lotGroup || !taxTreatmentSelect) return;
+    var selectedOption = lotGroup.options[lotGroup.selectedIndex];
+    var preferred = selectedOption ? selectedOption.dataset.defaultTax : null;
+    if (preferred && taxTreatmentSelect.value !== preferred) {
+      taxTreatmentSelect.value = preferred;
+    }
+  }
+
+  function applySecurityCurrencyDefault() {
+    if (!securitySelect || !currencySelect) return;
+    var selectedOption = securitySelect.options[securitySelect.selectedIndex];
+    if (!selectedOption || !selectedOption.dataset.currency) return;
+    var target = selectedOption.dataset.currency;
+    for (var i = 0; i < currencySelect.options.length; i++) {
+      if (currencySelect.options[i].value === target) {
+        currencySelect.value = target;
+        break;
+      }
+    }
+  }
+
+  function parseIbRow() {
+    if (!ibRowInput) return;
+    var raw = (ibRowInput.value || "").trim();
+    if (!raw) return;
+    var cells = raw.split(/\t+/);
+    if (cells.length < 10) {
+      window.alert("Could not parse IB row. Paste a full tab-separated row from the IB export.");
+      return;
+    }
+
+    var symbol = (cells[0] || "").trim().toUpperCase();
+    var statementDate = (cells[1] || "").trim();
+    var exDate = (cells[2] || "").trim();
+    var payDate = (cells[3] || "").trim();
+    var qty = (cells[4] || "").trim();
+    var tax = (cells[5] || "").trim();
+    var fee = (cells[6] || "").trim();
+    var grossRate = (cells[7] || "").trim();
+    var grossAmount = (cells[8] || "").trim();
+    var netAmount = (cells[9] || "").trim();
+    var code = (cells[10] || "").trim();
+
+    if (securitySelect && symbol) {
+      for (var i = 0; i < securitySelect.options.length; i++) {
+        var option = securitySelect.options[i];
+        if ((option.dataset.ticker || "").toUpperCase() === symbol) {
+          securitySelect.value = option.value;
+          break;
+        }
+      }
+      applySecurityCurrencyDefault();
+    }
+
+    if (dateInput) {
+      dateInput.value = payDate || statementDate || dateInput.value;
+    }
+    if (exDateInput && exDate) {
+      exDateInput.value = exDate;
+    }
+    if (quantityInput && qty) {
+      quantityInput.value = qty;
+    }
+    if (taxInput && tax) {
+      taxInput.value = tax;
+    }
+    if (feeInput && fee) {
+      feeInput.value = fee;
+    }
+    if (grossRateInput && grossRate) {
+      grossRateInput.value = grossRate;
+    }
+    if (grossInput && grossAmount) {
+      grossInput.value = grossAmount;
+    }
+    if (netInput && netAmount) {
+      netInput.value = netAmount;
+    }
+    if (ibCodeInput && code) {
+      ibCodeInput.value = code;
+    }
+    if (sourceInput && !sourceInput.value.trim()) {
+      sourceInput.value = "ibkr_statement";
+    }
+
+    updateResolvedGross();
+  }
+
+  [netInput, taxInput, feeInput, grossInput].forEach(function (el) {
+    if (!el) return;
+    el.addEventListener("input", updateResolvedGross);
+  });
+
+  if (lotGroup) {
+    lotGroup.addEventListener("change", function () {
+      filterSecuritiesByGroup();
+      applyGroupTaxDefault();
+    });
+  }
+  if (lotIdsSelect) {
+    lotIdsSelect.addEventListener("change", applyLotSelectionDefaults);
+  }
+  if (securitySelect) {
+    securitySelect.addEventListener("change", applySecurityCurrencyDefault);
+  }
+  if (parseIbRowBtn) {
+    parseIbRowBtn.addEventListener("click", parseIbRow);
+  }
+  if (reminderSecuritySelect && reminderDateInput) {
+    reminderSecuritySelect.addEventListener("change", function () {
+      var selectedOption = reminderSecuritySelect.options[reminderSecuritySelect.selectedIndex];
+      if (!selectedOption) return;
+      reminderDateInput.value = selectedOption.dataset.reminderDate || "";
+    });
+  }
+
+  filterSecuritiesByGroup();
+  applyLotSelectionDefaults();
+  applyGroupTaxDefault();
+  applySecurityCurrencyDefault();
+  if (reminderSecuritySelect && reminderDateInput && !reminderDateInput.value) {
+    var selectedOption = reminderSecuritySelect.options[reminderSecuritySelect.selectedIndex];
+    if (selectedOption) {
+      reminderDateInput.value = selectedOption.dataset.reminderDate || "";
+    }
+  }
+  updateResolvedGross();
+})();
+</script>
 {% endblock %}

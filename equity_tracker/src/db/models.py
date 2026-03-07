@@ -99,6 +99,9 @@ _AUDIT_ACTION_CHECK = (
 _DIVIDEND_TREATMENT_CHECK = (
     "tax_treatment IN ('TAXABLE','ISA_EXEMPT')"
 )
+_PORTFOLIO_GUARDRAIL_STATE_CHECK = (
+    "state IN ('ACTIVE','DISMISSED')"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +133,7 @@ class Security(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)        # ISO 4217
     exchange: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     units_precision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dividend_reminder_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     # ── Security catalogue link (Phase S) ─────────────────────────────────
     # catalog_id: FK to security_catalog.id; None for pre-Phase-S records.
@@ -528,6 +532,46 @@ class ScenarioSnapshot(Base):
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     input_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+
+# ---------------------------------------------------------------------------
+# portfolio_guardrail_state_events
+# ---------------------------------------------------------------------------
+
+class PortfolioGuardrailStateEvent(Base):
+    """
+    Persisted lifecycle of Portfolio behavioral-guardrail visibility.
+
+    Append-only rows capture deterministic user intent:
+      - ACTIVE: explicitly shown/reset.
+      - DISMISSED: hidden until either:
+          a) dismiss_until expires, or
+          b) condition_hash changes.
+    """
+
+    __tablename__ = "portfolio_guardrail_state_events"
+    __table_args__ = (
+        CheckConstraint(
+            _PORTFOLIO_GUARDRAIL_STATE_CHECK,
+            name="ck_portfolio_guardrail_state_events_state",
+        ),
+        Index(
+            "ix_portfolio_guardrail_state_events_guardrail_changed",
+            "guardrail_id",
+            "changed_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    guardrail_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="DISMISSED")
+    condition_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    dismiss_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=_utcnow
     )
 

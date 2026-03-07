@@ -102,6 +102,22 @@ def test_add_security_invalid_currency_returns_422(client):
     assert resp.status_code == 422
 
 
+def test_add_security_accepts_dividend_reminder_date(client):
+    resp = client.post(
+        "/portfolio/securities",
+        json={
+            "ticker": "DIVREM",
+            "name": "Dividend Reminder Co",
+            "currency": "GBP",
+            "is_manual_override": True,
+            "dividend_reminder_date": "2026-03-10",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["dividend_reminder_date"] == "2026-03-10"
+
+
 # ---------------------------------------------------------------------------
 # Lots
 # ---------------------------------------------------------------------------
@@ -707,6 +723,8 @@ def test_put_settings_round_trip(client):
         "default_tax_year": "2024-25",
         "show_exhausted_lots": True,
         "hide_values": True,
+        "monthly_espp_input_reminder_enabled": True,
+        "monthly_espp_input_reminder_day": 15,
     }
     put_resp = client.put("/api/settings", json=payload)
     assert put_resp.status_code == 200
@@ -716,11 +734,14 @@ def test_put_settings_round_trip(client):
     assert body["default_student_loan_plan"] == 2
     assert body["show_exhausted_lots"] is True
     assert body["hide_values"] is True
+    assert body["monthly_espp_input_reminder_enabled"] is True
+    assert body["monthly_espp_input_reminder_day"] == 15
 
     # GET should return the saved values
     get_resp = client.get("/api/settings")
     assert get_resp.status_code == 200
     assert get_resp.json()["default_gross_income"] == "85000.00"
+    assert get_resp.json()["monthly_espp_input_reminder_enabled"] is True
 
 
 # ---------------------------------------------------------------------------

@@ -1,37 +1,40 @@
-﻿{% if model_scope %}
+{% if model_scope %}
+{% set _model_scope_collapsed = model_scope_collapsed if model_scope_collapsed is defined else false %}
 <div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Model Scope</h2>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <tbody>
-        <tr>
-          <th>Inputs</th>
-          <td>
-            {% for item in model_scope.inputs %}
-            <div>{{ item }}</div>
-            {% endfor %}
-          </td>
-        </tr>
-        <tr>
-          <th>Assumptions</th>
-          <td>
-            {% for item in model_scope.assumptions %}
-            <div>{{ item }}</div>
-            {% endfor %}
-          </td>
-        </tr>
-        <tr>
-          <th>Exclusions</th>
-          <td>
-            {% for item in model_scope.exclusions %}
-            <div>{{ item }}</div>
-            {% endfor %}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <details {% if not _model_scope_collapsed %}open{% endif %}>
+    <summary class="card__header">
+      <h2 class="card__title">Model Scope</h2>
+    </summary>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr>
+            <th>Inputs</th>
+            <td>
+              {% for item in model_scope.inputs %}
+              <div>{{ item }}</div>
+              {% endfor %}
+            </td>
+          </tr>
+          <tr>
+            <th>Assumptions</th>
+            <td>
+              {% for item in model_scope.assumptions %}
+              <div>{{ item }}</div>
+              {% endfor %}
+            </td>
+          </tr>
+          <tr>
+            <th>Exclusions</th>
+            <td>
+              {% for item in model_scope.exclusions %}
+              <div>{{ item }}</div>
+              {% endfor %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
 </div>
 {% endif %}
