@@ -18,10 +18,19 @@
   </div>
 
   <div class="page-actions">
+    <form method="get" action="/net-value" class="inline-form">
+      <label for="net-value-as-of">As Of</label>
+      <input id="net-value-as-of" name="as_of" type="date" value="{{ selected_as_of or '' }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Load</button>
+      {% if page_as_of_active %}
+      <a href="/net-value" class="btn btn-secondary btn-sm">Today</a>
+      {% endif %}
+    </form>
     <button onclick="window.print()" class="btn btn-secondary btn-sm">Print</button>
     <button type="button" class="btn btn-secondary btn-sm" id="nv-audit-json-btn">Download audit JSON</button>
   </div>
 </div>
+<p class="muted">As of {{ page_as_of_date }}. Uses the latest stored price on or before the selected date for the hypothetical sell-all view.</p>
 
 {% set model_scope = {
   "inputs": [
@@ -40,8 +49,8 @@
 {% include "partials/model_scope_card.html" %}
 <p class="muted">
   Trace key totals:
-  <a href="/reconcile#trace-contributing-lots">Contributing lots</a> |
-  <a href="/reconcile#trace-audit-mutations">Recent mutations</a>
+  <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}">Contributing lots</a> |
+  <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}">Recent mutations</a>
 </p>
 
 {% if sell_all_metrics.fx_conversion_basis or sell_all_metrics.fx_as_of %}
@@ -111,10 +120,10 @@
     <div class="stat__label">Deployable Today (From Capital Stack) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if deployable_today_gbp is not none %}
     <div class="stat__value">&pound;{{ deployable_today_gbp | money }}</div>
-    <span class="stat-caption"><a href="/capital-stack">Open Capital Stack</a> for full holdings-to-deployable formula.</span>
+    <span class="stat-caption"><a href="{{ with_as_of('/capital-stack', selected_as_of) }}">Open Capital Stack</a> for full holdings-to-deployable formula.</span>
     {% else %}
     <div class="stat__value muted">Unavailable</div>
-    <span class="stat-caption"><a href="/capital-stack">Open Capital Stack</a> to inspect missing inputs.</span>
+    <span class="stat-caption"><a href="{{ with_as_of('/capital-stack', selected_as_of) }}">Open Capital Stack</a> to inspect missing inputs.</span>
     {% endif %}
   </div>
   <div class="stat {% if net_vs_deployable_delta_gbp is not none and net_vs_deployable_delta_gbp > 0 %}stat--warning{% else %}stat--accent{% endif %}">

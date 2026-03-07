@@ -20,6 +20,16 @@
     <h1>Tax Plan</h1>
     <p class="muted">Tax-year realization planner with lot-level projections and April rollover comparison.</p>
   </div>
+  <div class="page-actions">
+    <form method="get" action="/tax-plan" class="inline-form">
+      <label for="tax-plan-as-of">As Of</label>
+      <input id="tax-plan-as-of" name="as_of" type="date" value="{{ selected_as_of or '' }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Load</button>
+      {% if page_as_of_active %}
+      <a href="/tax-plan" class="btn btn-secondary btn-sm">Today</a>
+      {% endif %}
+    </form>
+  </div>
 </div>
 
 {% set model_scope = {
@@ -39,8 +49,8 @@
 {% include "partials/model_scope_card.html" %}
 <p class="muted">
   Trace key totals:
-  <a href="/reconcile#trace-contributing-lots">Contributing lots</a> |
-  <a href="/reconcile#trace-audit-mutations">Recent mutations</a>
+  <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}">Contributing lots</a> |
+  <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}">Recent mutations</a>
 </p>
 
 <p class="muted">As of {{ tax_plan.as_of_date }}. Generated {{ tax_plan.generated_at_utc }}.</p>
@@ -89,6 +99,7 @@
   </div>
   <p class="muted">Assumption quality: {{ assumption_badge(comp.assumption_quality) }}</p>
   <form method="get" action="/tax-plan" class="inline-form">
+    <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
     <div class="form-grid">
       <div class="form-field">
         <label for="gross_income_gbp">Gross Employment Income (&pound;)</label>

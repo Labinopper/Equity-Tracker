@@ -4,6 +4,7 @@ Tax planner routes (UI + JSON API).
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -49,6 +50,7 @@ def _locked_response(request: Request) -> HTMLResponse:
 
 @router.get("/api/tax-plan/summary")
 async def api_tax_plan_summary(
+    as_of: date | None = Query(None),
     gross_income_gbp: Decimal | None = Query(None, ge=0),
     bonus_gbp: Decimal = Query(_DEFAULT_BONUS_AMOUNT, ge=0),
     sell_amount_gbp: Decimal = Query(_DEFAULT_SELL_AMOUNT, ge=0),
@@ -58,6 +60,7 @@ async def api_tax_plan_summary(
     settings = _load_settings()
     return TaxPlanService.get_summary(
         settings=settings,
+        as_of=as_of,
         compensation_gross_income_gbp=gross_income_gbp,
         compensation_bonus_gbp=bonus_gbp,
         compensation_sell_amount_gbp=sell_amount_gbp,
@@ -68,6 +71,7 @@ async def api_tax_plan_summary(
 @router.get("/tax-plan", response_class=HTMLResponse, include_in_schema=False)
 async def tax_plan_page(
     request: Request,
+    as_of: date | None = Query(None),
     gross_income_gbp: Decimal | None = Query(None, ge=0),
     bonus_gbp: Decimal = Query(_DEFAULT_BONUS_AMOUNT, ge=0),
     sell_amount_gbp: Decimal = Query(_DEFAULT_SELL_AMOUNT, ge=0),
@@ -79,6 +83,7 @@ async def tax_plan_page(
     settings = _load_settings()
     payload = TaxPlanService.get_summary(
         settings=settings,
+        as_of=as_of,
         compensation_gross_income_gbp=gross_income_gbp,
         compensation_bonus_gbp=bonus_gbp,
         compensation_sell_amount_gbp=sell_amount_gbp,
@@ -92,6 +97,7 @@ async def tax_plan_page(
             "tax_plan": payload,
             "settings": settings,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
+            "page_as_of_active": as_of is not None,
         },
         media_type=_HTML_UTF8_MEDIA_TYPE,
     )

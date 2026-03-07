@@ -322,6 +322,7 @@ class ScenarioService:
         summary = PortfolioService.get_portfolio_summary(
             settings=settings,
             use_live_true_cost=False,
+            as_of=as_of_date,
         )
 
         securities: list[dict[str, Any]] = []

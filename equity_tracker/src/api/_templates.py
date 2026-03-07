@@ -8,8 +8,10 @@ server works regardless of the working directory.
 
 from __future__ import annotations
 
+from datetime import date as date_type
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
@@ -32,7 +34,36 @@ def _is_hide_values_enabled() -> bool:
         return False
 
 
+def _parse_as_of(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return date_type.fromisoformat(raw[:10]).isoformat()
+    except Exception:
+        return None
+
+
+def _with_as_of(href: str, as_of: str | None) -> str:
+    value = _parse_as_of(as_of)
+    if not value:
+        return href
+    parts = urlsplit(href)
+    query_pairs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "as_of"]
+    query_pairs.append(("as_of", value))
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            urlencode(query_pairs),
+            parts.fragment,
+        )
+    )
+
+
 def _global_template_context(_request) -> dict[str, bool | str]:
+    selected_as_of = _parse_as_of(_request.query_params.get("as_of"))
     alert_center = {
         "total": 0,
         "alerts": [],
@@ -48,6 +79,7 @@ def _global_template_context(_request) -> dict[str, bool | str]:
             alert_center = AlertService.get_alert_center(
                 settings=settings,
                 db_path=db_path,
+                as_of=date_type.fromisoformat(selected_as_of) if selected_as_of else None,
             )
         except Exception:
             alert_center = {
@@ -62,6 +94,8 @@ def _global_template_context(_request) -> dict[str, bool | str]:
         "hide_values": _is_hide_values_enabled(),
         "logout_url": "/auth/logout",
         "alert_center": alert_center,
+        "selected_as_of": selected_as_of,
+        "with_as_of": _with_as_of,
     }
 
 
@@ -106,3 +140,4 @@ def _public_money(value: object) -> str:
 
 templates.env.filters["money"] = _money
 templates.env.filters["public_money"] = _public_money
+templates.env.globals["with_as_of"] = _with_as_of

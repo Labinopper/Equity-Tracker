@@ -39,7 +39,7 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. Shared foundations and remaining platform expansion: `T54`-`T56`.
+1. Shared foundations and remaining platform expansion: `T55`-`T56`.
 2. Workflow and QoL expansion: `T80`-`T82`, `T90`.
 
 ## Definition of Done (Current + Next)
@@ -56,6 +56,7 @@ Execution mode (`2026-03-07`):
 
 ### Recently Completed Deferred Items (`2026-03-07`)
 
+- `T54`: shared `as_of` mode is now live across Portfolio, Net Value, Risk, Calendar, Scenario Lab, and adjacent linked pages; routes, APIs, and navigation now preserve the selected date and use the latest stored price on or before it.
 - `T57`: persisted alert lifecycle is now shared across Portfolio guardrails and the Risk alert center, with server-side snooze/dismiss/reactivate state, deterministic expiry, and audit-backed transitions.
 - `T83`: pension tracking and projection surface with deterministic assumptions and append-only ledger.
 - `T84`: strategic regression matrix coverage for Stage-10 strategic pages.
@@ -69,7 +70,6 @@ Execution mode (`2026-03-07`):
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
-| T54 | P2 | M | Major | Add global `as_of` date mode across Portfolio, Net Value, Risk, Calendar, and Scenario Lab payloads/routes. | Clarity, deterministic comparability | A single selected date produces consistent lock/forfeiture/tax context across all major pages and exports. |
 | T55 | P2 | M | Major | Add event-level provenance badges (price date, FX date, stale flags) in Calendar and Risk event rows. | Data-quality visibility, decision reliability | Every value-at-stake event row shows provenance/freshness metadata without leaving the page. |
 | T56 | P2 | M | Major | Add `/reconcile` drift explainer comparing current vs prior snapshot deltas by cause (price, FX, quantity, settings/audit). | Transparency, behavioural risk reduction | Users can trace a headline delta to deterministic components and linked audit rows in <=3 clicks. |
 

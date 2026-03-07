@@ -4,9 +4,10 @@ Scenario Lab routes (UI + JSON API).
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from ...app_context import AppContext
@@ -74,12 +75,15 @@ async def api_get_scenario(
 
 
 @router.get("/scenario-lab", response_class=HTMLResponse, include_in_schema=False)
-async def scenario_lab_page(request: Request) -> HTMLResponse:
+async def scenario_lab_page(
+    request: Request,
+    as_of: date | None = Query(None),
+) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
 
     settings = _load_settings()
-    scenario_context = ScenarioService.get_builder_context(settings=settings)
+    scenario_context = ScenarioService.get_builder_context(settings=settings, as_of=as_of)
     return templates.TemplateResponse(
         request,
         "scenario_lab.html",
@@ -87,6 +91,8 @@ async def scenario_lab_page(request: Request) -> HTMLResponse:
             "request": request,
             "scenario_context": scenario_context,
             "settings": settings,
+            "page_as_of_date": scenario_context["as_of_date"],
+            "page_as_of_active": as_of is not None,
         },
         media_type=_HTML_UTF8_MEDIA_TYPE,
     )

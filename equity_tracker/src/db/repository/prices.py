@@ -138,6 +138,25 @@ class PriceRepository:
         )
         return self._s.scalars(stmt).first()
 
+    def get_latest_on_or_before(
+        self,
+        security_id: str,
+        on_or_before_date: date,
+    ) -> PriceHistory | None:
+        """
+        Return the most recent price-history row on or before on_or_before_date.
+        """
+        stmt = (
+            select(PriceHistory)
+            .where(
+                PriceHistory.security_id == security_id,
+                PriceHistory.price_date <= on_or_before_date,
+            )
+            .order_by(PriceHistory.price_date.desc(), PriceHistory.fetched_at.desc())
+            .limit(1)
+        )
+        return self._s.scalars(stmt).first()
+
     def get_earliest_price_date(self, security_id: str) -> date | None:
         """
         Return the oldest stored price_date for a security, if any.

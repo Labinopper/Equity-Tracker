@@ -290,10 +290,6 @@ Legend: `H` = high objective alignment, `M` = moderate alignment (useful but wit
 
 These are capability expansions, not page-polish refinements. Active refinement backlog is closed; keep parked until explicit reprioritization.
 
-## AF1: Global As-of Mode (Cross-Surface)
-1. Scope: One shared `as_of` selector for Portfolio, Net Value, Risk, Calendar, Scenario Lab, and exports.
-2. Why Separate: Adds new cross-surface time-travel capability rather than modifying one page.
-
 ## AF2: Event Provenance Everywhere
 1. Scope: Standardized row-level provenance badges (`price as of`, `FX as of`, staleness) across Calendar, Risk, and strategic event tables.
 2. Why Separate: Introduces a shared provenance framework component.
@@ -301,10 +297,6 @@ These are capability expansions, not page-polish refinements. Active refinement 
 ## AF3: Reconcile Drift Snapshot Engine
 1. Scope: Compare current snapshot to prior snapshot and decompose delta by cause (`price`, `FX`, `qty`, `settings`, `transactions`).
 2. Why Separate: Adds new temporal comparison capability and persistence requirements.
-
-## AF4: Server-Persisted Alert Lifecycle
-1. Scope: Cross-device alert state (`active`, `snoozed`, `dismissed-until-condition-change`) with audit trail.
-2. Why Separate: Requires server model/state transitions beyond UI behavior.
 
 ## AF5: Decision Brief Export Pack
 1. Scope: Deterministic export bundle combining selected page metrics, assumptions, and trace links in PDF/JSON.

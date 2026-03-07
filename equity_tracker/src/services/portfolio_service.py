@@ -897,7 +897,11 @@ class PortfolioService:
                 lots = (
                     all_lots
                     if show_exhausted
-                    else [lot for lot in all_lots if Decimal(lot.quantity_remaining) > Decimal("0")]
+                    else [
+                        lot
+                        for lot in all_lots
+                        if Decimal(lot.quantity_remaining) > Decimal("0")
+                    ]
                 )
                 espp_plus_employee_ids = _espp_plus_employee_lot_ids(all_lots)
                 at_risk_employee_lot_ids = _matched_employee_lot_ids_at_risk(lots, today)
@@ -950,7 +954,7 @@ class PortfolioService:
                 badge_rsu_vesting_mv: Decimal | None = None
 
                 # Phase L: attach live price data when available
-                price_row = price_repo.get_latest(security.id)
+                price_row = price_repo.get_latest_on_or_before(security.id, today)
                 if price_row is not None and price_row.close_price_gbp is not None:
                     try:
                         current_price_native = Decimal(price_row.close_price_original_ccy)

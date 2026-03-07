@@ -71,10 +71,13 @@ class AlertService:
         *,
         settings: AppSettings | None,
         db_path,
+        as_of: date | None = None,
     ) -> dict[str, Any]:
+        as_of_date = as_of or date.today()
         summary = PortfolioService.get_portfolio_summary(
             settings=settings,
             use_live_true_cost=False,
+            as_of=as_of_date,
         )
         exposure = ExposureService.get_snapshot(
             settings=settings,
@@ -86,7 +89,6 @@ class AlertService:
         top_threshold = thresholds["top_holding_pct"]
         employer_threshold = thresholds["employer_pct"]
 
-        today = date.today()
         alerts: list[dict[str, Any]] = []
 
         top_holding_pct = _q_pct(_safe_decimal(exposure.get("top_holding_pct_gross")))
@@ -100,7 +102,7 @@ class AlertService:
                         f"Top holding is {top_holding_pct}% vs threshold {top_threshold}%."
                     ),
                     "href": "/risk#concentration-guardrails",
-                    "event_date": today.isoformat(),
+                    "event_date": as_of_date.isoformat(),
                 }
             )
 
@@ -116,7 +118,7 @@ class AlertService:
                         f"{employer_ticker} is {employer_pct}% of gross vs threshold {employer_threshold}%."
                     ),
                     "href": "/risk#concentration-guardrails",
-                    "event_date": today.isoformat(),
+                    "event_date": as_of_date.isoformat(),
                 }
             )
 
@@ -158,8 +160,8 @@ class AlertService:
                     if soonest_forfeiture_days is None or risk.days_remaining < soonest_forfeiture_days:
                         soonest_forfeiture_days = risk.days_remaining
 
-                if lot.scheme_type == "RSU" and lot.acquisition_date >= today:
-                    days_until_vest = (lot.acquisition_date - today).days
+                if lot.scheme_type == "RSU" and lot.acquisition_date >= as_of_date:
+                    days_until_vest = (lot.acquisition_date - as_of_date).days
                     if days_until_vest <= _VEST_SOON_DAYS:
                         vest_count += 1
                         vest_value += market_value
@@ -182,7 +184,7 @@ class AlertService:
                         f"of release (nearest in {soonest_forfeiture_days}d).{value_text}"
                     ),
                     "href": "/calendar",
-                    "event_date": today.isoformat(),
+                    "event_date": as_of_date.isoformat(),
                 }
             )
 
@@ -202,7 +204,7 @@ class AlertService:
                         f"(nearest in {soonest_vest_days}d).{value_text}"
                     ),
                     "href": "/calendar",
-                    "event_date": today.isoformat(),
+                    "event_date": as_of_date.isoformat(),
                 }
             )
 
@@ -216,7 +218,7 @@ class AlertService:
                     "title": "Tax Inputs Incomplete",
                     "message": "Income inputs are zero or missing; employment-tax outputs may be understated.",
                     "href": "/settings",
-                    "event_date": today.isoformat(),
+                    "event_date": as_of_date.isoformat(),
                 }
             )
 
@@ -231,7 +233,7 @@ class AlertService:
                         f"{stale_fx_count} security(ies) have stale FX basis."
                     ),
                     "href": "/data-quality",
-                    "event_date": today.isoformat(),
+                    "event_date": as_of_date.isoformat(),
                 }
             )
 

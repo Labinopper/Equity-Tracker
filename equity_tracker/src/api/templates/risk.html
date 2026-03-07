@@ -7,7 +7,18 @@
     <h1>Risk</h1>
     <p class="muted">Concentration, liquidity mix, and simple stress outcomes from current portfolio state.</p>
   </div>
+  <div class="page-actions">
+    <form method="get" action="/risk" class="inline-form">
+      <label for="risk-as-of">As Of</label>
+      <input id="risk-as-of" name="as_of" type="date" value="{{ selected_as_of or '' }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Load</button>
+      {% if page_as_of_active %}
+      <a href="/risk" class="btn btn-secondary btn-sm">Today</a>
+      {% endif %}
+    </form>
+  </div>
 </div>
+<p class="muted">As of {{ page_as_of_date }}. Concentration, lock, and optionality outputs use the selected date context.</p>
 
 <div class="stats">
   <div class="stat stat--accent">
@@ -91,16 +102,18 @@
           </td>
           <td>
             <div class="form-actions">
-              <a href="{{ alert.href or '/risk' }}">Open</a>
+              <a href="{{ with_as_of(alert.href or '/risk', selected_as_of) }}">Open</a>
               <form method="post" action="/risk/alerts/lifecycle" class="inline-form">
                 <input type="hidden" name="lifecycle_id" value="{{ alert.lifecycle_id }}">
                 <input type="hidden" name="condition_hash" value="{{ alert.condition_hash }}">
+                <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
                 <input type="hidden" name="action" value="snooze">
                 <button type="submit" class="btn btn-secondary btn-sm">Snooze {{ alert_center.policies.snooze_days or 7 }}d</button>
               </form>
               <form method="post" action="/risk/alerts/lifecycle" class="inline-form">
                 <input type="hidden" name="lifecycle_id" value="{{ alert.lifecycle_id }}">
                 <input type="hidden" name="condition_hash" value="{{ alert.condition_hash }}">
+                <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
                 <input type="hidden" name="action" value="dismiss">
                 <button type="submit" class="btn btn-secondary btn-sm">Dismiss</button>
               </form>
@@ -144,10 +157,11 @@
           </td>
           <td>
             <div class="form-actions">
-              <a href="{{ alert.href or '/risk' }}">Open</a>
+              <a href="{{ with_as_of(alert.href or '/risk', selected_as_of) }}">Open</a>
               <form method="post" action="/risk/alerts/lifecycle" class="inline-form">
                 <input type="hidden" name="lifecycle_id" value="{{ alert.lifecycle_id }}">
                 <input type="hidden" name="condition_hash" value="{{ alert.condition_hash }}">
+                <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
                 <input type="hidden" name="action" value="activate">
                 <button type="submit" class="btn btn-secondary btn-sm">Reactivate</button>
               </form>
@@ -336,6 +350,7 @@
   </div>
   <p class="muted">Deterministic flexibility score based on sellability, forfeiture, concentration, ISA ratio, and config completeness.</p>
   <form method="get" action="/risk" class="inline-form">
+    <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
     <div class="form-grid">
       <div class="form-field">
         <label for="weight_sellability">Sellability Weight (%)</label>
@@ -360,7 +375,7 @@
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary btn-sm">Recalculate Score</button>
-      <a href="/risk" class="btn btn-secondary btn-sm">Reset Weights</a>
+      <a href="{{ with_as_of('/risk', selected_as_of) }}" class="btn btn-secondary btn-sm">Reset Weights</a>
     </div>
   </form>
   <div class="table-wrap">

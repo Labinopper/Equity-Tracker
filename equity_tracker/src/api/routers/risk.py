@@ -4,6 +4,7 @@ Risk routes (UI + JSON API).
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote_plus
 
@@ -78,6 +79,7 @@ def _locked_response(request: Request) -> HTMLResponse:
 
 @router.get("/api/risk/summary", response_model=RiskSummarySchema)
 async def api_risk_summary(
+    as_of: date | None = Query(default=None),
     weight_sellability: float | None = Query(default=None),
     weight_forfeiture: float | None = Query(default=None),
     weight_concentration: float | None = Query(default=None),
@@ -98,12 +100,16 @@ async def api_risk_summary(
         settings=settings,
         db_path=db_path,
         optionality_weights=optionality_weights,
+        as_of=as_of,
     )
     return RiskSummarySchema.from_service(summary)
 
 
 @router.get("/risk", response_class=HTMLResponse, include_in_schema=False)
-async def risk_page(request: Request) -> HTMLResponse:
+async def risk_page(
+    request: Request,
+    as_of: date | None = Query(default=None),
+) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
 
@@ -120,6 +126,7 @@ async def risk_page(request: Request) -> HTMLResponse:
         settings=settings,
         db_path=db_path,
         optionality_weights=optionality_weights,
+        as_of=as_of,
     )
     return templates.TemplateResponse(
         request,
@@ -133,6 +140,8 @@ async def risk_page(request: Request) -> HTMLResponse:
                 if summary.optionality_index is not None
                 else {}
             ),
+            "page_as_of_date": summary.as_of_date.isoformat(),
+            "page_as_of_active": as_of is not None,
             **_flash(request.query_params.get("msg")),
         },
         media_type=_HTML_UTF8_MEDIA_TYPE,
@@ -145,6 +154,7 @@ async def update_risk_alert_lifecycle(
     lifecycle_id: str = Form(...),
     condition_hash: str = Form(default=""),
     action: str = Form(...),
+    as_of: str = Form(default=""),
 ) -> RedirectResponse:
     if not AppContext.is_initialized():
         return RedirectResponse(
@@ -164,7 +174,8 @@ async def update_risk_alert_lifecycle(
     except ValueError as exc:
         msg = str(exc)
 
+    suffix = f"&as_of={quote_plus(as_of.strip())}" if as_of.strip() else ""
     return RedirectResponse(
-        url=f"/risk?msg={quote_plus(msg)}#alert-center",
+        url=f"/risk?msg={quote_plus(msg)}{suffix}#alert-center",
         status_code=303,
     )

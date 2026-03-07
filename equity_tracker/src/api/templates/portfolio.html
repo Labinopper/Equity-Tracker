@@ -22,14 +22,23 @@
     <form id="manual-refresh-form" method="post" action="/portfolio/refresh-prices" class="inline-form">
       <button type="submit" class="btn btn-secondary btn-sm">Refresh Prices</button>
     </form>
-    <a href="/capital-stack" class="btn btn-secondary btn-sm">Capital Stack</a>
-    <a href="/tax-plan" class="btn btn-secondary btn-sm">Tax Plan</a>
+    <form method="get" action="/" class="inline-form">
+      <label for="portfolio-as-of">As Of</label>
+      <input id="portfolio-as-of" name="as_of" type="date" value="{{ selected_as_of or '' }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Load</button>
+      {% if page_as_of_active %}
+      <a href="/" class="btn btn-secondary btn-sm">Today</a>
+      {% endif %}
+    </form>
+    <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="btn btn-secondary btn-sm">Capital Stack</a>
+    <a href="{{ with_as_of('/tax-plan', selected_as_of) }}" class="btn btn-secondary btn-sm">Tax Plan</a>
     <button type="button" class="btn btn-secondary btn-sm" id="audit-json-btn">Download audit JSON</button>
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
     <a href="/dividends#add-dividend" class="btn btn-secondary btn-sm">+ Dividend</a>
     <a href="/portfolio/add-lot" class="btn btn-primary btn-sm">+ Lot</a>
   </div>
 </div>
+<p class="muted">As of {{ page_as_of_date }}. Uses the latest stored price on or before the selected date for holdings valuation and lock context.</p>
 
 {% set model_scope = {
   "inputs": [
@@ -49,8 +58,8 @@
 {% include "partials/model_scope_card.html" %}
 <p class="muted">
   Trace key totals:
-  <a href="/reconcile#trace-contributing-lots">Contributing lots</a> |
-  <a href="/reconcile#trace-audit-mutations">Recent mutations</a>
+  <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}">Contributing lots</a> |
+  <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}">Recent mutations</a>
 </p>
 
 {% if error %}
@@ -70,7 +79,7 @@
   <div class="valuation-basis-strip__meta">
     Price stale threshold: {{ price_stale_after_days }} day{% if price_stale_after_days != 1 %}s{% endif %}.
     FX stale threshold: {{ fx_stale_after_minutes }} minute{% if fx_stale_after_minutes != 1 %}s{% endif %}.
-    <a href="/data-quality">Open Data Quality</a>
+    <a href="{{ with_as_of('/data-quality', selected_as_of) }}">Open Data Quality</a>
   </div>
   <div class="valuation-basis-strip__items">
     <span class="valuation-pill">

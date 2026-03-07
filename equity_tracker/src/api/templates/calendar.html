@@ -10,6 +10,8 @@
   </div>
   <div class="page-actions">
     <form method="get" action="/calendar" class="filter-bar inline-form">
+      <label for="as_of">As Of</label>
+      <input id="as_of" name="as_of" type="date" value="{{ calendar_filters.as_of }}">
       <label for="days">Horizon</label>
       <select id="days" name="days" onchange="this.form.submit()">
         <option value="90" {{ 'selected' if calendar.horizon_days == 90 }}>90 days</option>

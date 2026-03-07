@@ -238,6 +238,7 @@ class RiskRebalanceFriction:
 @dataclass(frozen=True)
 class RiskSummary:
     generated_at_utc: datetime
+    as_of_date: date
     total_market_value_gbp: Decimal
     top_holding_pct: Decimal
     top_holding_sellable_pct: Decimal
@@ -267,16 +268,20 @@ class RiskService:
         settings: AppSettings | None = None,
         db_path=None,
         optionality_weights: dict[str, Decimal] | None = None,
+        as_of: date | None = None,
     ) -> RiskSummary:
+        as_of_date = as_of or date.today()
         summary = PortfolioService.get_portfolio_summary(
             settings=settings,
             use_live_true_cost=False,
+            as_of=as_of_date,
         )
         return RiskService._from_portfolio_summary(
             summary,
             settings=settings,
             db_path=db_path,
             optionality_weights=optionality_weights,
+            as_of=as_of_date,
         )
 
     @staticmethod
@@ -286,7 +291,9 @@ class RiskService:
         settings: AppSettings | None = None,
         db_path=None,
         optionality_weights: dict[str, Decimal] | None = None,
+        as_of: date | None = None,
     ) -> RiskSummary:
+        as_of_date = as_of or date.today()
         security_values: list[tuple[str, str, Decimal]] = []
         scheme_values: dict[str, Decimal] = {}
         sellable = Decimal("0")
@@ -450,11 +457,10 @@ class RiskService:
         notes.extend(list(exposure.get("notes", [])))
 
         deployable_cash = _q_money(Decimal(str(exposure["deployable_cash_gbp"])))
-        today = date.today()
         timeline: list[RiskOptionalityTimelineBand] = []
 
         for label, horizon_days in _OPTIONALITY_TIMELINE_BANDS:
-            as_of = today + timedelta(days=horizon_days)
+            band_as_of = as_of_date + timedelta(days=horizon_days)
             band_sellable = Decimal("0")
             band_locked = Decimal("0")
             band_forfeitable = Decimal("0")
@@ -468,13 +474,13 @@ class RiskService:
                     lot = lot_summary.lot
                     scheme_type = (lot.scheme_type or "").upper()
 
-                    if scheme_type == "RSU" and as_of < lot.acquisition_date:
+                    if scheme_type == "RSU" and band_as_of < lot.acquisition_date:
                         band_locked += value
                         continue
 
                     if scheme_type == "ESPP_PLUS" and lot.matching_lot_id is not None:
                         end = lot.forfeiture_period_end or (lot.acquisition_date + timedelta(days=183))
-                        if as_of < end:
+                        if band_as_of < end:
                             band_forfeitable += value
                             continue
 
@@ -487,7 +493,7 @@ class RiskService:
                 RiskOptionalityTimelineBand(
                     label=label,
                     horizon_days=horizon_days,
-                    as_of_date=as_of,
+                    as_of_date=band_as_of,
                     sellable_gbp=_q_money(band_sellable),
                     locked_gbp=_q_money(band_locked),
                     forfeitable_gbp=_q_money(band_forfeitable),
@@ -752,6 +758,7 @@ class RiskService:
 
         return RiskSummary(
             generated_at_utc=datetime.now(timezone.utc),
+            as_of_date=as_of_date,
             total_market_value_gbp=total_market_value,
             top_holding_pct=top_holding_pct,
             top_holding_sellable_pct=_q_pct(

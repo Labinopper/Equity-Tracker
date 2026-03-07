@@ -7,6 +7,16 @@
     <h1>Capital Stack</h1>
     <p class="muted">Deterministic holdings-capital decomposition from gross value to net deployable capital.</p>
   </div>
+  <div class="page-actions">
+    <form method="get" action="/capital-stack" class="inline-form">
+      <label for="capital-stack-as-of">As Of</label>
+      <input id="capital-stack-as-of" name="as_of" type="date" value="{{ selected_as_of or '' }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Load</button>
+      {% if page_as_of_active %}
+      <a href="/capital-stack" class="btn btn-secondary btn-sm">Today</a>
+      {% endif %}
+    </form>
+  </div>
 </div>
 
 <p class="muted">As of {{ stack.as_of_date }}.</p>

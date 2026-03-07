@@ -262,6 +262,7 @@ class RiskRebalanceFrictionSchema(BaseModel):
 
 class RiskSummarySchema(BaseModel):
     generated_at_utc: str
+    as_of_date: str
     total_market_value_gbp: str
     top_holding_pct: str
     top_holding_sellable_pct: str
@@ -295,6 +296,7 @@ class RiskSummarySchema(BaseModel):
             raise ValueError("Risk summary optionality index must be populated.")
         return cls(
             generated_at_utc=summary.generated_at_utc.isoformat(),
+            as_of_date=summary.as_of_date.isoformat(),
             total_market_value_gbp=str(summary.total_market_value_gbp),
             top_holding_pct=str(summary.top_holding_pct),
             top_holding_sellable_pct=str(summary.top_holding_sellable_pct),

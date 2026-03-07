@@ -60,18 +60,18 @@
       <span class="topbar__brand">EQUITY <span class="topbar__brand-accent">TRACKER</span></span>
       <span class="topbar__divider"></span>
       <nav class="topbar__nav" aria-label="Primary navigation">
-        <a href="/"         class="topbar__tab{{ ' topbar__tab--active' if active_group == 'decide' }}">Decide</a>
-        <a href="/per-scheme" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'schemes' }}">Schemes</a>
-        <a href="/risk"     class="topbar__tab{{ ' topbar__tab--active' if active_group == 'risk' }}">Risk</a>
-        <a href="/simulate" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'simulate' }}">Simulate</a>
-        <a href="/cgt"      class="topbar__tab{{ ' topbar__tab--active' if active_group == 'reports' }}">Reports</a>
-        <a href="/history"  class="topbar__tab{{ ' topbar__tab--active' if _is_history }}">History</a>
-        <a href="/risk#alert-center" class="topbar__tab">
+        <a href="{{ with_as_of('/', selected_as_of) }}"         class="topbar__tab{{ ' topbar__tab--active' if active_group == 'decide' }}">Decide</a>
+        <a href="{{ with_as_of('/per-scheme', selected_as_of) }}" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'schemes' }}">Schemes</a>
+        <a href="{{ with_as_of('/risk', selected_as_of) }}"     class="topbar__tab{{ ' topbar__tab--active' if active_group == 'risk' }}">Risk</a>
+        <a href="{{ with_as_of('/simulate', selected_as_of) }}" class="topbar__tab{{ ' topbar__tab--active' if active_group == 'simulate' }}">Simulate</a>
+        <a href="{{ with_as_of('/cgt', selected_as_of) }}"      class="topbar__tab{{ ' topbar__tab--active' if active_group == 'reports' }}">Reports</a>
+        <a href="{{ with_as_of('/history', selected_as_of) }}"  class="topbar__tab{{ ' topbar__tab--active' if _is_history }}">History</a>
+        <a href="{{ with_as_of('/risk#alert-center', selected_as_of) }}" class="topbar__tab">
           Alerts{% if alert_center and alert_center.total and alert_center.total > 0 %}
           <span class="topbar__alert-count">{{ alert_center.total }}</span>
           {% endif %}
         </a>
-        <a href="/settings" class="topbar__tab topbar__tab--settings{{ ' topbar__tab--active' if active_group == 'settings' }}">Settings</a>
+        <a href="{{ with_as_of('/settings', selected_as_of) }}" class="topbar__tab topbar__tab--settings{{ ' topbar__tab--active' if active_group == 'settings' }}">Settings</a>
       </nav>
       {% if hide_values %}
       <span class="topbar__privacy">Values Hidden</span>
@@ -86,33 +86,33 @@
     <nav class="subnav" aria-label="Section navigation">
 
       {% if active_group == 'decide' %}
-        <a href="/"          class="subnav__link{{ ' subnav__link--active' if _path == '/' }}">Portfolio</a>
-        <a href="/net-value" class="subnav__link{{ ' subnav__link--active' if _path == '/net-value' }}">Net Value</a>
-        <a href="/capital-stack" class="subnav__link{{ ' subnav__link--active' if _path == '/capital-stack' }}">Capital Stack</a>
-        <a href="/cash"      class="subnav__link{{ ' subnav__link--active' if _path == '/cash' }}">Cash</a>
+        <a href="{{ with_as_of('/', selected_as_of) }}"          class="subnav__link{{ ' subnav__link--active' if _path == '/' }}">Portfolio</a>
+        <a href="{{ with_as_of('/net-value', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/net-value' }}">Net Value</a>
+        <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/capital-stack' }}">Capital Stack</a>
+        <a href="{{ with_as_of('/cash', selected_as_of) }}"      class="subnav__link{{ ' subnav__link--active' if _path == '/cash' }}">Cash</a>
 
       {% elif active_group == 'risk' %}
-        <a href="/risk"      class="subnav__link{{ ' subnav__link--active' if _path == '/risk' }}">Risk</a>
-        <a href="/analytics" class="subnav__link{{ ' subnav__link--active' if _path == '/analytics' }}">Analytics</a>
-        <a href="/calendar"  class="subnav__link{{ ' subnav__link--active' if _path == '/calendar' }}">Calendar</a>
+        <a href="{{ with_as_of('/risk', selected_as_of) }}"      class="subnav__link{{ ' subnav__link--active' if _path == '/risk' }}">Risk</a>
+        <a href="{{ with_as_of('/analytics', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/analytics' }}">Analytics</a>
+        <a href="{{ with_as_of('/calendar', selected_as_of) }}"  class="subnav__link{{ ' subnav__link--active' if _path == '/calendar' }}">Calendar</a>
 
       {% elif active_group == 'simulate' %}
-        <a href="/simulate"     class="subnav__link{{ ' subnav__link--active' if _path == '/simulate' }}">Simulate</a>
-        <a href="/scenario-lab" class="subnav__link{{ ' subnav__link--active' if _path == '/scenario-lab' }}">Scenario Lab</a>
-        <a href="/tax-plan"     class="subnav__link{{ ' subnav__link--active' if _path == '/tax-plan' }}">Tax Plan</a>
-        <a href="/sell-plan"    class="subnav__link{{ ' subnav__link--active' if _path == '/sell-plan' }}">Sell Plan</a>
+        <a href="{{ with_as_of('/simulate', selected_as_of) }}"     class="subnav__link{{ ' subnav__link--active' if _path == '/simulate' }}">Simulate</a>
+        <a href="{{ with_as_of('/scenario-lab', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/scenario-lab' }}">Scenario Lab</a>
+        <a href="{{ with_as_of('/tax-plan', selected_as_of) }}"     class="subnav__link{{ ' subnav__link--active' if _path == '/tax-plan' }}">Tax Plan</a>
+        <a href="{{ with_as_of('/sell-plan', selected_as_of) }}"    class="subnav__link{{ ' subnav__link--active' if _path == '/sell-plan' }}">Sell Plan</a>
 
       {% elif active_group == 'reports' %}
-        <a href="/cgt"           class="subnav__link{{ ' subnav__link--active' if _path == '/cgt' }}">CGT</a>
-        <a href="/economic-gain" class="subnav__link{{ ' subnav__link--active' if _path == '/economic-gain' }}">Economic Gain</a>
-        <a href="/dividends"     class="subnav__link{{ ' subnav__link--active' if _path == '/dividends' }}">Dividends</a>
-        <a href="/audit"         class="subnav__link{{ ' subnav__link--active' if _path == '/audit' }}">Audit</a>
-        <a href="/insights"      class="subnav__link{{ ' subnav__link--active' if _path == '/insights' or _path == '/capital-efficiency' or _path == '/employment-exit' or _path == '/isa-efficiency' or _path == '/fee-drag' or _path == '/data-quality' or _path == '/employment-tax-events' or _path == '/reconcile' or _path == '/basis-timeline' }}">Insights</a>
-        <a href="/pension"       class="subnav__link{{ ' subnav__link--active' if _path == '/pension' }}">Pension</a>
+        <a href="{{ with_as_of('/cgt', selected_as_of) }}"           class="subnav__link{{ ' subnav__link--active' if _path == '/cgt' }}">CGT</a>
+        <a href="{{ with_as_of('/economic-gain', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/economic-gain' }}">Economic Gain</a>
+        <a href="{{ with_as_of('/dividends', selected_as_of) }}"     class="subnav__link{{ ' subnav__link--active' if _path == '/dividends' }}">Dividends</a>
+        <a href="{{ with_as_of('/audit', selected_as_of) }}"         class="subnav__link{{ ' subnav__link--active' if _path == '/audit' }}">Audit</a>
+        <a href="{{ with_as_of('/insights', selected_as_of) }}"      class="subnav__link{{ ' subnav__link--active' if _path == '/insights' or _path == '/capital-efficiency' or _path == '/employment-exit' or _path == '/isa-efficiency' or _path == '/fee-drag' or _path == '/data-quality' or _path == '/employment-tax-events' or _path == '/reconcile' or _path == '/basis-timeline' }}">Insights</a>
+        <a href="{{ with_as_of('/pension', selected_as_of) }}"       class="subnav__link{{ ' subnav__link--active' if _path == '/pension' }}">Pension</a>
 
       {% elif active_group == 'settings' %}
-        <a href="/settings" class="subnav__link{{ ' subnav__link--active' if _path == '/settings' }}">Settings</a>
-        <a href="/glossary" class="subnav__link{{ ' subnav__link--active' if _path == '/glossary' }}">Glossary</a>
+        <a href="{{ with_as_of('/settings', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/settings' }}">Settings</a>
+        <a href="{{ with_as_of('/glossary', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/glossary' }}">Glossary</a>
 
       {% endif %}
     </nav>
@@ -123,14 +123,14 @@
       <div class="alert-center-bar__items">
         {% for alert in alert_center.alerts[:3] %}
         <a
-          href="{{ alert.href or '/risk#alert-center' }}"
+          href="{{ with_as_of(alert.href or '/risk#alert-center', selected_as_of) }}"
           class="alert-center-pill alert-center-pill--{{ alert.severity or 'info' }}"
         >
           <strong>{{ alert.title }}</strong>: {{ alert.message }}
         </a>
         {% endfor %}
       </div>
-      <a href="/risk#alert-center" class="alert-center-bar__all">View all ({{ alert_center.total }})</a>
+      <a href="{{ with_as_of('/risk#alert-center', selected_as_of) }}" class="alert-center-bar__all">View all ({{ alert_center.total }})</a>
     </div>
     {% endif %}
 

@@ -41,7 +41,7 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -1036,7 +1036,11 @@ def _security_daily_change_unavailable(
     )
 
 
-def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
+def _build_security_daily_changes(
+    summary,
+    *,
+    as_of: date_type | None = None,
+) -> dict[str, SecurityDailyChange]:
     """
     Build latest-vs-previous-close daily move cards for each security.
 
@@ -1045,23 +1049,32 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
     """
     changes: dict[str, SecurityDailyChange] = {}
     now_utc = _utc_now()
+    selected_as_of = as_of or now_utc.date()
+    historical_mode = selected_as_of != now_utc.date()
     with AppContext.read_session() as sess:
         price_repo = PriceRepository(sess)
         for ss in summary.securities:
             security_id = ss.security.id
             last_changed_at = price_repo.get_current_price_run_started_at(security_id)
-            freshness_text, freshness_level, freshness_title = _daily_freshness_note(
-                exchange=ss.security.exchange,
-                price_last_changed_at=last_changed_at,
-                now_utc=now_utc,
-            )
+            if historical_mode:
+                freshness_text = f"Historical as of {selected_as_of.isoformat()}"
+                freshness_level = "muted"
+                freshness_title = (
+                    "Using the latest stored price on or before the selected as-of date."
+                )
+            else:
+                freshness_text, freshness_level, freshness_title = _daily_freshness_note(
+                    exchange=ss.security.exchange,
+                    price_last_changed_at=last_changed_at,
+                    now_utc=now_utc,
+                )
 
             market_status, market_opens_in = _market_status_label(
                 exchange=ss.security.exchange,
                 now_utc=now_utc,
             )
 
-            latest_row = price_repo.get_latest(security_id)
+            latest_row = price_repo.get_latest_on_or_before(security_id, selected_as_of)
             if latest_row is None:
                 daily = _security_daily_change_unavailable(
                     security_id,
@@ -1109,6 +1122,8 @@ def _build_security_daily_changes(summary) -> dict[str, SecurityDailyChange]:
                 ).all()
             )
             if (
+                not historical_mode
+                and
                 len(snap_rows) >= 2
                 and snap_rows[0].price_date == latest_row.price_date
                 and snap_rows[1].price_date == latest_row.price_date
@@ -2567,7 +2582,11 @@ def _derive_true_cost_per_share(
 # ---------------------------------------------------------------------------
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def home(request: Request, msg: str | None = None) -> HTMLResponse:
+async def home(
+    request: Request,
+    msg: str | None = None,
+    as_of: date_type | None = Query(None),
+) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
     db_path = _state.get_db_path()
@@ -2576,12 +2595,14 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
     if refresh_diag["next_due_at"] is None:
         _state.set_refresh_next_due(60)
         refresh_diag = _state.get_refresh_diagnostics()
-    IbkrPriceService.ingest_all()
+    if as_of is None or as_of >= date_type.today():
+        IbkrPriceService.ingest_all()
     summary = PortfolioService.get_portfolio_summary(
         settings=settings,
         use_live_true_cost=False,
+        as_of=as_of,
     )
-    security_daily_changes = _build_security_daily_changes(summary)
+    security_daily_changes = _build_security_daily_changes(summary, as_of=as_of)
     position_rows_by_security = _build_portfolio_position_rows(
         summary,
         settings=settings,
@@ -2602,6 +2623,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
         settings=settings,
         db_path=db_path,
         summary=summary,
+        as_of=as_of,
     )
     estimated_net_dividends_gbp = capital_stack_snapshot.get("estimated_net_dividends_gbp")
     portfolio_net_gain_plus_net_dividends: Decimal | None = None
@@ -2681,6 +2703,8 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
             "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
             "guardrail_snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
+            "page_as_of_date": (as_of or today).isoformat(),
+            "page_as_of_active": as_of is not None,
             "today": today,
             **_flash(msg),
         },
@@ -2902,17 +2926,22 @@ def _build_nv_securities(summary) -> list[dict]:
 
 
 @router.get("/net-value", response_class=HTMLResponse, include_in_schema=False)
-async def net_value(request: Request) -> HTMLResponse:
+async def net_value(
+    request: Request,
+    as_of: date_type | None = Query(None),
+) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
-    IbkrPriceService.ingest_all()
+    if as_of is None or as_of >= date_type.today():
+        IbkrPriceService.ingest_all()
     summary = PortfolioService.get_portfolio_summary(
         settings=settings,
         use_live_true_cost=False,
+        as_of=as_of,
     )
-    security_daily_changes = _build_security_daily_changes(summary)
+    security_daily_changes = _build_security_daily_changes(summary, as_of=as_of)
     position_rows_by_security = _build_portfolio_position_rows(
         summary,
         settings=settings,
@@ -2922,6 +2951,7 @@ async def net_value(request: Request) -> HTMLResponse:
         settings=settings,
         db_path=db_path,
         summary=summary,
+        as_of=as_of,
     )
     deployable_today_gbp = capital_stack_snapshot.get("net_deployable_today_gbp")
     net_vs_deployable_delta_gbp: Decimal | None = None
@@ -2952,26 +2982,34 @@ async def net_value(request: Request) -> HTMLResponse:
             "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
             "security_daily_changes": security_daily_changes,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
+            "page_as_of_date": (as_of or date_type.today()).isoformat(),
+            "page_as_of_active": as_of is not None,
         },
     )
 
 
 @router.get("/capital-stack", response_class=HTMLResponse, include_in_schema=False)
-async def capital_stack(request: Request) -> HTMLResponse:
+async def capital_stack(
+    request: Request,
+    as_of: date_type | None = Query(None),
+) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
 
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
-    IbkrPriceService.ingest_all()
+    if as_of is None or as_of >= date_type.today():
+        IbkrPriceService.ingest_all()
     summary = PortfolioService.get_portfolio_summary(
         settings=settings,
         use_live_true_cost=False,
+        as_of=as_of,
     )
     stack = CapitalStackService.get_snapshot(
         settings=settings,
         db_path=db_path,
         summary=summary,
+        as_of=as_of,
     )
     return _html_template_response(
         "capital_stack.html",
@@ -2979,6 +3017,7 @@ async def capital_stack(request: Request) -> HTMLResponse:
             "request": request,
             "stack": stack,
             "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
+            "page_as_of_active": as_of is not None,
         },
     )
 

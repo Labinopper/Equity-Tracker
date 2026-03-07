@@ -40,6 +40,7 @@ def _locked_response(request: Request) -> HTMLResponse:
 
 @router.get("/api/calendar/events")
 async def api_calendar_events(
+    as_of: date_type | None = Query(None),
     days: int = Query(_DEFAULT_DAYS, ge=1, le=_MAX_DAYS),
     sell_plan_id: str | None = Query(None),
     sell_method: str | None = Query(None),
@@ -50,7 +51,7 @@ async def api_calendar_events(
     db_path = _state.get_db_path()
     sell_events = SellPlanService.calendar_events(
         db_path=db_path,
-        as_of=date_type.today(),
+        as_of=as_of or date_type.today(),
         horizon_days=days,
         sell_plan_id=sell_plan_id,
         sell_method=sell_method,
@@ -59,6 +60,7 @@ async def api_calendar_events(
     return CalendarService.get_events_payload(
         settings=settings,
         horizon_days=days,
+        as_of=as_of,
         sell_plan_events=sell_events,
     )
 
@@ -66,6 +68,7 @@ async def api_calendar_events(
 @router.get("/calendar", response_class=HTMLResponse, include_in_schema=False)
 async def calendar_page(
     request: Request,
+    as_of: date_type | None = Query(None),
     days: int = Query(_DEFAULT_DAYS, ge=1, le=_MAX_DAYS),
     sell_plan_id: str | None = Query(None),
     sell_method: str | None = Query(None),
@@ -78,7 +81,7 @@ async def calendar_page(
     db_path = _state.get_db_path()
     sell_events = SellPlanService.calendar_events(
         db_path=db_path,
-        as_of=date_type.today(),
+        as_of=as_of or date_type.today(),
         horizon_days=days,
         sell_plan_id=sell_plan_id,
         sell_method=sell_method,
@@ -87,6 +90,7 @@ async def calendar_page(
     payload = CalendarService.get_events_payload(
         settings=settings,
         horizon_days=days,
+        as_of=as_of,
         sell_plan_events=sell_events,
     )
     return templates.TemplateResponse(
@@ -97,6 +101,7 @@ async def calendar_page(
             "calendar": payload,
             "settings": settings,
             "calendar_filters": {
+                "as_of": (as_of or payload.get("as_of_date") or ""),
                 "sell_plan_id": sell_plan_id or "",
                 "sell_method": sell_method or "",
                 "sell_status": sell_status or "",

@@ -7,6 +7,16 @@
     <h1>Scenario Lab</h1>
     <p class="muted">Build multi-leg disposal scenarios, apply price sensitivity, and compare outcomes side-by-side.</p>
   </div>
+  <div class="page-actions">
+    <form method="get" action="/scenario-lab" class="inline-form">
+      <label for="scenario-context-as-of">As Of</label>
+      <input id="scenario-context-as-of" name="as_of" type="date" value="{{ selected_as_of or '' }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Load Context</button>
+      {% if page_as_of_active %}
+      <a href="/scenario-lab" class="btn btn-secondary btn-sm">Today</a>
+      {% endif %}
+    </form>
+  </div>
 </div>
 
 {% set model_scope = {

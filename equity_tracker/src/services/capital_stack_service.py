@@ -180,6 +180,7 @@ class CapitalStackService:
         portfolio = summary or PortfolioService.get_portfolio_summary(
             settings=settings,
             use_live_true_cost=False,
+            as_of=as_of_date,
         )
 
         gross_market = Decimal("0")
