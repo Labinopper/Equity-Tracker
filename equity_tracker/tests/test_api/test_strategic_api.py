@@ -21,6 +21,7 @@ from src.db.repository.prices import PriceRepository
         ("/api/strategic/employment-tax-events", {"tax_year_rows", "event_rows", "notes"}),
         ("/api/strategic/reconcile", {"components", "trace_links", "drift_panel", "notes"}),
         ("/api/strategic/basis-timeline", {"date_rows", "security_rows", "lookback_days", "notes"}),
+        ("/api/strategic/pension", {"current_pension_value_gbp", "recorded_inputs_gbp", "scenario_rows", "ledger_rows", "trace_links", "model_scope", "notes"}),
     ],
 )
 def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
@@ -85,6 +86,11 @@ def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
     elif path == "/api/strategic/basis-timeline":
         assert body["lookback_days"] == 365
         assert "native-price and FX contribution components" in body["notes"][-1]
+    elif path == "/api/strategic/pension":
+        assert body["trace_links"]["ledger"].endswith("#pension-ledger")
+        assert body["trace_links"]["assumptions"].endswith("#pension-assumptions")
+        assert body["model_scope"]["assumptions"]
+        assert body["notes"][0].startswith("Projections use fixed monthly contributions")
 
 
 @pytest.mark.parametrize(
@@ -99,6 +105,7 @@ def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
         ("/employment-tax-events", "Employment Tax Events", ("Tax-Year Totals", "Event Ledger", 'href="/tax-plan"')),
         ("/reconcile", "Cross-Page Reconciliation", ("Reconciliation Path", "Trace: Contributing Lots", "Trace: Recent Audit Mutations")),
         ("/basis-timeline", "Price/FX Basis Timeline", ("Aggregate By Date", "Security Basis Rows", "Native Move", "FX Move")),
+        ("/pension", "Pension", ("Pension Assumptions", "Scenario Timeline", "Contribution Ledger")),
     ],
 )
 def test_strategic_pages_render_semantic_matrix(client, path, marker, semantic_markers):

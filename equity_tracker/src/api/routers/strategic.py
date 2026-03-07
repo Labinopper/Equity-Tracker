@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ...app_context import AppContext
+from ...services.pension_service import PensionService
 from ...services.strategic_service import StrategicService
 from ...settings import AppSettings
 from .. import _state
@@ -111,6 +112,13 @@ async def api_basis_timeline(
     )
 
 
+@router.get("/api/strategic/pension")
+async def api_pension(_: None = Depends(db_required)) -> dict:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    return PensionService.get_dashboard(settings=settings, db_path=db_path)
+
+
 @router.get("/insights", response_class=HTMLResponse, include_in_schema=False)
 async def insights_page(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
@@ -180,6 +188,14 @@ async def insights_page(request: Request) -> HTMLResponse:
             "trend_context": "Compare cumulative native-move contribution vs FX contribution.",
             "action_href": "/history",
             "action_label": "Open History",
+        },
+        {
+            "href": "/pension",
+            "label": "Pension",
+            "desc": "Contribution ledger, retirement projection, and tracked-wealth context.",
+            "trend_context": "Compare conservative, base, and aggressive outcomes across timeline checkpoints.",
+            "action_href": "/pension#pension-ledger",
+            "action_label": "Open Pension Ledger",
         },
     ]
 
@@ -352,3 +368,115 @@ async def basis_timeline_page(
         {"request": request, "payload": payload, "lookback_days": lookback_days},
         media_type=_HTML_UTF8_MEDIA_TYPE,
     )
+
+
+def _render_pension_page(
+    request: Request,
+    *,
+    msg: str | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    payload = PensionService.get_dashboard(settings=settings, db_path=db_path)
+    return templates.TemplateResponse(
+        request,
+        "pension.html",
+        {
+            "request": request,
+            "payload": payload,
+            "flash": msg,
+            "error": error,
+            "model_scope": payload.get("model_scope"),
+        },
+        status_code=status_code,
+        media_type=_HTML_UTF8_MEDIA_TYPE,
+    )
+
+
+@router.get("/pension", response_class=HTMLResponse, include_in_schema=False)
+async def pension_page(request: Request, msg: str | None = None) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+    return _render_pension_page(request, msg=msg)
+
+
+@router.post("/pension/contributions", response_class=HTMLResponse, include_in_schema=False)
+async def pension_add_contribution(
+    request: Request,
+    entry_date: str = Form(...),
+    entry_type: str = Form(...),
+    amount_gbp: str = Form(...),
+    source: str = Form("manual"),
+    notes: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    try:
+        parsed_date = date.fromisoformat(entry_date)
+        amount = Decimal(amount_gbp)
+        PensionService.record_entry(
+            db_path=db_path,
+            entry_date=parsed_date,
+            entry_type=entry_type,
+            amount_gbp=amount,
+            source=source,
+            notes=notes,
+        )
+    except (InvalidOperation, ValueError) as exc:
+        return _render_pension_page(
+            request,
+            error=f"Pension contribution not saved: {exc}",
+            status_code=422,
+        )
+
+    return RedirectResponse("/pension?msg=Pension+contribution+saved.", status_code=303)
+
+
+@router.post("/pension/assumptions", response_class=HTMLResponse, include_in_schema=False)
+async def pension_save_assumptions(
+    request: Request,
+    current_pension_value_gbp: str = Form("0"),
+    monthly_employee_contribution_gbp: str = Form("0"),
+    monthly_employer_contribution_gbp: str = Form("0"),
+    retirement_date: str = Form(...),
+    target_annual_income_gbp: str = Form("0"),
+    target_withdrawal_rate_pct: str = Form("4"),
+    conservative_annual_return_pct: str = Form("3"),
+    base_annual_return_pct: str = Form("5"),
+    aggressive_annual_return_pct: str = Form("7"),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    try:
+        PensionService.save_assumptions(
+            db_path=db_path,
+            current_pension_value_gbp=current_pension_value_gbp,
+            monthly_employee_contribution_gbp=monthly_employee_contribution_gbp,
+            monthly_employer_contribution_gbp=monthly_employer_contribution_gbp,
+            retirement_date=retirement_date,
+            target_annual_income_gbp=target_annual_income_gbp,
+            target_withdrawal_rate_pct=target_withdrawal_rate_pct,
+            conservative_annual_return_pct=conservative_annual_return_pct,
+            base_annual_return_pct=base_annual_return_pct,
+            aggressive_annual_return_pct=aggressive_annual_return_pct,
+        )
+    except ValueError as exc:
+        return _render_pension_page(
+            request,
+            error=f"Pension assumptions not saved: {exc}",
+            status_code=422,
+        )
+
+    return RedirectResponse("/pension?msg=Pension+assumptions+saved.", status_code=303)

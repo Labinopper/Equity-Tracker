@@ -11,13 +11,14 @@ Scope guardrails:
 Execution mode (`2026-03-07`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
-- Current prioritization source: remaining deferred backlog and remaining hardening candidates.
+- Current prioritization source: remaining shared-foundation, workflow, and hardening candidates after pension delivery.
 
 ## Current Status
 
 - Stages `1`-`10` are complete.
 - Refinement Waves `A`-`C` are complete.
 - `2026-03-07` maintenance updates are live: lot-first dividends input, hidden dividend maintenance controls, deployable cash FX conversion to GBP-equivalent, dividend cash FX metadata persistence, and Portfolio UI simplification.
+- `2026-03-07` pension page is live: append-only contribution ledger, deterministic projection scenarios, retirement-target lens, and tracked-wealth context.
 - Strategic hardening items `T84`, `T85`, `T86`, and `T88` are complete and under regression coverage.
 - Detailed delivery history and the pre-tidy backlog snapshot now live in `docs/todo_archive.md`.
 
@@ -38,15 +39,15 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. `T83`: pension expansion, promoted ahead of workflow / QoL scope now that feature-breaking hardening is complete.
-2. Deeper hardening and shared foundations: `T87`, `T89`, `T57`, `T54`-`T56`.
-3. Workflow and QoL expansion: `T80`-`T82`, `T90`.
+1. Deeper hardening and shared foundations: `T87`, `T89`, `T57`, `T54`-`T56`.
+2. Workflow and QoL expansion: `T80`-`T82`, `T90`.
 
 ## Definition of Done (Current + Next)
 
 - Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
 - Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
 - Refinement backlog closure achieved: `T58`-`T79` complete with regression coverage for changed semantics, labels, traces, reconciliation pathways, and operational messaging.
+- Pension domain (`T83`) is live with deterministic assumptions, timeline projections, and append-only contribution tracking.
 - Deferred hardening coverage now includes `T84`, `T85`, `T86`, and `T88`.
 - Remaining work is limited to deferred foundation, workflow, product-expansion, and hardening candidates.
 - If any shipped scope is reopened, use `docs/todo_archive.md` for the historical acceptance criteria and archived task detail.
@@ -55,6 +56,7 @@ Execution mode (`2026-03-07`):
 
 ### Recently Completed Deferred Items (`2026-03-07`)
 
+- `T83`: pension tracking and projection surface with deterministic assumptions and append-only ledger.
 - `T84`: strategic regression matrix coverage for Stage-10 strategic pages.
 - `T85`: alert-threshold, alert-center, and trace-link end-to-end coverage.
 - `T86`: documented wording, Model Scope, glossary-anchor, and trace-anchor copy contracts.
@@ -76,7 +78,6 @@ Execution mode (`2026-03-07`):
 | T80 | P2 | M | Major | Add deterministic decision-brief export pack (selected metrics + assumptions + trace links) from major surfaces. | Transparency, auditability | Export artifact includes reproducible inputs/metadata and deep links to traces. |
 | T81 | P2 | M | Major | Add guided weekly review workflow spanning Portfolio, Risk, Calendar, and Reconcile with completion notes. | Behavioural discipline | Workflow state persists and can be resumed without reconfiguration. |
 | T82 | P2 | M | Major | Add deterministic notification digest for threshold breaches, stale data, and upcoming forfeiture/tax events. | Risk salience | Digest entries are generated exclusively from existing deterministic rules/state. |
-| T83 | P2 | L | Major | Add pension tracking and projection domain (future `/pension`): employee/employer contribution ledger, deterministic growth scenarios, retirement target timeline, and contribution-vs-growth attribution with reconcile links. | Long-horizon retained-wealth clarity | Pension outputs reconcile to contribution ledger + assumptions; scenario projections are assumption-driven (no advisory predictions), and include explicit model scope/provenance. |
 | T90 | P2 | L | Major | Add deterministic reallocation candidate planner (future `/allocation-planner`) that identifies overweight holdings/exposures, quantifies trim amounts, and evaluates user-defined replacement candidates or target buckets for diversification/tax-wrapper improvement. | Concentration risk reduction, capital deployment discipline, decision support | Outputs remain non-advisory and traceable: the user defines the candidate universe or target allocation rules, the app shows why an exposure is overweight, how much capital could be reduced, which candidates improve target-fit metrics, and before/after concentration, FX, wrapper, and tax-friction deltas. |
 
 ### Hardening Candidates

@@ -29,8 +29,9 @@ Last updated: `2026-03-07`
 
 - Refinement/hardening pass is closed (effective `2026-03-06`).
 - Active refinement scope `T58`-`T79` is complete; no in-process refinement waves remain.
+- Pension domain `T83` is now live.
 - Deferred hardening items `T84`, `T85`, `T86`, and `T88` are now complete.
-- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T83` pension now next.
+- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T87` next.
 
 ## Recent Documentation Sync (`2026-03-07`)
 
@@ -38,5 +39,6 @@ Last updated: `2026-03-07`
 - Deployable cash semantics updated to GBP-equivalent (including non-GBP cash conversion via FX).
 - Portfolio page docs updated for removed view controls and default-collapsed Model Scope.
 - Deferred roadmap extended with pension planning domain (`T83`) covering contribution tracking and deterministic projection scenarios.
+- Pension page is now live at `/pension` with append-only contribution tracking, deterministic return scenarios, and tracked-wealth context.
 - Added a dated implementation review addendum capturing alignment findings, priority fixes, and the next delivery roadmap.
 - Split the TODO docs into a compact working backlog (`docs/todo.md`) and a historical archive (`docs/todo_archive.md`).

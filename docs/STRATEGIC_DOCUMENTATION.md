@@ -2,7 +2,7 @@
 
 Last updated: `2026-03-07`
 
-Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, and Portfolio UI simplification); feature-expansion tracks remain deferred pending reprioritization.
+Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, and pension tracking/projection); remaining feature-expansion tracks stay deferred pending reprioritization.
 
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
 
@@ -13,6 +13,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 3. Deployable cash now includes non-GBP BROKER/BANK balances converted to GBP-equivalent using current FX rates (used by Portfolio, Risk, and Capital Stack).
 4. Dividend cash auto-post now writes FX metadata (`fx_rate`, `fx_source`) on cash entries to improve provenance clarity.
 5. Portfolio page no longer shows `Portfolio View Controls`; `Model Scope` is now collapsed by default.
+6. Pension page is now live at `/pension` with append-only contribution tracking, deterministic return scenarios, retirement-target comparison, and tracked-wealth context.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -34,6 +35,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 | Economic Gain Report (`/economic-gain`) | What is realised performance on true-cost basis? | How different is economic vs tax basis outcome? | N | P | N | N | Y | Y | Y (realised) | N |
 | Dividends (`/dividends`) | What dividend flow is taxable vs ISA-exempt, with FX provenance? | How do net dividends offset current capital at risk by security? | P | Y | N | P | Y | Y | N | Y |
 | Audit Log (`/audit`) | What deterministic data mutations changed model outputs? | Which input changes altered downstream surfaces? | N | P | N | N | N | P | P | N |
+| Pension (`/pension`) | What is the current pension pot, what has been paid in, and what could it reach by retirement under fixed assumptions? | How much is recorded inputs vs attributed growth, and what is the shortfall vs target? | N | P | N | N | N | N | N | N |
 | Add Lot (`/portfolio/add-lot`) | Are acquisition inputs sufficient for deterministic cost/tax/lock modelling? | What values will be persisted before save? | N | Y | Y | N | Y | Y | P | Y |
 | Transfer Lot (`/portfolio/transfer-lot`) | Can this transfer occur without violating scheme rules? | What transfer-time forfeiture and tax effects are triggered? | Y | Y | Y | N | Y | P | Y | Y |
 | Edit Lot (`/portfolio/edit-lot`) | How can lot corrections be made with auditability intact? | What protected constraints apply to quantity/cost edits? | P | Y | N | N | P | Y | P | Y |
@@ -146,6 +148,13 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 4. Decision Support Role: Reporting-grade clarity on realised and income-driven drag.
 5. Structural Improvements: Add explicit `Actual vs Forecast` summary split and link per-security allocation to Portfolio rows.
 
+## Pension (`/pension`)
+1. Purpose: Long-horizon retirement capital tracking using deterministic assumptions.
+2. Economic Model Behind the Page: Append-only employee/employer/adjustment ledger, current pension-value assumption, contribution-vs-growth attribution, tracked-wealth context against portfolio and deployable cash, and fixed-return projection checkpoints (`Now`, `5y`, `10y`, `Retirement`).
+3. Illusion vs Reality Risks: Fixed-return scenarios can be over-read as forecasts if the user ignores model-scope notes and target assumptions.
+4. Decision Support Role: Retirement-progress clarity and contribution discipline, not deployable-cash planning or advisory allocation logic.
+5. Structural Improvements: Add richer timeline visualization and, if expanded later, direct trace from scenario rows into assumption history / prior contribution windows.
+
 ## Input and Operational Surfaces (`/portfolio/add-lot`, `/portfolio/transfer-lot`, `/portfolio/edit-lot`, `/portfolio/add-security`, `/settings`, `/audit`, `/glossary`, `/auth/login`, `locked.html`)
 1. Purpose: Data quality, deterministic input controls, provenance, and operational trust.
 2. Economic Model Behind the Page: These pages govern assumptions and inputs feeding all decision surfaces (not independent valuation engines).
@@ -179,6 +188,10 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 ## Is FX risk visible or implicit?
 - Improved: analytics FX attribution, dividend FX provenance, cash conversion provenance, and `/basis-timeline` are live (`T14`, `T30`).
 
+## Is long-horizon retirement capital represented deterministically?
+- Yes: `/pension` now tracks recorded pension inputs separately from attributed growth, shows retirement-target shortfall under fixed assumptions, and keeps the output explicitly non-predictive.
+- Residual risk remains if users leave current pot or contribution assumptions stale.
+
 # Behavioural Risk Surface
 
 - Confirmation bias via gross-value anchoring: still possible if users skip Capital Stack and focus on gross market value.
@@ -191,7 +204,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 # Core v1 vs v2 Summary Recommendations
 
 ## Core v1
-1. Keep strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`) under regression coverage as model formulas evolve.
+1. Keep strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`, `/pension`) under regression coverage as model formulas evolve.
 2. Expand end-to-end tests around alert thresholds and trace-link integrity to preserve deterministic transparency.
 3. Harden documentation/test coupling so wording changes remain aligned with implementation semantics.
 
@@ -200,7 +213,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Add reconciliation delta tolerance tests across representative portfolio states.
 3. Add UX friction checks for trace flows (Portfolio/Net Value/Tax Plan -> Reconcile -> Audit record).
 
-Backlog mirror: logged in `docs/todo.md` as `T84`-`T89`.
+Backlog mirror and delivered-post-closure state: logged in `docs/todo.md`.
 
 # Portfolio Refinement Focus (Current Template)
 
@@ -261,6 +274,7 @@ Legend: `H` = high objective alignment, `M` = moderate alignment (useful but wit
 | Employment Tax Events (`/employment-tax-events`) | M | Useful event trail but limited traceability back to source records. | Add links to source lot/disposal/audit rows and provenance columns. |
 | Reconcile (`/reconcile`) | H | Strong cross-surface explanation and trace sections. | Add snapshot-to-snapshot drift decomposition (`price`, `FX`, `quantity`, `settings`). |
 | Basis Timeline (`/basis-timeline`) | M | Good tabular attribution but low visual salience. | Add charted timeline and top-contributor summary cards. |
+| Pension (`/pension`) | H | Strong deterministic retirement-planning baseline with append-only inputs, explicit assumptions, and tracked-wealth context. | Add richer timeline visualization and optional assumption-history trace if the surface expands further. |
 | Audit Log (`/audit`) | H | Strong append-only transparency with table/record filtering. | Add structured JSON diff highlighter and date-range filters. |
 | Add Lot (`/portfolio/add-lot`) | H | Strong input workflow with derived/persisted preview and FX workflow context. | Add explicit `records to be created` preview (including matched lot creation effects). |
 | Transfer Lot (`/portfolio/transfer-lot`) | H | Strong transfer impact panel and rule transparency. | Add before/after custody map and tax-estimate confidence badge in confirmation block. |
@@ -302,19 +316,3 @@ These are capability expansions, not page-polish refinements. Active refinement 
 ## AF7: Deterministic Notification Digest
 1. Scope: Optional digest for threshold breaches, stale-data risks, and upcoming forfeiture/tax events.
 2. Why Separate: Adds delivery/notification subsystem.
-
-## AF8: Pension Tracking and Projection Surface
-1. Scope: Add a pension roadmap surface (future `/pension`) for long-horizon retirement capital tracking using deterministic contribution and growth assumptions.
-2. Core Use Cases:
-- Track monthly employee and employer contributions over time with audit history.
-- Show current pension pot composition (contributions vs growth attribution).
-- Project future pension value using scenario assumptions (base/conservative/aggressive) with explicit contribution schedules.
-- Compare pension trajectory against target retirement dates and target annual income drawdown assumptions.
-- Show pension share of total net worth/deployable plan context alongside existing portfolio and cash surfaces.
-3. Feature Direction (in-project style):
-- Append-only pension contribution ledger with provenance (`employee`, `employer`, `one-off adjustment`).
-- Deterministic growth model (user-configured annual return and volatility bands, no predictive market advice).
-- Scenario timeline outputs (`Now`, `5y`, `10y`, `Retirement`) similar to existing optionality timeline conventions.
-- Tax-wrapper awareness (pension separate from ISA/taxable) with clear model-scope assumptions.
-- Reconcile links from pension outputs back to source contribution rows and settings assumptions.
-4. Why Separate: Introduces a new long-horizon planning domain and model surfaces beyond current equity/cash execution stack.
