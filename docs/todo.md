@@ -11,7 +11,7 @@ Scope guardrails:
 Execution mode (`2026-03-07`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
-- Current prioritization source: remaining shared-foundation, workflow, and hardening candidates after pension delivery.
+- Current prioritization source: remaining shared-foundation, workflow, and hardening candidates after pension delivery and Stage-10 route hardening.
 
 ## Current Status
 
@@ -19,7 +19,7 @@ Execution mode (`2026-03-07`):
 - Refinement Waves `A`-`C` are complete.
 - `2026-03-07` maintenance updates are live: lot-first dividends input, hidden dividend maintenance controls, deployable cash FX conversion to GBP-equivalent, dividend cash FX metadata persistence, and Portfolio UI simplification.
 - `2026-03-07` pension page is live: append-only contribution ledger, deterministic projection scenarios, retirement-target lens, and tracked-wealth context.
-- Strategic hardening items `T84`, `T85`, `T86`, and `T88` are complete and under regression coverage.
+- Strategic hardening items `T84`-`T89` are complete and under regression coverage.
 - Detailed delivery history and the pre-tidy backlog snapshot now live in `docs/todo_archive.md`.
 
 ## Execution Status (Source of Truth)
@@ -39,7 +39,7 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. Deeper hardening and shared foundations: `T87`, `T89`, `T57`, `T54`-`T56`.
+1. Shared foundations and remaining platform expansion: `T57`, `T54`-`T56`.
 2. Workflow and QoL expansion: `T80`-`T82`, `T90`.
 
 ## Definition of Done (Current + Next)
@@ -48,7 +48,7 @@ Execution mode (`2026-03-07`):
 - Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
 - Refinement backlog closure achieved: `T58`-`T79` complete with regression coverage for changed semantics, labels, traces, reconciliation pathways, and operational messaging.
 - Pension domain (`T83`) is live with deterministic assumptions, timeline projections, and append-only contribution tracking.
-- Deferred hardening coverage now includes `T84`, `T85`, `T86`, and `T88`.
+- Deferred hardening coverage now includes `T84`-`T89`.
 - Remaining work is limited to deferred foundation, workflow, product-expansion, and hardening candidates.
 - If any shipped scope is reopened, use `docs/todo_archive.md` for the historical acceptance criteria and archived task detail.
 
@@ -60,7 +60,9 @@ Execution mode (`2026-03-07`):
 - `T84`: strategic regression matrix coverage for Stage-10 strategic pages.
 - `T85`: alert-threshold, alert-center, and trace-link end-to-end coverage.
 - `T86`: documented wording, Model Scope, glossary-anchor, and trace-anchor copy contracts.
+- `T87`: broader strategic API/UI regression suite for Stage-10 pages, seeded route states, and representative filter/query combinations.
 - `T88`: cross-surface delta-tolerance fixtures for price, FX, quantity, and settings changes.
+- `T89`: UX-friction regression checks for `Portfolio/Net Value/Tax Plan -> Reconcile -> Audit`, including visible filter context on audit destinations.
 
 ### Shared Foundation Candidates
 
@@ -79,13 +81,6 @@ Execution mode (`2026-03-07`):
 | T81 | P2 | M | Major | Add guided weekly review workflow spanning Portfolio, Risk, Calendar, and Reconcile with completion notes. | Behavioural discipline | Workflow state persists and can be resumed without reconfiguration. |
 | T82 | P2 | M | Major | Add deterministic notification digest for threshold breaches, stale data, and upcoming forfeiture/tax events. | Risk salience | Digest entries are generated exclusively from existing deterministic rules/state. |
 | T90 | P2 | L | Major | Add deterministic reallocation candidate planner (future `/allocation-planner`) that identifies overweight holdings/exposures, quantifies trim amounts, and evaluates user-defined replacement candidates or target buckets for diversification/tax-wrapper improvement. | Concentration risk reduction, capital deployment discipline, decision support | Outputs remain non-advisory and traceable: the user defines the candidate universe or target allocation rules, the app shows why an exposure is overweight, how much capital could be reduced, which candidates improve target-fit metrics, and before/after concentration, FX, wrapper, and tax-friction deltas. |
-
-### Hardening Candidates
-
-| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
-|---|---|---|---|---|---|---|
-| T87 | P2 | M | Major | Add broader strategic API/UI regression suite for all Stage-10 pages and filters/parameter combinations. | Reliability, extensibility | Stage-10 routes and representative query states are covered by stable smoke + semantic response checks. |
-| T89 | P2 | S | Minor | Add UX-friction regression checks for key trace workflows (`Portfolio/Net Value/Tax Plan -> Reconcile -> Audit`). | Decision flow, usability | Critical trace journeys remain completable in <=3 clicks with visible context and no dead-end states. |
 
 ## Archive
 

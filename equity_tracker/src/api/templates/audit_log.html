@@ -32,6 +32,15 @@
 <div class="alert alert-error">{{ filter_error }}</div>
 {% endif %}
 
+{% if active_table or active_record_id or active_date_from or active_date_to %}
+<p class="muted page-intro">
+  Showing {{ entries|length }} entr{% if entries|length == 1 %}y{% else %}ies{% endif %}
+  {% if active_table %} for table <strong>{{ active_table }}</strong>{% endif %}
+  {% if active_record_id %} for record <code>{{ active_record_id }}</code>{% endif %}
+  {% if active_date_from or active_date_to %} within the selected date window{% endif %}.
+</p>
+{% endif %}
+
 {% if not entries %}
 <div class="empty-state">
   No audit entries

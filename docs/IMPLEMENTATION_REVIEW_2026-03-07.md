@@ -13,7 +13,7 @@ Equity Tracker is intended to be a deterministic equity-compensation and persona
 1. What do I actually own right now?
 2. What portion is sellable, forfeitable, locked, or already deployable?
 3. What would remain after tax, fees, and scheme constraints?
-4. How do today’s choices change future liquidity, concentration, and tax outcomes?
+4. How do today's choices change future liquidity, concentration, and tax outcomes?
 
 The strategic documentation is consistent about several design principles:
 
@@ -28,14 +28,14 @@ The strategic documentation is consistent about several design principles:
 
 ### Strongest Alignment
 
-- The Portfolio, Capital Stack, Risk, Sell Plan, Scenario Lab, Tax Plan, Cash, and Dividend flows all reflect the intended "decision-support first" model.
+- The Portfolio, Capital Stack, Risk, Sell Plan, Scenario Lab, Tax Plan, Cash, Dividend, and Pension flows reflect the intended "decision-support first" model.
 - The implementation already carries lot-aware and scheme-aware concepts through the stack, including FIFO disposal treatment, wrapper awareness, lock/forfeiture status, tax drag, and FX provenance.
-- The app meaningfully distinguishes between gross market value, liquid value, and estimated retained value.
+- The app meaningfully distinguishes between gross market value, liquid value, estimated retained value, and longer-horizon pension context.
 - Auditability is materially stronger than a typical personal finance tool because inputs, lot states, cash movements, tax events, and scenario outputs are preserved rather than collapsed into a single balance.
 
 ### Partial / Underpowered Areas
 
-- `Net Value` still presents itself as `Sell-All Breakdown` in the live screen, which weakens the deliberate distinction between a planning view and a literal action view.
+- `Net Value` naming is now aligned, but the page still under-emphasises the delta versus `Capital Stack`.
 - `Insights` currently behaves more like a strategic link hub than a first-class synthesis surface.
 - Several screens are information-rich but still visually dense enough to feel like internal analysis consoles rather than concise decision briefs.
 - Some approximation-heavy calculations are correct in spirit but not always surfaced with enough emphasis for a financially sensitive tool.
@@ -44,13 +44,13 @@ The strategic documentation is consistent about several design principles:
 
 - Users can still anchor on large hypothetical numbers even when the model warnings are technically present.
 - Approximate tax outputs risk looking authoritative if their scope and assumptions are not restated near the result itself.
-- Valuation provenance and FX completeness appear strategically important but are currently weakened by failing tests around provider and FX expectations.
+- Valuation provenance and FX completeness remain strategically important; broader strategic hardening is now in place, but valuation-basis trust still depends on the remaining provider and freshness coverage.
 
 ## Priority Fixes / Refinements
 
 | Priority | Issue | Why it matters | Recommended change |
 |---|---|---|---|
-| 1 | `Net Value` naming drift (`Sell-All Breakdown` language remains on the page) | The app explicitly separates deployable reality from hypothetical liquidation. Naming drift reintroduces confusion. | Rename the page title, primary heading, and supporting copy so the screen is consistently `Net Value`, with a subordinate explanation that it is a full-liquidation estimate. |
+| 1 | `Net Value` still under-emphasises the gap to `Capital Stack` | The app explicitly separates hypothetical liquidation from deployable reality. If that delta is visually weak, users can still anchor on the larger number. | Add a more explicit `Net Value vs Deployable Today` delta treatment and keep the supporting copy close to the headline figure. |
 | 2 | Price / FX provenance tests are stale or failing | Valuation basis and FX provenance are trust-critical in this product. Weak test coverage here undermines the core decision model. | Repair test coverage around `yfinance` provider migration, FX completeness signalling, and valuation-basis edge cases before adding more valuation features. |
 | 3 | Approximate calculations are not always scoped aggressively enough in the UI | Indicative outputs can be mistaken for lot-exact figures, especially in tax and dividend-adjusted views. | Add stronger inline labelling for weighted / portfolio-level estimates and separate them visually from exact lot-derived outputs. |
 | 4 | `Insights` does not yet behave like a synthesis layer | The app has many pages, but the strategic docs imply a clearer "what deserves attention now?" surface. | Convert `Insights` from link-heavy directory behaviour into a prioritised summary of concentration, tax windows, lock expiries, cash constraints, and data-quality warnings. |
@@ -76,7 +76,7 @@ The strategic documentation is consistent about several design principles:
 
 - Keep this as the deployable-capital reality engine.
 - Elevate it as the main counterpart to Net Value whenever liquidity, tax, or scheme constraints are discussed.
-- Continue showing blocked / locked / forfeitable deductions clearly before any "after-tax deployable" number.
+- Continue showing blocked, locked, and forfeitable deductions clearly before any "after-tax deployable" number.
 
 ### Insights
 
@@ -111,7 +111,7 @@ The strategic documentation is consistent about several design principles:
 
 ### Quick Wins
 
-- Rename and re-copy `Net Value` for consistency.
+- Make the `Net Value` versus `Capital Stack` delta more explicit on-page.
 - Strengthen inline "estimate" badges and model-scope messaging where metrics are approximation-heavy.
 - Rework `Insights` into a signal-first summary rather than a page directory.
 - Fix failing valuation and FX test coverage.
@@ -121,7 +121,7 @@ The strategic documentation is consistent about several design principles:
 - Split oversized templates into reusable partials.
 - Refactor pricing, tax-planning, and portfolio aggregation services into smaller domain modules.
 - Improve lot-level dividend treatment and expose receivable timing where relevant.
-- Add a central data-quality surface tied to missing price / FX / metadata issues.
+- Add a central data-quality surface tied to missing price, FX, or metadata issues.
 
 ### Bigger vNext Features
 
@@ -132,7 +132,7 @@ The strategic documentation is consistent about several design principles:
 
 ## Concrete Next Actions
 
-1. Rename the `Net Value` screen headings and supporting copy to eliminate `Sell-All Breakdown` drift.
+1. Add an explicit `Net Value vs Deployable Today` delta block with supporting copy.
 2. Repair failing tests around price-source migration, FX completeness, and valuation-basis signalling.
 3. Add inline exact / estimate badges to Portfolio, Capital Stack, Tax Plan, and Scenario outputs.
 4. Refactor `Insights` into a prioritised summary of actionable risks, opportunities, and data issues.

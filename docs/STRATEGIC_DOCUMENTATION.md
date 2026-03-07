@@ -205,13 +205,14 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 
 ## Core v1
 1. Keep strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`, `/pension`) under regression coverage as model formulas evolve.
-2. Expand end-to-end tests around alert thresholds and trace-link integrity to preserve deterministic transparency.
-3. Harden documentation/test coupling so wording changes remain aligned with implementation semantics.
+2. Keep end-to-end alert-threshold, trace-link, and trace-friction tests current so deterministic decision paths remain completable with visible context.
+3. Keep seeded Stage-10 API/UI regression coverage current as new filters, parameters, and page states are added.
+4. Harden documentation/test coupling so wording changes remain aligned with implementation semantics.
 
 ## v2 Strategic Upgrade
-1. Add broader strategic API/UI regression suite for all Stage-10 pages.
-2. Add reconciliation delta tolerance tests across representative portfolio states.
-3. Add UX friction checks for trace flows (Portfolio/Net Value/Tax Plan -> Reconcile -> Audit record).
+1. Maintain reconciliation delta-tolerance fixtures across representative portfolio states as formulas evolve.
+2. Extend the same regression discipline to future shared-foundation features (`as_of`, provenance badges, drift explainers) once they ship.
+3. Keep improving trace destinations so filtered audit/reconcile workflows stay high-context even as new record types are added.
 
 Backlog mirror and delivered-post-closure state: logged in `docs/todo.md`.
 
