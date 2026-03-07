@@ -40,7 +40,7 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. Workflow and QoL expansion: `T80`-`T82`, `T90`.
+1. Workflow and QoL expansion: `T81`-`T82`, `T90`.
 
 ## Definition of Done (Current + Next)
 
@@ -68,12 +68,12 @@ Execution mode (`2026-03-07`):
 - `T89`: UX-friction regression checks for `Portfolio/Net Value/Tax Plan -> Reconcile -> Audit`, including visible filter context on audit destinations.
 - `T55`: event-level provenance badges are now live in Calendar and Risk event rows, including row-visible price/FX freshness context.
 - `T56`: `/reconcile` drift explainer now exposes explicit cause buckets, explained vs residual change, and direct trace links into basis-timeline or filtered audit windows.
+- `T80`: deterministic decision-brief JSON export is now live across Portfolio, Net Value, Capital Stack, Tax Plan, and Risk, including captured assumptions and deep links back to trace surfaces.
 
 ### Product Expansion Candidates
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
-| T80 | P2 | M | Major | Add deterministic decision-brief export pack (selected metrics + assumptions + trace links) from major surfaces. | Transparency, auditability | Export artifact includes reproducible inputs/metadata and deep links to traces. |
 | T81 | P2 | M | Major | Add guided weekly review workflow spanning Portfolio, Risk, Calendar, and Reconcile with completion notes. | Behavioural discipline | Workflow state persists and can be resumed without reconfiguration. |
 | T82 | P2 | M | Major | Add deterministic notification digest for threshold breaches, stale data, and upcoming forfeiture/tax events. | Risk salience | Digest entries are generated exclusively from existing deterministic rules/state. |
 | T90 | P2 | L | Major | Add deterministic reallocation candidate planner (future `/allocation-planner`) that identifies overweight holdings/exposures, quantifies trim amounts, and evaluates user-defined replacement candidates or target buckets for diversification/tax-wrapper improvement. | Concentration risk reduction, capital deployment discipline, decision support | Outputs remain non-advisory and traceable: the user defines the candidate universe or target allocation rules, the app shows why an exposure is overweight, how much capital could be reduced, which candidates improve target-fit metrics, and before/after concentration, FX, wrapper, and tax-friction deltas. |

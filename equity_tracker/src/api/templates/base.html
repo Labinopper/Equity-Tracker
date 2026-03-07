@@ -147,6 +147,86 @@
   </main>
 
 </div>
+<script>
+(function () {
+  var buttons = Array.from(document.querySelectorAll("[data-decision-brief-download]"));
+  if (!buttons.length) {
+    return;
+  }
+
+  function buildUrl(btn) {
+    var url = new URL("/reports/decision-brief-export", window.location.origin);
+    var asOf = btn.getAttribute("data-decision-brief-as-of");
+    if (asOf) {
+      url.searchParams.set("as_of", asOf);
+    }
+    var surfaces = btn.getAttribute("data-decision-brief-surfaces");
+    if (surfaces) {
+      url.searchParams.set("surfaces", surfaces);
+    }
+    if (btn.getAttribute("data-include-current-query") === "true") {
+      var current = new URL(window.location.href);
+      [
+        "gross_income_gbp",
+        "bonus_gbp",
+        "sell_amount_gbp",
+        "additional_pension_sacrifice_gbp"
+      ].forEach(function (key) {
+        var value = current.searchParams.get(key);
+        if (value) {
+          url.searchParams.set(key, value);
+        }
+      });
+    }
+    return url.pathname + url.search;
+  }
+
+  buttons.forEach(function (btn) {
+    var defaultLabel = btn.getAttribute("data-default-label") || (btn.textContent || "Download brief JSON").trim();
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      btn.textContent = "Downloading...";
+
+      fetch(buildUrl(btn))
+        .then(function (res) {
+          if (!res.ok) {
+            return res.json().then(function (body) {
+              throw new Error(
+                (body && body.detail && body.detail.message) ||
+                body.detail ||
+                ("HTTP " + res.status)
+              );
+            });
+          }
+          return res.json();
+        })
+        .then(function (data) {
+          var json = JSON.stringify(data, null, 2);
+          var blob = new Blob([json], { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          var ts = new Date()
+            .toISOString()
+            .replace(/:/g, "-")
+            .replace(/\.\d{3}Z$/, "Z");
+          a.href = url;
+          a.download = "equity-tracker_decision-brief_" + ts + ".json";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          btn.disabled = false;
+          btn.textContent = defaultLabel;
+        })
+        .catch(function (err) {
+          btn.disabled = false;
+          btn.textContent = defaultLabel;
+          alert("Decision brief export failed: " + err.message);
+        });
+    });
+  });
+})();
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

@@ -16,6 +16,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 6. Pension page is now live at `/pension` with append-only contribution tracking, deterministic return scenarios, retirement-target comparison, and tracked-wealth context.
 7. Calendar and Risk now show row-level price/FX provenance badges for event-driven or time-band rows that depend on current valuation basis.
 8. `/reconcile` now shows explicit drift cause buckets with explained vs residual change and direct trace links into basis timeline or filtered audit windows.
+9. Decision-brief JSON export is now live across Portfolio, Net Value, Capital Stack, Tax Plan, and Risk, capturing selected headline metrics, assumptions, and trace links.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -293,9 +294,6 @@ Legend: `H` = high objective alignment, `M` = moderate alignment (useful but wit
 These are capability expansions, not page-polish refinements. Active refinement backlog is closed; keep parked until explicit reprioritization.
 
 ## AF5: Decision Brief Export Pack
-1. Scope: Deterministic export bundle combining selected page metrics, assumptions, and trace links in PDF/JSON.
-2. Why Separate: Adds a new reporting/output surface, not a page refinement.
-
 ## AF6: Guided Weekly Review Workflow
 1. Scope: Cross-page checklist flow (`Portfolio -> Risk -> Calendar -> Reconcile`) with completion state and saved notes.
 2. Why Separate: Adds orchestrated workflow behavior spanning multiple pages.

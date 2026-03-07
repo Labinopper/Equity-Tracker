@@ -20,7 +20,7 @@ Phase WB additions
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from ...core.tax_engine import available_tax_years
 from ...core.tax_engine.context import TaxContext
 from ...services.audit_export_service import AuditExportService, NetValueAuditExportService
+from ...services.decision_brief_service import DecisionBriefExportService
 from ...services.report_service import ReportService
 from ...settings import AppSettings
 from ..dependencies import db_required, session_required
@@ -40,6 +41,20 @@ from ..schemas.reports import (
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(session_required)])
+
+
+def _db_encrypted_flag() -> bool:
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return False
+    import os
+
+    return os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
+
+
+def _load_settings() -> AppSettings | None:
+    db_path = _state.get_db_path()
+    return AppSettings.load(db_path) if db_path is not None else None
 
 
 @router.get(
@@ -198,14 +213,8 @@ async def portfolio_audit_export(
     reflects the exact same numbers shown on the Portfolio page.
     """
     db_path = _state.get_db_path()
-    db_encrypted = False
-    if db_path is not None:
-        import os
-        db_encrypted = os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
-
-    settings: AppSettings | None = None
-    if db_path is not None:
-        settings = AppSettings.load(db_path)
+    db_encrypted = _db_encrypted_flag()
+    settings = _load_settings()
 
     payload = AuditExportService.get_portfolio_audit_export(
         settings=settings,
@@ -248,20 +257,70 @@ async def net_value_audit_export(
     reflects the exact same numbers shown on the Net Value page.
     """
     db_path = _state.get_db_path()
-    db_encrypted = False
-    if db_path is not None:
-        import os
-        db_encrypted = os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
-
-    settings: AppSettings | None = None
-    if db_path is not None:
-        settings = AppSettings.load(db_path)
+    db_encrypted = _db_encrypted_flag()
+    settings = _load_settings()
 
     payload = NetValueAuditExportService.get_net_value_audit_export(
         settings=settings,
         db_path=db_path,
         db_encrypted=db_encrypted,
     )
+    return JSONResponse(content=payload)
+
+
+@router.get(
+    "/decision-brief-export",
+    summary="Decision brief export (JSON)",
+    description=(
+        "Deterministic decision-brief export across the main decision surfaces. "
+        "Returns selected headline metrics, captured assumptions, and deep links "
+        "back to page traces. Defaults to Portfolio, Net Value, Capital Stack, "
+        "Tax Plan, and Risk."
+    ),
+)
+async def decision_brief_export(
+    as_of: date | None = Query(
+        None,
+        description="Optional as-of date for the brief.",
+    ),
+    surfaces: str | None = Query(
+        None,
+        description=(
+            "Comma-separated surface keys to include. "
+            "Supported: portfolio, net_value, capital_stack, tax_plan, risk."
+        ),
+    ),
+    gross_income_gbp: Decimal | None = Query(None, ge=0),
+    bonus_gbp: Decimal | None = Query(None, ge=0),
+    sell_amount_gbp: Decimal | None = Query(None, ge=0),
+    additional_pension_sacrifice_gbp: Decimal | None = Query(None, ge=0),
+    _: None = Depends(db_required),
+) -> JSONResponse:
+    db_path = _state.get_db_path()
+    settings = _load_settings()
+    db_encrypted = _db_encrypted_flag()
+    selected_surfaces = (
+        [part.strip() for part in surfaces.split(",") if part.strip()]
+        if surfaces
+        else None
+    )
+
+    try:
+        payload = DecisionBriefExportService.get_export(
+            settings=settings,
+            db_path=db_path,
+            db_encrypted=db_encrypted,
+            as_of=as_of,
+            surfaces=selected_surfaces,
+            tax_plan_overrides={
+                "gross_income_gbp": gross_income_gbp,
+                "bonus_gbp": bonus_gbp,
+                "sell_amount_gbp": sell_amount_gbp,
+                "additional_pension_sacrifice_gbp": additional_pension_sacrifice_gbp,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse(content=payload)
 
 

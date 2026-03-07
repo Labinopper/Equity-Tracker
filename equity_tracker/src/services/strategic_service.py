@@ -126,6 +126,17 @@ def _model_scope_map() -> dict[str, dict[str, list[str]]]:
                 "No staged execution assumptions",
             ],
         },
+        "capital_stack": {
+            "inputs": [
+                "Current holdings, deployable cash ledger, stored FX basis, configured tax inputs",
+            ],
+            "assumptions": [
+                "Deterministic gross-to-deployable deduction chain at current inputs",
+            ],
+            "exclusions": [
+                "No optimization or recommendation engine",
+            ],
+        },
         "tax_plan": {
             "inputs": [
                 "Tax-year settings, disposal history, current lot inventory",
@@ -135,6 +146,18 @@ def _model_scope_map() -> dict[str, dict[str, list[str]]]:
             ],
             "exclusions": [
                 "No probabilistic outcomes",
+            ],
+        },
+        "risk": {
+            "inputs": [
+                "Current holdings, lock/forfeiture states, deployable cash, alert thresholds",
+            ],
+            "assumptions": [
+                "Optionality and concentration metrics are deterministic and current-state only",
+            ],
+            "exclusions": [
+                "No market forecasts",
+                "No recommendation logic",
             ],
         },
         "scenario_lab": {

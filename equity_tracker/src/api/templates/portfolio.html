@@ -32,6 +32,7 @@
     </form>
     <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="btn btn-secondary btn-sm">Capital Stack</a>
     <a href="{{ with_as_of('/tax-plan', selected_as_of) }}" class="btn btn-secondary btn-sm">Tax Plan</a>
+    <button type="button" class="btn btn-secondary btn-sm" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">Download brief JSON</button>
     <button type="button" class="btn btn-secondary btn-sm" id="audit-json-btn">Download audit JSON</button>
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
     <a href="/dividends#add-dividend" class="btn btn-secondary btn-sm">+ Dividend</a>

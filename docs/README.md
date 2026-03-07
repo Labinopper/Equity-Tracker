@@ -35,7 +35,8 @@ Last updated: `2026-03-07`
 - Shared provenance-badge coverage `T55` is now live across Calendar and Risk event rows.
 - Shared reconcile drift-explainer upgrade `T56` is now live with explicit cause buckets and direct trace links.
 - Shared alert lifecycle `T57` is now live across Portfolio guardrails and the Risk alert center.
-- Next prioritization source: remaining deferred sections in `docs/todo.md`, with workflow/QoL expansion now next.
+- Decision-brief export `T80` is now live as a deterministic JSON pack across Portfolio, Net Value, Capital Stack, Tax Plan, and Risk.
+- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T81` now next.
 
 ## Recent Documentation Sync (`2026-03-07`)
 
@@ -50,5 +51,6 @@ Last updated: `2026-03-07`
 - Added row-visible price/FX provenance badges across Calendar and Risk event rows.
 - Added explicit `/reconcile` drift trace links from cause buckets into basis timeline and filtered audit windows.
 - Added shared server-side alert lifecycle with snooze/dismiss/reactivate state, deterministic expiry, and audit-backed transitions across Portfolio guardrails and the Risk alert center.
+- Added a deterministic decision-brief export pack across the main decision surfaces, including assumptions and trace links.
 - Added a dated implementation review addendum capturing alignment findings, priority fixes, and the next delivery roadmap.
 - Split the TODO docs into a compact working backlog (`docs/todo.md`) and a historical archive (`docs/todo_archive.md`).
