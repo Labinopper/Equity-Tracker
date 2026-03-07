@@ -300,3 +300,19 @@ These are capability expansions, not page-polish refinements. Active refinement 
 ## AF7: Deterministic Notification Digest
 1. Scope: Optional digest for threshold breaches, stale-data risks, and upcoming forfeiture/tax events.
 2. Why Separate: Adds delivery/notification subsystem.
+
+## AF8: Pension Tracking and Projection Surface
+1. Scope: Add a pension roadmap surface (future `/pension`) for long-horizon retirement capital tracking using deterministic contribution and growth assumptions.
+2. Core Use Cases:
+- Track monthly employee and employer contributions over time with audit history.
+- Show current pension pot composition (contributions vs growth attribution).
+- Project future pension value using scenario assumptions (base/conservative/aggressive) with explicit contribution schedules.
+- Compare pension trajectory against target retirement dates and target annual income drawdown assumptions.
+- Show pension share of total net worth/deployable plan context alongside existing portfolio and cash surfaces.
+3. Feature Direction (in-project style):
+- Append-only pension contribution ledger with provenance (`employee`, `employer`, `one-off adjustment`).
+- Deterministic growth model (user-configured annual return and volatility bands, no predictive market advice).
+- Scenario timeline outputs (`Now`, `5y`, `10y`, `Retirement`) similar to existing optionality timeline conventions.
+- Tax-wrapper awareness (pension separate from ISA/taxable) with clear model-scope assumptions.
+- Reconcile links from pension outputs back to source contribution rows and settings assumptions.
+4. Why Separate: Introduces a new long-horizon planning domain and model surfaces beyond current equity/cash execution stack.

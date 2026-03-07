@@ -32,3 +32,4 @@ Last updated: `2026-03-07`
 - Dividends flow documented as lot-first input with hidden maintenance UI controls.
 - Deployable cash semantics updated to GBP-equivalent (including non-GBP cash conversion via FX).
 - Portfolio page docs updated for removed view controls and default-collapsed Model Scope.
+- Deferred roadmap extended with pension planning domain (`T83`) covering contribution tracking and deterministic projection scenarios.
