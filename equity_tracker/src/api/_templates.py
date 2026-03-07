@@ -33,7 +33,14 @@ def _is_hide_values_enabled() -> bool:
 
 
 def _global_template_context(_request) -> dict[str, bool | str]:
-    alert_center = {"total": 0, "alerts": [], "thresholds": {}}
+    alert_center = {
+        "total": 0,
+        "alerts": [],
+        "suppressed_total": 0,
+        "suppressed_alerts": [],
+        "thresholds": {},
+        "policies": {},
+    }
     db_path = _state.get_db_path()
     if db_path is not None and AppContext.is_initialized():
         try:
@@ -43,7 +50,14 @@ def _global_template_context(_request) -> dict[str, bool | str]:
                 db_path=db_path,
             )
         except Exception:
-            alert_center = {"total": 0, "alerts": [], "thresholds": {}}
+            alert_center = {
+                "total": 0,
+                "alerts": [],
+                "suppressed_total": 0,
+                "suppressed_alerts": [],
+                "thresholds": {},
+                "policies": {},
+            }
     return {
         "hide_values": _is_hide_values_enabled(),
         "logout_url": "/auth/logout",

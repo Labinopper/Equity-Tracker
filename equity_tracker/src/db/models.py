@@ -100,7 +100,7 @@ _DIVIDEND_TREATMENT_CHECK = (
     "tax_treatment IN ('TAXABLE','ISA_EXEMPT')"
 )
 _PORTFOLIO_GUARDRAIL_STATE_CHECK = (
-    "state IN ('ACTIVE','DISMISSED')"
+    "state IN ('ACTIVE','DISMISSED','SNOOZED')"
 )
 
 
@@ -549,6 +549,8 @@ class PortfolioGuardrailStateEvent(Base):
       - DISMISSED: hidden until either:
           a) dismiss_until expires, or
           b) condition_hash changes.
+      - SNOOZED: temporarily hidden until dismiss_until expires or the
+        underlying condition_hash changes.
     """
 
     __tablename__ = "portfolio_guardrail_state_events"

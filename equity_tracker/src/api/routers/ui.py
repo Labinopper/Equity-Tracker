@@ -34,7 +34,6 @@ is not open, the locked.html page is returned instead.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date as date_type
@@ -59,7 +58,6 @@ from ...core.tax_engine.context import TaxContext
 from ...db.models import (
     Lot,
     LotDisposal,
-    PortfolioGuardrailStateEvent,
     PriceTickerSnapshot,
     Transaction,
 )
@@ -73,6 +71,7 @@ from ...services.fx_service import FxService
 from ...services.ibkr_price_service import IbkrPriceService
 from ...services.capital_stack_service import CapitalStackService
 from ...services.exposure_service import ExposureService
+from ...services.alert_lifecycle_service import AlertLifecycleService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -150,7 +149,8 @@ _GUARDRAIL_DRAG_ESCALATION_PCT_OF_INCOME = Decimal("10")
 _GUARDRAIL_FORFEITURE_IMMINENCE_DAYS = 183
 _GUARDRAIL_CONCENTRATION_TOP_PCT_DEFAULT = Decimal("50")
 _GUARDRAIL_CONCENTRATION_EMPLOYER_PCT_DEFAULT = Decimal("40")
-_GUARDRAIL_DISMISS_MAX_DAYS = 30
+_GUARDRAIL_DISMISS_MAX_DAYS = AlertLifecycleService.DISMISS_MAX_DAYS
+_GUARDRAIL_SNOOZE_MAX_DAYS = AlertLifecycleService.SNOOZE_MAX_DAYS
 
 
 @dataclass
@@ -839,92 +839,16 @@ def _build_behavioral_guardrails(
     return warnings
 
 
-def _guardrail_condition_hash(guardrail: dict[str, str]) -> str:
-    payload = "|".join(
-        [
-            str(guardrail.get("id") or ""),
-            str(guardrail.get("severity") or ""),
-            str(guardrail.get("title") or ""),
-            str(guardrail.get("message") or ""),
-        ]
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _annotate_guardrails_with_hash(
-    guardrails: list[dict[str, str]],
-) -> list[dict[str, str]]:
-    annotated: list[dict[str, str]] = []
-    for guardrail in guardrails:
-        enriched = dict(guardrail)
-        enriched["condition_hash"] = _guardrail_condition_hash(guardrail)
-        annotated.append(enriched)
-    return annotated
-
-
-def _latest_guardrail_state_by_id(
-    guardrail_ids: set[str],
-) -> dict[str, PortfolioGuardrailStateEvent]:
-    if not guardrail_ids:
-        return {}
-    with AppContext.read_session() as sess:
-        rows = list(
-            sess.scalars(
-                select(PortfolioGuardrailStateEvent)
-                .where(PortfolioGuardrailStateEvent.guardrail_id.in_(guardrail_ids))
-                .order_by(
-                    PortfolioGuardrailStateEvent.guardrail_id.asc(),
-                    PortfolioGuardrailStateEvent.changed_at.desc(),
-                )
-            ).all()
-        )
-    latest: dict[str, PortfolioGuardrailStateEvent] = {}
-    for row in rows:
-        if row.guardrail_id in latest:
-            continue
-        latest[row.guardrail_id] = row
-    return latest
-
-
-def _guardrail_is_suppressed(
-    guardrail: dict[str, str],
-    state_row: PortfolioGuardrailStateEvent | None,
-    *,
-    now_utc: datetime,
-) -> bool:
-    if state_row is None or state_row.state != "DISMISSED":
-        return False
-    if state_row.condition_hash and state_row.condition_hash != guardrail.get("condition_hash"):
-        return False
-    if state_row.dismiss_until is None:
-        return True
-    dismiss_until_utc = _to_utc_aware(state_row.dismiss_until)
-    return dismiss_until_utc > now_utc
-
-
 def _apply_guardrail_visibility_persistence(
     guardrails: list[dict[str, str]],
     *,
     now_utc: datetime,
 ) -> tuple[list[dict[str, str]], int]:
-    annotated = _annotate_guardrails_with_hash(guardrails)
-    latest_rows = _latest_guardrail_state_by_id(
-        {
-            str(guardrail.get("id") or "").strip()
-            for guardrail in annotated
-            if str(guardrail.get("id") or "").strip()
-        }
+    lifecycle = AlertLifecycleService.apply_visibility(
+        guardrails,
+        now_utc=now_utc,
     )
-    visible: list[dict[str, str]] = []
-    hidden_count = 0
-    for guardrail in annotated:
-        guardrail_id = str(guardrail.get("id") or "").strip()
-        state_row = latest_rows.get(guardrail_id)
-        if _guardrail_is_suppressed(guardrail, state_row, now_utc=now_utc):
-            hidden_count += 1
-            continue
-        visible.append(guardrail)
-    return visible, hidden_count
+    return lifecycle["active"], lifecycle["suppressed_total"]
 
 
 def _price_row_gbp_value(price_row) -> Decimal | None:
@@ -2756,6 +2680,7 @@ async def home(request: Request, msg: str | None = None) -> HTMLResponse:
             "behavioral_guardrails_hidden_count": behavioral_guardrails_hidden_count,
             "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
             "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
+            "guardrail_snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
             "today": today,
             **_flash(msg),
         },
@@ -2779,6 +2704,7 @@ async def dismiss_portfolio_guardrail(request: Request) -> JSONResponse:
 
     guardrail_id = str(payload.get("guardrail_id") or "").strip()
     condition_hash = str(payload.get("condition_hash") or "").strip()
+    action = str(payload.get("action") or "dismiss").strip().lower()
     if not guardrail_id or not condition_hash:
         return JSONResponse(
             {
@@ -2787,45 +2713,31 @@ async def dismiss_portfolio_guardrail(request: Request) -> JSONResponse:
             },
             status_code=400,
         )
-
-    now_utc = _utc_now()
-    dismiss_until = now_utc + timedelta(days=_GUARDRAIL_DISMISS_MAX_DAYS)
-    with AppContext.write_session() as sess:
-        event = PortfolioGuardrailStateEvent(
-            guardrail_id=guardrail_id,
-            state="DISMISSED",
+    try:
+        result = AlertLifecycleService.record_state_transition(
+            lifecycle_id=guardrail_id,
             condition_hash=condition_hash,
-            dismiss_until=dismiss_until,
+            action=action,
             source="portfolio_ui",
             notes=(
-                "Dismissed from portfolio page; auto-reactivates on condition-hash "
-                "change or expiry."
+                "Updated from portfolio behavioral guardrails; "
+                "auto-reactivates on condition change or expiry."
             ),
+            dismiss_days=_GUARDRAIL_DISMISS_MAX_DAYS,
+            snooze_days=_GUARDRAIL_SNOOZE_MAX_DAYS,
         )
-        sess.add(event)
-        sess.flush()
-        AuditRepository(sess).log_insert(
-            table_name="portfolio_guardrail_state_events",
-            record_id=event.id,
-            new_values={
-                "guardrail_id": event.guardrail_id,
-                "state": event.state,
-                "condition_hash": event.condition_hash,
-                "dismiss_until": event.dismiss_until.isoformat()
-                if event.dismiss_until
-                else None,
-                "source": event.source,
-            },
-            notes="Portfolio guardrail lifecycle update.",
-        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
 
     return JSONResponse(
         {
             "ok": True,
             "guardrail_id": guardrail_id,
-            "dismiss_until": dismiss_until.isoformat(),
-            "policy": "until_condition_change_or_expiry",
-            "max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
+            "state": result["state"],
+            "until": result["until"],
+            "policy": result["policy"],
+            "dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
+            "snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
         }
     )
 

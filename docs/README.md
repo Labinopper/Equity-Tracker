@@ -31,7 +31,8 @@ Last updated: `2026-03-07`
 - Active refinement scope `T58`-`T79` is complete; no in-process refinement waves remain.
 - Pension domain `T83` is now live.
 - Deferred hardening items `T84`-`T89` are now complete.
-- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T57` next.
+- Shared alert lifecycle `T57` is now live across Portfolio guardrails and the Risk alert center.
+- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T54` next.
 
 ## Recent Documentation Sync (`2026-03-07`)
 
@@ -42,5 +43,6 @@ Last updated: `2026-03-07`
 - Pension page is now live at `/pension` with append-only contribution tracking, deterministic return scenarios, and tracked-wealth context.
 - Expanded Stage-10 strategic regression coverage across seeded route states and representative filter/query combinations.
 - Added trace-workflow friction coverage for `Portfolio/Net Value/Tax Plan -> Reconcile -> Audit`, plus clearer audit filter context on filtered destinations.
+- Added shared server-side alert lifecycle with snooze/dismiss/reactivate state, deterministic expiry, and audit-backed transitions across Portfolio guardrails and the Risk alert center.
 - Added a dated implementation review addendum capturing alignment findings, priority fixes, and the next delivery roadmap.
 - Split the TODO docs into a compact working backlog (`docs/todo.md`) and a historical archive (`docs/todo_archive.md`).

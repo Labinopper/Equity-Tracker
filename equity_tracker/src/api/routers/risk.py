@@ -5,11 +5,13 @@ Risk routes (UI + JSON API).
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote_plus
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ...app_context import AppContext
+from ...services.alert_lifecycle_service import AlertLifecycleService
 from ...services.risk_service import RiskService
 from ...settings import AppSettings
 from .. import _state
@@ -19,6 +21,10 @@ from ..schemas.risk import RiskSummarySchema
 
 router = APIRouter(tags=["risk"], dependencies=[Depends(session_required)])
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
+
+
+def _flash(msg: str | None) -> dict[str, str]:
+    return {"flash": msg} if msg else {}
 
 
 def _parse_optionality_weights(
@@ -127,6 +133,38 @@ async def risk_page(request: Request) -> HTMLResponse:
                 if summary.optionality_index is not None
                 else {}
             ),
+            **_flash(request.query_params.get("msg")),
         },
         media_type=_HTML_UTF8_MEDIA_TYPE,
+    )
+
+
+@router.post("/risk/alerts/lifecycle", include_in_schema=False)
+async def update_risk_alert_lifecycle(
+    request: Request,
+    lifecycle_id: str = Form(...),
+    condition_hash: str = Form(default=""),
+    action: str = Form(...),
+) -> RedirectResponse:
+    if not AppContext.is_initialized():
+        return RedirectResponse(
+            url=f"/risk?msg={quote_plus('Database is locked.')}#alert-center",
+            status_code=303,
+        )
+
+    try:
+        payload = AlertLifecycleService.record_state_transition(
+            lifecycle_id=lifecycle_id,
+            condition_hash=condition_hash,
+            action=action,
+            source="risk_alert_center",
+            notes="Updated from Risk alert center.",
+        )
+        msg = f"{payload['state_label']} alert state saved."
+    except ValueError as exc:
+        msg = str(exc)
+
+    return RedirectResponse(
+        url=f"/risk?msg={quote_plus(msg)}#alert-center",
+        status_code=303,
     )

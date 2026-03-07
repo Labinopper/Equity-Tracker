@@ -14,7 +14,7 @@
     >
       Guardrails <strong id="guardrail-active-count">{{ behavioral_guardrails_active_count }}</strong>
       {% if behavioral_guardrails_hidden_count > 0 %}
-      <span class="guardrail-count-pill__meta" id="guardrail-hidden-count">{{ behavioral_guardrails_hidden_count }} dismissed</span>
+      <span class="guardrail-count-pill__meta" id="guardrail-hidden-count">{{ behavioral_guardrails_hidden_count }} suppressed</span>
       {% endif %}
     </a>
   </div>
@@ -297,7 +297,7 @@
   </div>
   <p class="muted">
     Deterministic warnings for liquidity illusion, tax drag, ISA sheltering, and forfeiture timing.
-    Dismissals are persisted across sessions for up to {{ guardrail_dismiss_max_days }} days, and reopen automatically if conditions materially change.
+    Snoozes persist for {{ guardrail_snooze_max_days }} days, dismissals persist for up to {{ guardrail_dismiss_max_days }} days, and both reopen automatically if conditions materially change.
   </p>
   {% for guardrail in behavioral_guardrails %}
   <div
@@ -308,6 +308,7 @@
     <div><strong>{{ guardrail.title }}</strong></div>
     <div>{{ guardrail.message }}</div>
     <div class="form-actions">
+      <button type="button" class="btn btn-secondary btn-sm guardrail-snooze-btn">Snooze {{ guardrail_snooze_max_days }}d</button>
       <button type="button" class="btn btn-secondary btn-sm guardrail-dismiss-btn">Dismiss</button>
     </div>
   </div>
@@ -1384,7 +1385,7 @@
       countPill.appendChild(hiddenCountEl);
     }
     if (hiddenCountEl) {
-      hiddenCountEl.textContent = String(count) + " dismissed";
+      hiddenCountEl.textContent = String(count) + " suppressed";
     }
   }
 
@@ -1402,7 +1403,7 @@
     }
   }
 
-  function dismissGuardrail(guardrailId, conditionHash) {
+  function updateGuardrailLifecycle(guardrailId, conditionHash, action) {
     return fetch("/portfolio/guardrails/dismiss", {
       method: "POST",
       headers: {
@@ -1410,7 +1411,8 @@
       },
       body: JSON.stringify({
         guardrail_id: guardrailId,
-        condition_hash: conditionHash
+        condition_hash: conditionHash,
+        action: action
       })
     }).then(function (res) {
       if (!res.ok) {
@@ -1436,25 +1438,44 @@
     }
 
     var dismissBtn = alertEl.querySelector(".guardrail-dismiss-btn");
-    if (!dismissBtn) {
+    var snoozeBtn = alertEl.querySelector(".guardrail-snooze-btn");
+    if (!dismissBtn && !snoozeBtn) {
       return;
     }
-    dismissBtn.addEventListener("click", function () {
-      var originalLabel = dismissBtn.textContent;
-      dismissBtn.disabled = true;
-      dismissBtn.textContent = "Saving...";
-      dismissGuardrail(guardrailId, conditionHash)
+    function bindLifecycleButton(buttonEl, action, errorLabel) {
+      if (!buttonEl) {
+        return;
+      }
+      buttonEl.addEventListener("click", function () {
+        var originalLabel = buttonEl.textContent;
+        if (dismissBtn) {
+          dismissBtn.disabled = true;
+        }
+        if (snoozeBtn) {
+          snoozeBtn.disabled = true;
+        }
+        buttonEl.textContent = "Saving...";
+        updateGuardrailLifecycle(guardrailId, conditionHash, action)
         .then(function () {
           alertEl.remove();
           ensureHiddenCountLabel(parseHiddenCount() + 1);
           updateGuardrailHeader();
         })
         .catch(function (err) {
-          dismissBtn.disabled = false;
-          dismissBtn.textContent = originalLabel;
-          alert("Guardrail dismiss failed: " + err.message);
+          if (dismissBtn) {
+            dismissBtn.disabled = false;
+          }
+          if (snoozeBtn) {
+            snoozeBtn.disabled = false;
+          }
+          buttonEl.textContent = originalLabel;
+          alert(errorLabel + ": " + err.message);
         });
-    });
+      });
+    }
+
+    bindLifecycleButton(snoozeBtn, "snooze", "Guardrail snooze failed");
+    bindLifecycleButton(dismissBtn, "dismiss", "Guardrail dismiss failed");
   });
   updateGuardrailHeader();
 })();

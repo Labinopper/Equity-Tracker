@@ -7,6 +7,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from ..settings import AppSettings
+from .alert_lifecycle_service import AlertLifecycleService
 from .exposure_service import ExposureService
 from .portfolio_service import PortfolioService
 
@@ -234,7 +235,17 @@ class AlertService:
                 }
             )
 
-        alerts.sort(key=lambda row: (_severity_rank(str(row.get("severity"))), str(row.get("event_date") or ""), str(row.get("id") or "")))
+        alerts.sort(
+            key=lambda row: (
+                _severity_rank(str(row.get("severity"))),
+                str(row.get("event_date") or ""),
+                str(row.get("id") or ""),
+            )
+        )
+        lifecycle = AlertLifecycleService.apply_visibility(
+            alerts,
+            namespace="alert_center",
+        )
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -242,6 +253,12 @@ class AlertService:
                 "top_holding_pct": str(top_threshold),
                 "employer_pct": str(employer_threshold),
             },
-            "total": len(alerts),
-            "alerts": alerts,
+            "policies": {
+                "dismiss_days": AlertLifecycleService.DISMISS_MAX_DAYS,
+                "snooze_days": AlertLifecycleService.SNOOZE_MAX_DAYS,
+            },
+            "total": len(lifecycle["active"]),
+            "alerts": lifecycle["active"],
+            "suppressed_total": lifecycle["suppressed_total"],
+            "suppressed_alerts": lifecycle["suppressed"],
         }

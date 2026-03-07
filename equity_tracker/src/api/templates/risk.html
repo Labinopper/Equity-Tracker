@@ -64,6 +64,9 @@
   <div class="card__header">
     <h2 class="card__title">Alert Center</h2>
   </div>
+  <p class="muted">
+    Snoozes and dismissals persist across sessions and devices. Snooze for {{ alert_center.policies.snooze_days or 7 }} days, dismiss for {{ alert_center.policies.dismiss_days or 30 }} days, and reopen automatically on expiry or material condition change.
+  </p>
   {% if alert_center and alert_center.alerts %}
   <div class="table-wrap">
     <table>
@@ -86,7 +89,23 @@
             <div><strong>{{ alert.title }}</strong></div>
             <div class="muted">{{ alert.message }}</div>
           </td>
-          <td><a href="{{ alert.href or '/risk' }}">Open</a></td>
+          <td>
+            <div class="form-actions">
+              <a href="{{ alert.href or '/risk' }}">Open</a>
+              <form method="post" action="/risk/alerts/lifecycle" class="inline-form">
+                <input type="hidden" name="lifecycle_id" value="{{ alert.lifecycle_id }}">
+                <input type="hidden" name="condition_hash" value="{{ alert.condition_hash }}">
+                <input type="hidden" name="action" value="snooze">
+                <button type="submit" class="btn btn-secondary btn-sm">Snooze {{ alert_center.policies.snooze_days or 7 }}d</button>
+              </form>
+              <form method="post" action="/risk/alerts/lifecycle" class="inline-form">
+                <input type="hidden" name="lifecycle_id" value="{{ alert.lifecycle_id }}">
+                <input type="hidden" name="condition_hash" value="{{ alert.condition_hash }}">
+                <input type="hidden" name="action" value="dismiss">
+                <button type="submit" class="btn btn-secondary btn-sm">Dismiss</button>
+              </form>
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -94,6 +113,51 @@
   </div>
   {% else %}
   <p class="muted">No active deterministic alerts.</p>
+  {% endif %}
+  {% if alert_center and alert_center.suppressed_total %}
+  <div class="table-wrap" style="margin-top:1rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>State</th>
+          <th>Suppressed Alert</th>
+          <th>Hidden Until</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alert_center.suppressed_alerts %}
+        <tr>
+          <td>
+            <span class="badge badge-neutral">{{ alert.suppression_state_label }}</span>
+          </td>
+          <td>
+            <div><strong>{{ alert.title }}</strong></div>
+            <div class="muted">{{ alert.message }}</div>
+          </td>
+          <td>
+            {% if alert.suppressed_until_iso %}
+            <span class="mono-small">{{ alert.suppressed_until_iso }}</span>
+            {% else %}
+            <span class="muted">Until condition change</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="form-actions">
+              <a href="{{ alert.href or '/risk' }}">Open</a>
+              <form method="post" action="/risk/alerts/lifecycle" class="inline-form">
+                <input type="hidden" name="lifecycle_id" value="{{ alert.lifecycle_id }}">
+                <input type="hidden" name="condition_hash" value="{{ alert.condition_hash }}">
+                <input type="hidden" name="action" value="activate">
+                <button type="submit" class="btn btn-secondary btn-sm">Reactivate</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% endif %}
 </div>
 

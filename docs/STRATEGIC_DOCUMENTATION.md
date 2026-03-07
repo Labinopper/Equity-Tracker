@@ -229,9 +229,9 @@ Backlog mirror and delivered-post-closure state: logged in `docs/todo.md`.
 3. Expected Outcome: Improved deterministic trust and reduced stale-data misinterpretation.
 
 ## PR3: Persistent Guardrail State
-1. Objective Gap: Guardrail dismissals are local-browser only.
-2. Refinement: Backed by persisted, auditable server-side alert lifecycle with expiry semantics.
-3. Expected Outcome: Cross-session/device consistency and reduced silent risk masking.
+1. Status: Delivered on `2026-03-07`.
+2. Implementation: Portfolio guardrails and the Risk alert center now use persisted, auditable server-side lifecycle state with snooze/dismiss/reactivate actions and deterministic expiry semantics.
+3. Outcome: Cross-session/device consistency and reduced silent risk masking.
 
 ## PR4: Formula and Trace Clarity
 1. Objective Gap: View-control formula language is generic and not deeply connected to metric semantics.
