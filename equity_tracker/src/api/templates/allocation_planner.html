@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+{% block title %}Allocation Planner - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Allocation Planner</h1>
+    <p class="muted">Trim overweight exposures and compare user-defined redeployment candidates without advisory language.</p>
+  </div>
+</div>
+
+{% include "partials/model_scope_card.html" %}
+
+<p class="muted">
+  Trace links:
+  <a href="{{ payload.trace_links.risk }}">Risk</a> |
+  <a href="{{ payload.trace_links.capital_stack }}">Capital Stack</a> |
+  <a href="{{ payload.trace_links.simulate }}">Simulate</a>
+</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat stat--accent">
+    <div class="stat__label">Planner Target Max</div>
+    <div class="stat__value">{{ payload.planner_config.target_max_pct }}%</div>
+    <span class="stat-caption">Maximum gross concentration for the selected source.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Selected Source</div>
+    <div class="stat__value">{{ payload.selected_source.ticker if payload.selected_source else "None" }}</div>
+    <span class="stat-caption">{{ payload.selected_source.selection_reason if payload.selected_source else "No priced source available." }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Executable Trim</div>
+    <div class="stat__value">{{ payload.trim_plan.executable_quantity or "0" }} sh</div>
+    <span class="stat-caption">Whole-share trim at current deterministic GBP price.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Net Redeployable</div>
+    <div class="stat__value">&pound;{{ payload.trim_plan.net_redeployable_gbp | money }}</div>
+    <span class="stat-caption">After estimated employment tax, CGT, and fees.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Source After Trim</div>
+    <div class="stat__value">{{ payload.before_after.source_pct_after or "0.00" }}%</div>
+    <span class="stat-caption">Post-friction source concentration.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Top Holding After</div>
+    <div class="stat__value">{{ payload.before_after.top_holding_after or "None" }}</div>
+    <span class="stat-caption">{{ payload.before_after.top_holding_after_pct or "0.00" }}% of after-trade holdings.</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Planner Settings</h2>
+  </div>
+  <form method="post" action="/allocation-planner/settings" class="inline-form">
+    <input type="hidden" name="as_of" value="{{ selected_as_of or payload.as_of_date }}">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="source_selection_mode">Source Selection Mode</label>
+        <select id="source_selection_mode" name="source_selection_mode">
+          <option value="AUTO" {{ 'selected' if payload.planner_config.source_selection_mode == 'AUTO' else '' }}>Auto</option>
+          <option value="EMPLOYER" {{ 'selected' if payload.planner_config.source_selection_mode == 'EMPLOYER' else '' }}>Employer</option>
+          <option value="TICKER" {{ 'selected' if payload.planner_config.source_selection_mode == 'TICKER' else '' }}>Ticker</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="source_ticker">Source Ticker Override</label>
+        <input id="source_ticker" name="source_ticker" type="text" value="{{ payload.planner_config.source_ticker }}">
+      </div>
+      <div class="form-field">
+        <label for="target_max_pct">Target Max Concentration (%)</label>
+        <input id="target_max_pct" name="target_max_pct" type="text" inputmode="decimal" value="{{ payload.planner_config.target_max_pct }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Planner Settings</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Source Exposure Rows</h2>
+  </div>
+  {% if payload.security_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Gross Value</th>
+          <th>Gross %</th>
+          <th>Sellable</th>
+          <th>Excess vs Target</th>
+          <th>Actionable Trim</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.security_rows %}
+        <tr>
+          <td>{{ row.ticker }}</td>
+          <td>&pound;{{ row.gross_market_value_gbp | money }}</td>
+          <td>{{ row.gross_pct }}%</td>
+          <td>&pound;{{ row.sellable_market_value_gbp | money }}</td>
+          <td>&pound;{{ row.excess_over_target_gbp | money }}</td>
+          <td>&pound;{{ row.actionable_trim_gbp | money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No priced holdings available for source selection.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Trim Plan</h2>
+  </div>
+  {% if payload.selected_source %}
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Source</th><td>{{ payload.selected_source.ticker }}</td></tr>
+        <tr><th>Selection Reason</th><td>{{ payload.selected_source.selection_reason }}</td></tr>
+        <tr><th>Target Value Before</th><td>&pound;{{ payload.trim_plan.target_value_before_gbp | money }}</td></tr>
+        <tr><th>Excess Over Target</th><td>&pound;{{ payload.trim_plan.excess_over_target_gbp | money }}</td></tr>
+        <tr><th>Executable Quantity</th><td>{{ payload.trim_plan.executable_quantity }}</td></tr>
+        <tr><th>Gross Proceeds</th><td>&pound;{{ payload.trim_plan.gross_proceeds_gbp | money }}</td></tr>
+        <tr><th>Employment Tax</th><td>&pound;{{ payload.trim_plan.employment_tax_gbp | money }}</td></tr>
+        <tr><th>Estimated CGT</th><td>&pound;{{ payload.trim_plan.estimated_cgt_gbp | money }}</td></tr>
+        <tr><th>Broker Fees</th><td>&pound;{{ payload.trim_plan.broker_fees_gbp | money }}</td></tr>
+        <tr><th>Net Redeployable</th><td>&pound;{{ payload.trim_plan.net_redeployable_gbp | money }}</td></tr>
+        <tr><th>Remaining Overweight</th><td>&pound;{{ payload.trim_plan.remaining_overweight_gbp | money }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">
+    <a href="{{ payload.trim_plan.trace_links.risk }}">Risk</a> |
+    <a href="{{ payload.trim_plan.trace_links.capital_stack }}">Capital Stack</a> |
+    <a href="{{ payload.trim_plan.trace_links.reconcile }}">Reconcile</a> |
+    <a href="{{ payload.trim_plan.trace_links.simulate }}">Simulate This Trim</a>
+  </p>
+  {% else %}
+  <p class="muted">No source exposure is currently available.</p>
+  {% endif %}
+  {% if payload.trim_plan.notes %}
+  <ul>
+    {% for note in payload.trim_plan.notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+<div class="card" id="candidate-universe">
+  <div class="card__header">
+    <h2 class="card__title">Candidate Universe</h2>
+  </div>
+  <p class="muted">The app does not invent replacement securities. You define the candidate mix, wrapper target, currency, and bucket.</p>
+  <form method="post" action="/allocation-planner/candidates" class="inline-form">
+    <input type="hidden" name="as_of" value="{{ selected_as_of or payload.as_of_date }}">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="candidate-label">Label</label>
+        <input id="candidate-label" name="label" type="text" value="">
+      </div>
+      <div class="form-field">
+        <label for="candidate-ticker">Ticker</label>
+        <input id="candidate-ticker" name="ticker" type="text" value="">
+      </div>
+      <div class="form-field">
+        <label for="candidate-currency">Currency</label>
+        <input id="candidate-currency" name="currency" type="text" value="GBP">
+      </div>
+      <div class="form-field">
+        <label for="candidate-wrapper">Target Wrapper</label>
+        <select id="candidate-wrapper" name="target_wrapper">
+          <option value="TAXABLE">Taxable</option>
+          <option value="ISA">ISA</option>
+          <option value="PENSION">Pension</option>
+          <option value="CASH">Cash</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="candidate-bucket">Bucket</label>
+        <input id="candidate-bucket" name="bucket" type="text" value="UNSPECIFIED">
+      </div>
+      <div class="form-field">
+        <label for="candidate-weight">Allocation Weight</label>
+        <input id="candidate-weight" name="allocation_weight" type="text" inputmode="decimal" value="1">
+      </div>
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label for="candidate-notes">Notes</label>
+        <input id="candidate-notes" name="notes" type="text" value="">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Add Candidate</button>
+    </div>
+  </form>
+
+  {% if payload.candidate_rows %}
+  <div class="table-wrap" style="margin-top:1rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Ticker</th>
+          <th>Currency</th>
+          <th>Wrapper</th>
+          <th>Bucket</th>
+          <th>Weight</th>
+          <th>Notes</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.candidate_rows %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.ticker or '-' }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ row.target_wrapper }}</td>
+          <td>{{ row.bucket }}</td>
+          <td>{{ row.allocation_weight }}</td>
+          <td>{{ row.notes or '-' }}</td>
+          <td>
+            <form method="post" action="/allocation-planner/candidates/{{ row.candidate_id }}/delete">
+              <input type="hidden" name="as_of" value="{{ selected_as_of or payload.as_of_date }}">
+              <button type="submit" class="btn btn-secondary btn-sm">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No candidates defined yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Candidate Allocation Output</h2>
+  </div>
+  {% if payload.candidate_allocations %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Candidate</th>
+          <th>Allocated</th>
+          <th>Share of Redeploy</th>
+          <th>After Portfolio %</th>
+          <th>Wrapper</th>
+          <th>Currency</th>
+          <th>Fit Flags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.candidate_allocations %}
+        <tr>
+          <td>{{ row.label }}{% if row.ticker %} <span class="muted">({{ row.ticker }})</span>{% endif %}</td>
+          <td>&pound;{{ row.allocated_gbp | money }}</td>
+          <td>{{ row.allocation_share_pct }}%</td>
+          <td>{{ row.after_portfolio_pct }}%</td>
+          <td>{{ row.target_wrapper }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ row.fit_flags | join(', ') if row.fit_flags else '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Add candidates and ensure the source has an executable trim to see the redeployment mix.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Before vs After</h2>
+  </div>
+  {% if payload.before_after.total_holdings_before_gbp %}
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Total Holdings Before</th><td>&pound;{{ payload.before_after.total_holdings_before_gbp | money }}</td></tr>
+        <tr><th>Total Holdings After</th><td>&pound;{{ payload.before_after.total_holdings_after_gbp | money }}</td></tr>
+        <tr><th>Source % Before</th><td>{{ payload.before_after.source_pct_before }}%</td></tr>
+        <tr><th>Source % After</th><td>{{ payload.before_after.source_pct_after }}%</td></tr>
+        <tr><th>Top Holding Before</th><td>{{ payload.before_after.top_holding_before }} ({{ payload.before_after.top_holding_before_pct }}%)</td></tr>
+        <tr><th>Top Holding After</th><td>{{ payload.before_after.top_holding_after }} ({{ payload.before_after.top_holding_after_pct }}%)</td></tr>
+        <tr><th>Employer % Before</th><td>{{ payload.before_after.employer_pct_before }}%</td></tr>
+        <tr><th>Employer % After</th><td>{{ payload.before_after.employer_pct_after }}%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="table-wrap" style="margin-top:1rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Currency</th>
+          <th>Before</th>
+          <th>After</th>
+          <th>Before %</th>
+          <th>After %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.before_after.fx_rows %}
+        <tr>
+          <td>{{ row.currency }}</td>
+          <td>&pound;{{ row.before_gbp | money }}</td>
+          <td>&pound;{{ row.after_gbp | money }}</td>
+          <td>{{ row.before_pct }}%</td>
+          <td>{{ row.after_pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="table-wrap" style="margin-top:1rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Wrapper</th>
+          <th>Before</th>
+          <th>After</th>
+          <th>Before %</th>
+          <th>After %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.before_after.wrapper_rows %}
+        <tr>
+          <td>{{ row.wrapper }}</td>
+          <td>&pound;{{ row.before_gbp | money }}</td>
+          <td>&pound;{{ row.after_gbp | money }}</td>
+          <td>{{ row.before_pct }}%</td>
+          <td>{{ row.after_pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Before/after deltas appear after an executable trim is available.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Consumed Lots</h2>
+  </div>
+  {% if payload.trim_plan.consumed_lot_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Lot</th>
+          <th>Acquired</th>
+          <th>Qty</th>
+          <th>Wrapper</th>
+          <th>Proceeds</th>
+          <th>Realised Gain</th>
+          <th>Audit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.trim_plan.consumed_lot_rows %}
+        <tr>
+          <td>{{ row.lot_id }}</td>
+          <td>{{ row.acquisition_date }}</td>
+          <td>{{ row.quantity_allocated }}</td>
+          <td>{{ row.wrapper }}</td>
+          <td>&pound;{{ row.proceeds_gbp | money }}</td>
+          <td>&pound;{{ row.realised_gain_gbp | money }}</td>
+          <td><a href="{{ row.audit_href }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Lot trace appears once the planner has an executable trim quantity.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <ul>
+    {% for note in payload.notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

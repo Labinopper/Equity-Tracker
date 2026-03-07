@@ -4,6 +4,8 @@ Date: `2026-03-07`
 
 Status: advisory addendum aligned to `docs/STRATEGIC_DOCUMENTATION.md` and `docs/todo.md`
 
+Update: the decision-brief export, weekly-review workflow, notification digest, and allocation planner discussed in this addendum are now live.
+
 Purpose: capture the current implementation review, priority refinements, and a practical roadmap without changing the strategic source-of-truth documents.
 
 ## Intent Summary

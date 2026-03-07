@@ -2,7 +2,7 @@
 
 Last updated: `2026-03-07`
 
-Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, and pension tracking/projection); remaining feature-expansion tracks stay deferred pending reprioritization.
+Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance and expansion updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, pension tracking/projection, weekly review workflow, notification digest, and allocation planner); no tracked post-closure expansion items remain pending.
 
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
 
@@ -17,6 +17,9 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 7. Calendar and Risk now show row-level price/FX provenance badges for event-driven or time-band rows that depend on current valuation basis.
 8. `/reconcile` now shows explicit drift cause buckets with explained vs residual change and direct trace links into basis timeline or filtered audit windows.
 9. Decision-brief JSON export is now live across Portfolio, Net Value, Capital Stack, Tax Plan, and Risk, capturing selected headline metrics, assumptions, and trace links.
+10. Weekly review workflow is now live at `/weekly-review`, with persisted step notes and resumable review context spanning Portfolio, Risk, Calendar, and Reconcile.
+11. Notification digest is now live at `/notification-digest`, generated only from deterministic alert-center and calendar state.
+12. Allocation planner is now live at `/allocation-planner`, supporting user-defined candidate universes and before/after concentration, FX, wrapper, and friction deltas.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -39,6 +42,9 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 | Dividends (`/dividends`) | What dividend flow is taxable vs ISA-exempt, with FX provenance? | How do net dividends offset current capital at risk by security? | P | Y | N | P | Y | Y | N | Y |
 | Audit Log (`/audit`) | What deterministic data mutations changed model outputs? | Which input changes altered downstream surfaces? | N | P | N | N | N | P | P | N |
 | Pension (`/pension`) | What is the current pension pot, what has been paid in, and what could it reach by retirement under fixed assumptions? | How much is recorded inputs vs attributed growth, and what is the shortfall vs target? | N | P | N | N | N | N | N | N |
+| Weekly Review (`/weekly-review`) | What is the disciplined review sequence for this week, and what have I already checked? | What notes and completion state should persist across sessions? | Y | P | Y | Y | P | N | N | P |
+| Notification Digest (`/notification-digest`) | What deterministic alerts and timing items deserve attention now? | Which items are threshold breaches vs stale data vs upcoming events? | Y | Y | Y | Y | P | N | N | Y |
+| Allocation Planner (`/allocation-planner`) | If one exposure is overweight, how much can be trimmed and how could net proceeds be redeployed across user-defined candidates? | How do before/after concentration, FX, wrapper, and friction metrics change? | Y | Y | N | Y | Y | P | P | Y |
 | Add Lot (`/portfolio/add-lot`) | Are acquisition inputs sufficient for deterministic cost/tax/lock modelling? | What values will be persisted before save? | N | Y | Y | N | Y | Y | P | Y |
 | Transfer Lot (`/portfolio/transfer-lot`) | Can this transfer occur without violating scheme rules? | What transfer-time forfeiture and tax effects are triggered? | Y | Y | Y | N | Y | P | Y | Y |
 | Edit Lot (`/portfolio/edit-lot`) | How can lot corrections be made with auditability intact? | What protected constraints apply to quantity/cost edits? | P | Y | N | N | P | Y | P | Y |
@@ -158,6 +164,27 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 4. Decision Support Role: Retirement-progress clarity and contribution discipline, not deployable-cash planning or advisory allocation logic.
 5. Structural Improvements: Add richer timeline visualization and, if expanded later, direct trace from scenario rows into assumption history / prior contribution windows.
 
+## Weekly Review (`/weekly-review`)
+1. Purpose: Persisted behavioural review workflow across the core decision pages.
+2. Economic Model Behind the Page: Stores a resumable review state (`as_of`, step completion, notes) and overlays high-signal cues from Portfolio, Risk, Calendar, and Reconcile without replacing those underlying pages.
+3. Illusion vs Reality Risks: Step completion could be mistaken for portfolio health if the user marks items complete without opening the underlying evidence pages.
+4. Decision Support Role: Review discipline and continuity, not new financial analysis logic.
+5. Structural Improvements: If expanded later, add explicit review history comparison deltas and optional saved follow-up actions.
+
+## Notification Digest (`/notification-digest`)
+1. Purpose: Deterministic attention queue for threshold breaches, stale data, and upcoming timing events.
+2. Economic Model Behind the Page: Reuses alert-center state plus calendar/sell-plan events inside a bounded horizon; no independent scoring or recommendation layer is added.
+3. Illusion vs Reality Risks: Severity ordering can be over-read as optimisation priority if the user ignores the underlying page context.
+4. Decision Support Role: Salience and triage, not advisory prioritisation.
+5. Structural Improvements: If expanded later, add user-configurable digest presets while preserving rule transparency.
+
+## Allocation Planner (`/allocation-planner`)
+1. Purpose: Deterministic trim-and-redeploy planner for overweight exposures using a user-defined candidate universe.
+2. Economic Model Behind the Page: Identifies the selected overweight source, sizes a whole-share trim at current price, estimates employment tax/CGT/fees on the trim, and allocates only net proceeds across candidate weights while showing before/after concentration, FX, wrapper, and top-holding deltas.
+3. Illusion vs Reality Risks: Candidate rows can look like recommendations if the user forgets that the universe is fully user-defined and no return ranking exists.
+4. Decision Support Role: Concentration reduction and capital redeployment discipline without market prediction or stock-picking advice.
+5. Structural Improvements: If expanded later, add saved planner presets, bucket-level target rules, and deeper tax-wrapper capacity checks.
+
 ## Input and Operational Surfaces (`/portfolio/add-lot`, `/portfolio/transfer-lot`, `/portfolio/edit-lot`, `/portfolio/add-security`, `/settings`, `/audit`, `/glossary`, `/auth/login`, `locked.html`)
 1. Purpose: Data quality, deterministic input controls, provenance, and operational trust.
 2. Economic Model Behind the Page: These pages govern assumptions and inputs feeding all decision surfaces (not independent valuation engines).
@@ -207,7 +234,7 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 # Core v1 vs v2 Summary Recommendations
 
 ## Core v1
-1. Keep strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`, `/pension`) under regression coverage as model formulas evolve.
+1. Keep strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`, `/pension`, `/weekly-review`, `/notification-digest`, `/allocation-planner`) under regression coverage as model formulas and workflow semantics evolve.
 2. Keep end-to-end alert-threshold, trace-link, and trace-friction tests current so deterministic decision paths remain completable with visible context.
 3. Keep seeded Stage-10 API/UI regression coverage current as new filters, parameters, and page states are added.
 4. Harden documentation/test coupling so wording changes remain aligned with implementation semantics.

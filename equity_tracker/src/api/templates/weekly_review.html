@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Weekly Review - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Weekly Review</h1>
+    <p class="muted">Persisted review workflow across Portfolio, Risk, Calendar, and Reconcile.</p>
+  </div>
+  <form method="post" action="/weekly-review/start">
+    <input type="hidden" name="as_of" value="{{ selected_as_of or payload.as_of_date }}">
+    <button type="submit" class="btn btn-secondary">Start New Review</button>
+  </form>
+</div>
+
+{% include "partials/model_scope_card.html" %}
+
+<p class="muted">
+  Trace workflow:
+  <a href="{{ payload.trace_links.portfolio }}">Portfolio</a> |
+  <a href="{{ payload.trace_links.risk }}">Risk</a> |
+  <a href="{{ payload.trace_links.calendar }}">Calendar</a> |
+  <a href="{{ payload.trace_links.reconcile }}">Reconcile</a>
+</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+{% if payload.resume_context_note %}
+<div class="alert alert-info">{{ payload.resume_context_note }}</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat stat--accent">
+    <div class="stat__label">Review Progress</div>
+    <div class="stat__value">{{ payload.summary.completed_steps }} / {{ payload.summary.total_steps }}</div>
+    <span class="stat-caption">{{ payload.summary.progress_pct }}% complete.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Review As Of</div>
+    <div class="stat__value">{{ payload.as_of_date }}</div>
+    <span class="stat-caption">Context remains pinned until you start a new review.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Deployable Capital</div>
+    <div class="stat__value">&pound;{{ payload.summary.deployable_capital_gbp | money }}</div>
+    <span class="stat-caption">Current deployable-capital cue from the underlying workflow.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Active Alerts</div>
+    <div class="stat__value">{{ payload.summary.active_alert_count }}</div>
+    <span class="stat-caption">Use Risk to inspect concentration or freshness guardrails.</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Next Event</div>
+    <div class="stat__value">{{ payload.summary.next_event_date or "None" }}</div>
+    <span class="stat-caption">{{ payload.summary.next_event_title or "No upcoming event in the review horizon." }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Explained Drift</div>
+    <div class="stat__value">&pound;{{ payload.summary.explained_change_gbp | money }}</div>
+    <span class="stat-caption">Recent drift cue from Reconcile.</span>
+  </div>
+</div>
+
+<div class="card" id="review-steps">
+  <div class="card__header">
+    <h2 class="card__title">Review Steps</h2>
+  </div>
+  <p class="muted">Each step keeps its own notes and completion state so the review can be resumed without rebuilding context.</p>
+  {% for row in payload.step_rows %}
+  <div class="card" style="margin-top:1rem;">
+    <div class="card__header">
+      <h3 class="card__title">{{ row.label }}</h3>
+      <span class="badge {{ 'badge-success-soft' if row.status == 'COMPLETED' else 'badge-warning-soft' }}">{{ row.status.title() }}</span>
+    </div>
+    <p class="muted">{{ row.description }}</p>
+    <p><strong>Current signal:</strong> {{ row.signal }}</p>
+    <form method="post" action="/weekly-review/steps/{{ row.step_key }}">
+      <input type="hidden" name="as_of" value="{{ payload.as_of_date }}">
+      <div class="form-grid">
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label for="notes-{{ row.step_key }}">Notes</label>
+          <textarea id="notes-{{ row.step_key }}" name="notes" rows="3">{{ row.notes }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ row.href }}" class="btn btn-secondary btn-sm">{{ row.action_label }}</a>
+        <button type="submit" name="completed" value="{{ 'false' if row.status == 'COMPLETED' else 'true' }}" class="btn btn-primary btn-sm">
+          {{ 'Reopen Step' if row.status == 'COMPLETED' else 'Mark Complete' }}
+        </button>
+      </div>
+      {% if row.completed_at_utc %}
+      <p class="muted">Completed at {{ row.completed_at_utc }}.</p>
+      {% endif %}
+    </form>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card" id="review-history">
+  <div class="card__header">
+    <h2 class="card__title">Recent Reviews</h2>
+  </div>
+  {% if payload.recent_reviews %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Review Date</th>
+          <th>As Of</th>
+          <th>Status</th>
+          <th>Progress</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in payload.recent_reviews %}
+        <tr>
+          <td>{{ row.review_date }}</td>
+          <td>{{ row.as_of_date }}</td>
+          <td>{{ row.status }}</td>
+          <td>{{ row.completed_steps }} / {{ row.total_steps }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No prior reviews archived yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Notes</h2>
+  </div>
+  <ul>
+    {% for note in payload.notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

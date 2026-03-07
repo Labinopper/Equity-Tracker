@@ -22,6 +22,9 @@ from src.db.repository.prices import PriceRepository
         ("/api/strategic/reconcile", {"components", "trace_links", "drift_panel", "notes"}),
         ("/api/strategic/basis-timeline", {"date_rows", "security_rows", "lookback_days", "notes"}),
         ("/api/strategic/pension", {"current_pension_value_gbp", "recorded_inputs_gbp", "scenario_rows", "ledger_rows", "trace_links", "model_scope", "notes"}),
+        ("/api/strategic/weekly-review", {"active_review", "step_rows", "recent_reviews", "summary", "model_scope", "notes"}),
+        ("/api/strategic/notification-digest", {"summary", "entries", "trace_links", "model_scope", "notes"}),
+        ("/api/strategic/allocation-planner", {"planner_config", "security_rows", "trim_plan", "candidate_rows", "model_scope", "notes"}),
     ],
 )
 def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
@@ -91,6 +94,18 @@ def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
         assert body["trace_links"]["assumptions"].endswith("#pension-assumptions")
         assert body["model_scope"]["assumptions"]
         assert body["notes"][0].startswith("Projections use fixed monthly contributions")
+    elif path == "/api/strategic/weekly-review":
+        assert body["active_review"]["status"] == "ACTIVE"
+        assert len(body["step_rows"]) == 4
+        assert body["summary"]["total_steps"] == 4
+    elif path == "/api/strategic/notification-digest":
+        assert body["trace_links"]["alert_center"].startswith("/risk")
+        assert body["model_scope"]["inputs"]
+        assert body["notes"][0].startswith("Digest entries are generated exclusively")
+    elif path == "/api/strategic/allocation-planner":
+        assert body["planner_config"]["target_max_pct"]
+        assert "consumed_lot_rows" in body["trim_plan"]
+        assert body["notes"][0].startswith("Planner outputs are non-advisory")
 
 
 @pytest.mark.parametrize(
@@ -106,6 +121,9 @@ def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
         ("/reconcile", "Cross-Page Reconciliation", ("Reconciliation Path", "Trace: Contributing Lots", "Trace: Recent Audit Mutations")),
         ("/basis-timeline", "Price/FX Basis Timeline", ("Aggregate By Date", "Security Basis Rows", "Native Move", "FX Move")),
         ("/pension", "Pension", ("Pension Assumptions", "Scenario Timeline", "Contribution Ledger")),
+        ("/weekly-review", "Weekly Review", ("Review Steps", "Recent Reviews", "Review Progress")),
+        ("/notification-digest", "Notification Digest", ("Digest Entries", "Threshold Breaches", "Trace Links")),
+        ("/allocation-planner", "Allocation Planner", ("Planner Settings", "Candidate Universe", "Before vs After")),
     ],
 )
 def test_strategic_pages_render_semantic_matrix(client, path, marker, semantic_markers):

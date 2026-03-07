@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ...app_context import AppContext
+from ...services.allocation_planner_service import AllocationPlannerService
+from ...services.notification_digest_service import NotificationDigestService
 from ...services.pension_service import PensionService
 from ...services.strategic_service import StrategicService
+from ...services.weekly_review_service import WeeklyReviewService
 from ...settings import AppSettings
 from .. import _state
 from .._templates import templates
@@ -23,6 +27,33 @@ _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
 def _load_settings() -> AppSettings | None:
     db_path = _state.get_db_path()
     return AppSettings.load(db_path) if db_path else None
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _redirect_with_params(
+    path: str,
+    *,
+    msg: str | None = None,
+    as_of: date | None = None,
+) -> RedirectResponse:
+    params: list[tuple[str, str]] = []
+    if as_of is not None:
+        params.append(("as_of", as_of.isoformat()))
+    if msg:
+        params.append(("msg", msg))
+    target = path
+    if params:
+        target = f"{path}?{urlencode(params)}"
+    return RedirectResponse(target, status_code=303)
 
 
 def _locked_response(request: Request) -> HTMLResponse:
@@ -119,6 +150,52 @@ async def api_pension(_: None = Depends(db_required)) -> dict:
     return PensionService.get_dashboard(settings=settings, db_path=db_path)
 
 
+@router.get("/api/strategic/weekly-review")
+async def api_weekly_review(
+    as_of: date | None = Query(None),
+    _: None = Depends(db_required),
+) -> dict:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    return WeeklyReviewService.get_dashboard(
+        settings=settings,
+        db_path=db_path,
+        as_of=as_of,
+    )
+
+
+@router.get("/api/strategic/notification-digest")
+async def api_notification_digest(
+    as_of: date | None = Query(None),
+    horizon_days: int = Query(30, ge=7, le=120),
+    max_items: int = Query(12, ge=3, le=40),
+    _: None = Depends(db_required),
+) -> dict:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    return NotificationDigestService.get_digest(
+        settings=settings,
+        db_path=db_path,
+        as_of=as_of,
+        horizon_days=horizon_days,
+        max_items=max_items,
+    )
+
+
+@router.get("/api/strategic/allocation-planner")
+async def api_allocation_planner(
+    as_of: date | None = Query(None),
+    _: None = Depends(db_required),
+) -> dict:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    return AllocationPlannerService.get_dashboard(
+        settings=settings,
+        db_path=db_path,
+        as_of=as_of,
+    )
+
+
 @router.get("/insights", response_class=HTMLResponse, include_in_schema=False)
 async def insights_page(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
@@ -196,6 +273,30 @@ async def insights_page(request: Request) -> HTMLResponse:
             "trend_context": "Compare conservative, base, and aggressive outcomes across timeline checkpoints.",
             "action_href": "/pension#pension-ledger",
             "action_label": "Open Pension Ledger",
+        },
+        {
+            "href": "/weekly-review",
+            "label": "Weekly Review",
+            "desc": "Persisted checklist across Portfolio, Risk, Calendar, and Reconcile.",
+            "trend_context": "Resume the same as-of review without rebuilding context or notes.",
+            "action_href": "/weekly-review#review-steps",
+            "action_label": "Open Review Steps",
+        },
+        {
+            "href": "/notification-digest",
+            "label": "Notification Digest",
+            "desc": "Deterministic digest of threshold breaches, stale data, and upcoming timing items.",
+            "trend_context": "Compare what is urgent now versus what is merely upcoming in the chosen horizon.",
+            "action_href": "/notification-digest#digest-entries",
+            "action_label": "Open Digest",
+        },
+        {
+            "href": "/allocation-planner",
+            "label": "Allocation Planner",
+            "desc": "Trim overweight exposures and compare user-defined redeployment candidates.",
+            "trend_context": "Compare before/after concentration, FX, wrapper, and friction deltas.",
+            "action_href": "/allocation-planner#candidate-universe",
+            "action_label": "Open Candidate Universe",
         },
     ]
 
@@ -395,6 +496,96 @@ def _render_pension_page(
     )
 
 
+def _render_weekly_review_page(
+    request: Request,
+    *,
+    as_of: date | None = None,
+    msg: str | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    payload = WeeklyReviewService.get_dashboard(
+        settings=settings,
+        db_path=db_path,
+        as_of=as_of,
+    )
+    return templates.TemplateResponse(
+        request,
+        "weekly_review.html",
+        {
+            "request": request,
+            "payload": payload,
+            "flash": msg,
+            "error": error,
+            "model_scope": payload.get("model_scope"),
+        },
+        status_code=status_code,
+        media_type=_HTML_UTF8_MEDIA_TYPE,
+    )
+
+
+def _render_notification_digest_page(
+    request: Request,
+    *,
+    as_of: date | None = None,
+    horizon_days: int = 30,
+    max_items: int = 12,
+) -> HTMLResponse:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    payload = NotificationDigestService.get_digest(
+        settings=settings,
+        db_path=db_path,
+        as_of=as_of,
+        horizon_days=horizon_days,
+        max_items=max_items,
+    )
+    return templates.TemplateResponse(
+        request,
+        "notification_digest.html",
+        {
+            "request": request,
+            "payload": payload,
+            "horizon_days": horizon_days,
+            "max_items": max_items,
+            "model_scope": payload.get("model_scope"),
+        },
+        media_type=_HTML_UTF8_MEDIA_TYPE,
+    )
+
+
+def _render_allocation_planner_page(
+    request: Request,
+    *,
+    as_of: date | None = None,
+    msg: str | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    payload = AllocationPlannerService.get_dashboard(
+        settings=settings,
+        db_path=db_path,
+        as_of=as_of,
+    )
+    return templates.TemplateResponse(
+        request,
+        "allocation_planner.html",
+        {
+            "request": request,
+            "payload": payload,
+            "flash": msg,
+            "error": error,
+            "model_scope": payload.get("model_scope"),
+        },
+        status_code=status_code,
+        media_type=_HTML_UTF8_MEDIA_TYPE,
+    )
+
+
 @router.get("/pension", response_class=HTMLResponse, include_in_schema=False)
 async def pension_page(request: Request, msg: str | None = None) -> HTMLResponse:
     if not AppContext.is_initialized():
@@ -480,3 +671,229 @@ async def pension_save_assumptions(
         )
 
     return RedirectResponse("/pension?msg=Pension+assumptions+saved.", status_code=303)
+
+
+@router.get("/weekly-review", response_class=HTMLResponse, include_in_schema=False)
+async def weekly_review_page(
+    request: Request,
+    as_of: date | None = Query(None),
+    msg: str | None = None,
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+    return _render_weekly_review_page(request, as_of=as_of, msg=msg)
+
+
+@router.post("/weekly-review/start", response_class=HTMLResponse, include_in_schema=False)
+async def weekly_review_start(
+    request: Request,
+    as_of: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    review = WeeklyReviewService.start_new_review(
+        db_path=db_path,
+        as_of=_parse_optional_date(as_of),
+    )
+    return _redirect_with_params(
+        "/weekly-review",
+        msg="Weekly review restarted.",
+        as_of=_parse_optional_date(review.get("as_of_date")),
+    )
+
+
+@router.post(
+    "/weekly-review/steps/{step_key}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def weekly_review_update_step(
+    request: Request,
+    step_key: str,
+    notes: str = Form(""),
+    completed: str = Form("false"),
+    as_of: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    try:
+        review = WeeklyReviewService.update_step(
+            db_path=db_path,
+            step_key=step_key,
+            notes=notes,
+            completed=str(completed or "").strip().lower() == "true",
+            as_of=_parse_optional_date(as_of),
+        )
+    except ValueError as exc:
+        return _render_weekly_review_page(
+            request,
+            as_of=_parse_optional_date(as_of),
+            error=f"Weekly review step not saved: {exc}",
+            status_code=422,
+        )
+
+    return _redirect_with_params(
+        "/weekly-review",
+        msg="Weekly review step saved.",
+        as_of=_parse_optional_date(review.get("as_of_date")),
+    )
+
+
+@router.get("/notification-digest", response_class=HTMLResponse, include_in_schema=False)
+async def notification_digest_page(
+    request: Request,
+    as_of: date | None = Query(None),
+    horizon_days: int = Query(30, ge=7, le=120),
+    max_items: int = Query(12, ge=3, le=40),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+    return _render_notification_digest_page(
+        request,
+        as_of=as_of,
+        horizon_days=horizon_days,
+        max_items=max_items,
+    )
+
+
+@router.get("/allocation-planner", response_class=HTMLResponse, include_in_schema=False)
+async def allocation_planner_page(
+    request: Request,
+    as_of: date | None = Query(None),
+    msg: str | None = None,
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+    return _render_allocation_planner_page(request, as_of=as_of, msg=msg)
+
+
+@router.post(
+    "/allocation-planner/settings",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def allocation_planner_save_settings(
+    request: Request,
+    source_selection_mode: str = Form(...),
+    source_ticker: str = Form(""),
+    target_max_pct: str = Form("25"),
+    as_of: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    parsed_as_of = _parse_optional_date(as_of)
+    try:
+        AllocationPlannerService.save_settings(
+            db_path=db_path,
+            source_selection_mode=source_selection_mode,
+            source_ticker=source_ticker,
+            target_max_pct=target_max_pct,
+        )
+    except ValueError as exc:
+        return _render_allocation_planner_page(
+            request,
+            as_of=parsed_as_of,
+            error=f"Planner settings not saved: {exc}",
+            status_code=422,
+        )
+
+    return _redirect_with_params(
+        "/allocation-planner",
+        msg="Planner settings saved.",
+        as_of=parsed_as_of,
+    )
+
+
+@router.post(
+    "/allocation-planner/candidates",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def allocation_planner_add_candidate(
+    request: Request,
+    label: str = Form(...),
+    ticker: str = Form(""),
+    currency: str = Form("GBP"),
+    target_wrapper: str = Form("TAXABLE"),
+    bucket: str = Form("UNSPECIFIED"),
+    allocation_weight: str = Form("1"),
+    notes: str = Form(""),
+    as_of: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    parsed_as_of = _parse_optional_date(as_of)
+    try:
+        AllocationPlannerService.add_candidate(
+            db_path=db_path,
+            label=label,
+            ticker=ticker,
+            currency=currency,
+            target_wrapper=target_wrapper,
+            bucket=bucket,
+            allocation_weight=allocation_weight,
+            notes=notes,
+        )
+    except ValueError as exc:
+        return _render_allocation_planner_page(
+            request,
+            as_of=parsed_as_of,
+            error=f"Candidate not saved: {exc}",
+            status_code=422,
+        )
+
+    return _redirect_with_params(
+        "/allocation-planner",
+        msg="Candidate added.",
+        as_of=parsed_as_of,
+    )
+
+
+@router.post(
+    "/allocation-planner/candidates/{candidate_id}/delete",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def allocation_planner_delete_candidate(
+    request: Request,
+    candidate_id: str,
+    as_of: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    parsed_as_of = _parse_optional_date(as_of)
+    removed = AllocationPlannerService.remove_candidate(
+        db_path=db_path,
+        candidate_id=candidate_id,
+    )
+    msg = "Candidate removed." if removed else "Candidate not found."
+    return _redirect_with_params(
+        "/allocation-planner",
+        msg=msg,
+        as_of=parsed_as_of,
+    )

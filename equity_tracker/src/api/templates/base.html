@@ -18,7 +18,7 @@
   'schemes':  ['/per-scheme'],
   'risk':     ['/risk', '/analytics', '/calendar'],
   'simulate': ['/simulate', '/scenario-lab', '/tax-plan', '/sell-plan'],
-  'reports':  ['/cgt', '/economic-gain', '/dividends', '/audit', '/insights', '/capital-efficiency', '/employment-exit', '/isa-efficiency', '/fee-drag', '/data-quality', '/employment-tax-events', '/reconcile', '/basis-timeline', '/pension'],
+  'reports':  ['/cgt', '/economic-gain', '/dividends', '/audit', '/insights', '/capital-efficiency', '/employment-exit', '/isa-efficiency', '/fee-drag', '/data-quality', '/employment-tax-events', '/reconcile', '/basis-timeline', '/pension', '/weekly-review', '/notification-digest', '/allocation-planner'],
   'settings': ['/settings', '/glossary']
 } %}
 {% set _path_to_group = {
@@ -48,6 +48,9 @@
   '/reconcile': 'reports',
   '/basis-timeline': 'reports',
   '/pension': 'reports',
+  '/weekly-review': 'reports',
+  '/notification-digest': 'reports',
+  '/allocation-planner': 'reports',
   '/settings':      'settings',
   '/glossary':      'settings'
 } %}
@@ -107,7 +110,7 @@
         <a href="{{ with_as_of('/economic-gain', selected_as_of) }}" class="subnav__link{{ ' subnav__link--active' if _path == '/economic-gain' }}">Economic Gain</a>
         <a href="{{ with_as_of('/dividends', selected_as_of) }}"     class="subnav__link{{ ' subnav__link--active' if _path == '/dividends' }}">Dividends</a>
         <a href="{{ with_as_of('/audit', selected_as_of) }}"         class="subnav__link{{ ' subnav__link--active' if _path == '/audit' }}">Audit</a>
-        <a href="{{ with_as_of('/insights', selected_as_of) }}"      class="subnav__link{{ ' subnav__link--active' if _path == '/insights' or _path == '/capital-efficiency' or _path == '/employment-exit' or _path == '/isa-efficiency' or _path == '/fee-drag' or _path == '/data-quality' or _path == '/employment-tax-events' or _path == '/reconcile' or _path == '/basis-timeline' }}">Insights</a>
+        <a href="{{ with_as_of('/insights', selected_as_of) }}"      class="subnav__link{{ ' subnav__link--active' if _path == '/insights' or _path == '/capital-efficiency' or _path == '/employment-exit' or _path == '/isa-efficiency' or _path == '/fee-drag' or _path == '/data-quality' or _path == '/employment-tax-events' or _path == '/reconcile' or _path == '/basis-timeline' or _path == '/weekly-review' or _path == '/notification-digest' or _path == '/allocation-planner' }}">Insights</a>
         <a href="{{ with_as_of('/pension', selected_as_of) }}"       class="subnav__link{{ ' subnav__link--active' if _path == '/pension' }}">Pension</a>
 
       {% elif active_group == 'settings' %}

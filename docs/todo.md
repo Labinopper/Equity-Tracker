@@ -11,7 +11,7 @@ Scope guardrails:
 Execution mode (`2026-03-07`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
-- Current prioritization source: remaining workflow and product-expansion candidates after pension delivery, shared-foundation completion, and Stage-10 route hardening.
+- Current prioritization source: none. The tracked workflow and product-expansion candidates are now complete.
 
 ## Current Status
 
@@ -40,7 +40,8 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. Workflow and QoL expansion: `T81`-`T82`, `T90`.
+- No tracked backlog items remain from the current strategic plan.
+- New work should be logged only after explicit reprioritization.
 
 ## Definition of Done (Current + Next)
 
@@ -50,7 +51,7 @@ Execution mode (`2026-03-07`):
 - Pension domain (`T83`) is live with deterministic assumptions, timeline projections, and append-only contribution tracking.
 - Shared foundation upgrades `T54`-`T57` are now live across the core strategic surfaces.
 - Deferred hardening coverage now includes `T84`-`T89`.
-- Remaining work is limited to deferred workflow and product-expansion candidates.
+- Deferred workflow and product-expansion candidates `T81`, `T82`, and `T90` are now live.
 - If any shipped scope is reopened, use `docs/todo_archive.md` for the historical acceptance criteria and archived task detail.
 
 ## Deferred Backlog (Current Source of Truth)
@@ -69,14 +70,9 @@ Execution mode (`2026-03-07`):
 - `T55`: event-level provenance badges are now live in Calendar and Risk event rows, including row-visible price/FX freshness context.
 - `T56`: `/reconcile` drift explainer now exposes explicit cause buckets, explained vs residual change, and direct trace links into basis-timeline or filtered audit windows.
 - `T80`: deterministic decision-brief JSON export is now live across Portfolio, Net Value, Capital Stack, Tax Plan, and Risk, including captured assumptions and deep links back to trace surfaces.
-
-### Product Expansion Candidates
-
-| ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
-|---|---|---|---|---|---|---|
-| T81 | P2 | M | Major | Add guided weekly review workflow spanning Portfolio, Risk, Calendar, and Reconcile with completion notes. | Behavioural discipline | Workflow state persists and can be resumed without reconfiguration. |
-| T82 | P2 | M | Major | Add deterministic notification digest for threshold breaches, stale data, and upcoming forfeiture/tax events. | Risk salience | Digest entries are generated exclusively from existing deterministic rules/state. |
-| T90 | P2 | L | Major | Add deterministic reallocation candidate planner (future `/allocation-planner`) that identifies overweight holdings/exposures, quantifies trim amounts, and evaluates user-defined replacement candidates or target buckets for diversification/tax-wrapper improvement. | Concentration risk reduction, capital deployment discipline, decision support | Outputs remain non-advisory and traceable: the user defines the candidate universe or target allocation rules, the app shows why an exposure is overweight, how much capital could be reduced, which candidates improve target-fit metrics, and before/after concentration, FX, wrapper, and tax-friction deltas. |
+- `T81`: guided weekly review workflow is now live across Portfolio, Risk, Calendar, and Reconcile with persisted notes and resumable context.
+- `T82`: deterministic notification digest is now live for threshold breaches, stale data, and upcoming forfeiture/tax/sell-plan timing items.
+- `T90`: deterministic allocation planner is now live at `/allocation-planner`, with user-defined candidate universe management and before/after concentration, FX, wrapper, and friction deltas.
 
 ## Archive
 

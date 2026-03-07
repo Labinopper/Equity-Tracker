@@ -161,6 +161,9 @@ def test_insights_page_lists_every_stage10_surface_and_action_link(client):
         ("Reconcile", "/reconcile", "/reconcile?lookback_days=30#trace-drift-decomposition"),
         ("Price/FX Basis Timeline", "/basis-timeline", "/history"),
         ("Pension", "/pension", "/pension#pension-ledger"),
+        ("Weekly Review", "/weekly-review", "/weekly-review#review-steps"),
+        ("Notification Digest", "/notification-digest", "/notification-digest#digest-entries"),
+        ("Allocation Planner", "/allocation-planner", "/allocation-planner#candidate-universe"),
     )
     for label, href, action_href in expected_links:
         assert label in text

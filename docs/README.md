@@ -36,7 +36,8 @@ Last updated: `2026-03-07`
 - Shared reconcile drift-explainer upgrade `T56` is now live with explicit cause buckets and direct trace links.
 - Shared alert lifecycle `T57` is now live across Portfolio guardrails and the Risk alert center.
 - Decision-brief export `T80` is now live as a deterministic JSON pack across Portfolio, Net Value, Capital Stack, Tax Plan, and Risk.
-- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T81` now next.
+- Weekly review workflow `T81`, notification digest `T82`, and allocation planner `T90` are now live.
+- No tracked deferred backlog items remain in `docs/todo.md`.
 
 ## Recent Documentation Sync (`2026-03-07`)
 
@@ -52,5 +53,8 @@ Last updated: `2026-03-07`
 - Added explicit `/reconcile` drift trace links from cause buckets into basis timeline and filtered audit windows.
 - Added shared server-side alert lifecycle with snooze/dismiss/reactivate state, deterministic expiry, and audit-backed transitions across Portfolio guardrails and the Risk alert center.
 - Added a deterministic decision-brief export pack across the main decision surfaces, including assumptions and trace links.
+- Added a persisted weekly-review workflow spanning Portfolio, Risk, Calendar, and Reconcile.
+- Added a deterministic notification digest for threshold breaches, stale data, and upcoming timing items.
+- Added a deterministic allocation planner with user-defined candidate universe management and before/after concentration, FX, wrapper, and friction deltas.
 - Added a dated implementation review addendum capturing alignment findings, priority fixes, and the next delivery roadmap.
 - Split the TODO docs into a compact working backlog (`docs/todo.md`) and a historical archive (`docs/todo_archive.md`).
