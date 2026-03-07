@@ -45,7 +45,7 @@ function Is-TrackerProcess([int]$processId) {
         $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $processId"
         if ($null -eq $proc) { return $false }
         $cmd = [string]$proc.CommandLine
-        return ($cmd -match "run_api\.py") -and ($cmd -match "equity_tracker")
+        return ($cmd -match '(^|[\"'' ])run_api\.py($|[\"'' ])')
     }
     catch {
         return $false
