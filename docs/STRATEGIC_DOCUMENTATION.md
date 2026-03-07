@@ -200,6 +200,8 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 2. Add reconciliation delta tolerance tests across representative portfolio states.
 3. Add UX friction checks for trace flows (Portfolio/Net Value/Tax Plan -> Reconcile -> Audit record).
 
+Backlog mirror: logged in `docs/todo.md` as `T84`-`T89`.
+
 # Portfolio Refinement Focus (Current Template)
 
 ## PR1: Actionable-First Visual Hierarchy

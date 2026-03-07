@@ -6,13 +6,17 @@ Last updated: `2026-03-07`
 
 - `docs/STRATEGIC_DOCUMENTATION.md`
 - `docs/todo.md`
+- `docs/todo_archive.md`
+- `docs/IMPLEMENTATION_REVIEW_2026-03-07.md`
 
 ## What Each File Owns
 
 | File | Ownership |
 |---|---|
 | `docs/STRATEGIC_DOCUMENTATION.md` | Strategic question mapping by page; deterministic economic model documentation; system alignment review; behavioural risk surface; structural recommendations. |
-| `docs/todo.md` | Execution-order backlog; implementation status by task ID; delivered/partial/pending stage tracking; acceptance criteria for remaining upgrades. |
+| `docs/todo.md` | Compact current backlog and deferred prioritization source of truth. |
+| `docs/todo_archive.md` | Archived task-history snapshot, delivered scope tables, and pre-tidy detailed backlog reference. |
+| `docs/IMPLEMENTATION_REVIEW_2026-03-07.md` | Dated implementation review against the strategic docs; current-state assessment; priority refinements; aligned roadmap and next actions. |
 
 ## Current Stage Snapshot
 
@@ -25,7 +29,7 @@ Last updated: `2026-03-07`
 
 - Refinement/hardening pass is closed (effective `2026-03-06`).
 - Active refinement scope `T58`-`T79` is complete; no in-process refinement waves remain.
-- Next prioritization source: deferred feature sections in `docs/todo.md` (`T54`-`T57`, `T80`-`T82`).
+- Next prioritization source: deferred sections in `docs/todo.md` (`T54`-`T57`, `T80`-`T90`).
 
 ## Recent Documentation Sync (`2026-03-07`)
 
@@ -33,3 +37,5 @@ Last updated: `2026-03-07`
 - Deployable cash semantics updated to GBP-equivalent (including non-GBP cash conversion via FX).
 - Portfolio page docs updated for removed view controls and default-collapsed Model Scope.
 - Deferred roadmap extended with pension planning domain (`T83`) covering contribution tracking and deterministic projection scenarios.
+- Added a dated implementation review addendum capturing alignment findings, priority fixes, and the next delivery roadmap.
+- Split the TODO docs into a compact working backlog (`docs/todo.md`) and a historical archive (`docs/todo_archive.md`).

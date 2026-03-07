@@ -893,6 +893,7 @@ class StrategicService:
         if not qty_by_security:
             return {
                 "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                "lookback_days": lookback_days,
                 "date_rows": [],
                 "security_rows": [],
                 "notes": ["No active quantities available for basis timeline."],

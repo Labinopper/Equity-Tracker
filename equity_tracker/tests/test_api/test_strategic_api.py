@@ -2,19 +2,146 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 
-def _add_security(client, ticker: str) -> dict:
+import pytest
+
+from src.app_context import AppContext
+from src.db.repository.prices import PriceRepository
+
+
+@pytest.mark.parametrize(
+    ("path", "required_keys"),
+    [
+        ("/api/strategic/capital-efficiency", {"components", "total_structural_drag_gbp", "model_scope", "notes"}),
+        ("/api/strategic/employment-exit", {"rows", "totals", "exit_date", "model_scope", "notes"}),
+        ("/api/strategic/isa-efficiency", {"active_tax_year", "isa_ratio_pct", "potential_shelterable_today_gbp", "notes"}),
+        ("/api/strategic/fee-drag", {"totals", "tax_year_rows", "transaction_rows", "notes"}),
+        ("/api/strategic/data-quality", {"summary", "impact_rows", "tax_plan_freshness", "notes"}),
+        ("/api/strategic/employment-tax-events", {"tax_year_rows", "event_rows", "notes"}),
+        ("/api/strategic/reconcile", {"components", "trace_links", "drift_panel", "notes"}),
+        ("/api/strategic/basis-timeline", {"date_rows", "security_rows", "lookback_days", "notes"}),
+    ],
+)
+def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
+    if path == "/api/strategic/basis-timeline":
+        sec = _add_security(client, "SBASIS", currency="USD")
+        _add_lot(client, sec["id"])
+        _upsert_price(
+            sec["id"],
+            price_date=date.today() - timedelta(days=1),
+            close_original_ccy="100.00",
+            close_gbp="80.00",
+            currency="USD",
+        )
+        _upsert_price(
+            sec["id"],
+            price_date=date.today(),
+            close_original_ccy="110.00",
+            close_gbp="92.00",
+            currency="USD",
+        )
+
+    resp = client.get(path)
+    assert resp.status_code == 200, path
+
+    body = resp.json()
+    for key in required_keys:
+        assert key in body, f"{path} missing key: {key}"
+
+    if path == "/api/strategic/capital-efficiency":
+        labels = {row["label"] for row in body["components"]}
+        assert "Employment Tax (Hypothetical)" in labels
+        assert "CGT (Hypothetical)" in labels
+        assert body["model_scope"]["assumptions"]
+        assert "Structural drag is deterministic" in body["notes"][0]
+    elif path == "/api/strategic/employment-exit":
+        assert body["price_shock_pct"] == "0.00"
+        assert body["model_scope"]["inputs"]
+        assert "No market forecast" in body["notes"][-1]
+    elif path == "/api/strategic/isa-efficiency":
+        assert body["notes"][0].startswith("Headroom uses ISA-lot acquisition values")
+        assert body["tax_year_start"] <= body["tax_year_end"]
+    elif path == "/api/strategic/fee-drag":
+        assert body["totals"]["broker_fees_gbp"] is not None
+        assert "committed disposal transactions only" in body["notes"][0]
+    elif path == "/api/strategic/data-quality":
+        surfaces = {row["surface"] for row in body["impact_rows"]}
+        assert surfaces == {
+            "Portfolio / Net Value",
+            "Risk / Analytics",
+            "Tax Plan",
+            "Scenario / Simulate",
+        }
+        assert "No inferred backfill" in body["notes"][-1]
+    elif path == "/api/strategic/employment-tax-events":
+        assert "explicit source tags" in body["notes"][0]
+        assert isinstance(body["event_rows"], list)
+    elif path == "/api/strategic/reconcile":
+        steps = [row["step"] for row in body["components"]]
+        assert steps[0] == "Portfolio Gross Market Value"
+        assert steps[-1] == "Reconciled Deployable Capital"
+        assert body["trace_links"]["contributing_lots"].endswith("#trace-contributing-lots")
+    elif path == "/api/strategic/basis-timeline":
+        assert body["lookback_days"] == 365
+        assert "native-price and FX contribution components" in body["notes"][-1]
+
+
+@pytest.mark.parametrize(
+    ("path", "marker", "semantic_markers"),
+    [
+        ("/insights", "Insights", ("Strategic Pages", "Quick Action", "Trend Context")),
+        ("/capital-efficiency", "Capital Efficiency", ("Drag Components", "Fee Realization Context", 'href="/fee-drag"')),
+        ("/employment-exit", "Employment Exit", ("Scenario Inputs", "Per-Security Exit View", 'href="/scenario-lab"')),
+        ("/isa-efficiency", "ISA Efficiency", ("Headroom", "Tax-Year Context", 'href="/cash"')),
+        ("/fee-drag", "Fee Drag", ("By Tax Year", "Transaction Ledger", 'href="/sell-plan"')),
+        ("/data-quality", "Data Quality", ("Impact by Surface", "Tax Plan Freshness Cross-Check", 'href="/settings"')),
+        ("/employment-tax-events", "Employment Tax Events", ("Tax-Year Totals", "Event Ledger", 'href="/tax-plan"')),
+        ("/reconcile", "Cross-Page Reconciliation", ("Reconciliation Path", "Trace: Contributing Lots", "Trace: Recent Audit Mutations")),
+        ("/basis-timeline", "Price/FX Basis Timeline", ("Aggregate By Date", "Security Basis Rows", "Native Move", "FX Move")),
+    ],
+)
+def test_strategic_pages_render_semantic_matrix(client, path, marker, semantic_markers):
+    resp = client.get(path)
+    assert resp.status_code == 200, path
+
+    text = resp.text
+    assert marker in text
+    for semantic_marker in semantic_markers:
+        assert semantic_marker in text, f"{path} missing semantic marker: {semantic_marker}"
+
+
+def _add_security(client, ticker: str, currency: str = "GBP") -> dict:
     resp = client.post(
         "/portfolio/securities",
         json={
             "ticker": ticker,
             "name": f"{ticker} Corp",
-            "currency": "GBP",
+            "currency": currency,
             "is_manual_override": True,
         },
     )
     assert resp.status_code == 201, resp.text
     return resp.json()
+
+
+def _upsert_price(
+    security_id: str,
+    *,
+    price_date: date,
+    close_original_ccy: str,
+    close_gbp: str,
+    currency: str,
+) -> None:
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=security_id,
+            price_date=price_date,
+            close_price_original_ccy=close_original_ccy,
+            close_price_gbp=close_gbp,
+            currency=currency,
+            source="test-strategic-api",
+        )
 
 
 def _add_lot(client, security_id: str) -> dict:
@@ -64,64 +191,6 @@ def test_strategic_reconcile_page_renders_trace_anchors(client):
     assert 'id="trace-drift-decomposition"' in text
     assert 'id="trace-contributing-lots"' in text
     assert 'id="trace-audit-mutations"' in text
-
-
-def test_strategic_api_endpoints_smoke(client):
-    _ = _add_security(client, "SSTAGE")
-
-    cases = [
-        ("/api/strategic/capital-efficiency", {"components", "total_structural_drag_gbp"}),
-        ("/api/strategic/employment-exit", {"rows", "totals", "exit_date"}),
-        ("/api/strategic/isa-efficiency", {"active_tax_year", "isa_ratio_pct"}),
-        ("/api/strategic/fee-drag", {"totals", "tax_year_rows", "transaction_rows"}),
-        ("/api/strategic/data-quality", {"summary", "impact_rows", "tax_plan_freshness"}),
-        ("/api/strategic/employment-tax-events", {"tax_year_rows", "event_rows"}),
-        ("/api/strategic/reconcile", {"components", "trace_links"}),
-        ("/api/strategic/basis-timeline", {"date_rows", "security_rows"}),
-    ]
-
-    for path, required_keys in cases:
-        resp = client.get(path)
-        assert resp.status_code == 200, path
-        body = resp.json()
-        for key in required_keys:
-            assert key in body, f"{path} missing key: {key}"
-
-
-def test_strategic_pages_render(client):
-    pages = [
-        ("/insights", "Insights"),
-        ("/capital-efficiency", "Capital Efficiency"),
-        ("/employment-exit", "Employment Exit"),
-        ("/isa-efficiency", "ISA Efficiency"),
-        ("/fee-drag", "Fee Drag"),
-        ("/data-quality", "Data Quality"),
-        ("/employment-tax-events", "Employment Tax Events"),
-        ("/reconcile", "Cross-Page Reconciliation"),
-        ("/basis-timeline", "Price/FX Basis Timeline"),
-    ]
-
-    for path, marker in pages:
-        resp = client.get(path)
-        assert resp.status_code == 200, path
-        assert marker in resp.text
-
-    assert "Trend Context" in client.get("/capital-efficiency").text
-    assert "Action Links" in client.get("/capital-efficiency").text
-    assert "Comparison Context" in client.get("/employment-exit").text
-    assert "Action Links" in client.get("/employment-exit").text
-    assert "Trend Context" in client.get("/isa-efficiency").text
-    assert "Action Links" in client.get("/isa-efficiency").text
-    assert "Trend Context" in client.get("/fee-drag").text
-    assert "Action Links" in client.get("/fee-drag").text
-    assert "Trend Context" in client.get("/data-quality").text
-    assert "Action Links" in client.get("/data-quality").text
-    assert "Trend Context" in client.get("/employment-tax-events").text
-    assert "Action Links" in client.get("/employment-tax-events").text
-    assert "Trend Context" in client.get("/basis-timeline").text
-    assert "Action Links" in client.get("/basis-timeline").text
-    assert "Trend Context" in client.get("/insights").text
-    assert "Quick Action" in client.get("/insights").text
 
 
 def test_basis_timeline_lookback_validation(client):
