@@ -8,6 +8,9 @@
   Staleness thresholds control when price and FX data triggers a warning badge.
   Reminder settings drive calendar prompts for recurring ESPP data entry.
 </p>
+{% if server_started_at_display %}
+<p class="muted">Server last started: <strong>{{ server_started_at_display }}</strong></p>
+{% endif %}
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>

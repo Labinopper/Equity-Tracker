@@ -4781,11 +4781,18 @@ def _render_settings_page(
     status_code: int = 200,
 ) -> HTMLResponse:
     settings = AppSettings.load(db_path) if db_path else None
+    started_at_utc = getattr(request.app.state, "server_started_at_utc", None)
+    started_at_display = None
+    if isinstance(started_at_utc, datetime):
+        local_started = started_at_utc.astimezone()
+        started_at_display = local_started.strftime("%Y-%m-%d %H:%M:%S %Z")
+
     context = {
         "request": request,
         "settings": settings,
         "tax_years": available_tax_years(),
         "settings_completeness": _settings_completeness_payload(settings),
+        "server_started_at_display": started_at_display,
         **_flash(msg),
     }
     if error:

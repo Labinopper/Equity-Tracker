@@ -46,7 +46,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import AsyncGenerator
 from zoneinfo import ZoneInfo
@@ -220,6 +220,8 @@ def _log_backfill_result(label: str, result: dict) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     """Startup: optionally open DB. Shutdown: always close DB."""
+    app.state.server_started_at_utc = datetime.now(timezone.utc)
+
     try:
         engine = _open_engine_from_env()
     except Exception as exc:

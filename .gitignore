@@ -36,6 +36,9 @@ Thumbs.db
 *.log
 CODEX_PROGRESS.md
 CODEX_QUESTIONS.md
+.autodeploy.lock
+.equity_tracker.pid
+logs/
 
 # --- Secrets ---
 secrets/
@@ -51,3 +54,8 @@ secrets/
 *.tar
 *.gz
 *.7z
+
+# --- Local migration / machine-specific folders ---
+data/
+migration_bundle_*/
+equity_tracker_pre_migration_backup_*/
