@@ -118,6 +118,15 @@ def test_api_dividend_entry_create_supports_native_currency_and_fx(client):
     assert payload["entries"][0]["original_currency"] == "USD"
     assert payload["allocation"]["mode"] == "SECURITY_LEVEL"
 
+    db_path = _state.get_db_path()
+    entries = CashLedgerService.load_entries(db_path)
+    dividend_cash_entry = next(
+        row for row in entries if row.get("metadata", {}).get("dividend_entry_id") == created["id"]
+    )
+    metadata = dividend_cash_entry.get("metadata", {})
+    assert metadata.get("fx_rate") == "0.800000"
+    assert metadata.get("fx_source") == "manual_test"
+
 
 def test_dividends_ui_add_form_submission(client):
     sec_id = _add_security(client, "DIVFORM")

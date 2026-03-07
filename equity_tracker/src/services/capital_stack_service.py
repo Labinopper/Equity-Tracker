@@ -22,6 +22,7 @@ from ..db.models import Transaction
 from ..settings import AppSettings
 from .cash_ledger_service import CONTAINER_BANK, CONTAINER_BROKER, CashLedgerService
 from .dividend_service import DividendService
+from .fx_service import FxService
 from .portfolio_service import PortfolioService
 
 _MONEY_Q = Decimal("0.01")
@@ -48,6 +49,53 @@ def _to_decimal(value: object) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return None
+
+
+def _deployable_cash_gbp_with_fx(cash_dashboard: dict[str, Any]) -> tuple[Decimal, list[str]]:
+    total = Decimal("0")
+    fx_rates: dict[str, Decimal] = {"GBP": Decimal("1")}
+    fx_converted: set[str] = set()
+    fx_missing: set[str] = set()
+
+    for row in cash_dashboard.get("balances", []):
+        if row.get("container") not in {CONTAINER_BROKER, CONTAINER_BANK}:
+            continue
+        currency = str(row.get("currency") or "").strip().upper()
+        if not currency:
+            continue
+        amount = _to_decimal(row.get("balance"))
+        if amount is None:
+            continue
+        if currency == "GBP":
+            total += amount
+            continue
+
+        fx_rate = fx_rates.get(currency)
+        if fx_rate is None:
+            try:
+                quote = FxService.get_rate(currency, "GBP")
+            except Exception:
+                fx_missing.add(currency)
+                continue
+            fx_rate = quote.rate
+            fx_rates[currency] = fx_rate
+            fx_converted.add(currency)
+        total += amount * fx_rate
+
+    notes: list[str] = []
+    if fx_converted:
+        notes.append(
+            "Deployable non-GBP cash converted to GBP using live FX: "
+            + ", ".join(sorted(fx_converted))
+            + "."
+        )
+    if fx_missing:
+        notes.append(
+            "Deployable non-GBP cash excluded due to unavailable FX to GBP: "
+            + ", ".join(sorted(fx_missing))
+            + "."
+        )
+    return _q_money(total), notes
 
 
 def _marginal_cgt_rate_for_settings(
@@ -214,17 +262,9 @@ class CapitalStackService:
         )
 
         cash_dashboard = CashLedgerService.dashboard(db_path=db_path)
-        gbp_deployable_cash = Decimal("0")
-        for row in cash_dashboard.get("balances", []):
-            if row.get("currency") != "GBP":
-                continue
-            if row.get("container") not in {CONTAINER_BROKER, CONTAINER_BANK}:
-                continue
-            amount = _to_decimal(row.get("balance"))
-            if amount is None:
-                continue
-            gbp_deployable_cash += amount
-        gbp_deployable_cash = _q_money(gbp_deployable_cash)
+        gbp_deployable_cash, deployable_cash_notes = _deployable_cash_gbp_with_fx(
+            cash_dashboard
+        )
         combined_deployable_with_cash = (
             _q_money(net_deployable + gbp_deployable_cash)
             if net_deployable is not None
@@ -257,6 +297,7 @@ class CapitalStackService:
             notes.append(
                 "Estimated fees use historical average fee per disposed share."
             )
+        notes.extend(deployable_cash_notes)
 
         return {
             "as_of_date": as_of_date.isoformat(),

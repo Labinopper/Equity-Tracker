@@ -319,6 +319,8 @@ async def api_dividend_entry_create(
                         "dividend_entry_id": entry["id"],
                         "security_id": entry["security_id"],
                         "ticker": entry["ticker"],
+                        "fx_rate": entry.get("fx_rate_to_gbp") or None,
+                        "fx_source": entry.get("fx_rate_source") or None,
                     },
                 )
                 entry["cash_entry_id"] = cash_entry.get("entry_id")
@@ -516,6 +518,8 @@ async def dividends_backfill_cash_submit(
                     "security_id": entry.get("security_id"),
                     "ticker": entry.get("ticker"),
                     "lot_group": entry.get("lot_group"),
+                    "fx_rate": entry.get("fx_rate_to_gbp"),
+                    "fx_source": entry.get("fx_rate_source"),
                     "backfill": True,
                 },
             )
@@ -810,6 +814,8 @@ async def dividends_add_submit(
                     "security_id": entry["security_id"],
                     "ticker": entry["ticker"],
                     "lot_group": normalized_group_value,
+                    "fx_rate": entry.get("fx_rate_to_gbp") or None,
+                    "fx_source": entry.get("fx_rate_source") or None,
                 },
             )
             msg_text = (

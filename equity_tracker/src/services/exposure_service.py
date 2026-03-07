@@ -15,6 +15,7 @@ from typing import Any
 
 from ..settings import AppSettings
 from .cash_ledger_service import CONTAINER_BANK, CONTAINER_BROKER, CashLedgerService
+from .fx_service import FxService
 
 _MONEY_Q = Decimal("0.01")
 _PCT_Q = Decimal("0.01")
@@ -66,19 +67,50 @@ def _settings_income_dependency_pct(settings: AppSettings | None) -> Decimal:
     return _q_pct(raw)
 
 
-def _deployable_cash_gbp(db_path) -> Decimal:
+def _deployable_cash_gbp(db_path) -> tuple[Decimal, list[str]]:
     dashboard = CashLedgerService.dashboard(db_path=db_path)
     total = Decimal("0")
+    fx_rates: dict[str, Decimal] = {"GBP": Decimal("1")}
+    fx_converted: set[str] = set()
+    fx_missing: set[str] = set()
     for row in dashboard.get("balances", []):
-        if row.get("currency") != "GBP":
-            continue
         if row.get("container") not in {CONTAINER_BROKER, CONTAINER_BANK}:
+            continue
+        currency = str(row.get("currency") or "").strip().upper()
+        if not currency:
             continue
         amount = _to_decimal(row.get("balance"))
         if amount is None:
             continue
-        total += amount
-    return _q_money(total)
+        if currency == "GBP":
+            total += amount
+            continue
+        fx_rate = fx_rates.get(currency)
+        if fx_rate is None:
+            try:
+                quote = FxService.get_rate(currency, "GBP")
+            except Exception:
+                fx_missing.add(currency)
+                continue
+            fx_rate = quote.rate
+            fx_rates[currency] = fx_rate
+            fx_converted.add(currency)
+        total += amount * fx_rate
+
+    notes: list[str] = []
+    if fx_converted:
+        notes.append(
+            "Converted deployable non-GBP cash to GBP using live FX: "
+            + ", ".join(sorted(fx_converted))
+            + "."
+        )
+    if fx_missing:
+        notes.append(
+            "Excluded deployable non-GBP cash with unavailable FX to GBP: "
+            + ", ".join(sorted(fx_missing))
+            + "."
+        )
+    return _q_money(total), notes
 
 
 def _top_bucket(values_by_ticker: dict[str, Decimal]) -> tuple[str | None, Decimal]:
@@ -155,7 +187,7 @@ class ExposureService:
         employer_gross = _q_money(gross_by_ticker.get(employer_ticker or "", Decimal("0")))
         employer_sellable = _q_money(sellable_by_ticker.get(employer_ticker or "", Decimal("0")))
 
-        deployable_cash = _deployable_cash_gbp(db_path)
+        deployable_cash, deployable_cash_notes = _deployable_cash_gbp(db_path)
         deployable_capital = _q_money(sellable_total_q + deployable_cash)
 
         employer_income_dependency_pct = _settings_income_dependency_pct(settings)
@@ -188,6 +220,7 @@ class ExposureService:
             notes.append(
                 f"{unpriced_lot_count} lot(s) excluded from concentration splits due to missing prices."
             )
+        notes.extend(deployable_cash_notes)
 
         return {
             "top_holding_ticker_gross": top_gross_ticker,

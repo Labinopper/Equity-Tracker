@@ -10,6 +10,7 @@ from src.services.cash_ledger_service import (
     CONTAINER_BROKER,
     CashLedgerService,
 )
+from src.services.fx_service import FxQuote
 from src.services.portfolio_service import PortfolioService
 from src.settings import AppSettings
 
@@ -138,6 +139,58 @@ def test_portfolio_deployable_capital_includes_gbp_cash(client, db_engine):
     assert resp.status_code == 200
     assert "Deployable Capital (Holdings + GBP Cash)" in resp.text
     assert "&pound;275.00" in resp.text
+
+
+def test_risk_api_deployable_capital_converts_non_gbp_cash(client, db_engine, monkeypatch):
+    _, db_path = db_engine
+
+    sec = PortfolioService.add_security(
+        ticker="CASHUSD",
+        name="Cash USD PLC",
+        currency="GBP",
+        is_manual_override=True,
+    )
+    PortfolioService.add_lot(
+        security_id=sec.id,
+        scheme_type="BROKERAGE",
+        acquisition_date=date.today() - timedelta(days=60),
+        quantity=Decimal("10"),
+        acquisition_price_gbp=Decimal("10.00"),
+        true_cost_per_share_gbp=Decimal("10.00"),
+    )
+    _set_price(sec.id, "20.00")
+
+    CashLedgerService.record_entry(
+        db_path=db_path,
+        entry_date=date.today(),
+        container=CONTAINER_BROKER,
+        currency="USD",
+        amount=Decimal("10.00"),
+        notes="stage6 deployable usd cash",
+    )
+
+    def _mock_fx(from_currency: str, to_currency: str, *, rates=None):
+        assert from_currency == "USD"
+        assert to_currency == "GBP"
+        return FxQuote(
+            from_currency="USD",
+            to_currency="GBP",
+            rate=Decimal("0.80"),
+            as_of="2026-03-07 00:00:00",
+            source="test_fx",
+            path=("USD2GBP",),
+        )
+
+    monkeypatch.setattr(
+        "src.services.exposure_service.FxService.get_rate",
+        staticmethod(_mock_fx),
+    )
+
+    resp = client.get("/api/risk/summary")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["deployable"]["deployable_cash_gbp"] == "8.00"
+    assert payload["deployable"]["deployable_capital_gbp"] == "208.00"
 
 
 def test_risk_api_stage6_employer_dependence_breakdown(client, db_engine):

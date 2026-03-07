@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: `2026-03-06`
+Last updated: `2026-03-07`
 
 ## Source of Truth Files
 
@@ -26,3 +26,9 @@ Last updated: `2026-03-06`
 - Refinement/hardening pass is closed (effective `2026-03-06`).
 - Active refinement scope `T58`-`T79` is complete; no in-process refinement waves remain.
 - Next prioritization source: deferred feature sections in `docs/todo.md` (`T54`-`T57`, `T80`-`T82`).
+
+## Recent Documentation Sync (`2026-03-07`)
+
+- Dividends flow documented as lot-first input with hidden maintenance UI controls.
+- Deployable cash semantics updated to GBP-equivalent (including non-GBP cash conversion via FX).
+- Portfolio page docs updated for removed view controls and default-collapsed Model Scope.

@@ -218,4 +218,4 @@ def test_capital_stack_combined_deployable_includes_gbp_cash(client, db_engine):
 
     page = client.get("/capital-stack")
     assert page.status_code == 200
-    assert "Combined Deployable (Holdings + GBP Cash)" in page.text
+    assert "Combined Deployable (Holdings + Cash)" in page.text

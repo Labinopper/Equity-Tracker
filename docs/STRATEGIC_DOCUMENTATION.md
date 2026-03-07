@@ -1,16 +1,24 @@
 # Strategic Question Table
 
-Last updated: `2026-03-06`
+Last updated: `2026-03-07`
 
-Execution mode: refinement and hardening closure complete (`T58`-`T79` shipped). New feature-expansion tracks are documented and deferred pending reprioritization.
+Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, and Portfolio UI simplification); feature-expansion tracks remain deferred pending reprioritization.
 
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
+
+## Post-Closure Updates (`2026-03-07`)
+
+1. Dividends add workflow is now lot-first: select active lot(s) first, then enter payout values.
+2. Dividends maintenance actions (`one-time cash backfill`, `relink existing dividend`) are intentionally hidden from UI to reduce accidental historical rewrites; backend routes remain available for controlled recovery use.
+3. Deployable cash now includes non-GBP BROKER/BANK balances converted to GBP-equivalent using current FX rates (used by Portfolio, Risk, and Capital Stack).
+4. Dividend cash auto-post now writes FX metadata (`fx_rate`, `fx_source`) on cash entries to improve provenance clarity.
+5. Portfolio page no longer shows `Portfolio View Controls`; `Model Scope` is now collapsed by default.
 
 | Page | Primary Strategic Question | Secondary Questions | Liquidity Clarity | Tax Visibility | Forfeiture Risk | Concentration Risk | ISA Efficiency | True Cost Modelling | FIFO Integrity | FX Exposure |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Portfolio (`/`) | What do I own now, what is sellable now, and what is retained after estimated drag? | How much capital is locked, forfeitable, or employer-concentrated? | Y | Y | Y | Y | Y | Y | P | Y |
 | Net Value (`/net-value`) | If everything were hypothetically sold now, what gross vs estimated net remains? | How large is the theoretical-to-actionable gap? | Y | Y | Y | P | P | P | N | Y |
-| Capital Stack (`/capital-stack`) | What is true deployable capital after structural deductions? | Which deduction layer is dominating retained-wealth loss? | Y | Y | Y | P | Y | Y | N | P |
+| Capital Stack (`/capital-stack`) | What is true deployable capital after structural deductions? | Which deduction layer is dominating retained-wealth loss? | Y | Y | Y | P | Y | Y | N | Y |
 | Cash (`/cash`) | What cash is deployable by account and currency, and what ISA transfer path is valid? | What FX conversion provenance exists for non-GBP to ISA flow? | Y | P | N | N | Y | N | N | Y |
 | Sell Plan (`/sell-plan`) | How can disposal be executed deterministically in tranches under constraints? | Is the plan compliant with sellability, cadence, and cap constraints? | Y | Y | Y | Y | P | Y | P | N |
 | Simulate Disposal (`/simulate`) | For a proposed disposal, what FIFO and tax/fee outcomes occur before commit? | What forfeiture and shortfall risks are triggered? | Y | Y | Y | P | P | Y | Y | N |

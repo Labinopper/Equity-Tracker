@@ -6,7 +6,7 @@ Scope guardrails:
 - No buy/sell advice language.
 - Every change must improve at least one of: clarity, risk visibility, retained-wealth realism, hidden drag visibility.
 
-Execution mode (`2026-03-06`):
+Execution mode (`2026-03-07`):
 - Refinement and hardening only.
 - Active implementation scope: closed (`T58`-`T79` complete).
 - Deferred (not active): `T54`-`T57`, `T80`-`T82`.
@@ -21,6 +21,14 @@ Execution mode (`2026-03-06`):
 - Wave A complete (`T58`-`T69`; commit `d2d9751`).
 - Wave B complete (`T70`-`T77`; commit `7ff36ac`).
 - Wave C complete (`T78`-`T79`; glossary reverse links and operational auth/lock recovery messaging shipped with regression coverage).
+
+## Progress Update (2026-03-07)
+
+- Dividends input flow now defaults to lot-first selection (active lot pickers drive security/currency/group defaults).
+- Dividends maintenance controls are now hidden from UI (`one-time backfill`, `relink existing`) while backend endpoints remain available for controlled recovery/migration actions.
+- Deployable cash calculations now include non-GBP BROKER/BANK balances converted to GBP-equivalent using current FX rates (Portfolio, Risk, Capital Stack).
+- Dividend cash auto-post now persists FX metadata (`fx_rate`, `fx_source`) into cash-entry metadata for provenance.
+- Portfolio UI simplified: `Portfolio View Controls` removed and `Model Scope` defaults to collapsed.
 
 ## Active Refinement Queue (Closed)
 
