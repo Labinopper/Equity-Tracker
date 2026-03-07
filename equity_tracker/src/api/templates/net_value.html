@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Sell-All Breakdown - Equity Tracker{% endblock %}
+{% block title %}Net Value - Equity Tracker{% endblock %}
 
 {% block content %}
 <div class="page-title">
   <div class="page-title__heading">
-    <h1>Sell-All Breakdown</h1>
+    <h1>Net Value</h1>
 
     <span class="title-help">
-      <button class="info-button" type="button" aria-label="Sell-All Breakdown info">ℹ</button>
+      <button class="info-button" type="button" aria-label="Net Value info">ℹ</button>
 
       <div class="tooltip tooltip--title">
         <div class="tooltip-content">
@@ -480,7 +480,7 @@
       .catch(function (err) {
         btn.disabled = false;
         btn.textContent = "Download audit JSON";
-        alert("Sell-All Breakdown audit export failed: " + err.message);
+        alert("Net Value audit export failed: " + err.message);
       });
   });
 })();

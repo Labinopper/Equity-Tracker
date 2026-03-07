@@ -29,7 +29,8 @@ Last updated: `2026-03-07`
 
 - Refinement/hardening pass is closed (effective `2026-03-06`).
 - Active refinement scope `T58`-`T79` is complete; no in-process refinement waves remain.
-- Next prioritization source: deferred sections in `docs/todo.md` (`T54`-`T57`, `T80`-`T90`).
+- Deferred hardening items `T84`, `T85`, `T86`, and `T88` are now complete.
+- Next prioritization source: remaining deferred sections in `docs/todo.md`, with `T83` pension now next.
 
 ## Recent Documentation Sync (`2026-03-07`)
 

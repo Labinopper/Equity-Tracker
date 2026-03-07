@@ -11,13 +11,14 @@ Scope guardrails:
 Execution mode (`2026-03-07`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
-- Current prioritization source: deferred backlog only (`T54`-`T57`, `T80`-`T90`).
+- Current prioritization source: remaining deferred backlog and remaining hardening candidates.
 
 ## Current Status
 
 - Stages `1`-`10` are complete.
 - Refinement Waves `A`-`C` are complete.
 - `2026-03-07` maintenance updates are live: lot-first dividends input, hidden dividend maintenance controls, deployable cash FX conversion to GBP-equivalent, dividend cash FX metadata persistence, and Portfolio UI simplification.
+- Strategic hardening items `T84`, `T85`, `T86`, and `T88` are complete and under regression coverage.
 - Detailed delivery history and the pre-tidy backlog snapshot now live in `docs/todo_archive.md`.
 
 ## Execution Status (Source of Truth)
@@ -37,20 +38,27 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-1. Feature-breaking hardening first: `T85`, `T88` (with `T84` already started), then `T86` where wording regressions can silently break interpretation.
-2. `T83`: pension expansion, promoted ahead of workflow / QoL scope.
-3. Deeper hardening and shared foundations: `T87`, `T89`, `T57`, `T54`-`T56`.
-4. Workflow and QoL expansion: `T80`-`T82`, `T90`.
+1. `T83`: pension expansion, promoted ahead of workflow / QoL scope now that feature-breaking hardening is complete.
+2. Deeper hardening and shared foundations: `T87`, `T89`, `T57`, `T54`-`T56`.
+3. Workflow and QoL expansion: `T80`-`T82`, `T90`.
 
 ## Definition of Done (Current + Next)
 
 - Completed baseline: Core v1 (`T01`-`T12`), sell execution core (`T45`-`T50`, `T53`), and priority additions (`T33`, `T36`, `T37`, `T38`) are merged.
 - Stage 10 complete: `T13`-`T32` are merged with targeted deterministic tests for strategic reconcile and audit record filtering.
 - Refinement backlog closure achieved: `T58`-`T79` complete with regression coverage for changed semantics, labels, traces, reconciliation pathways, and operational messaging.
+- Deferred hardening coverage now includes `T84`, `T85`, `T86`, and `T88`.
 - Remaining work is limited to deferred foundation, workflow, product-expansion, and hardening candidates.
 - If any shipped scope is reopened, use `docs/todo_archive.md` for the historical acceptance criteria and archived task detail.
 
 ## Deferred Backlog (Current Source of Truth)
+
+### Recently Completed Deferred Items (`2026-03-07`)
+
+- `T84`: strategic regression matrix coverage for Stage-10 strategic pages.
+- `T85`: alert-threshold, alert-center, and trace-link end-to-end coverage.
+- `T86`: documented wording, Model Scope, glossary-anchor, and trace-anchor copy contracts.
+- `T88`: cross-surface delta-tolerance fixtures for price, FX, quantity, and settings changes.
 
 ### Shared Foundation Candidates
 
@@ -75,11 +83,7 @@ Execution mode (`2026-03-07`):
 
 | ID | Priority | Size | Type | Task | Objective Alignment | Acceptance Criteria |
 |---|---|---|---|---|---|---|
-| T84 | P1 | M | Major | Add regression matrix coverage for strategic pages (`/capital-efficiency`, `/employment-exit`, `/isa-efficiency`, `/fee-drag`, `/data-quality`, `/employment-tax-events`, `/reconcile`, `/basis-timeline`) as formulas and copy evolve. | Transparency, deterministic trust | Each strategic page has route smoke coverage plus at least one semantic assertion tied to its core metric/output framing. |
-| T85 | P1 | M | Major | Expand end-to-end tests around alert thresholds, alert-center surfacing, and trace-link integrity across Portfolio, Net Value, Tax Plan, Reconcile, and Audit. | Risk salience, traceability | Deterministic threshold breaches and trace hops are reproducible in tests and fail on broken navigation or missing explanations. |
-| T86 | P1 | S | Minor | Harden documentation-to-test coupling for high-risk wording, model-scope copy, and glossary/trace anchors. | Clarity, semantic integrity | Copy/anchor regressions on decision-critical labels fail targeted tests before merge. |
 | T87 | P2 | M | Major | Add broader strategic API/UI regression suite for all Stage-10 pages and filters/parameter combinations. | Reliability, extensibility | Stage-10 routes and representative query states are covered by stable smoke + semantic response checks. |
-| T88 | P2 | M | Major | Add reconciliation delta-tolerance fixtures across representative portfolio states for `/reconcile`, Portfolio, Net Value, Capital Stack, and Tax Plan. | Cross-surface trust | Fixture portfolios validate deterministic deltas within documented tolerances for price, FX, quantity, and settings changes. |
 | T89 | P2 | S | Minor | Add UX-friction regression checks for key trace workflows (`Portfolio/Net Value/Tax Plan -> Reconcile -> Audit`). | Decision flow, usability | Critical trace journeys remain completable in <=3 clicks with visible context and no dead-end states. |
 
 ## Archive
