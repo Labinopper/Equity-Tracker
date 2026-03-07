@@ -24,6 +24,14 @@ function Get-UpstreamBranch {
     }
 }
 
+function Get-RepoDirtyState {
+    $output = & $gitExe -C $repoRoot status --porcelain --untracked-files=no 2>$null
+    if ($null -eq $output) {
+        return ""
+    }
+    return (($output | Out-String).Trim())
+}
+
 function Get-ListenPid {
     $conn = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -ne $conn) {
@@ -90,7 +98,7 @@ try {
         throw "Git not found at $gitExe"
     }
 
-    $dirty = (& $gitExe -C $repoRoot status --porcelain).Trim()
+    $dirty = Get-RepoDirtyState
     $upstream = Get-UpstreamBranch
     $restartRequired = $false
 
