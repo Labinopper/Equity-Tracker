@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = $PSScriptRoot
 $appDir = Join-Path $repoRoot "equity_tracker"
 $pythonExe = Join-Path $appDir ".venv\Scripts\python.exe"
+$startScript = Join-Path $appDir "start.ps1"
 $gitExe = "C:\Program Files\Git\cmd\git.exe"
 $pidFile = Join-Path $repoRoot ".equity_tracker.pid"
 $lockFile = Join-Path $repoRoot ".autodeploy.lock"
@@ -76,7 +77,14 @@ function Start-TrackerProcess {
     if (!(Test-Path $logDir)) {
         New-Item -ItemType Directory -Path $logDir | Out-Null
     }
-    $proc = Start-Process -FilePath $pythonExe -ArgumentList "run_api.py" -WorkingDirectory $appDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+    $proc = Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $startScript `
+        -WorkingDirectory $appDir `
+        -PassThru `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutLog `
+        -RedirectStandardError $stderrLog
     Set-Content -Path $pidFile -Value $proc.Id -NoNewline
     Write-Log "Started Equity Tracker PID $($proc.Id)"
 }
