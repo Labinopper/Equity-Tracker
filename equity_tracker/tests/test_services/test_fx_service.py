@@ -53,3 +53,19 @@ def test_get_rate_multi_hop_path():
 def test_get_rate_missing_pair_raises():
     with pytest.raises(RuntimeError, match="USD2GBP"):
         FxService.get_rate("USD", "GBP", rates={})
+
+
+def test_current_live_provider_defaults_to_twelve_data_when_price_provider_matches(monkeypatch):
+    monkeypatch.setenv("EQUITY_PRICE_PROVIDER", "twelve_data")
+    monkeypatch.setenv("EQUITY_TWELVE_DATA_API_KEY", "test-key")
+    monkeypatch.delenv("EQUITY_FX_PROVIDER", raising=False)
+
+    assert FxService.current_live_provider() == "twelve_data"
+
+
+def test_current_live_provider_respects_explicit_override(monkeypatch):
+    monkeypatch.setenv("EQUITY_PRICE_PROVIDER", "twelve_data")
+    monkeypatch.setenv("EQUITY_TWELVE_DATA_API_KEY", "test-key")
+    monkeypatch.setenv("EQUITY_FX_PROVIDER", "yfinance")
+
+    assert FxService.current_live_provider() == "yfinance"

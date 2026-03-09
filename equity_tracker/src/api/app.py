@@ -150,6 +150,7 @@ def _open_engine_from_env() -> DatabaseEngine | None:
 # ---------------------------------------------------------------------------
 
 _UK_TZ = ZoneInfo("Europe/London")
+_UTC = ZoneInfo("UTC")
 
 
 def _seconds_until_11pm_uk() -> float:
@@ -159,6 +160,12 @@ def _seconds_until_11pm_uk() -> float:
     if now >= target:
         target += timedelta(days=1)
     return (target - now).total_seconds()
+
+
+def _seconds_until_next_minute() -> float:
+    now = datetime.now(_UTC)
+    target = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    return max(1.0, (target - now).total_seconds())
 
 
 async def _nightly_history_task() -> None:
@@ -196,6 +203,37 @@ async def _nightly_history_task() -> None:
             _log_backfill_result("Nightly", result)
         except Exception:
             logger.exception("Nightly extended history backfill failed.")
+
+
+async def _intraday_quote_refresh_task() -> None:
+    """
+    Background task: refresh a budgeted subset of open-market securities each minute.
+
+    Twelve Data is only used when configured. Otherwise this task exits immediately.
+    """
+    from ..services.price_service import PriceService
+    from ..services.twelve_data_price_service import TwelveDataPriceService
+
+    if not TwelveDataPriceService.is_configured():
+        logger.info("Twelve Data intraday refresh disabled; no API key configured.")
+        return
+
+    while True:
+        try:
+            if AppContext.is_initialized():
+                result = PriceService.refresh_intraday_budgeted()
+                if result.get("fetched") or result.get("errors"):
+                    logger.info(
+                        "Intraday refresh: fetched=%d planned=%d remaining_credits=%d errors=%d.",
+                        result.get("fetched", 0),
+                        result.get("planned", 0),
+                        result.get("remaining_credits", 0),
+                        len(result.get("errors", [])),
+                    )
+        except Exception:
+            logger.exception("Intraday budgeted refresh failed.")
+
+        await asyncio.sleep(_seconds_until_next_minute())
 
 
 def _log_backfill_result(label: str, result: dict) -> None:
@@ -257,12 +295,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
         )
 
     history_task = asyncio.create_task(_nightly_history_task())
+    intraday_task = asyncio.create_task(_intraday_quote_refresh_task())
 
     yield
 
     history_task.cancel()
+    intraday_task.cancel()
     with suppress(asyncio.CancelledError):
         await history_task
+    with suppress(asyncio.CancelledError):
+        await intraday_task
 
     _state.set_db_path(None)
     AppContext.lock()

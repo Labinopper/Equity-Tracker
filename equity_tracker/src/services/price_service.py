@@ -1,9 +1,10 @@
 """
-PriceService - fetch and store live market prices via yfinance.
+PriceService - fetch and store live market prices.
 
 Design notes:
-  - fetch_all() reads yfinance and stores one PriceHistory row per security.
-  - fetch_and_store() fetches yfinance for a single security.
+  - fetch_all() reads the configured live provider and stores one PriceHistory
+    row per security.
+  - fetch_and_store() fetches the configured live provider for a single security.
   - Historical backfill still uses yfinance daily closes.
   - Currency conversion rules:
       GBP  -> price stored as-is.
@@ -18,6 +19,7 @@ Design notes:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -28,12 +30,14 @@ from ..app_context import AppContext
 from ..db.models import Lot
 from ..db.repository import PriceRepository, SecurityRepository
 from .fx_service import FxService
+from .twelve_data_price_service import TwelveDataPriceService
 
 logger = logging.getLogger(__name__)
 
 # Source prefix used when storing yfinance prices in PriceHistory.source.
 # Format: "yfinance:{price_ts}" or "yfinance:{price_ts}|fx:{fx_ts}".
 _LIVE_SOURCE_PREFIX = "yfinance:"
+_TWELVE_DATA_SOURCE_PREFIX = "twelvedata:"
 _FX_SEPARATOR = "|fx:"
 _HISTORY_SOURCE = "yfinance_history"
 _GBP_DECIMAL_QUANT = Decimal("0.0001")
@@ -45,6 +49,10 @@ _PRE_ACQUISITION_DAYS = 365
 
 class _HistoryRateLimitError(Exception):
     """Raised when yfinance signals a rate-limit (HTTP 429) response."""
+
+
+class CreditBudgetExceededError(RuntimeError):
+    """Raised when a Twelve Data action would exceed the configured budget."""
 
 
 # ---------------------------------------------------------------------------
@@ -83,14 +91,19 @@ class PriceSnapshot:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _build_source(price_timestamp: str) -> str:
+def _build_source(price_timestamp: str, *, source_prefix: str = _LIVE_SOURCE_PREFIX) -> str:
     """Encode a live price timestamp into the PriceHistory.source field."""
-    return f"{_LIVE_SOURCE_PREFIX}{price_timestamp}"
+    return f"{source_prefix}{price_timestamp}"
 
 
-def _build_source_with_fx(price_timestamp: str, fx_timestamp: str) -> str:
+def _build_source_with_fx(
+    price_timestamp: str,
+    fx_timestamp: str,
+    *,
+    source_prefix: str = _LIVE_SOURCE_PREFIX,
+) -> str:
     """Encode both live price and FX timestamps into the source field."""
-    return f"{_LIVE_SOURCE_PREFIX}{price_timestamp}{_FX_SEPARATOR}{fx_timestamp}"
+    return f"{source_prefix}{price_timestamp}{_FX_SEPARATOR}{fx_timestamp}"
 
 
 def _parse_sheets_timestamp(source: str) -> str | None:
@@ -99,7 +112,7 @@ def _parse_sheets_timestamp(source: str) -> str | None:
     Supports both legacy google_sheets and current yfinance source prefixes.
     """
     if source:
-        for prefix in ("google_sheets:", _LIVE_SOURCE_PREFIX):
+        for prefix in ("google_sheets:", _LIVE_SOURCE_PREFIX, _TWELVE_DATA_SOURCE_PREFIX):
             if source.startswith(prefix):
                 ts = source[len(prefix):]
                 ts = ts.split(_FX_SEPARATOR, 1)[0]
@@ -135,6 +148,17 @@ def _normalize_provider_currency(value: str | None) -> str | None:
 
 def _current_utc_timestamp() -> str:
     return datetime.now(timezone.utc).strftime(_FX_TS_FMT)
+
+
+def _current_live_provider() -> str:
+    provider = os.environ.get("EQUITY_PRICE_PROVIDER", "yfinance").strip().lower()
+    if provider == "twelve_data" and TwelveDataPriceService.is_configured():
+        return "twelve_data"
+    return "yfinance"
+
+
+def _uses_twelve_data_fx() -> bool:
+    return FxService.uses_twelve_data()
 
 
 def _history_symbol_for_security(ticker: str, exchange: str | None) -> str:
@@ -285,6 +309,47 @@ def _read_live_close(
     )
 
 
+def _read_twelve_data_close(
+    *,
+    ticker: str,
+    exchange: str | None,
+) -> tuple[Decimal, date, str, str | None]:
+    config = TwelveDataPriceService.load_config()
+    if config is None:
+        raise RuntimeError("Twelve Data is not configured.")
+
+    quote = TwelveDataPriceService.fetch_quote(
+        ticker=ticker,
+        exchange=exchange,
+        api_key=config.api_key,
+        extended_hours=config.extended_hours,
+    )
+    TwelveDataPriceService.increment_credit_usage(1)
+    return (
+        quote.close.quantize(_GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP),
+        quote.price_date,
+        quote.timestamp_text,
+        quote.currency,
+    )
+
+
+def _normalise_twelve_data_quote(quote) -> tuple[Decimal, date, str, str]:
+    native_price = quote.close.quantize(_GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP)
+    quote_currency = _normalize_provider_currency(quote.currency) or "GBP"
+    if quote_currency == "GBX":
+        native_price = (native_price / Decimal("100")).quantize(
+            _GBP_DECIMAL_QUANT,
+            rounding=ROUND_HALF_UP,
+        )
+        quote_currency = "GBP"
+    return native_price, quote.price_date, quote.timestamp_text, quote_currency
+
+
+def _currency_requires_fx_credit(currency: str | None) -> bool:
+    normalized = _normalize_provider_currency(currency)
+    return normalized not in {None, "GBP", "GBX"}
+
+
 def _price_row_gbp_value(price_row) -> Decimal | None:
     """Return GBP Decimal value from a PriceHistory row."""
     if price_row is None:
@@ -343,17 +408,27 @@ class PriceService:
         ticker: str,
         currency: str,
         exchange: str | None,
-    ) -> tuple[Decimal, str, date, str]:
+        provider_name: str | None = None,
+    ) -> tuple[Decimal, str, date, str, str]:
         """
         Resolve latest native price + currency metadata for one security.
 
         Returns:
-          (native_price, quote_currency, price_date, provider_timestamp)
+          (native_price, quote_currency, price_date, provider_timestamp, source_prefix)
         """
-        native_price, price_date, provider_ts, provider_currency = _read_live_close(
-            ticker=ticker,
-            exchange=exchange,
-        )
+        chosen_provider = provider_name or _current_live_provider()
+        if chosen_provider == "twelve_data":
+            native_price, price_date, provider_ts, provider_currency = _read_twelve_data_close(
+                ticker=ticker,
+                exchange=exchange,
+            )
+            source_prefix = _TWELVE_DATA_SOURCE_PREFIX
+        else:
+            native_price, price_date, provider_ts, provider_currency = _read_live_close(
+                ticker=ticker,
+                exchange=exchange,
+            )
+            source_prefix = _LIVE_SOURCE_PREFIX
         security_currency = (currency or "GBP").strip().upper()
         quote_currency = _normalize_provider_currency(provider_currency) or security_currency
 
@@ -365,7 +440,7 @@ class PriceService:
             )
             quote_currency = "GBP"
 
-        return native_price, quote_currency, price_date, provider_ts
+        return native_price, quote_currency, price_date, provider_ts, source_prefix
 
     @staticmethod
     def _persist_live_price(
@@ -404,11 +479,107 @@ class PriceService:
             )
 
     @staticmethod
+    def _store_provider_quote(
+        *,
+        security_id: str,
+        ticker: str,
+        exchange: str | None,
+        quote_currency: str,
+        native_price: Decimal,
+        price_date: date,
+        provider_ts: str,
+        source_prefix: str,
+    ) -> int:
+        fx_as_of: str | None = None
+        native_to_gbp_rate_for_backfill: Decimal | None = None
+
+        if quote_currency == "GBP":
+            price_gbp = native_price.quantize(_GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP)
+            source = _build_source(provider_ts, source_prefix=source_prefix)
+        else:
+            quote = FxService.get_rate(quote_currency, "GBP")
+            price_gbp = (native_price * quote.rate).quantize(
+                _GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP
+            )
+            native_to_gbp_rate_for_backfill = quote.rate
+            fx_as_of = quote.as_of or _current_utc_timestamp()
+            source = _build_source_with_fx(
+                provider_ts,
+                fx_as_of,
+                source_prefix=source_prefix,
+            )
+
+        PriceService._persist_live_price(
+            security_id=security_id,
+            quote_currency=quote_currency,
+            native_price=native_price,
+            price_gbp=price_gbp,
+            price_date=price_date,
+            source=source,
+        )
+
+        logger.info(
+            "Stored live %s price for %s (%s): £%s [%s]",
+            source_prefix.rstrip(":"),
+            ticker,
+            security_id,
+            price_gbp,
+            provider_ts,
+        )
+
+        try:
+            return PriceService._backfill_history_for_security(
+                security_id=security_id,
+                ticker=ticker,
+                currency=quote_currency,
+                exchange=exchange,
+                native_to_gbp_rate=native_to_gbp_rate_for_backfill,
+            )
+        except _HistoryRateLimitError as exc:
+            logger.warning(
+                "Rate limited during history backfill for %s; will retry at next run: %s",
+                ticker, exc,
+            )
+            return 0
+
+    @staticmethod
     def _earliest_lot_date(security_id: str) -> date | None:
         """Return the earliest recorded acquisition date for a security."""
         with AppContext.read_session() as sess:
             stmt = select(func.min(Lot.acquisition_date)).where(Lot.security_id == security_id)
             return sess.scalar(stmt)
+
+    @staticmethod
+    def _estimate_twelve_data_cost(
+        security_items: list[tuple[str, str, str | None, str | None]],
+    ) -> int:
+        quote_symbols = {
+            TwelveDataPriceService.request_symbol(ticker, exchange)
+            for _security_id, ticker, _currency, exchange in security_items
+        }
+        if not _uses_twelve_data_fx():
+            return len(quote_symbols)
+        fx_pairs = {
+            f"{currency.strip().upper()}2GBP"
+            for _security_id, _ticker, currency, _exchange in security_items
+            if _currency_requires_fx_credit(currency)
+        }
+        return len(quote_symbols) + len(fx_pairs)
+
+    @staticmethod
+    def _ensure_twelve_data_budget_for(
+        security_items: list[tuple[str, str, str | None, str | None]],
+    ) -> None:
+        config = TwelveDataPriceService.load_config()
+        if config is None:
+            raise RuntimeError("Twelve Data is not configured.")
+        estimated_cost = PriceService._estimate_twelve_data_cost(security_items)
+        remaining_credits = TwelveDataPriceService.remaining_effective_credits(config)
+        if estimated_cost > remaining_credits:
+            raise CreditBudgetExceededError(
+                f"Twelve Data refresh would require about {estimated_cost} credits, "
+                f"but only {remaining_credits} remain in the daily budget."
+            )
 
     @staticmethod
     def _backfill_history_for_security(
@@ -603,9 +774,13 @@ class PriceService:
         }
 
     @staticmethod
-    def fetch_and_store(security_id: str) -> PriceSnapshot:
+    def fetch_and_store(
+        security_id: str,
+        *,
+        provider_name: str | None = None,
+    ) -> PriceSnapshot:
         """
-        Fetch the latest market price for a security via yfinance,
+        Fetch the latest market price for a security via the active live provider,
         convert to GBP if needed via FxService, and persist a PriceHistory row.
 
         Raises:
@@ -626,58 +801,38 @@ class PriceService:
             exchange = security.exchange
 
         # 2. Read latest provider price
-        native_price, quote_currency, price_date, provider_ts = PriceService._fetch_live_components(
+        native_price, quote_currency, price_date, provider_ts, source_prefix = PriceService._fetch_live_components(
             ticker=ticker,
             currency=currency,
             exchange=exchange,
+            provider_name=provider_name,
         )
 
-        # 3. Apply FX conversion for non-GBP currencies
-        fx_as_of: str | None = None
-        native_to_gbp_rate_for_backfill: Decimal | None = None
+        PriceService._store_provider_quote(
+            security_id=security_id,
+            ticker=ticker,
+            exchange=exchange,
+            quote_currency=quote_currency,
+            native_price=native_price,
+            price_date=price_date,
+            provider_ts=provider_ts,
+            source_prefix=source_prefix,
+        )
 
         if quote_currency == "GBP":
             price_gbp = native_price.quantize(_GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP)
-            source = _build_source(provider_ts)
+            source = _build_source(provider_ts, source_prefix=source_prefix)
+            fx_as_of: str | None = None
         else:
             quote = FxService.get_rate(quote_currency, "GBP")
             price_gbp = (native_price * quote.rate).quantize(
                 _GBP_DECIMAL_QUANT, rounding=ROUND_HALF_UP
             )
-            native_to_gbp_rate_for_backfill = quote.rate
             fx_as_of = quote.as_of or _current_utc_timestamp()
-            source = _build_source_with_fx(provider_ts, fx_as_of)
-
-        # 4. Persist PriceHistory
-        PriceService._persist_live_price(
-            security_id=security_id,
-            quote_currency=quote_currency,
-            native_price=native_price,
-            price_gbp=price_gbp,
-            price_date=price_date,
-            source=source,
-        )
-
-        logger.info(
-            "Stored live yfinance price for %s (%s): £%s [%s]",
-            ticker,
-            security_id,
-            price_gbp,
-            provider_ts,
-        )
-
-        try:
-            PriceService._backfill_history_for_security(
-                security_id=security_id,
-                ticker=ticker,
-                currency=quote_currency,
-                exchange=exchange,
-                native_to_gbp_rate=native_to_gbp_rate_for_backfill,
-            )
-        except _HistoryRateLimitError as exc:
-            logger.warning(
-                "Rate limited during history backfill for %s; will retry at next run: %s",
-                ticker, exc,
+            source = _build_source_with_fx(
+                provider_ts,
+                fx_as_of,
+                source_prefix=source_prefix,
             )
 
         return PriceSnapshot(
@@ -692,9 +847,9 @@ class PriceService:
         )
 
     @staticmethod
-    def fetch_all() -> dict:
+    def fetch_all(*, provider_name: str | None = None) -> dict:
         """
-        Read all prices from yfinance and store a PriceHistory row for every
+        Read all prices from the active live provider and store a PriceHistory row for every
         security in the database.
 
         Returns a summary dict::
@@ -718,6 +873,89 @@ class PriceService:
             securities = sec_repo.list_all()
             sec_items = [(s.id, s.ticker, s.currency, s.exchange) for s in securities]
 
+        chosen_provider = provider_name or _current_live_provider()
+        if chosen_provider == "twelve_data":
+            config = TwelveDataPriceService.load_config()
+            if config is None:
+                raise RuntimeError("Twelve Data is not configured.")
+            PriceService._ensure_twelve_data_budget_for(sec_items)
+
+            batch_items = [(ticker, exchange) for _id, ticker, _currency, exchange in sec_items]
+            quotes_by_symbol, batch_errors = TwelveDataPriceService.fetch_quotes(
+                items=batch_items,
+                api_key=config.api_key,
+                extended_hours=config.extended_hours,
+            )
+            request_symbol_count = len(
+                {
+                    TwelveDataPriceService.request_symbol(ticker, exchange)
+                    for ticker, exchange in batch_items
+                }
+            )
+            TwelveDataPriceService.increment_credit_usage(request_symbol_count)
+
+            fetched = 0
+            backfilled_days = 0
+            errors: list[dict] = []
+            for security_id, ticker, _currency, exchange in sec_items:
+                request_symbol = TwelveDataPriceService.request_symbol(ticker, exchange)
+                batch_error = batch_errors.get(request_symbol)
+                if batch_error is not None:
+                    logger.warning(
+                        "Failed to store price for %s (%s): %s", ticker, security_id, batch_error
+                    )
+                    errors.append(
+                        {
+                            "security_id": security_id,
+                            "ticker": ticker,
+                            "error": batch_error,
+                        }
+                    )
+                    continue
+
+                quote = quotes_by_symbol.get(request_symbol)
+                if quote is None:
+                    errors.append(
+                        {
+                            "security_id": security_id,
+                            "ticker": ticker,
+                            "error": "No quote returned from Twelve Data.",
+                        }
+                    )
+                    continue
+
+                try:
+                    native_price, price_date, provider_ts, quote_currency = _normalise_twelve_data_quote(quote)
+                    backfilled_days += PriceService._store_provider_quote(
+                        security_id=security_id,
+                        ticker=ticker,
+                        exchange=exchange,
+                        quote_currency=quote_currency,
+                        native_price=native_price,
+                        price_date=price_date,
+                        provider_ts=provider_ts,
+                        source_prefix=_TWELVE_DATA_SOURCE_PREFIX,
+                    )
+                    fetched += 1
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to store price for %s (%s): %s", ticker, security_id, exc
+                    )
+                    errors.append(
+                        {
+                            "security_id": security_id,
+                            "ticker": ticker,
+                            "error": str(exc),
+                        }
+                    )
+
+            return {
+                "fetched": fetched,
+                "failed": len(errors),
+                "errors": errors,
+                "backfilled_days": backfilled_days,
+            }
+
         # 2. Store a PriceHistory row per security
         fetched = 0
         backfilled_days = 0
@@ -725,11 +963,12 @@ class PriceService:
 
         for security_id, ticker, currency, exchange in sec_items:
             try:
-                native_price, quote_currency, price_date, provider_ts = (
+                native_price, quote_currency, price_date, provider_ts, source_prefix = (
                     PriceService._fetch_live_components(
                         ticker=ticker,
                         currency=currency,
                         exchange=exchange,
+                        provider_name=provider_name,
                     )
                 )
                 native_to_gbp_rate: Decimal | None = None
@@ -741,13 +980,17 @@ class PriceService:
                     )
                     native_to_gbp_rate = quote.rate
                     fx_as_of = quote.as_of or _current_utc_timestamp()
-                    source = _build_source_with_fx(provider_ts, fx_as_of)
+                    source = _build_source_with_fx(
+                        provider_ts,
+                        fx_as_of,
+                        source_prefix=source_prefix,
+                    )
                 else:
                     price_gbp = native_price.quantize(
                         _GBP_DECIMAL_QUANT,
                         rounding=ROUND_HALF_UP,
                     )
-                    source = _build_source(provider_ts)
+                    source = _build_source(provider_ts, source_prefix=source_prefix)
 
                 PriceService._persist_live_price(
                     security_id=security_id,
@@ -759,7 +1002,8 @@ class PriceService:
                 )
 
                 logger.info(
-                    "Stored live yfinance price for %s: £%s [%s]",
+                    "Stored live %s price for %s: £%s [%s]",
+                    source_prefix.rstrip(":"),
                     ticker,
                     price_gbp,
                     provider_ts,
@@ -793,6 +1037,183 @@ class PriceService:
             "failed": len(errors),
             "errors": errors,
             "backfilled_days": backfilled_days,
+        }
+
+    @staticmethod
+    def refresh_intraday_budgeted() -> dict:
+        """
+        Run one Twelve Data budget-aware refresh pass.
+
+        Returns a summary dict. If Twelve Data is not configured, no work is done.
+        """
+        config = TwelveDataPriceService.load_config()
+        if config is None:
+            return {
+                "enabled": False,
+                "fetched": 0,
+                "planned": 0,
+                "remaining_credits": 0,
+                "errors": [],
+            }
+
+        remaining_credits = TwelveDataPriceService.remaining_effective_credits(config)
+        candidates = TwelveDataPriceService.build_scheduler_candidates(config)
+        plan = TwelveDataPriceService.build_refresh_plan(
+            candidates,
+            remaining_credits=remaining_credits,
+            min_refresh_minutes=config.min_refresh_minutes,
+            max_refresh_minutes=config.max_refresh_minutes,
+            now_utc=datetime.now(timezone.utc),
+        )
+        if not plan:
+            return {
+                "enabled": True,
+                "fetched": 0,
+                "planned": 0,
+                "remaining_credits": remaining_credits,
+                "errors": [],
+            }
+
+        plan_by_security_id = {item.security_id: item for item in plan}
+        with AppContext.read_session() as sess:
+            securities = SecurityRepository(sess).list_all()
+            securities_by_id = {security.id: security for security in securities if security.id in plan_by_security_id}
+
+        while plan:
+            estimated_cost = PriceService._estimate_twelve_data_cost(
+                [
+                    (
+                        item.security_id,
+                        securities_by_id[item.security_id].ticker,
+                        securities_by_id[item.security_id].currency,
+                        item.exchange or securities_by_id[item.security_id].exchange,
+                    )
+                    for item in plan
+                    if item.security_id in securities_by_id
+                ]
+            )
+            if estimated_cost <= remaining_credits:
+                break
+            plan = plan[:-1]
+
+        if not plan:
+            return {
+                "enabled": True,
+                "fetched": 0,
+                "planned": 0,
+                "remaining_credits": remaining_credits,
+                "errors": [],
+            }
+
+        batch_items = []
+        for item in plan:
+            security = securities_by_id.get(item.security_id)
+            if security is None:
+                continue
+            batch_items.append((security.ticker, item.exchange or security.exchange))
+
+        if not batch_items:
+            return {
+                "enabled": True,
+                "fetched": 0,
+                "planned": len(plan),
+                "remaining_credits": remaining_credits,
+                "errors": [],
+            }
+
+        quotes_by_symbol, batch_errors = TwelveDataPriceService.fetch_quotes(
+            items=batch_items,
+            api_key=config.api_key,
+            extended_hours=config.extended_hours,
+        )
+        request_symbol_count = len(
+            {
+                TwelveDataPriceService.request_symbol(ticker, exchange)
+                for ticker, exchange in batch_items
+            }
+        )
+        TwelveDataPriceService.increment_credit_usage(request_symbol_count)
+
+        fetched = 0
+        errors: list[dict] = []
+        for item in plan:
+            security = securities_by_id.get(item.security_id)
+            if security is None:
+                errors.append(
+                    {
+                        "security_id": item.security_id,
+                        "ticker": item.ticker,
+                        "error": "Security not found.",
+                    }
+                )
+                continue
+
+            request_symbol = TwelveDataPriceService.request_symbol(
+                security.ticker,
+                item.exchange or security.exchange,
+            )
+            batch_error = batch_errors.get(request_symbol)
+            if batch_error is not None:
+                logger.warning(
+                    "Budgeted Twelve Data refresh failed for %s (%s): %s",
+                    item.ticker,
+                    item.security_id,
+                    batch_error,
+                )
+                errors.append(
+                    {
+                        "security_id": item.security_id,
+                        "ticker": item.ticker,
+                        "error": batch_error,
+                    }
+                )
+                continue
+
+            quote = quotes_by_symbol.get(request_symbol)
+            if quote is None:
+                errors.append(
+                    {
+                        "security_id": item.security_id,
+                        "ticker": item.ticker,
+                        "error": "No quote returned from Twelve Data.",
+                    }
+                )
+                continue
+
+            try:
+                native_price, price_date, provider_ts, quote_currency = _normalise_twelve_data_quote(quote)
+                PriceService._store_provider_quote(
+                    security_id=item.security_id,
+                    ticker=security.ticker,
+                    exchange=security.exchange,
+                    quote_currency=quote_currency,
+                    native_price=native_price,
+                    price_date=price_date,
+                    provider_ts=provider_ts,
+                    source_prefix=_TWELVE_DATA_SOURCE_PREFIX,
+                )
+                fetched += 1
+            except Exception as exc:
+                logger.warning(
+                    "Budgeted Twelve Data refresh failed for %s (%s): %s",
+                    item.ticker,
+                    item.security_id,
+                    exc,
+                )
+                errors.append(
+                    {
+                        "security_id": item.security_id,
+                        "ticker": item.ticker,
+                        "error": str(exc),
+                    }
+                )
+
+        return {
+            "enabled": True,
+            "fetched": fetched,
+            "planned": len(plan),
+            "remaining_credits": remaining_credits,
+            "errors": errors,
         }
 
     # â”€â”€ Read â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -1,7 +1,9 @@
 """
 FxService - provider-agnostic FX quote resolution.
 
-Default provider is yfinance FX symbols (e.g. USDGBP=X).
+Live provider follows EQUITY_FX_PROVIDER when set; otherwise it follows
+EQUITY_PRICE_PROVIDER. Twelve Data can be used for live FX when configured,
+with optional fallback to yfinance.
 
 Capabilities:
 - Direct pair lookup (e.g. USD2GBP)
@@ -14,15 +16,20 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import os
 from typing import Iterable, Mapping
 
 from .sheets_fx_service import FxRow
+from .twelve_data_price_service import TwelveDataPriceService
 
 _FX_TS_FMT = "%Y-%m-%d %H:%M:%S"
 _LIVE_SOURCE = "yfinance_fx"
+_TWELVE_DATA_LIVE_SOURCE = "twelvedata_fx"
 _MAX_PATH_HOPS = 4
+_LIVE_CACHE_TTL = timedelta(minutes=1)
+_LIVE_FX_CACHE: dict[tuple[str, str, str], tuple[datetime, FxQuote]] = {}
 
 
 @dataclass(frozen=True)
@@ -71,6 +78,43 @@ def _oldest_as_of(values: Iterable[str | None]) -> str | None:
     return raw_vals[0]
 
 
+def _current_live_fx_provider() -> str:
+    explicit = (os.environ.get("EQUITY_FX_PROVIDER", "").strip().lower())
+    if explicit in {"twelve_data", "yfinance"}:
+        return explicit
+    live_price_provider = os.environ.get("EQUITY_PRICE_PROVIDER", "yfinance").strip().lower()
+    if live_price_provider == "twelve_data" and TwelveDataPriceService.is_configured():
+        return "twelve_data"
+    return "yfinance"
+
+
+def _allow_twelve_data_fallback_to_yfinance() -> bool:
+    return os.environ.get("EQUITY_TWELVE_DATA_FALLBACK_TO_YFINANCE", "false").strip().lower() == "true"
+
+
+def _cache_key(provider: str, from_currency: str, to_currency: str) -> tuple[str, str, str]:
+    return provider, from_currency, to_currency
+
+
+def _get_cached_live_quote(provider: str, from_currency: str, to_currency: str) -> FxQuote | None:
+    entry = _LIVE_FX_CACHE.get(_cache_key(provider, from_currency, to_currency))
+    if entry is None:
+        return None
+    observed_at, quote = entry
+    if datetime.now(timezone.utc) - observed_at > _LIVE_CACHE_TTL:
+        _LIVE_FX_CACHE.pop(_cache_key(provider, from_currency, to_currency), None)
+        return None
+    return quote
+
+
+def _store_cached_live_quote(provider: str, quote: FxQuote) -> FxQuote:
+    _LIVE_FX_CACHE[_cache_key(provider, quote.from_currency, quote.to_currency)] = (
+        datetime.now(timezone.utc),
+        quote,
+    )
+    return quote
+
+
 class FxService:
     """FX conversion service with pluggable provider-backed rates."""
 
@@ -85,7 +129,15 @@ class FxService:
         return {}
 
     @staticmethod
-    def _read_live_pair(
+    def current_live_provider() -> str:
+        return _current_live_fx_provider()
+
+    @staticmethod
+    def uses_twelve_data() -> bool:
+        return FxService.current_live_provider() == "twelve_data" and TwelveDataPriceService.is_configured()
+
+    @staticmethod
+    def _read_live_pair_yfinance(
         *,
         from_currency: str,
         to_currency: str,
@@ -136,6 +188,65 @@ class FxService:
             source=_LIVE_SOURCE,
             path=(pair_label,),
         )
+
+    @staticmethod
+    def _read_live_pair_twelve_data(
+        *,
+        from_currency: str,
+        to_currency: str,
+    ) -> FxQuote | None:
+        config = TwelveDataPriceService.load_config()
+        if config is None:
+            return None
+
+        pair_symbol = f"{from_currency}/{to_currency}"
+        try:
+            quote = TwelveDataPriceService.fetch_quote(
+                ticker=pair_symbol,
+                exchange=None,
+                api_key=config.api_key,
+                extended_hours=config.extended_hours,
+            )
+        except Exception:
+            return None
+
+        if quote.close <= 0:
+            return None
+
+        TwelveDataPriceService.increment_credit_usage(1)
+        return FxQuote(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            rate=quote.close,
+            as_of=quote.timestamp_text,
+            source=_TWELVE_DATA_LIVE_SOURCE,
+            path=(f"{from_currency}2{to_currency}",),
+        )
+
+    @staticmethod
+    def _read_live_pair(
+        *,
+        from_currency: str,
+        to_currency: str,
+        provider: str,
+    ) -> FxQuote | None:
+        cached = _get_cached_live_quote(provider, from_currency, to_currency)
+        if cached is not None:
+            return cached
+
+        if provider == "twelve_data":
+            quote = FxService._read_live_pair_twelve_data(
+                from_currency=from_currency,
+                to_currency=to_currency,
+            )
+        else:
+            quote = FxService._read_live_pair_yfinance(
+                from_currency=from_currency,
+                to_currency=to_currency,
+            )
+        if quote is None:
+            return None
+        return _store_cached_live_quote(provider, quote)
 
     @staticmethod
     def _resolve_direct_or_inverse(
@@ -291,9 +402,11 @@ class FxService:
             if path_quote is not None:
                 return path_quote
         else:
+            provider = FxService.current_live_provider()
             live_direct = FxService._read_live_pair(
                 from_currency=frm,
                 to_currency=to,
+                provider=provider,
             )
             if live_direct is not None:
                 return live_direct
@@ -301,6 +414,7 @@ class FxService:
             live_inverse = FxService._read_live_pair(
                 from_currency=to,
                 to_currency=frm,
+                provider=provider,
             )
             if live_inverse is not None and live_inverse.rate > 0:
                 return FxQuote(
@@ -312,15 +426,41 @@ class FxService:
                     path=live_inverse.path,
                 )
 
+            if provider == "twelve_data" and _allow_twelve_data_fallback_to_yfinance():
+                live_direct = FxService._read_live_pair(
+                    from_currency=frm,
+                    to_currency=to,
+                    provider="yfinance",
+                )
+                if live_direct is not None:
+                    return live_direct
+
+                live_inverse = FxService._read_live_pair(
+                    from_currency=to,
+                    to_currency=frm,
+                    provider="yfinance",
+                )
+                if live_inverse is not None and live_inverse.rate > 0:
+                    return FxQuote(
+                        from_currency=frm,
+                        to_currency=to,
+                        rate=Decimal("1") / live_inverse.rate,
+                        as_of=live_inverse.as_of,
+                        source=live_inverse.source,
+                        path=live_inverse.path,
+                    )
+
             # Conservative two-leg fallback via USD.
             if frm != "USD" and to != "USD":
                 leg1 = FxService._read_live_pair(
                     from_currency=frm,
                     to_currency="USD",
+                    provider=provider,
                 )
                 leg2 = FxService._read_live_pair(
                     from_currency="USD",
                     to_currency=to,
+                    provider=provider,
                 )
                 if leg1 is not None and leg2 is not None:
                     return FxQuote(
@@ -328,9 +468,30 @@ class FxService:
                         to_currency=to,
                         rate=leg1.rate * leg2.rate,
                         as_of=_oldest_as_of((leg1.as_of, leg2.as_of)),
-                        source=_LIVE_SOURCE,
+                        source=leg1.source,
                         path=(f"{frm}2USD", f"USD2{to}"),
                     )
+
+                if provider == "twelve_data" and _allow_twelve_data_fallback_to_yfinance():
+                    leg1 = FxService._read_live_pair(
+                        from_currency=frm,
+                        to_currency="USD",
+                        provider="yfinance",
+                    )
+                    leg2 = FxService._read_live_pair(
+                        from_currency="USD",
+                        to_currency=to,
+                        provider="yfinance",
+                    )
+                    if leg1 is not None and leg2 is not None:
+                        return FxQuote(
+                            from_currency=frm,
+                            to_currency=to,
+                            rate=leg1.rate * leg2.rate,
+                            as_of=_oldest_as_of((leg1.as_of, leg2.as_of)),
+                            source=leg1.source,
+                            path=(f"{frm}2USD", f"USD2{to}"),
+                        )
 
         pair_hint = f"{frm}2{to}"
         raise RuntimeError(

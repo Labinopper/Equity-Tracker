@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ...services.price_service import PriceService
+from ...services.price_service import CreditBudgetExceededError, PriceService
 from .. import _state
 from ..dependencies import db_required, session_required
 
@@ -76,6 +76,9 @@ async def refresh_prices(
     try:
         result = PriceService.fetch_all()
         _state.record_refresh_result(result)
+    except CreditBudgetExceededError as exc:
+        _state.record_refresh_exception(str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         _state.record_refresh_exception(str(exc))
         raise

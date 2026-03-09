@@ -78,7 +78,7 @@ from ...services.portfolio_service import (
     SecuritySummary,
     _estimate_sell_all_employment_tax,
 )
-from ...services.price_service import PriceService
+from ...services.price_service import CreditBudgetExceededError, PriceService
 from ...services.report_service import ReportService
 from ...services.dividend_service import DividendService
 from ...settings import AppSettings
@@ -4971,7 +4971,13 @@ async def refresh_prices_ui(request: Request) -> RedirectResponse:  # noqa: ARG0
     """Trigger a live price fetch for all securities, then redirect to portfolio."""
     if _is_locked():
         return _locked_response(request)
-    result = PriceService.fetch_all()
+    try:
+        result = PriceService.fetch_all()
+    except CreditBudgetExceededError as exc:
+        return RedirectResponse(
+            f"/?msg=Refresh+blocked:+{str(exc).replace(' ', '+')}",
+            status_code=303,
+        )
     _state.record_refresh_result(result)
     fetched = result["fetched"]
     failed  = result["failed"]

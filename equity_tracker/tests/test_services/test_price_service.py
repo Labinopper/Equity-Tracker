@@ -25,6 +25,7 @@ from src.app_context import AppContext
 from src.db.models import Security
 from src.db.repository import PriceRepository, SecurityRepository
 from src.services.price_service import (
+    CreditBudgetExceededError,
     PriceService,
     _build_source,
     _build_source_with_fx,
@@ -96,6 +97,37 @@ class TestSourceHelpers:
 
     def test_parse_fx_timestamp_empty_suffix(self):
         assert _parse_fx_timestamp("google_sheets:2025-01-15 10:00:00|fx:") is None
+
+
+class TestTwelveDataBudgetHelpers:
+    def test_estimate_twelve_data_cost_counts_unique_quote_symbols_and_fx_pairs(self, monkeypatch):
+        monkeypatch.setenv("EQUITY_TWELVE_DATA_API_KEY", "test-key")
+        monkeypatch.setenv("EQUITY_PRICE_PROVIDER", "twelve_data")
+        monkeypatch.setenv("EQUITY_FX_PROVIDER", "twelve_data")
+
+        items = [
+            ("1", "AAPL", "USD", "NASDAQ"),
+            ("2", "MSFT", "USD", "NASDAQ"),
+            ("3", "VOD", "GBP", "LSE"),
+        ]
+
+        assert PriceService._estimate_twelve_data_cost(items) == 4
+
+    def test_ensure_twelve_data_budget_for_raises_when_estimate_exceeds_budget(self, monkeypatch):
+        monkeypatch.setenv("EQUITY_TWELVE_DATA_API_KEY", "test-key")
+        monkeypatch.setenv("EQUITY_PRICE_PROVIDER", "twelve_data")
+        monkeypatch.setenv("EQUITY_FX_PROVIDER", "twelve_data")
+        monkeypatch.setenv("EQUITY_TWELVE_DATA_DAILY_BUDGET", "2")
+        monkeypatch.setenv("EQUITY_TWELVE_DATA_DAILY_RESERVE", "0")
+
+        items = [
+            ("1", "AAPL", "USD", "NASDAQ"),
+            ("2", "MSFT", "USD", "NASDAQ"),
+            ("3", "VOD", "GBP", "LSE"),
+        ]
+
+        with pytest.raises(CreditBudgetExceededError, match="require about 4 credits"):
+            PriceService._ensure_twelve_data_budget_for(items)
 
 
 # ---------------------------------------------------------------------------
