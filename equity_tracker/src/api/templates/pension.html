@@ -275,10 +275,17 @@
   </form>
 </div>
 
-<div class="card" id="pension-ledger">
-  <div class="card__header">
-    <h2 class="card__title">Contribution Ledger</h2>
-  </div>
+<details class="card net-panel" id="pension-ledger">
+  <summary>
+    <span>Contribution Ledger</span>
+    <span class="muted">
+      {% if payload.ledger_rows %}
+      {{ payload.ledger_rows|length }} entries
+      {% else %}
+      No entries
+      {% endif %}
+    </span>
+  </summary>
   {% if payload.ledger_rows %}
   <div class="table-wrap">
     <table>
@@ -309,7 +316,7 @@
   {% else %}
   <p class="muted">No pension contributions recorded yet.</p>
   {% endif %}
-</div>
+</details>
 
 <div class="card">
   <div class="card__header">
