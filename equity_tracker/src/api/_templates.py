@@ -20,6 +20,7 @@ from . import _state
 from ..app_context import AppContext
 from ..settings import AppSettings
 from ..services.alert_service import AlertService
+from ..services.calendar_service import CalendarService
 
 _BASE_DIR = Path(__file__).parent
 
@@ -73,6 +74,7 @@ def _global_template_context(_request) -> dict[str, bool | str]:
         "policies": {},
     }
     db_path = _state.get_db_path()
+    calendar_actionable_count = 0
     if db_path is not None and AppContext.is_initialized():
         try:
             settings = AppSettings.load(db_path)
@@ -81,6 +83,22 @@ def _global_template_context(_request) -> dict[str, bool | str]:
                 db_path=db_path,
                 as_of=date_type.fromisoformat(selected_as_of) if selected_as_of else None,
             )
+            calendar_payload = CalendarService.get_events_payload(
+                as_of=date_type.fromisoformat(selected_as_of) if selected_as_of else None,
+            )
+            for event in calendar_payload.get("events") or []:
+                if event.get("completed"):
+                    continue
+                event_date_raw = str(event.get("event_date") or "").strip()
+                if not event_date_raw:
+                    continue
+                try:
+                    event_date = date_type.fromisoformat(event_date_raw)
+                except Exception:
+                    continue
+                comparison_date = date_type.fromisoformat(selected_as_of) if selected_as_of else date_type.today()
+                if event_date <= comparison_date:
+                    calendar_actionable_count += 1
         except Exception:
             alert_center = {
                 "total": 0,
@@ -90,10 +108,12 @@ def _global_template_context(_request) -> dict[str, bool | str]:
                 "thresholds": {},
                 "policies": {},
             }
+            calendar_actionable_count = 0
     return {
         "hide_values": _is_hide_values_enabled(),
         "logout_url": "/auth/logout",
         "alert_center": alert_center,
+        "calendar_actionable_count": calendar_actionable_count,
         "selected_as_of": selected_as_of,
         "with_as_of": _with_as_of,
     }

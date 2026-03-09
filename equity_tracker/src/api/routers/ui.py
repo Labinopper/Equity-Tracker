@@ -72,6 +72,7 @@ from ...services.ibkr_price_service import IbkrPriceService
 from ...services.capital_stack_service import CapitalStackService
 from ...services.exposure_service import ExposureService
 from ...services.alert_lifecycle_service import AlertLifecycleService
+from ...services.calendar_service import CalendarService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -2816,6 +2817,7 @@ def _build_portfolio_page_context(
     behavioral_guardrails_total_count = len(behavioral_guardrails_raw)
     behavioral_guardrails_active_count = len(behavioral_guardrails)
     today = now_utc.date()
+    calendar_actionable_today = _calendar_actionable_today_summary(as_of=today)
     return {
         "request": request,
         "summary": summary,
@@ -2862,6 +2864,8 @@ def _build_portfolio_page_context(
         "behavioral_guardrails_active_count": behavioral_guardrails_active_count,
         "behavioral_guardrails_hidden_count": behavioral_guardrails_hidden_count,
         "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
+        "calendar_actionable_today_count": calendar_actionable_today["count"],
+        "calendar_actionable_today_label": calendar_actionable_today["label"],
         "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
         "guardrail_snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
         "page_as_of_date": (as_of or today).isoformat(),
@@ -2897,6 +2901,10 @@ async def portfolio_live_data(
                 "active_count": context["behavioral_guardrails_active_count"],
                 "hidden_count": context["behavioral_guardrails_hidden_count"],
                 "total_count": context["behavioral_guardrails_total_count"],
+            },
+            "calendar_actionables": {
+                "count": context["calendar_actionable_today_count"],
+                "label": context["calendar_actionable_today_label"],
             },
         }
     )
@@ -4612,6 +4620,36 @@ def _cgt_assumption_badges(
         }
     )
     return badges
+
+
+def _calendar_actionable_today_summary(*, as_of: date_type) -> dict[str, int | str]:
+    try:
+        payload = CalendarService.get_events_payload(as_of=as_of)
+    except Exception:
+        return {
+            "count": 0,
+            "label": "0 things to do",
+        }
+
+    actionable_count = 0
+    for event in payload.get("events") or []:
+        if event.get("completed"):
+            continue
+        event_date_raw = str(event.get("event_date") or "").strip()
+        if not event_date_raw:
+            continue
+        try:
+            event_date = date_type.fromisoformat(event_date_raw)
+        except ValueError:
+            continue
+        if event_date <= as_of:
+            actionable_count += 1
+
+    label = "1 thing to do" if actionable_count == 1 else f"{actionable_count} things to do"
+    return {
+        "count": actionable_count,
+        "label": label,
+    }
 
 
 @router.get("/cgt", response_class=HTMLResponse, include_in_schema=False)

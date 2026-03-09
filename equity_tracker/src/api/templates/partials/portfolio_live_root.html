@@ -64,7 +64,13 @@
 </div>
 
 <h2 class="stats-band-title">Actionable Today</h2>
-<p class="stats-band-subtitle">What is deployable now after deterministic structural drag.</p>
+<p class="stats-band-subtitle">Deployable now after deterministic structural drag.</p>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <a href="/calendar" class="valuation-pill {% if calendar_actionable_today_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+    <strong>{{ calendar_actionable_today_label }}</strong>
+    <span class="muted">Open Calendar</span>
+  </a>
+</div>
 <div class="stats stats-band">
   <div class="stat stat--accent">
     <div class="stat__label">Deployable Capital (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
@@ -104,8 +110,8 @@
   </div>
 </div>
 
-<h2 class="stats-band-title">Risk and Context</h2>
-<p class="stats-band-subtitle">Structural exposure and wrapper context for interpretation, not immediate deployable cash.</p>
+<h2 class="stats-band-title">Portfolio Structure</h2>
+<p class="stats-band-subtitle">Exposure, lock state, wrappers, and contextual interpretation.</p>
 <div class="stats stats-band">
   <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label">Net Gain + Net Dividends <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
@@ -178,8 +184,8 @@
   </div>
 </div>
 
-<h2 class="stats-band-title">Cost Basis Context</h2>
-<p class="stats-band-subtitle">Realised basis metrics for economic framing and reconciliation depth.</p>
+<h2 class="stats-band-title">Cost Basis</h2>
+<p class="stats-band-subtitle">Realised basis metrics for economic framing and reconciliation.</p>
 <div class="stats stats-band">
   <div class="stat">
     <div class="stat__label"><a href="/glossary#true-cost-acquisition">Total True Cost</a> <span class="metric-tag metric-tag--realised">Realised</span></div>

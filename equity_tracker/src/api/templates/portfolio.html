@@ -18,6 +18,14 @@
       <span class="guardrail-count-pill__meta" id="guardrail-hidden-count">{{ behavioral_guardrails_hidden_count }} suppressed</span>
       {% endif %}
     </a>
+    <a
+      href="/calendar"
+      id="calendar-actionable-pill"
+      class="guardrail-count-pill {% if calendar_actionable_today_count > 0 %}guardrail-count-pill--warning{% else %}guardrail-count-pill--ok{% endif %}"
+      title="Open calendar actions due today or overdue"
+    >
+      <span id="calendar-actionable-label">{{ calendar_actionable_today_label }}</span>
+    </a>
   </div>
   <div class="page-actions">
     <form id="manual-refresh-form" method="post" action="/portfolio/refresh-prices" class="inline-form">
@@ -551,6 +559,23 @@
     }
   }
 
+  function updateCalendarActionables(actionables) {
+    var pill = document.getElementById("calendar-actionable-pill");
+    var labelEl = document.getElementById("calendar-actionable-label");
+    var count = Number.parseInt(String((actionables && actionables.count) || 0), 10);
+    if (!Number.isFinite(count)) {
+      count = 0;
+    }
+    var label = (actionables && actionables.label) || (count === 1 ? "1 thing to do" : (String(count) + " things to do"));
+    if (labelEl) {
+      labelEl.textContent = label;
+    }
+    if (pill) {
+      pill.classList.toggle("guardrail-count-pill--warning", count > 0);
+      pill.classList.toggle("guardrail-count-pill--ok", count <= 0);
+    }
+  }
+
   function replaceLiveSections(payload) {
     if (!liveRoot) {
       return;
@@ -568,6 +593,9 @@
     currentSecurities.innerHTML = nextSecurities.innerHTML;
     if (payload.guardrails) {
       updateGuardrailCounts(payload.guardrails);
+    }
+    if (payload.calendar_actionables) {
+      updateCalendarActionables(payload.calendar_actionables);
     }
     wireSecurityVisibilityPersistence();
     applyPortfolioViewPrefs(loadViewPrefs());
