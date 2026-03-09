@@ -17,6 +17,8 @@ from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from ..settings import AppSettings
+from .calendar_event_state_service import CalendarEventStateService
+from .dividend_service import DividendService
 from .pension_service import PensionService
 from .portfolio_service import PortfolioService
 
@@ -34,6 +36,7 @@ _EVENT_MONTHLY_INPUT_REMINDER = "MONTHLY_INPUT_REMINDER"
 _EVENT_PENSION_CONTRIBUTION_CHECK = "PENSION_CONTRIBUTION_CHECK"
 _EVENT_ESPP_TRANSFER_GUARDRAIL = "ESPP_TRANSFER_GUARDRAIL"
 _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL = "ESPP_PLUS_LONG_HOLD_GUARDRAIL"
+_EVENT_DIVIDEND_CONFIRMATION = "DIVIDEND_CONFIRMATION"
 
 _EVENT_REMINDERS = frozenset(
     {
@@ -42,6 +45,7 @@ _EVENT_REMINDERS = frozenset(
         _EVENT_PENSION_CONTRIBUTION_CHECK,
         _EVENT_ESPP_TRANSFER_GUARDRAIL,
         _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL,
+        _EVENT_DIVIDEND_CONFIRMATION,
     }
 )
 
@@ -53,9 +57,10 @@ _EVENT_PRIORITY: dict[str, int] = {
     _EVENT_DIVIDEND_REMINDER: 4,
     _EVENT_MONTHLY_INPUT_REMINDER: 5,
     _EVENT_PENSION_CONTRIBUTION_CHECK: 6,
-    _EVENT_SELL_TRANCHE: 7,
-    _EVENT_TAX_YEAR_END: 8,
-    _EVENT_TAX_YEAR_START: 9,
+    _EVENT_DIVIDEND_CONFIRMATION: 7,
+    _EVENT_SELL_TRANCHE: 8,
+    _EVENT_TAX_YEAR_END: 9,
+    _EVENT_TAX_YEAR_START: 10,
 }
 
 
@@ -75,6 +80,20 @@ def _days_until(event_date: date, as_of: date) -> int:
 
 def _in_horizon(event_date: date, *, as_of: date, horizon_days: int) -> bool:
     return as_of <= event_date <= (as_of + timedelta(days=horizon_days))
+
+
+def _in_horizon_or_recent(
+    event_date: date,
+    *,
+    as_of: date,
+    horizon_days: int,
+    keep_past_days: int = 30,
+) -> bool:
+    if _in_horizon(event_date, as_of=as_of, horizon_days=horizon_days):
+        return True
+    if event_date < as_of:
+        return (as_of - event_date).days <= keep_past_days
+    return False
 
 
 def _next_tax_year_end(as_of: date) -> date:
@@ -189,6 +208,7 @@ class CalendarService:
 
         as_of_date = as_of or date.today()
         generated_at_utc = datetime.now(timezone.utc).isoformat()
+        state_by_event = CalendarEventStateService.load_states(db_path)
 
         summary = PortfolioService.get_portfolio_summary(
             settings=settings,
@@ -317,6 +337,71 @@ class CalendarService:
                         }
                     )
 
+        dividend_payload = DividendService.get_summary(settings=settings, as_of=as_of_date)
+        for row in dividend_payload.get("reference_events") or []:
+            if str(row.get("status") or "") == "Recorded":
+                continue
+            ex_date_raw = str(row.get("ex_dividend_date") or "").strip()
+            if not ex_date_raw:
+                continue
+            try:
+                ex_date = date.fromisoformat(ex_date_raw)
+            except ValueError:
+                continue
+            payment_date_raw = str(row.get("payment_date") or "").strip()
+            if payment_date_raw:
+                try:
+                    event_date = date.fromisoformat(payment_date_raw)
+                    date_basis = "pay date"
+                except ValueError:
+                    event_date = ex_date + timedelta(days=28)
+                    date_basis = "estimated pay date"
+            elif ex_date <= as_of_date:
+                event_date = ex_date + timedelta(days=28)
+                date_basis = "estimated pay date"
+            else:
+                event_date = ex_date
+                date_basis = "ex-date"
+
+            event_id = (
+                f"dividend-confirm:{row.get('security_id')}:{row.get('holding_scope')}:"
+                f"{ex_date.isoformat()}"
+            )
+            state_row = state_by_event.get(event_id, {})
+            if not _in_horizon_or_recent(event_date, as_of=as_of_date, horizon_days=horizon_days):
+                continue
+
+            expected_value_gbp = row.get("expected_total_gbp")
+            events.append(
+                {
+                    "event_id": event_id,
+                    "event_type": _EVENT_DIVIDEND_CONFIRMATION,
+                    "event_date": event_date.isoformat(),
+                    "days_until": _days_until(event_date, as_of_date),
+                    "title": f"{row.get('ticker')}: Dividend confirmation",
+                    "subtitle": (
+                        f"Confirm {row.get('holding_scope_label')} receipt for ex-date {ex_date.isoformat()} "
+                        f"using {date_basis}."
+                    ),
+                    "security_id": row.get("security_id"),
+                    "ticker": row.get("ticker"),
+                    "scheme_type": row.get("holding_scope_label"),
+                    "lot_id": None,
+                    "quantity": row.get("expected_quantity"),
+                    "value_at_stake_gbp": expected_value_gbp,
+                    "has_live_value": expected_value_gbp is not None,
+                    "price_as_of": None,
+                    "price_is_stale": False,
+                    "fx_as_of": None,
+                    "fx_is_stale": False,
+                    "fx_basis_note": None,
+                    "deep_link": "/dividends",
+                    "action_label": "Open Dividends",
+                    "completed": bool(state_row.get("completed")),
+                    "completed_at_utc": state_row.get("completed_at_utc"),
+                }
+            )
+
             espp_total_qty = sum(
                 (
                     lot_summary.quantity_remaining
@@ -431,34 +516,40 @@ class CalendarService:
             reminder_day = int(getattr(settings, "monthly_espp_input_reminder_day", 1))
             monthly_event_date = _next_monthly_occurrence(day=reminder_day, as_of=as_of_date)
             if _in_horizon(monthly_event_date, as_of=as_of_date, horizon_days=horizon_days):
-                events.append(
-                    {
-                        "event_id": (
-                            "global:"
-                            f"{_EVENT_MONTHLY_INPUT_REMINDER.lower()}:"
-                            f"{monthly_event_date.isoformat()}"
-                        ),
-                        "event_type": _EVENT_MONTHLY_INPUT_REMINDER,
-                        "event_date": monthly_event_date.isoformat(),
-                        "days_until": _days_until(monthly_event_date, as_of_date),
-                        "title": "Monthly ESPP/ESPP+ input reminder",
-                        "subtitle": "Record this month's ESPP and ESPP+ purchases.",
-                        "security_id": None,
-                        "ticker": None,
-                        "scheme_type": "ESPP/ESPP_PLUS",
-                        "lot_id": None,
-                        "quantity": None,
-                        "value_at_stake_gbp": None,
-                        "has_live_value": False,
-                        "price_as_of": None,
-                        "price_is_stale": False,
-                        "fx_as_of": None,
-                        "fx_is_stale": False,
-                        "fx_basis_note": None,
-                        "deep_link": "/portfolio/add-lot",
-                        "action_label": "Open Add Lot",
-                    }
+                reminder_variants = (
+                    ("ESPP", "Monthly ESPP input reminder", "Record this month's ESPP purchase."),
+                    ("ESPP_PLUS", "Monthly ESPP+ input reminder", "Record this month's ESPP+ purchase."),
                 )
+                for scheme_type, title, subtitle in reminder_variants:
+                    events.append(
+                        {
+                            "event_id": (
+                                "global:"
+                                f"{_EVENT_MONTHLY_INPUT_REMINDER.lower()}:"
+                                f"{scheme_type.lower()}:"
+                                f"{monthly_event_date.isoformat()}"
+                            ),
+                            "event_type": _EVENT_MONTHLY_INPUT_REMINDER,
+                            "event_date": monthly_event_date.isoformat(),
+                            "days_until": _days_until(monthly_event_date, as_of_date),
+                            "title": title,
+                            "subtitle": subtitle,
+                            "security_id": None,
+                            "ticker": None,
+                            "scheme_type": scheme_type,
+                            "lot_id": None,
+                            "quantity": None,
+                            "value_at_stake_gbp": None,
+                            "has_live_value": False,
+                            "price_as_of": None,
+                            "price_is_stale": False,
+                            "fx_as_of": None,
+                            "fx_is_stale": False,
+                            "fx_basis_note": None,
+                            "deep_link": "/portfolio/add-lot",
+                            "action_label": "Open Add Lot",
+                        }
+                    )
 
         pension_assumptions = PensionService.load_assumptions(db_path)
         pension_monthly_total = _q_money(
@@ -567,7 +658,14 @@ class CalendarService:
                 event.setdefault("fx_basis_note", None)
                 event.setdefault("deep_link", None)
                 event.setdefault("action_label", None)
+                state_row = state_by_event.get(str(event.get("event_id") or ""), {})
+                event.setdefault("completed", bool(state_row.get("completed")))
+                event.setdefault("completed_at_utc", state_row.get("completed_at_utc"))
                 events.append(event)
+
+        for event in events:
+            event.setdefault("completed", False)
+            event.setdefault("completed_at_utc", None)
 
         events.sort(
             key=lambda event: (
@@ -579,19 +677,19 @@ class CalendarService:
         )
 
         next_vest = next(
-            (event for event in events if event["event_type"] == _EVENT_VEST_DATE),
+            (event for event in events if event["event_type"] == _EVENT_VEST_DATE and not event.get("completed")),
             None,
         )
         next_forfeiture = next(
-            (event for event in events if event["event_type"] == _EVENT_FORFEITURE_END),
+            (event for event in events if event["event_type"] == _EVENT_FORFEITURE_END and not event.get("completed")),
             None,
         )
         next_sell_tranche = next(
-            (event for event in events if event["event_type"] == _EVENT_SELL_TRANCHE),
+            (event for event in events if event["event_type"] == _EVENT_SELL_TRANCHE and not event.get("completed")),
             None,
         )
         next_reminder = next(
-            (event for event in events if event["event_type"] in _EVENT_REMINDERS),
+            (event for event in events if event["event_type"] in _EVENT_REMINDERS and not event.get("completed")),
             None,
         )
 

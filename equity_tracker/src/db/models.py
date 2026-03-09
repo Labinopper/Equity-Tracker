@@ -165,6 +165,9 @@ class Security(Base):
     dividend_entries: Mapped[list[DividendEntry]] = relationship(
         back_populates="security", lazy="select", cascade="all, delete-orphan"
     )
+    dividend_reference_events: Mapped[list[DividendReferenceEvent]] = relationship(
+        back_populates="security", lazy="select", cascade="all, delete-orphan"
+    )
     price_history: Mapped[list[PriceHistory]] = relationship(
         back_populates="security", lazy="select", cascade="all, delete-orphan"
     )
@@ -618,6 +621,49 @@ class DividendEntry(Base):
     )
 
     security: Mapped[Security] = relationship(back_populates="dividend_entries")
+
+
+# ---------------------------------------------------------------------------
+# dividend_reference_events
+# ---------------------------------------------------------------------------
+
+class DividendReferenceEvent(Base):
+    """
+    Provider-sourced reference dividend event.
+
+    This is not a cash ledger entry and must not be treated as a realised
+    dividend receipt. It is used to surface expected / reference events and
+    to reconcile against manual broker-recorded dividend entries.
+    """
+
+    __tablename__ = "dividend_reference_events"
+    __table_args__ = (
+        UniqueConstraint("provider_event_key", name="uq_dividend_reference_provider_key"),
+        Index(
+            "ix_dividend_reference_security_ex_date",
+            "security_id",
+            "ex_dividend_date",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    security_id: Mapped[str] = mapped_column(
+        ForeignKey("securities.id", ondelete="RESTRICT"), nullable=False
+    )
+    ex_dividend_date: Mapped[date] = mapped_column(Date, nullable=False)
+    payment_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    amount_original_ccy: Mapped[str] = mapped_column(String(30), nullable=False)
+    original_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="twelvedata")
+    provider_event_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+    security: Mapped[Security] = relationship(back_populates="dividend_reference_events")
 
 
 # ---------------------------------------------------------------------------

@@ -108,6 +108,7 @@
         <tr>
           <th>Date</th>
           <th>Countdown</th>
+          <th>Status</th>
           <th>Event</th>
           <th>Security</th>
           <th>Scheme</th>
@@ -125,6 +126,8 @@
             <td>
               {% if event.days_until == 0 %}
               Today
+              {% elif event.days_until < 0 %}
+              {{ (event.days_until | abs) }} day{% if (event.days_until | abs) != 1 %}s{% endif %} overdue
               {% elif event.days_until == 1 %}
               1 day
               {% else %}
@@ -132,8 +135,18 @@
               {% endif %}
             </td>
             <td>
+              {% if event.completed %}
+              <span class="valuation-pill valuation-pill--ok">Completed</span>
+              {% else %}
+              <span class="valuation-pill valuation-pill--warning">Open</span>
+              {% endif %}
+            </td>
+            <td>
               <div>{{ event.title }}</div>
               <div class="muted">{{ event.subtitle }}</div>
+              {% if event.completed_at_utc %}
+              <div class="muted">Completed {{ event.completed_at_utc }}</div>
+              {% endif %}
             </td>
             <td>{{ event.ticker or '-' }}</td>
             <td>{{ event.scheme_type or '-' }}</td>
@@ -173,12 +186,22 @@
               {% else %}
               <span class="muted">-</span>
               {% endif %}
+              <form method="post" action="/calendar/events/state" class="inline-form" style="margin-top:0.35rem;">
+                <input type="hidden" name="event_id" value="{{ event.event_id }}">
+                <input type="hidden" name="completed" value="{{ 'false' if event.completed else 'true' }}">
+                <input type="hidden" name="as_of" value="{{ calendar_filters.as_of }}">
+                <input type="hidden" name="days" value="{{ calendar.horizon_days }}">
+                <input type="hidden" name="sell_plan_id" value="{{ calendar_filters.sell_plan_id }}">
+                <input type="hidden" name="sell_method" value="{{ calendar_filters.sell_method }}">
+                <input type="hidden" name="sell_status" value="{{ calendar_filters.sell_status }}">
+                <button type="submit" class="btn btn-secondary btn-sm">{{ 'Reopen' if event.completed else 'Complete' }}</button>
+              </form>
             </td>
           </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="9" class="muted">No upcoming events in this horizon.</td>
+            <td colspan="10" class="muted">No upcoming events in this horizon.</td>
           </tr>
         {% endif %}
       </tbody>

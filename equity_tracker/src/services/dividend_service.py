@@ -12,17 +12,27 @@ No changes to existing portfolio/tax engines.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
+from sqlalchemy import select
+
 from ..app_context import AppContext
 from ..core.tax_engine import calculate_dividend_tax, get_bands, tax_year_for_date
 from ..core.tax_engine.income_tax import personal_allowance
-from ..db.repository import DividendEntryRepository, SecurityRepository
+from ..db.models import LotDisposal, Transaction
+from ..db.repository import (
+    DividendEntryRepository,
+    DividendReferenceEventRepository,
+    LotRepository,
+    SecurityRepository,
+)
 from ..settings import AppSettings
 from .fx_service import FxService
 from .portfolio_service import PortfolioService
+from .twelve_data_dividend_service import TwelveDataDividendService
 
 _GBP_Q = Decimal("0.01")
 _PCT_Q = Decimal("0.01")
@@ -30,6 +40,7 @@ _FX_Q = Decimal("0.000001")
 _VALID_TREATMENTS = frozenset({"TAXABLE", "ISA_EXEMPT"})
 _GBP = "GBP"
 _IBKR_META_PREFIX = "IBKR_META:"
+_TRANSFER_DATE_RE = re.compile(r"\bon (\d{4}-\d{2}-\d{2})\b")
 
 
 def _q_money(value: Decimal) -> Decimal:
@@ -239,6 +250,352 @@ def _normalize_currency(value: str | None) -> str:
     return cleaned
 
 
+def _is_transfer_shadow_lot(lot: Any) -> bool:
+    return bool(
+        getattr(lot, "import_source", None) == "ui_transfer_to_brokerage"
+        or (
+            getattr(lot, "external_id", None) is not None
+            and str(getattr(lot, "external_id")).startswith("transfer-origin-lot:")
+        )
+    )
+
+
+def _source_lot_id_for_transfer_shadow(lot: Any) -> str | None:
+    external_id = str(getattr(lot, "external_id", None) or "").strip()
+    prefix = "transfer-origin-lot:"
+    if not external_id.startswith(prefix):
+        return None
+    source_lot_id = external_id[len(prefix) :].strip()
+    return source_lot_id or None
+
+
+def _transfer_date_for_lot(lot: Any) -> date | None:
+    notes = str(getattr(lot, "notes", None) or "").strip()
+    if not notes:
+        return None
+    match = _TRANSFER_DATE_RE.search(notes)
+    if match is None:
+        return None
+    try:
+        return date.fromisoformat(match.group(1))
+    except ValueError:
+        return None
+
+
+def _eligible_quantity_on_ex_date(
+    *,
+    security_id: str,
+    ex_dividend_date: date,
+    holding_scope: str | None = None,
+) -> Decimal:
+    quantities = _eligible_quantities_by_holding_bucket_on_ex_date(
+        security_id=security_id,
+        ex_dividend_date=ex_dividend_date,
+    )
+    normalized_scope = (holding_scope or "").strip().upper()
+    if not normalized_scope:
+        return sum(quantities.values(), Decimal("0"))
+    return quantities.get(normalized_scope, Decimal("0"))
+
+
+def _holding_bucket_for_lot(lot: Any) -> str:
+    scheme = str(getattr(lot, "scheme_type", "") or "").strip().upper()
+    return scheme or "UNKNOWN"
+
+
+def _holding_bucket_label(bucket: str) -> str:
+    normalized = (bucket or "").strip().upper()
+    if normalized == "ESPP_PLUS":
+        return "ESPP+"
+    if normalized == "ESPP":
+        return "ESPP"
+    if normalized == "BROKERAGE":
+        return "Brokerage"
+    if normalized == "ISA":
+        return "ISA"
+    if normalized == "RSU":
+        return "RSU"
+    if not normalized:
+        return "Unknown"
+    return normalized.replace("_", " ").title()
+
+
+def _holding_bucket_tax_treatment(bucket: str) -> str:
+    return "ISA_EXEMPT" if (bucket or "").strip().upper() == "ISA" else "TAXABLE"
+
+
+def _holding_bucket_lot_group(bucket: str) -> str:
+    normalized = (bucket or "").strip().upper()
+    if not normalized:
+        raise ValueError("holding bucket is required.")
+    return f"SCHEME:{normalized}"
+
+
+def _eligible_quantities_by_holding_bucket_on_ex_date(
+    *,
+    security_id: str,
+    ex_dividend_date: date,
+) -> dict[str, Decimal]:
+    with AppContext.read_session() as sess:
+        lot_repo = LotRepository(sess)
+        lots = lot_repo.get_all_lots_for_security(security_id)
+        if not lots:
+            return {}
+
+        lot_ids = [lot.id for lot in lots]
+        disposal_events_by_lot: dict[str, list[tuple[date, Decimal]]] = {}
+        transfer_events_by_source_lot: dict[str, list[tuple[date, Decimal]]] = {}
+        if lot_ids:
+            rows = sess.execute(
+                select(
+                    LotDisposal.lot_id,
+                    LotDisposal.quantity_allocated,
+                    Transaction.transaction_date,
+                )
+                .join(Transaction, LotDisposal.transaction_id == Transaction.id)
+                .where(LotDisposal.lot_id.in_(lot_ids))
+            ).all()
+            for lot_id, quantity_allocated, transaction_date in rows:
+                try:
+                    qty = Decimal(str(quantity_allocated))
+                except (InvalidOperation, TypeError, ValueError):
+                    continue
+                if qty <= Decimal("0"):
+                    continue
+                disposal_events_by_lot.setdefault(str(lot_id), []).append((transaction_date, qty))
+
+        for lot in lots:
+            if not _is_transfer_shadow_lot(lot):
+                continue
+            source_lot_id = _source_lot_id_for_transfer_shadow(lot)
+            transfer_date = _transfer_date_for_lot(lot)
+            shadow_qty = _to_decimal(getattr(lot, "quantity_remaining", None))
+            if (
+                source_lot_id is None
+                or transfer_date is None
+                or shadow_qty is None
+                or shadow_qty <= Decimal("0")
+            ):
+                continue
+            transfer_events_by_source_lot.setdefault(source_lot_id, []).append(
+                (transfer_date, shadow_qty)
+            )
+
+    eligible_by_bucket: dict[str, Decimal] = {}
+    for lot in lots:
+        is_transfer_shadow = _is_transfer_shadow_lot(lot)
+        transfer_date = _transfer_date_for_lot(lot) if is_transfer_shadow else None
+        if is_transfer_shadow and transfer_date is not None and ex_dividend_date < transfer_date:
+            continue
+        if lot.acquisition_date >= ex_dividend_date:
+            continue
+        current_qty = _to_decimal(lot.quantity_remaining)
+        if current_qty is None:
+            continue
+        reconstructed_qty = current_qty
+        for transaction_date, qty in disposal_events_by_lot.get(lot.id, []):
+            if transaction_date > ex_dividend_date:
+                reconstructed_qty += qty
+        if not is_transfer_shadow:
+            for event_date, qty in transfer_events_by_source_lot.get(lot.id, []):
+                if event_date > ex_dividend_date:
+                    reconstructed_qty += qty
+        if reconstructed_qty <= Decimal("0"):
+            continue
+        bucket = _holding_bucket_for_lot(lot)
+        eligible_by_bucket[bucket] = eligible_by_bucket.get(bucket, Decimal("0")) + reconstructed_qty
+
+    return {
+        bucket: qty
+        for bucket, qty in eligible_by_bucket.items()
+        if qty > Decimal("0")
+    }
+
+
+def _build_actual_dividend_match_index(entry_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for row in entry_rows:
+        security_id = str(row.get("security_id") or "").strip()
+        if not security_id:
+            continue
+        buckets.setdefault(security_id, []).append(row)
+    return buckets
+
+
+def _match_reference_event_to_actual_entry(
+    *,
+    reference_event: Any,
+    entry_rows: list[dict[str, Any]],
+    expected_total_original: Decimal,
+) -> dict[str, Any] | None:
+    ex_date_iso = reference_event.ex_dividend_date.isoformat()
+    candidates: list[dict[str, Any]] = []
+    for row in entry_rows:
+        row_ex_date = str(row.get("ex_date") or "").strip()
+        if row_ex_date and row_ex_date == ex_date_iso:
+            candidates.append(row)
+    if candidates:
+        return sorted(
+            candidates,
+            key=lambda row: (str(row.get("dividend_date") or ""), str(row.get("id") or "")),
+        )[0]
+
+    event_currency = _normalize_currency(reference_event.original_currency)
+    window_end = reference_event.ex_dividend_date + timedelta(days=60)
+    for row in entry_rows:
+        if _normalize_currency(row.get("original_currency")) != event_currency:
+            continue
+        try:
+            dividend_date = date.fromisoformat(str(row.get("dividend_date") or ""))
+        except ValueError:
+            continue
+        if dividend_date < reference_event.ex_dividend_date or dividend_date > window_end:
+            continue
+        row_amount = _to_decimal(row.get("amount_original_ccy"))
+        if row_amount is None:
+            continue
+        if abs(row_amount - expected_total_original) <= Decimal("0.05"):
+            candidates.append(row)
+
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda row: (str(row.get("dividend_date") or ""), str(row.get("id") or "")),
+    )[0]
+
+
+def _estimate_reference_dividend_gbp(
+    *,
+    original_currency: str,
+    amount_original: Decimal,
+    ex_dividend_date: date,
+) -> tuple[Decimal | None, str | None]:
+    normalized_currency = _normalize_currency(original_currency)
+    if normalized_currency == _GBP:
+        return _q_money(amount_original), "native_gbp"
+
+    try:
+        if ex_dividend_date <= date.today():
+            fx_rate, fx_source = _auto_fx_rate_to_gbp(
+                from_currency=normalized_currency,
+                dividend_date=ex_dividend_date,
+            )
+        else:
+            quote = FxService.get_rate(normalized_currency, "GBP")
+            fx_rate = _q_fx(quote.rate)
+            fx_source = f"estimate_{quote.source}:{quote.as_of or ex_dividend_date.isoformat()}"
+    except Exception:
+        return None, None
+
+    return _q_money(amount_original * fx_rate), fx_source
+
+
+def _build_reference_dividend_rows(
+    *,
+    reference_events: list[Any],
+    entry_rows: list[dict[str, Any]],
+    security_map: dict[str, Any],
+    as_of_date: date,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    matched_entries_by_security = _build_actual_dividend_match_index(entry_rows)
+    rows: list[dict[str, Any]] = []
+    upcoming_count = 0
+    awaiting_count = 0
+    recorded_count = 0
+    total_expected_gbp = Decimal("0")
+    total_expected_gbp_known = 0
+
+    for event in sorted(
+        reference_events,
+        key=lambda row: (row.ex_dividend_date, row.id),
+        reverse=True,
+    ):
+        security = security_map.get(event.security_id)
+        if security is None:
+            continue
+        amount_per_share_original = _to_decimal(event.amount_original_ccy)
+        if amount_per_share_original is None or amount_per_share_original <= Decimal("0"):
+            continue
+        eligible_quantities = _eligible_quantities_by_holding_bucket_on_ex_date(
+            security_id=event.security_id,
+            ex_dividend_date=event.ex_dividend_date,
+        )
+        for scope_id, eligible_quantity in sorted(eligible_quantities.items()):
+            if eligible_quantity <= Decimal("0"):
+                continue
+
+            expected_total_original = _q_money(amount_per_share_original * eligible_quantity)
+            expected_treatment = _holding_bucket_tax_treatment(scope_id)
+            expected_lot_group = _holding_bucket_lot_group(scope_id)
+            matched_entry = _match_reference_event_to_actual_entry(
+                reference_event=event,
+                entry_rows=[
+                    row
+                    for row in matched_entries_by_security.get(event.security_id, [])
+                    if (
+                        str(row.get("lot_group") or "").strip().upper() == expected_lot_group
+                        or (
+                            not str(row.get("lot_group") or "").strip()
+                            and str(row.get("tax_treatment") or "").strip().upper()
+                            == expected_treatment
+                        )
+                    )
+                ],
+                expected_total_original=expected_total_original,
+            )
+            estimated_gbp, estimated_gbp_source = _estimate_reference_dividend_gbp(
+                original_currency=event.original_currency,
+                amount_original=expected_total_original,
+                ex_dividend_date=event.ex_dividend_date,
+            )
+            if estimated_gbp is not None:
+                total_expected_gbp += estimated_gbp
+                total_expected_gbp_known += 1
+
+            if matched_entry is not None:
+                status = "Recorded"
+                recorded_count += 1
+            elif event.ex_dividend_date > as_of_date:
+                status = "Upcoming ex-date"
+                upcoming_count += 1
+            else:
+                status = "Awaiting confirmation"
+                awaiting_count += 1
+
+            rows.append(
+                {
+                    "security_id": event.security_id,
+                    "ticker": security.ticker,
+                    "name": security.name,
+                    "holding_scope": scope_id,
+                    "holding_scope_label": _holding_bucket_label(scope_id),
+                    "ex_dividend_date": event.ex_dividend_date.isoformat(),
+                    "payment_date": event.payment_date.isoformat() if event.payment_date else None,
+                    "amount_per_share_original_ccy": _money_str(amount_per_share_original),
+                    "expected_quantity": _quantity_str(eligible_quantity),
+                    "expected_total_original_ccy": _money_str(expected_total_original),
+                    "original_currency": _normalize_currency(event.original_currency),
+                    "expected_total_gbp": _money_str(estimated_gbp),
+                    "expected_total_gbp_source": estimated_gbp_source,
+                    "status": status,
+                    "source": event.source,
+                    "matched_entry_id": matched_entry.get("id") if matched_entry else None,
+                    "matched_dividend_date": matched_entry.get("dividend_date") if matched_entry else None,
+                }
+            )
+
+    summary = {
+        "row_count": len(rows),
+        "upcoming_count": upcoming_count,
+        "awaiting_count": awaiting_count,
+        "recorded_count": recorded_count,
+        "estimated_total_gbp": _money_str(total_expected_gbp) if total_expected_gbp_known else None,
+        "estimated_total_known_count": total_expected_gbp_known,
+    }
+    return rows, summary
+
+
 def _taxable_income_ex_dividends(
     *,
     settings: AppSettings | None,
@@ -437,6 +794,84 @@ class DividendService:
             }
 
     @staticmethod
+    def confirm_reference_dividend(
+        *,
+        security_id: str,
+        ex_dividend_date: date,
+        dividend_date: date,
+        holding_scope: str,
+        confirmation_mode: str,
+        amount_original_ccy: Decimal,
+        original_currency: str,
+        tax_withheld_original_ccy: Decimal | None = None,
+        fee_original_ccy: Decimal | None = None,
+        fx_rate_to_gbp: Decimal | None = None,
+        fx_rate_source: str | None = None,
+        stock_quantity_received: Decimal | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_scope = (holding_scope or "").strip().upper()
+        if not normalized_scope:
+            raise ValueError("holding_scope is required.")
+        tax_treatment = _holding_bucket_tax_treatment(normalized_scope)
+        lot_group = _holding_bucket_lot_group(normalized_scope)
+
+        normalized_mode = (confirmation_mode or "").strip().lower()
+        if normalized_mode not in {"cash", "stock"}:
+            raise ValueError("confirmation_mode must be cash or stock.")
+        if amount_original_ccy <= Decimal("0"):
+            raise ValueError("gross amount must be greater than zero.")
+        if normalized_mode == "stock" and (
+            stock_quantity_received is None or stock_quantity_received <= Decimal("0")
+        ):
+            raise ValueError("stock quantity received is required when confirming stock.")
+
+        gross_amount_original_ccy = _q_money(amount_original_ccy)
+        tax_withheld_original_ccy = _q_money(
+            max(Decimal("0"), tax_withheld_original_ccy or Decimal("0"))
+        )
+        fee_original_ccy = _q_money(max(Decimal("0"), fee_original_ccy or Decimal("0")))
+        net_amount_original_ccy = _q_money(
+            max(
+                Decimal("0"),
+                gross_amount_original_ccy - tax_withheld_original_ccy - fee_original_ccy,
+            )
+        )
+
+        metadata: dict[str, object] = {
+            "ex_date": ex_dividend_date.isoformat(),
+            "lot_group": lot_group,
+            "confirmation_mode": normalized_mode,
+            "gross_amount_original_ccy": gross_amount_original_ccy,
+            "net_amount_original_ccy": net_amount_original_ccy,
+            "tax_withheld_original_ccy": tax_withheld_original_ccy,
+            "fee_original_ccy": fee_original_ccy,
+        }
+        if stock_quantity_received is not None and stock_quantity_received > Decimal("0"):
+            metadata["stock_quantity_received"] = stock_quantity_received
+
+        return DividendService.add_dividend_entry(
+            security_id=security_id,
+            dividend_date=dividend_date,
+            amount_gbp=None,
+            amount_original_ccy=gross_amount_original_ccy,
+            original_currency=original_currency,
+            fx_rate_to_gbp=fx_rate_to_gbp,
+            fx_rate_source=fx_rate_source,
+            tax_treatment=tax_treatment,
+            source="dividend_confirmation",
+            notes=DividendService.append_ibkr_metadata_to_notes(
+                notes=notes,
+                metadata=metadata,
+            ),
+        )
+
+    @staticmethod
+    def delete_dividend_entry(entry_id: str) -> bool:
+        with AppContext.write_session() as sess:
+            return DividendEntryRepository(sess).delete(entry_id)
+
+    @staticmethod
     def get_summary(
         *,
         settings: AppSettings | None = None,
@@ -456,6 +891,17 @@ class DividendService:
             settings=settings,
             use_live_true_cost=False,
         )
+
+        tracked_security_ids = sorted({sec.id for sec in securities})
+
+        dividend_sync_result = TwelveDataDividendService.sync_tracked_if_due(
+            security_ids=tracked_security_ids,
+        )
+
+        with AppContext.read_session() as sess:
+            reference_events = DividendReferenceEventRepository(sess).list_for_security_ids(
+                tracked_security_ids
+            )
 
         active_schemes_by_security: dict[str, set[str]] = {}
         for sec_summary in portfolio_summary.securities:
@@ -587,6 +1033,18 @@ class DividendService:
                 "active_lot_options": active_lot_options,
                 "lot_group_options": lot_group_options,
                 "currency_options": currency_options,
+                "reference_summary": {
+                    "row_count": 0,
+                    "upcoming_count": 0,
+                    "awaiting_count": 0,
+                    "recorded_count": 0,
+                    "estimated_total_gbp": None,
+                    "estimated_total_known_count": 0,
+                },
+                "reference_events": [],
+                "reference_notes": [
+                    "Reference dividend values are hidden while privacy mode is enabled."
+                ],
                 "summary": {
                     "trailing_12m_total_gbp": None,
                     "forecast_12m_total_gbp": None,
@@ -619,6 +1077,7 @@ class DividendService:
                     "notes": ["Dividend values are hidden while privacy mode is enabled."],
                 },
                 "notes": ["Dividend values are hidden while privacy mode is enabled."],
+                "sync": dividend_sync_result,
             }
 
         trailing_start = as_of_date - timedelta(days=365)
@@ -801,6 +1260,12 @@ class DividendService:
             )
 
         entry_rows.sort(key=lambda row: (row["dividend_date"], row["id"]), reverse=True)
+        reference_rows, reference_summary = _build_reference_dividend_rows(
+            reference_events=reference_events,
+            entry_rows=entry_rows,
+            security_map=security_map,
+            as_of_date=as_of_date,
+        )
 
         tax_year_rows: list[dict[str, Any]] = []
         estimated_tax_total = Decimal("0")
@@ -976,6 +1441,20 @@ class DividendService:
             notes.append(
                 "No withholding tax rows logged yet; add tax withheld to match broker payout slips."
             )
+        reference_notes: list[str] = [
+            "Reference dividends come from Twelve Data and are not auto-booked as received cash."
+        ]
+        if reference_rows:
+            reference_notes.append(
+                "Eligibility uses holdings on the ex-dividend date, so post-ex-date transfers remain attributed to the original holder."
+            )
+            reference_notes.append(
+                "Unvested RSUs are excluded until the lot acquisition/vest date has passed."
+            )
+        else:
+            reference_notes.append("No reference dividend events found for tracked holdings yet.")
+        if dividend_sync_result.get("errors"):
+            reference_notes.append("Some tracked securities failed dividend sync and may be incomplete.")
 
         return {
             "generated_at_utc": generated_at_utc,
@@ -985,6 +1464,9 @@ class DividendService:
             "active_lot_options": active_lot_options,
             "lot_group_options": lot_group_options,
             "currency_options": currency_options,
+            "reference_summary": reference_summary,
+            "reference_events": reference_rows,
+            "reference_notes": reference_notes,
             "summary": {
                 "trailing_12m_total_gbp": _money_str(trailing_total),
                 "forecast_12m_total_gbp": _money_str(forecast_total),
@@ -1024,6 +1506,7 @@ class DividendService:
                 ],
             },
             "notes": notes,
+            "sync": dividend_sync_result,
         }
 
     @staticmethod

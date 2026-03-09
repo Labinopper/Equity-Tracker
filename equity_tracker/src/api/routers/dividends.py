@@ -377,6 +377,102 @@ async def dividends_reminder_submit(
     return RedirectResponse(f"/dividends?msg={msg}", status_code=303)
 
 
+@router.post("/dividends/confirm-reference", response_class=HTMLResponse, include_in_schema=False)
+async def dividends_confirm_reference_submit(
+    request: Request,
+    security_id: str = Form(...),
+    ex_dividend_date: str = Form(...),
+    dividend_date: str = Form(...),
+    holding_scope: str = Form(...),
+    confirmation_mode: str = Form("cash"),
+    amount_original_ccy: str = Form(...),
+    original_currency: str = Form("GBP"),
+    tax_withheld_original_ccy: str = Form(""),
+    fee_original_ccy: str = Form(""),
+    fx_rate_to_gbp: str = Form(""),
+    fx_rate_source: str = Form("manual"),
+    stock_quantity_received: str = Form(""),
+    notes: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    settings = _load_settings()
+    prev = {
+        "confirm_security_id": security_id,
+        "confirm_ex_dividend_date": ex_dividend_date,
+        "confirm_dividend_date": dividend_date,
+        "confirm_holding_scope": holding_scope,
+        "confirm_confirmation_mode": confirmation_mode,
+        "confirm_amount_original_ccy": amount_original_ccy,
+        "confirm_original_currency": original_currency,
+        "confirm_tax_withheld_original_ccy": tax_withheld_original_ccy,
+        "confirm_fee_original_ccy": fee_original_ccy,
+        "confirm_fx_rate_to_gbp": fx_rate_to_gbp,
+        "confirm_fx_rate_source": fx_rate_source,
+        "confirm_stock_quantity_received": stock_quantity_received,
+        "confirm_notes": notes,
+    }
+
+    try:
+        parsed_ex_date = date.fromisoformat(ex_dividend_date)
+        parsed_dividend_date = date.fromisoformat(dividend_date)
+        parsed_amount_original_ccy = _parse_decimal_optional(
+            amount_original_ccy, "amount_original_ccy"
+        )
+        parsed_tax_withheld_original_ccy = _parse_decimal_optional(
+            tax_withheld_original_ccy, "tax_withheld_original_ccy"
+        )
+        parsed_fee_original_ccy = _parse_decimal_optional(
+            fee_original_ccy, "fee_original_ccy"
+        )
+        parsed_fx_rate_to_gbp = _parse_decimal_optional(
+            fx_rate_to_gbp, "fx_rate_to_gbp"
+        )
+        parsed_stock_quantity_received = _parse_decimal_optional(
+            stock_quantity_received, "stock_quantity_received"
+        )
+    except ValueError as exc:
+        return _render_dividends_page(request, settings=settings, error=str(exc), prev=prev)
+
+    if parsed_amount_original_ccy is None:
+        return _render_dividends_page(
+            request,
+            settings=settings,
+            error="Gross amount in native currency is required for confirmation.",
+            prev=prev,
+        )
+
+    try:
+        DividendService.confirm_reference_dividend(
+            security_id=(security_id or "").strip(),
+            ex_dividend_date=parsed_ex_date,
+            dividend_date=parsed_dividend_date,
+            holding_scope=holding_scope,
+            confirmation_mode=confirmation_mode,
+            amount_original_ccy=parsed_amount_original_ccy,
+            original_currency=original_currency,
+            tax_withheld_original_ccy=parsed_tax_withheld_original_ccy,
+            fee_original_ccy=parsed_fee_original_ccy,
+            fx_rate_to_gbp=parsed_fx_rate_to_gbp,
+            fx_rate_source=fx_rate_source.strip() or None,
+            stock_quantity_received=parsed_stock_quantity_received,
+            notes=notes.strip() or None,
+        )
+    except (ValueError, KeyError) as exc:
+        return _render_dividends_page(
+            request,
+            settings=settings,
+            error=_exc_message(exc),
+            prev=prev,
+        )
+
+    return RedirectResponse(
+        f"/dividends?msg={quote_plus('Dividend confirmation saved.')}",
+        status_code=303,
+    )
+
+
 @router.post("/dividends/relink", response_class=HTMLResponse, include_in_schema=False)
 async def dividends_relink_submit(
     request: Request,

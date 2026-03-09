@@ -1,5 +1,8 @@
 """
-DividendEntryRepository - CRUD for manual dividend records.
+Dividend repositories.
+
+- DividendEntryRepository: manual / realised dividend records.
+- DividendReferenceEventRepository: provider-sourced reference dividend events.
 """
 
 from __future__ import annotations
@@ -10,7 +13,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import DividendEntry, _new_uuid
+from ..models import DividendEntry, DividendReferenceEvent, _new_uuid
 
 
 class DividendEntryRepository:
@@ -66,5 +69,72 @@ class DividendEntryRepository:
             select(DividendEntry)
             .where(DividendEntry.security_id == security_id)
             .order_by(DividendEntry.dividend_date.desc(), DividendEntry.id.asc())
+        )
+        return list(self._s.scalars(stmt).all())
+
+    def delete(self, entry_id: str) -> bool:
+        row = self.get_by_id(entry_id)
+        if row is None:
+            return False
+        self._s.delete(row)
+        return True
+
+
+class DividendReferenceEventRepository:
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def upsert(
+        self,
+        *,
+        security_id: str,
+        ex_dividend_date: date,
+        payment_date: date | None,
+        amount_original_ccy: Decimal,
+        original_currency: str,
+        source: str,
+        provider_event_key: str,
+    ) -> tuple[DividendReferenceEvent, bool]:
+        stmt = select(DividendReferenceEvent).where(
+            DividendReferenceEvent.provider_event_key == provider_event_key
+        )
+        row = self._s.scalars(stmt).first()
+        created = row is None
+        if row is None:
+            row = DividendReferenceEvent(
+                id=_new_uuid(),
+                security_id=security_id,
+                provider_event_key=provider_event_key,
+            )
+            self._s.add(row)
+
+        row.security_id = security_id
+        row.ex_dividend_date = ex_dividend_date
+        row.payment_date = payment_date
+        row.amount_original_ccy = str(amount_original_ccy)
+        row.original_currency = original_currency
+        row.source = source
+        return row, created
+
+    def list_all(self) -> list[DividendReferenceEvent]:
+        stmt = (
+            select(DividendReferenceEvent)
+            .order_by(
+                DividendReferenceEvent.ex_dividend_date.desc(),
+                DividendReferenceEvent.id.asc(),
+            )
+        )
+        return list(self._s.scalars(stmt).all())
+
+    def list_for_security_ids(self, security_ids: list[str]) -> list[DividendReferenceEvent]:
+        if not security_ids:
+            return []
+        stmt = (
+            select(DividendReferenceEvent)
+            .where(DividendReferenceEvent.security_id.in_(security_ids))
+            .order_by(
+                DividendReferenceEvent.ex_dividend_date.desc(),
+                DividendReferenceEvent.id.asc(),
+            )
         )
         return list(self._s.scalars(stmt).all())
