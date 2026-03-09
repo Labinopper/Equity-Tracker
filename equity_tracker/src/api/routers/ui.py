@@ -902,11 +902,13 @@ def _format_compact_duration(delta: timedelta) -> str:
     total_seconds = max(0, int(delta.total_seconds()))
     days, rem = divmod(total_seconds, 86400)
     hours, rem = divmod(rem, 3600)
-    minutes, _ = divmod(rem, 60)
+    minutes, seconds = divmod(rem, 60)
     if days > 0:
         return f"{days}d {hours}h"
     if hours > 0:
         return f"{hours}h {minutes}m"
+    if total_seconds < 120:
+        return f"{total_seconds}s"
     return f"{minutes}m"
 
 

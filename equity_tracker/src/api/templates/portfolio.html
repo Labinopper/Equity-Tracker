@@ -75,6 +75,7 @@
 </div>
 {% endif %}
 
+<div id="portfolio-live-root">
 {% set valuation = portfolio_valuation_basis %}
 <div class="valuation-basis-strip">
   <div class="valuation-basis-strip__title">Valuation Basis</div>
@@ -942,6 +943,7 @@
 </div>
 {% endfor %}
 {% endif %}
+</div>
 
 <script>
 (function () {
@@ -957,6 +959,7 @@
   var focusToggle = document.getElementById("portfolio-focus-mode");
   var viewHelpText = document.getElementById("portfolio-help-text");
   var viewVisibleCount = document.getElementById("portfolio-visible-count");
+  var liveRoot = document.getElementById("portfolio-live-root");
 
   function loadSecurityVisibilityState() {
     try {
@@ -1001,6 +1004,135 @@
         saveSecurityVisibilityState(state);
       });
     });
+  }
+
+  function bindGuardrailLifecycle() {
+    var alerts = Array.from(document.querySelectorAll(".guardrail-alert[data-guardrail-id]"));
+    var countPill = document.getElementById("guardrail-count-pill");
+    var activeCountEl = document.getElementById("guardrail-active-count");
+    var hiddenCountEl = document.getElementById("guardrail-hidden-count");
+    var guardrailsCard = document.getElementById("behavioral-guardrails");
+
+    function visibleAlertsCount() {
+      return alerts.filter(function (alertEl) {
+        return alertEl && alertEl.parentNode;
+      }).length;
+    }
+
+    function parseHiddenCount() {
+      if (!hiddenCountEl) {
+        return 0;
+      }
+      var raw = (hiddenCountEl.textContent || "").trim().split(" ")[0];
+      var parsed = Number.parseInt(raw || "0", 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function ensureHiddenCountLabel(count) {
+      if (count <= 0) {
+        return;
+      }
+      if (!hiddenCountEl && countPill) {
+        hiddenCountEl = document.createElement("span");
+        hiddenCountEl.className = "guardrail-count-pill__meta";
+        hiddenCountEl.id = "guardrail-hidden-count";
+        countPill.appendChild(hiddenCountEl);
+      }
+      if (hiddenCountEl) {
+        hiddenCountEl.textContent = String(count) + " suppressed";
+      }
+    }
+
+    function updateGuardrailHeader() {
+      var activeCount = visibleAlertsCount();
+      if (activeCountEl) {
+        activeCountEl.textContent = String(activeCount);
+      }
+      if (countPill) {
+        countPill.classList.toggle("guardrail-count-pill--warning", activeCount > 0);
+        countPill.classList.toggle("guardrail-count-pill--ok", activeCount <= 0);
+      }
+      if (guardrailsCard) {
+        guardrailsCard.style.display = activeCount <= 0 ? "none" : "";
+      }
+    }
+
+    function updateGuardrailLifecycle(guardrailId, conditionHash, action) {
+      return fetch("/portfolio/guardrails/dismiss", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          guardrail_id: guardrailId,
+          condition_hash: conditionHash,
+          action: action
+        })
+      }).then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (body) {
+            throw new Error(
+              (body && body.message) ||
+              (body && body.detail) ||
+              ("HTTP " + res.status)
+            );
+          }).catch(function () {
+            throw new Error("HTTP " + res.status);
+          });
+        }
+        return res.json();
+      });
+    }
+
+    alerts.forEach(function (alertEl) {
+      var guardrailId = alertEl.getAttribute("data-guardrail-id");
+      var conditionHash = alertEl.getAttribute("data-guardrail-hash");
+      if (!guardrailId || !conditionHash) {
+        return;
+      }
+
+      var dismissBtn = alertEl.querySelector(".guardrail-dismiss-btn");
+      var snoozeBtn = alertEl.querySelector(".guardrail-snooze-btn");
+      if (!dismissBtn && !snoozeBtn) {
+        return;
+      }
+      function bindLifecycleButton(buttonEl, action, errorLabel) {
+        if (!buttonEl || buttonEl.dataset.bound === "1") {
+          return;
+        }
+        buttonEl.dataset.bound = "1";
+        buttonEl.addEventListener("click", function () {
+          var originalLabel = buttonEl.textContent;
+          if (dismissBtn) {
+            dismissBtn.disabled = true;
+          }
+          if (snoozeBtn) {
+            snoozeBtn.disabled = true;
+          }
+          buttonEl.textContent = "Saving...";
+          updateGuardrailLifecycle(guardrailId, conditionHash, action)
+          .then(function () {
+            alertEl.remove();
+            ensureHiddenCountLabel(parseHiddenCount() + 1);
+            updateGuardrailHeader();
+          })
+          .catch(function (err) {
+            if (dismissBtn) {
+              dismissBtn.disabled = false;
+            }
+            if (snoozeBtn) {
+              snoozeBtn.disabled = false;
+            }
+            buttonEl.textContent = originalLabel;
+            alert(errorLabel + ": " + err.message);
+          });
+        });
+      }
+
+      bindLifecycleButton(snoozeBtn, "snooze", "Guardrail snooze failed");
+      bindLifecycleButton(dismissBtn, "dismiss", "Guardrail dismiss failed");
+    });
+    updateGuardrailHeader();
   }
 
   function defaultViewPrefs() {
@@ -1279,7 +1411,33 @@
           setState("Success", "refresh-state-success");
         }
         resetCountdown();
-        location.reload();
+        return fetch(window.location.pathname + window.location.search, {
+          headers: {
+            "X-Requested-With": "fetch"
+          },
+          cache: "no-store"
+        });
+      })
+      .then(function (resp) {
+        if (!resp || !resp.ok) {
+          throw new Error(resp ? ("HTTP " + resp.status) : "Refresh view unavailable");
+        }
+        return resp.text();
+      })
+      .then(function (html) {
+        if (!liveRoot) {
+          return;
+        }
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, "text/html");
+        var nextRoot = doc.getElementById("portfolio-live-root");
+        if (!nextRoot) {
+          throw new Error("Updated portfolio fragment missing");
+        }
+        liveRoot.innerHTML = nextRoot.innerHTML;
+        wireSecurityVisibilityPersistence();
+        applyPortfolioViewPrefs(loadViewPrefs());
+        bindGuardrailLifecycle();
       })
       .catch(function (err) {
         setState("Error", "refresh-state-error");
@@ -1292,6 +1450,7 @@
 
   wireSecurityVisibilityPersistence();
   wirePortfolioViewControls();
+  bindGuardrailLifecycle();
 
   if (manualForm) {
     manualForm.addEventListener("submit", function (ev) {
@@ -1357,138 +1516,6 @@
         alert("Audit export failed: " + err.message);
       });
   });
-})();
-
-(function () {
-  var alerts = Array.from(document.querySelectorAll(".guardrail-alert[data-guardrail-id]"));
-  if (!alerts.length) {
-    return;
-  }
-
-  var countPill = document.getElementById("guardrail-count-pill");
-  var activeCountEl = document.getElementById("guardrail-active-count");
-  var hiddenCountEl = document.getElementById("guardrail-hidden-count");
-  var guardrailsCard = document.getElementById("behavioral-guardrails");
-
-  function visibleAlertsCount() {
-    return alerts.filter(function (alertEl) {
-      return alertEl && alertEl.parentNode;
-    }).length;
-  }
-
-  function parseHiddenCount() {
-    if (!hiddenCountEl) {
-      return 0;
-    }
-    var raw = (hiddenCountEl.textContent || "").trim().split(" ")[0];
-    var parsed = Number.parseInt(raw || "0", 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  function ensureHiddenCountLabel(count) {
-    if (count <= 0) {
-      return;
-    }
-    if (!hiddenCountEl && countPill) {
-      hiddenCountEl = document.createElement("span");
-      hiddenCountEl.className = "guardrail-count-pill__meta";
-      hiddenCountEl.id = "guardrail-hidden-count";
-      countPill.appendChild(hiddenCountEl);
-    }
-    if (hiddenCountEl) {
-      hiddenCountEl.textContent = String(count) + " suppressed";
-    }
-  }
-
-  function updateGuardrailHeader() {
-    var activeCount = visibleAlertsCount();
-    if (activeCountEl) {
-      activeCountEl.textContent = String(activeCount);
-    }
-    if (countPill) {
-      countPill.classList.toggle("guardrail-count-pill--warning", activeCount > 0);
-      countPill.classList.toggle("guardrail-count-pill--ok", activeCount <= 0);
-    }
-    if (guardrailsCard && activeCount <= 0) {
-      guardrailsCard.style.display = "none";
-    }
-  }
-
-  function updateGuardrailLifecycle(guardrailId, conditionHash, action) {
-    return fetch("/portfolio/guardrails/dismiss", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        guardrail_id: guardrailId,
-        condition_hash: conditionHash,
-        action: action
-      })
-    }).then(function (res) {
-      if (!res.ok) {
-        return res.json().then(function (body) {
-          throw new Error(
-            (body && body.message) ||
-            (body && body.detail) ||
-            ("HTTP " + res.status)
-          );
-        }).catch(function () {
-          throw new Error("HTTP " + res.status);
-        });
-      }
-      return res.json();
-    });
-  }
-
-  alerts.forEach(function (alertEl) {
-    var guardrailId = alertEl.getAttribute("data-guardrail-id");
-    var conditionHash = alertEl.getAttribute("data-guardrail-hash");
-    if (!guardrailId || !conditionHash) {
-      return;
-    }
-
-    var dismissBtn = alertEl.querySelector(".guardrail-dismiss-btn");
-    var snoozeBtn = alertEl.querySelector(".guardrail-snooze-btn");
-    if (!dismissBtn && !snoozeBtn) {
-      return;
-    }
-    function bindLifecycleButton(buttonEl, action, errorLabel) {
-      if (!buttonEl) {
-        return;
-      }
-      buttonEl.addEventListener("click", function () {
-        var originalLabel = buttonEl.textContent;
-        if (dismissBtn) {
-          dismissBtn.disabled = true;
-        }
-        if (snoozeBtn) {
-          snoozeBtn.disabled = true;
-        }
-        buttonEl.textContent = "Saving...";
-        updateGuardrailLifecycle(guardrailId, conditionHash, action)
-        .then(function () {
-          alertEl.remove();
-          ensureHiddenCountLabel(parseHiddenCount() + 1);
-          updateGuardrailHeader();
-        })
-        .catch(function (err) {
-          if (dismissBtn) {
-            dismissBtn.disabled = false;
-          }
-          if (snoozeBtn) {
-            snoozeBtn.disabled = false;
-          }
-          buttonEl.textContent = originalLabel;
-          alert(errorLabel + ": " + err.message);
-        });
-      });
-    }
-
-    bindLifecycleButton(snoozeBtn, "snooze", "Guardrail snooze failed");
-    bindLifecycleButton(dismissBtn, "dismiss", "Guardrail dismiss failed");
-  });
-  updateGuardrailHeader();
 })();
 </script>
 {% endblock %}
