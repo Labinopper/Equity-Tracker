@@ -387,7 +387,16 @@ class TwelveDataStreamService:
         symbol = str(payload.get("symbol") or "").strip().upper()
         if not symbol:
             return
-        meta = TwelveDataStreamService._symbol_meta.get(symbol)
+        exchange = str(payload.get("exchange") or "").strip().upper()
+        meta = None
+        lookup_keys: list[str] = []
+        if exchange and "/" not in symbol:
+            lookup_keys.append(f"{symbol}:{exchange}")
+        lookup_keys.append(symbol)
+        for lookup_key in lookup_keys:
+            meta = TwelveDataStreamService._symbol_meta.get(lookup_key)
+            if meta is not None:
+                break
         if meta is None:
             return
 

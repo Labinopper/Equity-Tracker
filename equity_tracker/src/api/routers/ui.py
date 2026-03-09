@@ -706,6 +706,7 @@ def _build_behavioral_guardrails(
                     "id": "concentration_top_holding",
                     "severity": "warning",
                     "title": "Top-holding concentration breach",
+                    "condition_key": f"concentration_top_holding|ticker:{top_ticker}|threshold:{top_threshold}",
                     "message": (
                         f"{top_ticker} is {top_pct}% of gross market value "
                         f"(threshold {top_threshold}%)."
@@ -740,6 +741,7 @@ def _build_behavioral_guardrails(
                     "id": "concentration_employer",
                     "severity": "warning",
                     "title": "Employer concentration breach",
+                    "condition_key": f"concentration_employer|ticker:{employer_ticker}|threshold:{employer_threshold}",
                     "message": (
                         f"{employer_ticker} exposure is {employer_pct}% of gross market value "
                         f"(threshold {employer_threshold}%)."
@@ -764,6 +766,7 @@ def _build_behavioral_guardrails(
                     "id": "liquidity_illusion",
                     "severity": "warning",
                     "title": "Liquidity illusion risk",
+                    "condition_key": "liquidity_illusion",
                     "message": (
                         f"{non_deployable_pct}% of gross capital is currently non-deployable "
                         "(locked, forfeitable, or tax-constrained)."
@@ -796,6 +799,7 @@ def _build_behavioral_guardrails(
                     "id": "isa_underutilisation",
                     "severity": "info",
                     "title": "ISA shelter under-utilisation",
+                    "condition_key": "isa_underutilisation",
                     "message": (
                         f"ISA market-value share is {isa_ratio_pct}% while taxable holdings remain "
                         f"£{_q2(taxable_market_value)}."
@@ -817,6 +821,7 @@ def _build_behavioral_guardrails(
                     "id": "drag_escalation",
                     "severity": "warning",
                     "title": "Employment-tax drag escalation",
+                    "condition_key": "drag_escalation",
                     "message": (
                         f"Sellable employment-tax estimate is {drag_pct}% of configured gross income."
                     ),
@@ -840,6 +845,7 @@ def _build_behavioral_guardrails(
                 "id": "forfeiture_imminence",
                 "severity": "warning",
                 "title": "Forfeiture timing exposure",
+                "condition_key": f"forfeiture_imminence|count:{imminent_count}",
                 "message": (
                     f"{imminent_count} position(s) have forfeiture windows inside "
                     f"{_GUARDRAIL_FORFEITURE_IMMINENCE_DAYS} days "

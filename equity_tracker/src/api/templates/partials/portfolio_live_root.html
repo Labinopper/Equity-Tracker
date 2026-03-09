@@ -1,15 +1,14 @@
 {% set valuation = portfolio_valuation_basis %}
 <div id="portfolio-live-summary">
 <div class="valuation-basis-strip">
-  <div class="valuation-basis-strip__title">Valuation Basis</div>
+  <div class="valuation-basis-strip__title">Data Basis</div>
   <div class="valuation-basis-strip__meta">
-    Price stale threshold: {{ price_stale_after_days }} day{% if price_stale_after_days != 1 %}s{% endif %}.
-    FX stale threshold: {{ fx_stale_after_minutes }} minute{% if fx_stale_after_minutes != 1 %}s{% endif %}.
+    Latest stored portfolio basis.
     <a href="{{ with_as_of('/data-quality', selected_as_of) }}">Open Data Quality</a>
   </div>
   <div class="valuation-basis-strip__items">
     <span class="valuation-pill">
-      Price as of
+      Prices
       {% if valuation.price_as_of_latest %}
       <strong>{{ valuation.price_as_of_latest }}</strong>
       {% else %}
@@ -19,53 +18,47 @@
       <span class="muted">(range starts {{ valuation.price_as_of_earliest }})</span>
       {% endif %}
     </span>
-    <span class="valuation-pill valuation-pill--neutral">
-      Coverage <strong>{{ valuation.price_tracked_count }}/{{ valuation.total_security_count }}</strong> priced
-    </span>
+    {% if valuation.fx_required_count > 0 %}
     <span class="valuation-pill">
-      FX as of
+      FX
       {% if valuation.fx_as_of %}
       <strong>{{ valuation.fx_as_of }}</strong>
       {% else %}
       <strong>N/A or missing</strong>
       {% endif %}
     </span>
+    {% endif %}
     {% if valuation.stale_price_count > 0 and valuation.missing_price_count > 0 %}
     <span class="valuation-pill valuation-pill--warning">
-      Price basis issues: {{ valuation.stale_price_count }} stale, {{ valuation.missing_price_count }} missing
+      Price issues: {{ valuation.stale_price_count }} stale, {{ valuation.missing_price_count }} missing
     </span>
     {% elif valuation.stale_price_count > 0 %}
     <span class="valuation-pill valuation-pill--warning">
-      {{ valuation.stale_price_count }} stale price basis (&gt;{{ price_stale_after_days }}d)
+      {{ valuation.stale_price_count }} stale price{% if valuation.stale_price_count != 1 %}s{% endif %}
     </span>
     {% elif valuation.missing_price_count > 0 %}
     <span class="valuation-pill valuation-pill--warning">
-      {{ valuation.missing_price_count }} missing price basis
+      {{ valuation.missing_price_count }} missing price{% if valuation.missing_price_count != 1 %}s{% endif %}
     </span>
     {% else %}
-    <span class="valuation-pill valuation-pill--ok">Price basis fresh</span>
+    <span class="valuation-pill valuation-pill--ok">Prices current</span>
     {% endif %}
     {% if valuation.fx_required_count > 0 %}
-      <span class="valuation-pill valuation-pill--neutral">
-        FX coverage <strong>{{ valuation.fx_as_of_count }}/{{ valuation.fx_required_count }}</strong>
-      </span>
       {% if valuation.stale_fx_count > 0 and valuation.missing_fx_count > 0 %}
       <span class="valuation-pill valuation-pill--warning">
-        FX basis issues: {{ valuation.stale_fx_count }} stale, {{ valuation.missing_fx_count }} missing
+        FX issues: {{ valuation.stale_fx_count }} stale, {{ valuation.missing_fx_count }} missing
       </span>
       {% elif valuation.stale_fx_count > 0 %}
       <span class="valuation-pill valuation-pill--warning">
-        {{ valuation.stale_fx_count }} stale FX basis (&gt;{{ fx_stale_after_minutes }}m)
+        {{ valuation.stale_fx_count }} stale FX rate{% if valuation.stale_fx_count != 1 %}s{% endif %}
       </span>
       {% elif valuation.missing_fx_count > 0 %}
       <span class="valuation-pill valuation-pill--warning">FX basis incomplete</span>
       {% elif valuation.fx_is_stale %}
-      <span class="valuation-pill valuation-pill--warning">FX basis stale</span>
+      <span class="valuation-pill valuation-pill--warning">FX stale</span>
       {% else %}
-      <span class="valuation-pill valuation-pill--ok">FX basis fresh</span>
+      <span class="valuation-pill valuation-pill--ok">FX current</span>
       {% endif %}
-    {% else %}
-    <span class="valuation-pill valuation-pill--neutral">FX basis not required (GBP-only holdings)</span>
     {% endif %}
   </div>
 </div>

@@ -30,15 +30,19 @@ def _to_utc_aware(value: datetime) -> datetime:
 
 
 def _hash_payload(item: dict[str, Any]) -> str:
-    payload = "|".join(
-        [
-            str(item.get("lifecycle_id") or ""),
-            str(item.get("severity") or ""),
-            str(item.get("title") or ""),
-            str(item.get("message") or ""),
-            str(item.get("href") or ""),
-        ]
-    )
+    explicit_key = str(item.get("condition_key") or "").strip()
+    if explicit_key:
+        payload = explicit_key
+    else:
+        payload = "|".join(
+            [
+                str(item.get("lifecycle_id") or ""),
+                str(item.get("severity") or ""),
+                str(item.get("title") or ""),
+                str(item.get("message") or ""),
+                str(item.get("href") or ""),
+            ]
+        )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

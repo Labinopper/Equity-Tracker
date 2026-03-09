@@ -61,13 +61,22 @@ def _load_dotenv() -> None:
             os.environ.setdefault(key, value)
 
 
-if __name__ == "__main__":
+def main() -> None:
     _load_dotenv()
-    uvicorn.run(
-        "src.api.app:app",
+    # Import after .env load so startup sees the intended runtime config.
+    from src.api.app import app
+
+    config = uvicorn.Config(
+        app,
         host="0.0.0.0",   # bind all interfaces — required for LAN access
         port=8000,
         workers=1,         # MUST remain 1 — see threading constraint above
         reload=False,
         log_level="info",
     )
+    server = uvicorn.Server(config)
+    server.run()
+
+
+if __name__ == "__main__":
+    main()
