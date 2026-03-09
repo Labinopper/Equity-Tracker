@@ -4,6 +4,7 @@ from datetime import date
 
 from src.app_context import AppContext
 from src.db.repository.prices import PriceRepository
+from src.services.pension_service import ENTRY_TYPE_GROWTH
 
 
 def _add_security(client, *, ticker: str, currency: str = "GBP") -> str:
@@ -100,6 +101,7 @@ def test_pension_page_persists_assumptions_and_contributions(client):
     assert payload["target_pot_gbp"] == "1250000.00"
     assert payload["portfolio_gross_market_value_gbp"] == "1500.00"
     assert payload["total_tracked_wealth_gbp"] == "121500.00"
+    assert payload["timeline_chart"]["points"]
     assert len(payload["ledger_rows"]) == 3
     assert len(payload["scenario_rows"]) == 4
 
@@ -114,9 +116,12 @@ def test_pension_page_persists_assumptions_and_contributions(client):
     assert "Pension" in text
     assert "Tracked Wealth Context" in text
     assert "Pension Assumptions" in text
-    assert "Scenario Timeline" in text
+    assert "Pension Timeline" in text
+    assert "Validate Current Value" in text
     assert "Contribution Ledger" in text
+    assert 'id="chart-pension-timeline"' in text
     assert 'id="pension-assumptions"' in text
+    assert 'id="pension-validation"' in text
     assert 'id="pension-ledger"' in text
     assert "payroll" in text
     assert "employer-match" in text
@@ -155,3 +160,56 @@ def test_pension_page_validation_rejects_invalid_inputs(client):
     )
     assert invalid_contribution.status_code == 422
     assert "Pension contribution not saved" in invalid_contribution.text
+
+
+def test_pension_value_validation_records_growth_separately(client):
+    baseline_resp = client.post(
+        "/pension/valuation",
+        data={
+            "valuation_date": "2026-02-06",
+            "current_value_gbp": "100000",
+            "source": "portal",
+            "notes": "baseline",
+        },
+        follow_redirects=False,
+    )
+    assert baseline_resp.status_code == 303
+    assert baseline_resp.headers["location"] == "/pension?msg=Pension+value+validated."
+
+    contribution_resp = client.post(
+        "/pension/contributions",
+        data={
+            "entry_date": "2026-03-06",
+            "entry_type": "EMPLOYEE",
+            "amount_gbp": "1000",
+            "source": "payroll",
+            "notes": "march contribution",
+        },
+        follow_redirects=False,
+    )
+    assert contribution_resp.status_code == 303
+
+    second_resp = client.post(
+        "/pension/valuation",
+        data={
+            "valuation_date": "2026-03-06",
+            "current_value_gbp": "101750",
+            "source": "portal",
+            "notes": "march value check",
+        },
+        follow_redirects=False,
+    )
+    assert second_resp.status_code == 303
+    assert (
+        second_resp.headers["location"]
+        == "/pension?msg=Pension+value+validated.+Growth+recorded%3A+GBP+750.00."
+    )
+
+    payload = client.get("/api/strategic/pension").json()
+    assert payload["current_pension_value_gbp"] == "101750.00"
+    assert payload["last_valuation_date"] == "2026-03-06"
+    assert payload["employee_contributions_gbp"] == "1000.00"
+    assert payload["recorded_growth_gbp"] == "750.00"
+    assert payload["growth_attribution_gbp"] == "100750.00"
+    assert payload["ledger_rows"][0]["entry_type"] == ENTRY_TYPE_GROWTH
+    assert payload["ledger_rows"][0]["amount_gbp"] == "750.00"

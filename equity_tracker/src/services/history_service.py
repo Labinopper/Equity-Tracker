@@ -15,11 +15,11 @@ Entry points
 
 Price kind classification
 ─────────────────────────
-Only "daily" sources (yfinance, yfinance_history, google_sheets:*) are included in
+Only "daily" sources (yfinance, twelvedata, yfinance_history, google_sheets:*) are included in
 history charts.  Intraday IBKR snapshots (source == "ibkr") are excluded.
 
 When multiple daily rows exist for the same (security, date), the source
-priority is: yfinance:* (0) > google_sheets:* (1) > yfinance_history (2).
+priority is: twelvedata:* / yfinance:* (0) > google_sheets:* (1) > yfinance_history (2).
 
 FX strategy
 ───────────
@@ -50,6 +50,7 @@ from ..db.repository import (
 from ..settings import AppSettings
 from .portfolio_service import _estimate_sell_all_employment_tax
 from .dividend_service import DividendService
+from .price_service import PriceService
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ _QUANT2 = Decimal("0.01")
 _QUANT4 = Decimal("0.0001")
 
 # Sources that produce end-of-day closing prices (not intraday snapshots).
-_DAILY_PREFIXES = ("yfinance", "yfinance_history", "google_sheets")
+_DAILY_PREFIXES = ("twelvedata", "yfinance", "yfinance_history", "google_sheets")
 
 
 def _is_daily(source: str) -> bool:
@@ -66,6 +67,8 @@ def _is_daily(source: str) -> bool:
 
 def _source_priority(source: str) -> int:
     """Lower integer = higher priority when deduplicating same-date rows."""
+    if source.startswith("twelvedata:"):
+        return 0
     if source.startswith("yfinance:"):
         return 0
     if source.startswith("google_sheets"):
@@ -411,6 +414,8 @@ class HistoryService:
         price_series items include aligned cost_basis_gbp and true_cost_gbp
         values so Chart.js can render both lines with the same date labels.
         """
+        PriceService.ensure_recent_daily_history_for_security(security_id)
+
         with AppContext.read_session() as sess:
             sec_repo = SecurityRepository(sess)
             price_repo = PriceRepository(sess)
@@ -765,6 +770,8 @@ class HistoryService:
         untracked disposals are already baked into quantity_remaining, so they
         are never double-counted.
         """
+        PriceService.ensure_recent_daily_history_all()
+
         with AppContext.read_session() as sess:
             sec_repo = SecurityRepository(sess)
             price_repo = PriceRepository(sess)

@@ -383,6 +383,38 @@ class TestGetPortfolioSummary:
         ss = summary.securities[0]
         assert ss.price_is_stale is True
 
+    def test_security_price_is_not_marked_stale_when_market_is_closed(self, app_context, monkeypatch):
+        sec = PortfolioService.add_security(
+            "CLOSEDPX", "Closed Price Corp", "USD", exchange="NASDAQ", is_manual_override=True
+        )
+        _add_basic_lot(sec.id, quantity="10", acquisition_price="10.00", true_cost="10.00")
+
+        with AppContext.write_session() as sess:
+            PriceRepository(sess).upsert(
+                security_id=sec.id,
+                price_date=date(2026, 3, 6),
+                close_price_original_ccy="12.00",
+                close_price_gbp="9.00",
+                currency="USD",
+                source="twelvedata:2026-03-06",
+            )
+
+        from src.services import staleness_service as staleness_module
+
+        class _ClosedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                fixed = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
+                if tz is None:
+                    return fixed.replace(tzinfo=None)
+                return fixed.astimezone(tz)
+
+        monkeypatch.setattr(staleness_module, "datetime", _ClosedDateTime)
+
+        summary = PortfolioService.get_portfolio_summary()
+        ss = summary.securities[0]
+        assert ss.price_is_stale is False
+
     def test_security_fx_is_marked_stale_when_fx_timestamp_is_old(self, app_context):
         sec = PortfolioService.add_security(
             "STALEFX", "Stale FX Corp", "USD", is_manual_override=True
@@ -1500,4 +1532,3 @@ class TestSellabilityStatus:
         summary = PortfolioService.get_portfolio_summary()
         lots = summary.securities[0].active_lots
         assert all(ls.sellability_status == "SELLABLE" for ls in lots)
-

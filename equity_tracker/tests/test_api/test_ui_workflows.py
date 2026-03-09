@@ -1797,9 +1797,9 @@ def test_portfolio_view_model_forfeiture_cash_and_economic_logic(client, db_engi
     assert row.sell_now_forfeited_match_value > Decimal("0")
     # Cash outcome must not include locked/forfeited matched-share value.
     assert row.net_cash_if_sold == row.sell_now_cash_paid
-    expected_economic = (
-        row.net_cash_if_sold - row.paid_true_cost - row.sell_now_forfeited_match_value
-    ).quantize(Decimal("0.01"))
+    # Forfeiture is already reflected in net_cash_if_sold by excluding the
+    # matched-share proceeds. Economic result should not deduct it twice.
+    expected_economic = (row.net_cash_if_sold - row.paid_true_cost).quantize(Decimal("0.01"))
     assert row.sell_now_economic_result == expected_economic
 
 

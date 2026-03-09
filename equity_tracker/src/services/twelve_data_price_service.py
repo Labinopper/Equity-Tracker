@@ -1,11 +1,10 @@
 """
-Twelve Data intraday quote service with market-aware credit budgeting.
+Twelve Data intraday quote service with market-aware per-minute rate limiting.
 
 Design goals:
-  - Spend credits only while a security's exchange is open.
-  - Prioritise larger positions when credits are scarce.
-  - Persist a daily usage counter beside the portfolio DB so restarts do not
-    reset the budget.
+  - Spend calls only while a security's exchange is open.
+  - Share a configurable per-minute cap across quote and FX calls.
+  - Prioritise larger positions when tracked instruments exceed that cap.
   - Keep write/persistence logic in PriceService; this service only decides
     *what* to refresh and fetches raw provider quotes.
 """
@@ -34,10 +33,7 @@ logger = logging.getLogger(__name__)
 
 _API_BASE_URL = "https://api.twelvedata.com"
 _API_TIMEOUT_SECS = 10.0
-_DEFAULT_DAILY_BUDGET = 780
-_DEFAULT_DAILY_RESERVE = 20
-_DEFAULT_MIN_REFRESH_MINUTES = 5
-_DEFAULT_MAX_REFRESH_MINUTES = 120
+_DEFAULT_MAX_CALLS_PER_MINUTE = 40
 _DEFAULT_EXTENDED_HOURS = False
 _QUOTE_SOURCE_PREFIX = "twelvedata:"
 _USD_EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "ARCA", "IEX", "XNYS", "XNAS"}
@@ -50,10 +46,7 @@ _UTC = ZoneInfo("UTC")
 @dataclass(frozen=True)
 class TwelveDataConfig:
     api_key: str
-    daily_budget: int
-    daily_reserve: int
-    min_refresh_minutes: int
-    max_refresh_minutes: int
+    max_calls_per_minute: int
     extended_hours: bool
 
 
@@ -89,7 +82,7 @@ class RefreshPlanItem:
     security_id: str
     ticker: str
     exchange: str | None
-    interval_minutes: int
+    interval_seconds: int
     overdue_score: Decimal
 
 
@@ -184,46 +177,32 @@ def market_window_for_exchange(
 def build_refresh_plan(
     candidates: Iterable[RefreshCandidate],
     *,
-    remaining_credits: int,
-    min_refresh_minutes: int,
-    max_refresh_minutes: int,
+    minute_capacity_remaining: int,
+    tracked_instrument_count: int,
+    max_calls_per_minute: int,
     now_utc: datetime,
 ) -> list[RefreshPlanItem]:
     open_candidates = [candidate for candidate in candidates if candidate.minutes_until_close > 0]
-    if not open_candidates or remaining_credits <= 0:
+    if not open_candidates or minute_capacity_remaining <= 0:
         return []
-
-    total_weight = sum((candidate.weight for candidate in open_candidates), Decimal("0"))
-    if total_weight <= Decimal("0"):
-        total_weight = Decimal(len(open_candidates))
-
-    max_minutes_remaining = max(candidate.minutes_until_close for candidate in open_candidates)
-    per_run_budget = max(1, min(remaining_credits, math.ceil(remaining_credits / max(max_minutes_remaining, 1))))
+    refresh_interval_seconds = max(
+        5,
+        math.ceil((60 * max(1, tracked_instrument_count)) / max(1, max_calls_per_minute)),
+    )
 
     due_items: list[RefreshPlanItem] = []
     for candidate in open_candidates:
-        allocated_credits = max(
-            1,
-            int(
-                math.floor(
-                    (Decimal(remaining_credits) * candidate.weight / total_weight)
-                )
-            ),
-        )
-        interval_minutes = math.ceil(candidate.minutes_until_close / allocated_credits)
-        interval_minutes = max(min_refresh_minutes, min(max_refresh_minutes, interval_minutes))
-
         if candidate.last_refreshed_at is None:
             overdue_score = Decimal("999999")
         else:
             last_refreshed_at = candidate.last_refreshed_at
             if last_refreshed_at.tzinfo is None:
                 last_refreshed_at = last_refreshed_at.replace(tzinfo=_UTC)
-            minutes_since = max(
+            seconds_since = max(
                 Decimal("0"),
-                Decimal((now_utc - last_refreshed_at).total_seconds()) / Decimal("60"),
+                Decimal((now_utc - last_refreshed_at).total_seconds()),
             )
-            overdue_score = minutes_since / Decimal(interval_minutes)
+            overdue_score = seconds_since / Decimal(refresh_interval_seconds)
 
         if overdue_score >= Decimal("1"):
             due_items.append(
@@ -231,49 +210,52 @@ def build_refresh_plan(
                     security_id=candidate.security_id,
                     ticker=candidate.ticker,
                     exchange=candidate.exchange,
-                    interval_minutes=interval_minutes,
+                    interval_seconds=refresh_interval_seconds,
                     overdue_score=overdue_score,
                 )
             )
 
-    due_items.sort(key=lambda item: (item.overdue_score, item.interval_minutes), reverse=True)
-    return due_items[:per_run_budget]
+    due_items.sort(key=lambda item: (item.overdue_score, item.interval_seconds), reverse=True)
+    return due_items[:minute_capacity_remaining]
 
 
-class _BudgetCounter:
+class _MinuteCounter:
     def __init__(self, path: Path) -> None:
         self._path = path
 
     def load(self) -> dict[str, object]:
         if not self._path.exists():
-            return {"date": _utc_now().date().isoformat(), "used": 0}
+            return {"minute": _utc_now().replace(second=0, microsecond=0).isoformat(), "used": 0}
         try:
             payload = json.loads(self._path.read_text(encoding="utf-8"))
         except Exception:
-            return {"date": _utc_now().date().isoformat(), "used": 0}
+            return {"minute": _utc_now().replace(second=0, microsecond=0).isoformat(), "used": 0}
         if not isinstance(payload, dict):
-            return {"date": _utc_now().date().isoformat(), "used": 0}
+            return {"minute": _utc_now().replace(second=0, microsecond=0).isoformat(), "used": 0}
         return {
-            "date": str(payload.get("date") or _utc_now().date().isoformat()),
+            "minute": str(
+                payload.get("minute")
+                or _utc_now().replace(second=0, microsecond=0).isoformat()
+            ),
             "used": int(payload.get("used") or 0),
         }
 
-    def get_used_today(self) -> int:
+    def get_used_this_minute(self) -> int:
         payload = self.load()
-        today = _utc_now().date().isoformat()
-        if payload["date"] != today:
-            self._write(today, 0)
+        minute_bucket = _utc_now().replace(second=0, microsecond=0).isoformat()
+        if payload["minute"] != minute_bucket:
+            self._write(minute_bucket, 0)
             return 0
         return int(payload["used"])
 
     def increment(self, amount: int = 1) -> None:
-        today = _utc_now().date().isoformat()
-        used = self.get_used_today() + amount
-        self._write(today, used)
+        minute_bucket = _utc_now().replace(second=0, microsecond=0).isoformat()
+        used = self.get_used_this_minute() + amount
+        self._write(minute_bucket, used)
 
-    def _write(self, day: str, used: int) -> None:
+    def _write(self, minute_bucket: str, used: int) -> None:
         self._path.write_text(
-            json.dumps({"date": day, "used": used}, indent=2),
+            json.dumps({"minute": minute_bucket, "used": used}, indent=2),
             encoding="utf-8",
         )
 
@@ -284,17 +266,16 @@ class TwelveDataPriceService:
         api_key = os.environ.get("EQUITY_TWELVE_DATA_API_KEY", "").strip()
         if not api_key:
             return None
-        daily_budget = int(os.environ.get("EQUITY_TWELVE_DATA_DAILY_BUDGET", str(_DEFAULT_DAILY_BUDGET)))
-        daily_reserve = int(os.environ.get("EQUITY_TWELVE_DATA_DAILY_RESERVE", str(_DEFAULT_DAILY_RESERVE)))
-        min_refresh = int(os.environ.get("EQUITY_TWELVE_DATA_MIN_REFRESH_MINUTES", str(_DEFAULT_MIN_REFRESH_MINUTES)))
-        max_refresh = int(os.environ.get("EQUITY_TWELVE_DATA_MAX_REFRESH_MINUTES", str(_DEFAULT_MAX_REFRESH_MINUTES)))
+        max_calls_per_minute = int(
+            os.environ.get(
+                "EQUITY_TWELVE_DATA_MAX_CALLS_PER_MINUTE",
+                str(_DEFAULT_MAX_CALLS_PER_MINUTE),
+            )
+        )
         extended_hours = os.environ.get("EQUITY_TWELVE_DATA_EXTENDED_HOURS", "false").lower() == "true"
         return TwelveDataConfig(
             api_key=api_key,
-            daily_budget=max(1, daily_budget),
-            daily_reserve=max(0, daily_reserve),
-            min_refresh_minutes=max(1, min_refresh),
-            max_refresh_minutes=max(max(1, min_refresh), max_refresh),
+            max_calls_per_minute=max(1, max_calls_per_minute),
             extended_hours=extended_hours,
         )
 
@@ -311,18 +292,17 @@ class TwelveDataPriceService:
         return _build_symbol(ticker, exchange)
 
     @staticmethod
-    def _budget_counter() -> _BudgetCounter | None:
+    def _minute_counter() -> _MinuteCounter | None:
         db_path = os.environ.get("EQUITY_DB_PATH", "").strip()
         if not db_path:
             return None
-        return _BudgetCounter(Path(f"{db_path}.twelve_data_budget.json"))
+        return _MinuteCounter(Path(f"{db_path}.twelve_data_rate_limit.json"))
 
     @staticmethod
-    def remaining_effective_credits(config: TwelveDataConfig) -> int:
-        counter = TwelveDataPriceService._budget_counter()
-        used = counter.get_used_today() if counter is not None else 0
-        effective_budget = max(0, config.daily_budget - config.daily_reserve)
-        return max(0, effective_budget - used)
+    def remaining_minute_capacity(config: TwelveDataConfig) -> int:
+        counter = TwelveDataPriceService._minute_counter()
+        used = counter.get_used_this_minute() if counter is not None else 0
+        return max(0, config.max_calls_per_minute - used)
 
     @staticmethod
     def fetch_quote(*, ticker: str, exchange: str | None, api_key: str, extended_hours: bool) -> TwelveDataQuote:
@@ -500,21 +480,21 @@ class TwelveDataPriceService:
     def build_refresh_plan(
         candidates: Iterable[RefreshCandidate],
         *,
-        remaining_credits: int,
-        min_refresh_minutes: int,
-        max_refresh_minutes: int,
+        minute_capacity_remaining: int,
+        tracked_instrument_count: int,
+        max_calls_per_minute: int,
         now_utc: datetime,
     ) -> list[RefreshPlanItem]:
         return build_refresh_plan(
             candidates,
-            remaining_credits=remaining_credits,
-            min_refresh_minutes=min_refresh_minutes,
-            max_refresh_minutes=max_refresh_minutes,
+            minute_capacity_remaining=minute_capacity_remaining,
+            tracked_instrument_count=tracked_instrument_count,
+            max_calls_per_minute=max_calls_per_minute,
             now_utc=now_utc,
         )
 
     @staticmethod
     def increment_credit_usage(amount: int = 1) -> None:
-        counter = TwelveDataPriceService._budget_counter()
+        counter = TwelveDataPriceService._minute_counter()
         if counter is not None:
             counter.increment(amount)

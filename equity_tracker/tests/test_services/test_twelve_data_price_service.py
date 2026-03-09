@@ -57,9 +57,9 @@ def test_refresh_plan_prioritises_unrefreshed_and_heavier_positions() -> None:
 
     plan = build_refresh_plan(
         candidates,
-        remaining_credits=10,
-        min_refresh_minutes=5,
-        max_refresh_minutes=120,
+        minute_capacity_remaining=10,
+        tracked_instrument_count=2,
+        max_calls_per_minute=40,
         now_utc=now_utc,
     )
 
@@ -67,3 +67,4 @@ def test_refresh_plan_prioritises_unrefreshed_and_heavier_positions() -> None:
     assert plan[0].security_id == "large-unseen"
     assert plan[0].exchange == "NASDAQ"
     assert all(item.security_id != "fresh" for item in plan)
+    assert plan[0].interval_seconds == 5

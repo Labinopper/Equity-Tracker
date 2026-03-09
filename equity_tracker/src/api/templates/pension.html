@@ -14,6 +14,7 @@
 <p class="muted">
   Trace key totals:
   <a href="#pension-assumptions">Assumptions</a> |
+  <a href="#pension-validation">Value validation</a> |
   <a href="#pension-ledger">Contribution ledger</a> |
   <a href="{{ payload.trace_links.wealth_context }}">Capital Stack context</a>
 </p>
@@ -42,7 +43,7 @@
     <div class="stat__value {% if payload.growth_attribution_gbp|float < 0 %}loss{% else %}gain{% endif %}">
       {% if payload.growth_attribution_gbp|float < 0 %}-{% elif payload.growth_attribution_gbp|float > 0 %}+{% endif %}&pound;{{ (payload.growth_attribution_gbp|float|abs) | money }}
     </div>
-    <span class="stat-caption">Current pension value minus recorded inputs.</span>
+    <span class="stat-caption">Current pension value minus recorded inputs. Recorded growth ledger: &pound;{{ payload.recorded_growth_gbp | money }}.</span>
   </div>
   <div class="stat">
     <div class="stat__label">Target Pot at Retirement <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
@@ -65,6 +66,39 @@
     <div class="stat__value">{{ payload.retirement_date }}</div>
     <span class="stat-caption">{{ payload.years_to_retirement }} years from now.</span>
   </div>
+</div>
+
+<div class="card" id="pension-validation">
+  <div class="card__header">
+    <h2 class="card__title">Validate Current Value</h2>
+  </div>
+  <p class="muted">
+    Confirm the current pension pot when you have a statement or portal value. Any change not explained by recorded contributions since the last validation is recorded as growth.
+    {% if payload.last_valuation_date %}Last validated: {{ payload.last_valuation_date }}.{% endif %}
+  </p>
+  <form method="post" action="/pension/valuation" class="inline-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="valuation_date">Valuation Date</label>
+        <input id="valuation_date" name="valuation_date" type="date" value="{{ payload.as_of_date }}">
+      </div>
+      <div class="form-field">
+        <label for="validated_current_value_gbp">Current Pension Value (&pound;)</label>
+        <input id="validated_current_value_gbp" name="current_value_gbp" type="text" inputmode="decimal" value="{{ payload.current_pension_value_gbp }}">
+      </div>
+      <div class="form-field">
+        <label for="valuation_source">Source</label>
+        <input id="valuation_source" name="source" type="text" value="portal-check">
+      </div>
+      <div class="form-field" style="grid-column: span 2;">
+        <label for="valuation_notes">Notes</label>
+        <input id="valuation_notes" name="notes" type="text" value="">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Validate Pension Value</button>
+    </div>
+  </form>
 </div>
 
 <div class="card" id="pension-assumptions">
@@ -148,9 +182,22 @@
 
 <div class="card">
   <div class="card__header">
-    <h2 class="card__title">Scenario Timeline</h2>
+    <h2 class="card__title">Pension Timeline</h2>
   </div>
-  <p class="muted">Projection checkpoints use the current pot, fixed monthly contribution schedule, and fixed annual return assumptions.</p>
+  <p class="muted">
+    Actual contributions and recorded growth are shown to date. Forward paths use the fixed monthly contribution schedule and configured return assumptions against the target pot.
+    {% if payload.timeline_chart.summary.current_progress_to_target_pct %}
+    Current progress: {{ payload.timeline_chart.summary.current_progress_to_target_pct }}% of target.
+    {% endif %}
+    {% if payload.timeline_chart.summary.retirement_base_progress_to_target_pct %}
+    Base case at retirement: {{ payload.timeline_chart.summary.retirement_base_progress_to_target_pct }}% of target.
+    {% endif %}
+  </p>
+  {% if payload.timeline_chart.points %}
+  <div class="security-history-chart-wrap security-history-chart-wrap--main">
+    <canvas id="chart-pension-timeline" aria-label="Pension contributions, growth, and future target timeline"></canvas>
+  </div>
+  {% endif %}
   <div class="table-wrap">
     <table>
       <thead>
@@ -274,4 +321,169 @@
     {% endfor %}
   </ul>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% include "partials/chart_theme.html" %}
+<script>
+(function () {
+  if (typeof Chart === "undefined") return;
+  var rows = {{ (payload.timeline_chart.points or []) | tojson }};
+  if (!Array.isArray(rows) || !rows.length) return;
+  var canvas = document.getElementById("chart-pension-timeline");
+  if (!canvas) return;
+  var theme = window.analyticsChartTheme || {};
+
+  function asNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    var n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  var labels = rows.map(function (row) {
+    return row.label && row.label !== row.date ? row.label + " (" + row.date + ")" : row.date;
+  });
+
+  new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: "bar",
+          label: "Cumulative Inputs",
+          data: rows.map(function (row) { return asNumber(row.cumulative_inputs_gbp); }),
+          backgroundColor: "rgba(61, 120, 240, 0.45)",
+          borderColor: theme.accent || "#3d78f0",
+          borderWidth: 1,
+          stack: "actual"
+        },
+        {
+          type: "bar",
+          label: "Recorded Growth",
+          data: rows.map(function (row) { return asNumber(row.cumulative_growth_gbp); }),
+          backgroundColor: "rgba(0, 209, 140, 0.40)",
+          borderColor: theme.gain || "#00d18c",
+          borderWidth: 1,
+          stack: "actual"
+        },
+        {
+          type: "line",
+          label: "Actual Pot",
+          data: rows.map(function (row) { return asNumber(row.actual_pot_gbp); }),
+          borderColor: theme.heading || "#e8eaf0",
+          backgroundColor: theme.heading || "#e8eaf0",
+          pointRadius: 4,
+          pointHoverRadius: 5,
+          tension: 0.2,
+          spanGaps: true,
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "Base Projection",
+          data: rows.map(function (row) { return asNumber(row.base_projected_pot_gbp); }),
+          borderColor: theme.warning || "#f0a030",
+          backgroundColor: "rgba(240, 160, 48, 0.12)",
+          pointRadius: 3,
+          pointHoverRadius: 4,
+          tension: 0.2,
+          spanGaps: true,
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "Conservative Projection",
+          data: rows.map(function (row) { return asNumber(row.conservative_projected_pot_gbp); }),
+          borderColor: "rgba(112, 160, 255, 0.85)",
+          pointRadius: 0,
+          tension: 0.2,
+          spanGaps: true,
+          borderDash: [6, 4],
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "Aggressive Projection",
+          data: rows.map(function (row) { return asNumber(row.aggressive_projected_pot_gbp); }),
+          borderColor: "rgba(0, 209, 140, 0.85)",
+          pointRadius: 0,
+          tension: 0.2,
+          spanGaps: true,
+          borderDash: [2, 4],
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "Target Pot",
+          data: rows.map(function (row) { return asNumber(row.target_pot_gbp); }),
+          borderColor: theme.loss || "#f0384f",
+          pointRadius: 0,
+          borderDash: [10, 6],
+          spanGaps: true,
+          yAxisID: "y"
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { maxRotation: 0, autoSkip: true }
+        },
+        y: {
+          stacked: false,
+          beginAtZero: true,
+          ticks: {
+            callback: function (value) { return "GBP " + Number(value).toLocaleString(); }
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          position: "bottom"
+        },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              var val = context.parsed && typeof context.parsed.y === "number"
+                ? context.parsed.y
+                : context.raw;
+              if (val === null || val === undefined) return context.dataset.label + ": n/a";
+              return context.dataset.label + ": GBP " + Number(val).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              });
+            }
+          }
+        }
+      }
+    }
+  });
+})();
+</script>
+<style>
+.security-history-chart-wrap {
+  position: relative;
+  min-height: 22rem;
+  margin: 1rem 0 1.25rem;
+}
+.security-history-chart-wrap--main {
+  min-height: 26rem;
+}
+.security-history-chart-wrap > canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+@media (max-width: 720px) {
+  .security-history-chart-wrap,
+  .security-history-chart-wrap--main {
+    min-height: 20rem;
+  }
+}
+</style>
 {% endblock %}

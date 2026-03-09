@@ -630,6 +630,46 @@ async def pension_add_contribution(
     return RedirectResponse("/pension?msg=Pension+contribution+saved.", status_code=303)
 
 
+@router.post("/pension/valuation", response_class=HTMLResponse, include_in_schema=False)
+async def pension_validate_value(
+    request: Request,
+    valuation_date: str = Form(...),
+    current_value_gbp: str = Form(...),
+    source: str = Form("manual-valuation"),
+    notes: str = Form(""),
+) -> HTMLResponse:
+    if not AppContext.is_initialized():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    if db_path is None:
+        return _locked_response(request)
+
+    try:
+        parsed_date = date.fromisoformat(valuation_date)
+        value = Decimal(current_value_gbp)
+        result = PensionService.validate_current_value(
+            db_path=db_path,
+            valuation_date=parsed_date,
+            current_value_gbp=value,
+            source=source,
+            notes=notes,
+        )
+    except (InvalidOperation, ValueError) as exc:
+        return _render_pension_page(
+            request,
+            error=f"Pension valuation not saved: {exc}",
+            status_code=422,
+        )
+
+    growth_recorded = Decimal(str(result.get("growth_recorded_gbp") or "0"))
+    if growth_recorded == Decimal("0"):
+        msg = "Pension value validated."
+    else:
+        msg = f"Pension value validated. Growth recorded: GBP {growth_recorded:.2f}."
+    return _redirect_with_params("/pension", msg=msg)
+
+
 @router.post("/pension/assumptions", response_class=HTMLResponse, include_in_schema=False)
 async def pension_save_assumptions(
     request: Request,

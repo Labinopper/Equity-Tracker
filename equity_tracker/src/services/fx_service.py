@@ -29,6 +29,7 @@ _LIVE_SOURCE = "yfinance_fx"
 _TWELVE_DATA_LIVE_SOURCE = "twelvedata_fx"
 _MAX_PATH_HOPS = 4
 _LIVE_CACHE_TTL = timedelta(minutes=1)
+_TWELVE_DATA_LIVE_CACHE_TTL = timedelta(seconds=5)
 _LIVE_FX_CACHE: dict[tuple[str, str, str], tuple[datetime, FxQuote]] = {}
 
 
@@ -101,7 +102,8 @@ def _get_cached_live_quote(provider: str, from_currency: str, to_currency: str) 
     if entry is None:
         return None
     observed_at, quote = entry
-    if datetime.now(timezone.utc) - observed_at > _LIVE_CACHE_TTL:
+    ttl = _TWELVE_DATA_LIVE_CACHE_TTL if provider == "twelve_data" else _LIVE_CACHE_TTL
+    if datetime.now(timezone.utc) - observed_at > ttl:
         _LIVE_FX_CACHE.pop(_cache_key(provider, from_currency, to_currency), None)
         return None
     return quote

@@ -45,6 +45,7 @@ _FX_TS_FMT = "%Y-%m-%d %H:%M:%S"
 
 # Days of pre-acquisition price history to maintain per security.
 _PRE_ACQUISITION_DAYS = 365
+_DAILY_HISTORY_PREFIXES = ("yfinance:", "twelvedata:", "google_sheets", _HISTORY_SOURCE)
 
 
 class _HistoryRateLimitError(Exception):
@@ -52,7 +53,7 @@ class _HistoryRateLimitError(Exception):
 
 
 class CreditBudgetExceededError(RuntimeError):
-    """Raised when a Twelve Data action would exceed the configured budget."""
+    """Raised when a Twelve Data action would exceed the configured rate limit."""
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +364,12 @@ def _price_row_gbp_value(price_row) -> Decimal | None:
         return None
 
 
+def _is_daily_history_source(source: str | None) -> bool:
+    if not source:
+        return False
+    return any(source.startswith(prefix) for prefix in _DAILY_HISTORY_PREFIXES)
+
+
 def _daily_direction_and_percent(
     *,
     current_price_gbp: Decimal,
@@ -550,6 +557,96 @@ class PriceService:
             return sess.scalar(stmt)
 
     @staticmethod
+    def _latest_daily_price_date(security_id: str) -> date | None:
+        with AppContext.read_session() as sess:
+            rows = PriceRepository(sess).get_history_range(security_id)
+        daily_dates = [
+            row.price_date
+            for row in rows
+            if _is_daily_history_source(row.source)
+        ]
+        return max(daily_dates) if daily_dates else None
+
+    @staticmethod
+    def _sync_history_window_for_security(
+        *,
+        security_id: str,
+        ticker: str,
+        currency: str,
+        exchange: str | None,
+        start_date: date,
+        end_date: date,
+        native_to_gbp_rate: Decimal | None = None,
+    ) -> int:
+        if start_date > end_date:
+            return 0
+
+        ccy = currency.strip().upper()
+        if ccy != "GBP" and native_to_gbp_rate is None:
+            logger.info(
+                "Skipping %s history sync for %s (%s): %s->GBP rate unavailable.",
+                ccy,
+                ticker,
+                security_id,
+                ccy,
+            )
+            return 0
+
+        symbol = _history_symbol_for_security(ticker, exchange)
+        try:
+            closes = _read_history_closes(
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except _HistoryRateLimitError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "History sync failed for %s (%s): %s",
+                ticker,
+                security_id,
+                exc,
+            )
+            return 0
+
+        if not closes:
+            return 0
+
+        rows_written = 0
+        with AppContext.write_session() as sess:
+            price_repo = PriceRepository(sess)
+            for price_date, close_original in sorted(closes.items()):
+                if ccy != "GBP":
+                    close_gbp = (close_original * native_to_gbp_rate).quantize(
+                        _GBP_DECIMAL_QUANT,
+                        rounding=ROUND_HALF_UP,
+                    )
+                else:
+                    close_gbp = close_original
+
+                price_repo.upsert(
+                    security_id=security_id,
+                    price_date=price_date,
+                    close_price_original_ccy=str(close_original),
+                    close_price_gbp=str(close_gbp),
+                    currency=ccy,
+                    source=_HISTORY_SOURCE,
+                )
+                rows_written += 1
+
+        if rows_written > 0:
+            logger.info(
+                "Synced %d daily history rows for %s (%s), %s to %s.",
+                rows_written,
+                ticker,
+                security_id,
+                start_date.isoformat(),
+                end_date.isoformat(),
+            )
+        return rows_written
+
+    @staticmethod
     def _estimate_twelve_data_cost(
         security_items: list[tuple[str, str, str | None, str | None]],
     ) -> int:
@@ -574,11 +671,11 @@ class PriceService:
         if config is None:
             raise RuntimeError("Twelve Data is not configured.")
         estimated_cost = PriceService._estimate_twelve_data_cost(security_items)
-        remaining_credits = TwelveDataPriceService.remaining_effective_credits(config)
-        if estimated_cost > remaining_credits:
+        remaining_calls = TwelveDataPriceService.remaining_minute_capacity(config)
+        if estimated_cost > remaining_calls:
             raise CreditBudgetExceededError(
-                f"Twelve Data refresh would require about {estimated_cost} credits, "
-                f"but only {remaining_credits} remain in the daily budget."
+                f"Twelve Data refresh would require about {estimated_cost} calls, "
+                f"but only {remaining_calls} remain in the current minute limit."
             )
 
     @staticmethod
@@ -772,6 +869,102 @@ class PriceService:
             "rate_limited": rate_limited,
             "errors": errors,
         }
+
+    @staticmethod
+    def ensure_recent_daily_history_for_security(
+        security_id: str,
+        *,
+        up_to_date: date | None = None,
+    ) -> dict:
+        """
+        Repair trailing daily-history gaps for one security.
+
+        Intended for history/report reads when the server missed one or more
+        scheduled backfill runs. Never writes today's row; live pricing remains
+        provider-driven.
+        """
+        today_utc = datetime.now(tz=timezone.utc).date()
+        requested_end = up_to_date or today_utc
+        target_end = min(requested_end, today_utc - timedelta(days=1))
+        if target_end < date.min + timedelta(days=1):
+            return {"backfilled_days": 0, "errors": []}
+
+        with AppContext.read_session() as sess:
+            security = SecurityRepository(sess).get_by_id(security_id)
+            if security is None:
+                raise ValueError(f"Security {security_id!r} not found.")
+
+        native_to_gbp_rate: Decimal | None = None
+        ccy = (security.currency or "GBP").strip().upper()
+        if ccy != "GBP":
+            try:
+                native_to_gbp_rate = FxService.get_rate(ccy, "GBP").rate
+            except Exception as exc:
+                logger.info(
+                    "Recent history repair: no %s->GBP rate for %s (%s).",
+                    ccy, security.ticker, exc,
+                )
+
+        rows_written = 0
+        errors: list[dict] = []
+        try:
+            rows_written += PriceService._backfill_history_for_security(
+                security_id=security.id,
+                ticker=security.ticker,
+                currency=ccy,
+                exchange=security.exchange,
+                native_to_gbp_rate=native_to_gbp_rate,
+            )
+        except _HistoryRateLimitError as exc:
+            errors.append({"ticker": security.ticker, "error": str(exc)})
+            return {"backfilled_days": rows_written, "errors": errors}
+
+        latest_daily = PriceService._latest_daily_price_date(security.id)
+        if latest_daily is None:
+            latest_daily = (PriceService._earliest_lot_date(security.id) or target_end) - timedelta(days=1)
+
+        start_date = latest_daily + timedelta(days=1)
+        if start_date <= target_end:
+            try:
+                rows_written += PriceService._sync_history_window_for_security(
+                    security_id=security.id,
+                    ticker=security.ticker,
+                    currency=ccy,
+                    exchange=security.exchange,
+                    start_date=start_date,
+                    end_date=target_end,
+                    native_to_gbp_rate=native_to_gbp_rate,
+                )
+            except _HistoryRateLimitError as exc:
+                errors.append({"ticker": security.ticker, "error": str(exc)})
+
+        return {"backfilled_days": rows_written, "errors": errors}
+
+    @staticmethod
+    def ensure_recent_daily_history_all(
+        *,
+        up_to_date: date | None = None,
+    ) -> dict:
+        """
+        Repair trailing daily-history gaps for all securities.
+        """
+        with AppContext.read_session() as sess:
+            securities = SecurityRepository(sess).list_all()
+
+        total_rows = 0
+        errors: list[dict] = []
+        for security in securities:
+            try:
+                result = PriceService.ensure_recent_daily_history_for_security(
+                    security.id,
+                    up_to_date=up_to_date,
+                )
+                total_rows += int(result.get("backfilled_days", 0) or 0)
+                errors.extend(result.get("errors", []))
+            except Exception as exc:
+                errors.append({"ticker": security.ticker, "error": str(exc)})
+
+        return {"backfilled_days": total_rows, "errors": errors}
 
     @staticmethod
     def fetch_and_store(
@@ -1052,17 +1245,27 @@ class PriceService:
                 "enabled": False,
                 "fetched": 0,
                 "planned": 0,
-                "remaining_credits": 0,
+                "remaining_calls": 0,
                 "errors": [],
             }
 
-        remaining_credits = TwelveDataPriceService.remaining_effective_credits(config)
+        minute_capacity_remaining = TwelveDataPriceService.remaining_minute_capacity(config)
         candidates = TwelveDataPriceService.build_scheduler_candidates(config)
+        candidate_by_security_id = {candidate.security_id: candidate for candidate in candidates}
+        with AppContext.read_session() as sess:
+            securities = SecurityRepository(sess).list_all()
+            tracked_instrument_count = PriceService._estimate_twelve_data_cost(
+                [
+                    (security.id, security.ticker, security.currency, security.exchange)
+                    for security in securities
+                    if security.id in candidate_by_security_id
+                ]
+            )
         plan = TwelveDataPriceService.build_refresh_plan(
             candidates,
-            remaining_credits=remaining_credits,
-            min_refresh_minutes=config.min_refresh_minutes,
-            max_refresh_minutes=config.max_refresh_minutes,
+            minute_capacity_remaining=minute_capacity_remaining,
+            tracked_instrument_count=max(1, tracked_instrument_count),
+            max_calls_per_minute=config.max_calls_per_minute,
             now_utc=datetime.now(timezone.utc),
         )
         if not plan:
@@ -1070,7 +1273,8 @@ class PriceService:
                 "enabled": True,
                 "fetched": 0,
                 "planned": 0,
-                "remaining_credits": remaining_credits,
+                "remaining_calls": minute_capacity_remaining,
+                "tracked_instruments": tracked_instrument_count,
                 "errors": [],
             }
 
@@ -1092,7 +1296,7 @@ class PriceService:
                     if item.security_id in securities_by_id
                 ]
             )
-            if estimated_cost <= remaining_credits:
+            if estimated_cost <= minute_capacity_remaining:
                 break
             plan = plan[:-1]
 
@@ -1101,7 +1305,8 @@ class PriceService:
                 "enabled": True,
                 "fetched": 0,
                 "planned": 0,
-                "remaining_credits": remaining_credits,
+                "remaining_calls": minute_capacity_remaining,
+                "tracked_instruments": tracked_instrument_count,
                 "errors": [],
             }
 
@@ -1117,7 +1322,8 @@ class PriceService:
                 "enabled": True,
                 "fetched": 0,
                 "planned": len(plan),
-                "remaining_credits": remaining_credits,
+                "remaining_calls": minute_capacity_remaining,
+                "tracked_instruments": tracked_instrument_count,
                 "errors": [],
             }
 
@@ -1212,7 +1418,8 @@ class PriceService:
             "enabled": True,
             "fetched": fetched,
             "planned": len(plan),
-            "remaining_credits": remaining_credits,
+            "remaining_calls": minute_capacity_remaining,
+            "tracked_instruments": tracked_instrument_count,
             "errors": errors,
         }
 

@@ -17,6 +17,7 @@ from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from ..settings import AppSettings
+from .pension_service import PensionService
 from .portfolio_service import PortfolioService
 
 _GBP_Q = Decimal("0.01")
@@ -30,6 +31,7 @@ _EVENT_TAX_YEAR_END = "TAX_YEAR_END"
 _EVENT_TAX_YEAR_START = "TAX_YEAR_START"
 _EVENT_DIVIDEND_REMINDER = "DIVIDEND_REMINDER"
 _EVENT_MONTHLY_INPUT_REMINDER = "MONTHLY_INPUT_REMINDER"
+_EVENT_PENSION_CONTRIBUTION_CHECK = "PENSION_CONTRIBUTION_CHECK"
 _EVENT_ESPP_TRANSFER_GUARDRAIL = "ESPP_TRANSFER_GUARDRAIL"
 _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL = "ESPP_PLUS_LONG_HOLD_GUARDRAIL"
 
@@ -37,6 +39,7 @@ _EVENT_REMINDERS = frozenset(
     {
         _EVENT_DIVIDEND_REMINDER,
         _EVENT_MONTHLY_INPUT_REMINDER,
+        _EVENT_PENSION_CONTRIBUTION_CHECK,
         _EVENT_ESPP_TRANSFER_GUARDRAIL,
         _EVENT_ESPP_PLUS_LONG_HOLD_GUARDRAIL,
     }
@@ -49,9 +52,10 @@ _EVENT_PRIORITY: dict[str, int] = {
     _EVENT_VEST_DATE: 3,
     _EVENT_DIVIDEND_REMINDER: 4,
     _EVENT_MONTHLY_INPUT_REMINDER: 5,
-    _EVENT_SELL_TRANCHE: 6,
-    _EVENT_TAX_YEAR_END: 7,
-    _EVENT_TAX_YEAR_START: 8,
+    _EVENT_PENSION_CONTRIBUTION_CHECK: 6,
+    _EVENT_SELL_TRANCHE: 7,
+    _EVENT_TAX_YEAR_END: 8,
+    _EVENT_TAX_YEAR_START: 9,
 }
 
 
@@ -173,6 +177,7 @@ class CalendarService:
     def get_events_payload(
         *,
         settings: AppSettings | None = None,
+        db_path = None,
         horizon_days: int = _DEFAULT_HORIZON_DAYS,
         as_of: date | None = None,
         sell_plan_events: list[dict[str, Any]] | None = None,
@@ -452,6 +457,51 @@ class CalendarService:
                         "fx_basis_note": None,
                         "deep_link": "/portfolio/add-lot",
                         "action_label": "Open Add Lot",
+                    }
+                )
+
+        pension_assumptions = PensionService.load_assumptions(db_path)
+        pension_monthly_total = _q_money(
+            Decimal(str(pension_assumptions.get("monthly_employee_contribution_gbp") or "0"))
+            + Decimal(str(pension_assumptions.get("monthly_employer_contribution_gbp") or "0"))
+        )
+        if pension_monthly_total > Decimal("0"):
+            pension_event_date = _next_monthly_occurrence(day=6, as_of=as_of_date)
+            if _in_horizon(pension_event_date, as_of=as_of_date, horizon_days=horizon_days):
+                last_valuation_date = str(pension_assumptions.get("last_valuation_date") or "").strip()
+                subtitle = (
+                    "Confirm this month's pension contributions. Optional: validate the current pot value to record growth separately."
+                )
+                if last_valuation_date:
+                    subtitle = (
+                        f"{subtitle} Last validated on {last_valuation_date}."
+                    )
+                events.append(
+                    {
+                        "event_id": (
+                            "global:"
+                            f"{_EVENT_PENSION_CONTRIBUTION_CHECK.lower()}:"
+                            f"{pension_event_date.isoformat()}"
+                        ),
+                        "event_type": _EVENT_PENSION_CONTRIBUTION_CHECK,
+                        "event_date": pension_event_date.isoformat(),
+                        "days_until": _days_until(pension_event_date, as_of_date),
+                        "title": "Monthly pension contribution check",
+                        "subtitle": subtitle,
+                        "security_id": None,
+                        "ticker": None,
+                        "scheme_type": "PENSION",
+                        "lot_id": None,
+                        "quantity": None,
+                        "value_at_stake_gbp": _money_str(pension_monthly_total),
+                        "has_live_value": False,
+                        "price_as_of": None,
+                        "price_is_stale": False,
+                        "fx_as_of": None,
+                        "fx_is_stale": False,
+                        "fx_basis_note": None,
+                        "deep_link": "/pension#pension-validation",
+                        "action_label": "Open Pension",
                     }
                 )
 

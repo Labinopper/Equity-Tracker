@@ -21,8 +21,9 @@ _ZERO = Decimal("0")
 ENTRY_TYPE_EMPLOYEE = "EMPLOYEE"
 ENTRY_TYPE_EMPLOYER = "EMPLOYER"
 ENTRY_TYPE_ADJUSTMENT = "ADJUSTMENT"
+ENTRY_TYPE_GROWTH = "GROWTH"
 VALID_ENTRY_TYPES = frozenset(
-    {ENTRY_TYPE_EMPLOYEE, ENTRY_TYPE_EMPLOYER, ENTRY_TYPE_ADJUSTMENT}
+    {ENTRY_TYPE_EMPLOYEE, ENTRY_TYPE_EMPLOYER, ENTRY_TYPE_ADJUSTMENT, ENTRY_TYPE_GROWTH}
 )
 
 
@@ -120,6 +121,7 @@ def _default_assumptions(today: date | None = None) -> dict[str, str]:
     now = today or date.today()
     return {
         "current_pension_value_gbp": "0.00",
+        "last_valuation_date": "",
         "monthly_employee_contribution_gbp": "0.00",
         "monthly_employer_contribution_gbp": "0.00",
         "retirement_date": _add_years(now, 20).isoformat(),
@@ -134,7 +136,7 @@ def _default_assumptions(today: date | None = None) -> dict[str, str]:
 def _normalize_entry_type(value: object) -> str:
     entry_type = str(value or "").strip().upper()
     if entry_type not in VALID_ENTRY_TYPES:
-        raise ValueError("Contribution type must be EMPLOYEE, EMPLOYER, or ADJUSTMENT.")
+        raise ValueError("Contribution type must be EMPLOYEE, EMPLOYER, ADJUSTMENT, or GROWTH.")
     return entry_type
 
 
@@ -153,6 +155,12 @@ def _projection_value(
     for _ in range(months):
         pot = _q_money((pot * (Decimal("1") + monthly_rate)) + monthly_contribution)
     return pot
+
+
+def _progress_pct(current: Decimal, target: Decimal | None) -> Decimal | None:
+    if target is None or target <= _ZERO:
+        return None
+    return _q_rate((current / target) * Decimal("100"))
 
 
 class PensionService:
@@ -187,6 +195,8 @@ class PensionService:
             raise ValueError("Employee and employer contributions must be greater than zero.")
         if normalized_type == ENTRY_TYPE_ADJUSTMENT and amount == _ZERO:
             raise ValueError("Adjustment amount must be non-zero.")
+        if normalized_type == ENTRY_TYPE_GROWTH and amount == _ZERO:
+            raise ValueError("Growth amount must be non-zero.")
 
         entries = PensionService.load_entries(db_path)
         entry = {
@@ -265,8 +275,10 @@ class PensionService:
         if values["aggressive_annual_return_pct"] < values["base_annual_return_pct"]:
             raise ValueError("Aggressive return must be at least base return.")
 
+        existing = PensionService.load_assumptions(db_path)
         payload = {
             "current_pension_value_gbp": str(values["current_pension_value_gbp"]),
+            "last_valuation_date": str(existing.get("last_valuation_date") or "").strip(),
             "monthly_employee_contribution_gbp": str(values["monthly_employee_contribution_gbp"]),
             "monthly_employer_contribution_gbp": str(values["monthly_employer_contribution_gbp"]),
             "retirement_date": retirement.isoformat(),
@@ -278,6 +290,81 @@ class PensionService:
         }
         _save_json(_assumptions_path(db_path), payload)
         return payload
+
+    @staticmethod
+    def validate_current_value(
+        *,
+        db_path: Path | None,
+        valuation_date: date,
+        current_value_gbp: Decimal,
+        source: str = "manual-valuation",
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        if db_path is None:
+            raise ValueError("Database path is required.")
+
+        value = _q_money(current_value_gbp)
+        if value < _ZERO:
+            raise ValueError("Current pension value cannot be negative.")
+
+        assumptions = PensionService.load_assumptions(db_path)
+        entries = PensionService.load_entries(db_path)
+
+        prior_value = _q_money(_safe_decimal(assumptions.get("current_pension_value_gbp")))
+        prior_date_text = str(assumptions.get("last_valuation_date") or "").strip()
+        prior_date = date.fromisoformat(prior_date_text) if prior_date_text else None
+        if prior_date is not None and valuation_date < prior_date:
+            raise ValueError("Valuation date cannot be earlier than the last validation date.")
+
+        contributions_since_last_validation = Decimal("0.00")
+        if prior_date is not None:
+            for entry in entries:
+                entry_type = _normalize_entry_type(entry.get("entry_type"))
+                if entry_type not in {
+                    ENTRY_TYPE_EMPLOYEE,
+                    ENTRY_TYPE_EMPLOYER,
+                    ENTRY_TYPE_ADJUSTMENT,
+                }:
+                    continue
+                try:
+                    entry_date = date.fromisoformat(str(entry.get("entry_date") or ""))
+                except ValueError:
+                    continue
+                if prior_date < entry_date <= valuation_date:
+                    contributions_since_last_validation += _safe_decimal(entry.get("amount_gbp"))
+
+        growth_entry = None
+        growth_amount = Decimal("0.00")
+        if prior_date is not None:
+            growth_amount = _q_money(value - prior_value - contributions_since_last_validation)
+            if growth_amount != _ZERO:
+                note_parts = []
+                if notes:
+                    note_parts.append(str(notes).strip())
+                note_parts.append(
+                    "Derived from valuation delta net of contributions since last validation."
+                )
+                growth_entry = PensionService.record_entry(
+                    db_path=db_path,
+                    entry_date=valuation_date,
+                    entry_type=ENTRY_TYPE_GROWTH,
+                    amount_gbp=growth_amount,
+                    source=str(source or "manual-valuation").strip() or "manual-valuation",
+                    notes=" ".join(part for part in note_parts if part).strip(),
+                )
+
+        assumptions["current_pension_value_gbp"] = str(value)
+        assumptions["last_valuation_date"] = valuation_date.isoformat()
+        _save_json(_assumptions_path(db_path), assumptions)
+        return {
+            "valuation_date": valuation_date.isoformat(),
+            "current_pension_value_gbp": str(value),
+            "prior_value_gbp": str(prior_value),
+            "prior_valuation_date": prior_date.isoformat() if prior_date is not None else None,
+            "contributions_since_last_validation_gbp": str(_q_money(contributions_since_last_validation)),
+            "growth_recorded_gbp": str(growth_amount),
+            "growth_entry": growth_entry,
+        }
 
     @staticmethod
     def get_dashboard(
@@ -298,6 +385,7 @@ class PensionService:
         employee_total = _q_money(totals_by_type[ENTRY_TYPE_EMPLOYEE])
         employer_total = _q_money(totals_by_type[ENTRY_TYPE_EMPLOYER])
         adjustment_total = _q_money(totals_by_type[ENTRY_TYPE_ADJUSTMENT])
+        growth_total = _q_money(totals_by_type[ENTRY_TYPE_GROWTH])
         recorded_inputs = _q_money(employee_total + employer_total + adjustment_total)
 
         current_value_assumption = _q_money(
@@ -388,6 +476,111 @@ class PensionService:
                     row[f"{scenario_name}_shortfall_vs_target_gbp"] = None
             scenario_rows.append(row)
 
+        cumulative_inputs = Decimal("0.00")
+        cumulative_growth = Decimal("0.00")
+        chart_points: dict[str, dict[str, Any]] = {}
+
+        def ensure_point(point_date: date) -> dict[str, Any]:
+            key = point_date.isoformat()
+            existing = chart_points.get(key)
+            if existing is not None:
+                return existing
+            point = {
+                "date": key,
+                "label": key,
+                "is_future": point_date > today,
+                "cumulative_inputs_gbp": None,
+                "cumulative_growth_gbp": None,
+                "actual_pot_gbp": None,
+                "conservative_projected_pot_gbp": None,
+                "base_projected_pot_gbp": None,
+                "aggressive_projected_pot_gbp": None,
+                "target_pot_gbp": str(target_pot) if target_pot is not None else None,
+                "progress_to_target_pct": None,
+            }
+            chart_points[key] = point
+            return point
+
+        for entry in entries:
+            try:
+                point_date = date.fromisoformat(str(entry.get("entry_date") or ""))
+            except ValueError:
+                continue
+            point = ensure_point(point_date)
+            entry_type = _normalize_entry_type(entry.get("entry_type"))
+            amount = _q_money(_safe_decimal(entry.get("amount_gbp")))
+            if entry_type == ENTRY_TYPE_GROWTH:
+                cumulative_growth = _q_money(cumulative_growth + amount)
+            else:
+                cumulative_inputs = _q_money(cumulative_inputs + amount)
+            point["cumulative_inputs_gbp"] = str(cumulative_inputs)
+            point["cumulative_growth_gbp"] = str(cumulative_growth)
+
+        valuation_date_text = str(assumptions.get("last_valuation_date") or "").strip()
+        if valuation_date_text:
+            valuation_point = ensure_point(date.fromisoformat(valuation_date_text))
+            valuation_point["actual_pot_gbp"] = str(current_value)
+            valuation_point["progress_to_target_pct"] = (
+                str(_progress_pct(current_value, target_pot))
+                if _progress_pct(current_value, target_pot) is not None
+                else None
+            )
+        else:
+            today_point = ensure_point(today)
+            today_point["actual_pot_gbp"] = str(current_value)
+            today_point["progress_to_target_pct"] = (
+                str(_progress_pct(current_value, target_pot))
+                if _progress_pct(current_value, target_pot) is not None
+                else None
+            )
+            today_point["cumulative_inputs_gbp"] = today_point["cumulative_inputs_gbp"] or str(recorded_inputs)
+            today_point["cumulative_growth_gbp"] = today_point["cumulative_growth_gbp"] or str(growth_total)
+
+        now_point = ensure_point(today)
+        now_point["conservative_projected_pot_gbp"] = str(current_value)
+        now_point["base_projected_pot_gbp"] = str(current_value)
+        now_point["aggressive_projected_pot_gbp"] = str(current_value)
+        now_point["progress_to_target_pct"] = (
+            str(_progress_pct(current_value, target_pot))
+            if _progress_pct(current_value, target_pot) is not None
+            else now_point["progress_to_target_pct"]
+        )
+
+        for row in scenario_rows[1:]:
+            point = ensure_point(date.fromisoformat(row["target_date"]))
+            point["label"] = row["label"]
+            point["conservative_projected_pot_gbp"] = row["conservative_projected_pot_gbp"]
+            point["base_projected_pot_gbp"] = row["base_projected_pot_gbp"]
+            point["aggressive_projected_pot_gbp"] = row["aggressive_projected_pot_gbp"]
+            projected_base = _q_money(_safe_decimal(row["base_projected_pot_gbp"]))
+            progress = _progress_pct(projected_base, target_pot)
+            point["progress_to_target_pct"] = str(progress) if progress is not None else None
+
+        ordered_chart_points = [
+            chart_points[key]
+            for key in sorted(chart_points.keys())
+        ]
+
+        chart_summary = {
+            "current_progress_to_target_pct": (
+                str(_progress_pct(current_value, target_pot))
+                if _progress_pct(current_value, target_pot) is not None
+                else None
+            ),
+            "retirement_base_progress_to_target_pct": None,
+            "retirement_base_shortfall_vs_target_gbp": None,
+        }
+        if scenario_rows:
+            retirement_row = scenario_rows[-1]
+            retirement_base_pot = _q_money(_safe_decimal(retirement_row["base_projected_pot_gbp"]))
+            retirement_progress = _progress_pct(retirement_base_pot, target_pot)
+            chart_summary["retirement_base_progress_to_target_pct"] = (
+                str(retirement_progress) if retirement_progress is not None else None
+            )
+            chart_summary["retirement_base_shortfall_vs_target_gbp"] = retirement_row[
+                "base_shortfall_vs_target_gbp"
+            ]
+
         total_tracked_wealth = current_value
         portfolio_gross = Decimal("0.00")
         deployable_cash = Decimal("0.00")
@@ -431,10 +624,12 @@ class PensionService:
             "as_of_date": today.isoformat(),
             "current_pension_value_gbp": str(current_value),
             "current_pension_value_is_assumed": current_value_assumption > _ZERO,
+            "last_valuation_date": str(assumptions.get("last_valuation_date") or ""),
             "recorded_inputs_gbp": str(recorded_inputs),
             "employee_contributions_gbp": str(employee_total),
             "employer_contributions_gbp": str(employer_total),
             "adjustments_gbp": str(adjustment_total),
+            "recorded_growth_gbp": str(growth_total),
             "growth_attribution_gbp": str(growth_attribution),
             "monthly_employee_contribution_gbp": str(monthly_employee),
             "monthly_employer_contribution_gbp": str(monthly_employer),
@@ -450,10 +645,15 @@ class PensionService:
             "pension_share_of_tracked_wealth_pct": str(pension_share_of_tracked_wealth_pct),
             "assumptions": assumptions,
             "scenario_rows": scenario_rows,
+            "timeline_chart": {
+                "points": ordered_chart_points,
+                "summary": chart_summary,
+            },
             "ledger_rows": ledger_rows,
             "trace_links": {
                 "ledger": "/pension#pension-ledger",
                 "assumptions": "/pension#pension-assumptions",
+                "valuation": "/pension#pension-validation",
                 "wealth_context": "/capital-stack",
             },
             "model_scope": {

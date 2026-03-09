@@ -1716,18 +1716,11 @@ def _build_espp_plus_group_row(
         net_cash_if_sold = paid_cash
 
     # Invariant: Gain = Net – True Economic Cost.
-    # If matched shares are forfeited on early sale, include that lost value
-    # as an explicit economic deduction.
+    # If matched shares are forfeited on early sale, that loss is already
+    # reflected by excluding them from net_cash_if_sold. Do not deduct the
+    # forfeited match value a second time here.
     sell_now_economic = (
-        _q2(
-            net_cash_if_sold
-            - paid_true_cost
-            - (
-                _q2(forfeited_match_value)
-                if match_effect == "FORFEITED"
-                else Decimal("0.00")
-            )
-        )
+        _q2(net_cash_if_sold - paid_true_cost)
         if net_cash_if_sold is not None
         else None
     )

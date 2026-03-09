@@ -59,6 +59,7 @@ async def api_calendar_events(
     )
     return CalendarService.get_events_payload(
         settings=settings,
+        db_path=db_path,
         horizon_days=days,
         as_of=as_of,
         sell_plan_events=sell_events,
@@ -89,6 +90,7 @@ async def calendar_page(
     )
     payload = CalendarService.get_events_payload(
         settings=settings,
+        db_path=db_path,
         horizon_days=days,
         as_of=as_of,
         sell_plan_events=sell_events,

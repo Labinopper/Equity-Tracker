@@ -85,6 +85,7 @@ class NotificationDigestService:
         )
         calendar_payload = CalendarService.get_events_payload(
             settings=settings,
+            db_path=db_path,
             as_of=as_of_date,
             horizon_days=bounded_horizon,
             sell_plan_events=sell_plan_events,

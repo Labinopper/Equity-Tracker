@@ -32,6 +32,7 @@ from src.services.price_service import (
     _parse_fx_timestamp,
     _parse_sheets_timestamp,
 )
+from src.services.portfolio_service import PortfolioService
 from src.services.sheets_fx_service import FxRow
 from src.services.sheets_price_service import SheetRow
 
@@ -113,12 +114,11 @@ class TestTwelveDataBudgetHelpers:
 
         assert PriceService._estimate_twelve_data_cost(items) == 4
 
-    def test_ensure_twelve_data_budget_for_raises_when_estimate_exceeds_budget(self, monkeypatch):
+    def test_ensure_twelve_data_budget_for_raises_when_estimate_exceeds_minute_limit(self, monkeypatch):
         monkeypatch.setenv("EQUITY_TWELVE_DATA_API_KEY", "test-key")
         monkeypatch.setenv("EQUITY_PRICE_PROVIDER", "twelve_data")
         monkeypatch.setenv("EQUITY_FX_PROVIDER", "twelve_data")
-        monkeypatch.setenv("EQUITY_TWELVE_DATA_DAILY_BUDGET", "2")
-        monkeypatch.setenv("EQUITY_TWELVE_DATA_DAILY_RESERVE", "0")
+        monkeypatch.setenv("EQUITY_TWELVE_DATA_MAX_CALLS_PER_MINUTE", "2")
 
         items = [
             ("1", "AAPL", "USD", "NASDAQ"),
@@ -126,8 +126,65 @@ class TestTwelveDataBudgetHelpers:
             ("3", "VOD", "GBP", "LSE"),
         ]
 
-        with pytest.raises(CreditBudgetExceededError, match="require about 4 credits"):
+        with pytest.raises(CreditBudgetExceededError, match="require about 4 calls"):
             PriceService._ensure_twelve_data_budget_for(items)
+
+
+class TestHistoryGapRepair:
+    def test_ensure_recent_daily_history_for_security_repairs_trailing_gap(self, app_context, monkeypatch):
+        sec = _add_security("HISTFIX", "GBP")
+        PortfolioService.add_lot(
+            security_id=sec.id,
+            scheme_type="BROKERAGE",
+            acquisition_date=date(2026, 3, 1),
+            quantity=Decimal("10"),
+            acquisition_price_gbp=Decimal("10.00"),
+            true_cost_per_share_gbp=Decimal("10.00"),
+        )
+
+        with AppContext.write_session() as sess:
+            PriceRepository(sess).upsert(
+                security_id=sec.id,
+                price_date=date(2026, 3, 5),
+                close_price_original_ccy="12.00",
+                currency="GBP",
+                source="yfinance:2026-03-05 16:00:00",
+                close_price_gbp="12.00",
+            )
+
+        from src.services import price_service as price_module
+
+        class _FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                fixed = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
+                if tz is None:
+                    return fixed.replace(tzinfo=None)
+                return fixed.astimezone(tz)
+
+        monkeypatch.setattr(price_module, "datetime", _FixedDateTime)
+        monkeypatch.setattr(price_module.PriceService, "_backfill_history_for_security", staticmethod(lambda **kwargs: 0))
+
+        def _fake_read_history_closes(*, symbol: str, start_date: date, end_date: date):
+            assert symbol == "HISTFIX"
+            assert start_date == date(2026, 3, 6)
+            assert end_date == date(2026, 3, 9)
+            return {
+                date(2026, 3, 6): Decimal("12.50"),
+                date(2026, 3, 7): Decimal("12.75"),
+                date(2026, 3, 9): Decimal("13.00"),
+            }
+
+        monkeypatch.setattr(price_module, "_read_history_closes", _fake_read_history_closes)
+
+        result = PriceService.ensure_recent_daily_history_for_security(sec.id)
+
+        assert result["backfilled_days"] == 3
+        with AppContext.read_session() as sess:
+            rows = PriceRepository(sess).get_history_range(sec.id)
+        written_dates = {row.price_date for row in rows if row.source == "yfinance_history"}
+        assert date(2026, 3, 6) in written_dates
+        assert date(2026, 3, 9) in written_dates
 
 
 # ---------------------------------------------------------------------------

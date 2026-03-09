@@ -372,6 +372,7 @@ class WeeklyReviewService:
         )
         calendar_payload = CalendarService.get_events_payload(
             settings=settings,
+            db_path=db_path,
             as_of=review_as_of,
             horizon_days=60,
             sell_plan_events=sell_plan_events,

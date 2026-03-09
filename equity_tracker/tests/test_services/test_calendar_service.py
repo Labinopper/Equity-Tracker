@@ -9,6 +9,7 @@ from src.app_context import AppContext
 from src.db.repository.prices import PriceRepository
 from src.settings import AppSettings
 from src.services.calendar_service import CalendarService
+from src.services.pension_service import PensionService
 from src.services.portfolio_service import PortfolioService
 
 
@@ -166,6 +167,39 @@ def test_calendar_payload_includes_dividend_and_monthly_reminders(app_context):
 
     assert payload["countdowns"]["next_reminder"]["event_date"] == "2026-03-05"
     assert payload["event_counts"]["reminders"] >= 2
+
+
+def test_calendar_payload_includes_monthly_pension_check(app_context, tmp_path):
+    as_of = date(2026, 2, 24)
+    db_path = tmp_path / "calendar-pension.db"
+    PensionService.save_assumptions(
+        db_path=db_path,
+        current_pension_value_gbp="100000",
+        monthly_employee_contribution_gbp="500",
+        monthly_employer_contribution_gbp="250",
+        retirement_date="2045-03-31",
+        target_annual_income_gbp="40000",
+        target_withdrawal_rate_pct="4",
+        conservative_annual_return_pct="3",
+        base_annual_return_pct="5",
+        aggressive_annual_return_pct="7",
+    )
+
+    payload = CalendarService.get_events_payload(
+        as_of=as_of,
+        horizon_days=60,
+        db_path=db_path,
+    )
+
+    pension_events = [
+        e for e in payload["events"] if e["event_type"] == "PENSION_CONTRIBUTION_CHECK"
+    ]
+
+    assert len(pension_events) == 1
+    assert pension_events[0]["event_date"] == "2026-03-06"
+    assert pension_events[0]["deep_link"] == "/pension#pension-validation"
+    assert pension_events[0]["value_at_stake_gbp"] == "750.00"
+    assert "validate the current pot value" in pension_events[0]["subtitle"]
 
 
 def test_calendar_payload_includes_espp_transfer_guardrail_events(app_context):

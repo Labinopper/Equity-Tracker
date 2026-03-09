@@ -1014,6 +1014,7 @@ class PortfolioService:
                         sec_fx_as_of = None
                     price_is_stale = StalenessService.is_price_stale(
                         price_as_of,
+                        exchange=security.exchange,
                         stale_after_days=price_stale_after_days,
                         today=today,
                     )

@@ -162,9 +162,15 @@ def _seconds_until_11pm_uk() -> float:
     return (target - now).total_seconds()
 
 
-def _seconds_until_next_minute() -> float:
+def _seconds_until_next_tick(step_seconds: int = 5) -> float:
     now = datetime.now(_UTC)
-    target = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    step_seconds = max(1, int(step_seconds))
+    current_second = now.second + (now.microsecond / 1_000_000)
+    seconds_to_add = step_seconds - (current_second % step_seconds)
+    if seconds_to_add <= 0:
+        seconds_to_add = float(step_seconds)
+    target = now + timedelta(seconds=seconds_to_add)
+    target = target.replace(microsecond=0)
     return max(1.0, (target - now).total_seconds())
 
 
@@ -207,7 +213,7 @@ async def _nightly_history_task() -> None:
 
 async def _intraday_quote_refresh_task() -> None:
     """
-    Background task: refresh a budgeted subset of open-market securities each minute.
+    Background task: refresh a rate-limited subset of open-market securities every 5 seconds.
 
     Twelve Data is only used when configured. Otherwise this task exits immediately.
     """
@@ -224,16 +230,17 @@ async def _intraday_quote_refresh_task() -> None:
                 result = PriceService.refresh_intraday_budgeted()
                 if result.get("fetched") or result.get("errors"):
                     logger.info(
-                        "Intraday refresh: fetched=%d planned=%d remaining_credits=%d errors=%d.",
+                        "Intraday refresh: fetched=%d planned=%d remaining_calls=%d tracked_instruments=%d errors=%d.",
                         result.get("fetched", 0),
                         result.get("planned", 0),
-                        result.get("remaining_credits", 0),
+                        result.get("remaining_calls", 0),
+                        result.get("tracked_instruments", 0),
                         len(result.get("errors", [])),
                     )
         except Exception:
             logger.exception("Intraday budgeted refresh failed.")
 
-        await asyncio.sleep(_seconds_until_next_minute())
+        await asyncio.sleep(_seconds_until_next_tick(5))
 
 
 def _log_backfill_result(label: str, result: dict) -> None:
