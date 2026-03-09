@@ -27,10 +27,13 @@ from .twelve_data_price_service import TwelveDataPriceService
 _FX_TS_FMT = "%Y-%m-%d %H:%M:%S"
 _LIVE_SOURCE = "yfinance_fx"
 _TWELVE_DATA_LIVE_SOURCE = "twelvedata_fx"
+_TWELVE_DATA_STREAM_SOURCE = "twelvedata_ws_fx"
 _MAX_PATH_HOPS = 4
 _LIVE_CACHE_TTL = timedelta(minutes=1)
 _TWELVE_DATA_LIVE_CACHE_TTL = timedelta(seconds=5)
+_TWELVE_DATA_STREAM_CACHE_TTL = timedelta(seconds=30)
 _LIVE_FX_CACHE: dict[tuple[str, str, str], tuple[datetime, FxQuote]] = {}
+_STREAM_FX_CACHE: dict[tuple[str, str], tuple[datetime, FxQuote]] = {}
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,17 @@ def _store_cached_live_quote(provider: str, quote: FxQuote) -> FxQuote:
     return quote
 
 
+def _get_streamed_quote(from_currency: str, to_currency: str) -> FxQuote | None:
+    entry = _STREAM_FX_CACHE.get((from_currency, to_currency))
+    if entry is None:
+        return None
+    observed_at, quote = entry
+    if datetime.now(timezone.utc) - observed_at > _TWELVE_DATA_STREAM_CACHE_TTL:
+        _STREAM_FX_CACHE.pop((from_currency, to_currency), None)
+        return None
+    return quote
+
+
 class FxService:
     """FX conversion service with pluggable provider-backed rates."""
 
@@ -137,6 +151,28 @@ class FxService:
     @staticmethod
     def uses_twelve_data() -> bool:
         return FxService.current_live_provider() == "twelve_data" and TwelveDataPriceService.is_configured()
+
+    @staticmethod
+    def record_stream_quote(
+        *,
+        from_currency: str,
+        to_currency: str,
+        rate: Decimal,
+        as_of: str,
+    ) -> FxQuote:
+        quote = FxQuote(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            rate=rate,
+            as_of=as_of,
+            source=_TWELVE_DATA_STREAM_SOURCE,
+            path=(f"{from_currency}2{to_currency}",),
+        )
+        _STREAM_FX_CACHE[(from_currency, to_currency)] = (
+            datetime.now(timezone.utc),
+            quote,
+        )
+        return quote
 
     @staticmethod
     def _read_live_pair_yfinance(
@@ -232,6 +268,11 @@ class FxService:
         to_currency: str,
         provider: str,
     ) -> FxQuote | None:
+        if provider == "twelve_data":
+            streamed = _get_streamed_quote(from_currency, to_currency)
+            if streamed is not None:
+                return streamed
+
         cached = _get_cached_live_quote(provider, from_currency, to_currency)
         if cached is not None:
             return cached

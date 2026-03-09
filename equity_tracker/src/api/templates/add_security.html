@@ -28,7 +28,7 @@
                placeholder="Type ticker or company name..."
                value="{{ prev.ticker if prev and not prev.is_manual_override else '' }}"
                class="catalog-search-input">
-        <span class="form-hint">Start typing to search LSE, NYSE, and NASDAQ listings.</span>
+        <span class="form-hint">Start typing to search the locally synced US and UK security catalogue.</span>
         <span class="form-hint">Data-quality guardrails: duplicate ticker+currency pairs are blocked; ticker conflicts across currencies require ISIN/exchange disambiguation.</span>
 
         {# Dropdown results #}

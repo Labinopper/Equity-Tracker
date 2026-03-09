@@ -174,7 +174,7 @@
   <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     {% if portfolio_net_gain_if_sold is not none %}
-    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">&pound;{% if portfolio_net_gain_if_sold < 0 %}-{% elif portfolio_net_gain_if_sold > 0 %}+{% endif %}{{ portfolio_net_gain_if_sold | abs | money }}</div>
+    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
@@ -194,7 +194,7 @@
   <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
     <div class="stat__label">Net Gain + Net Dividends <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
     {% if portfolio_net_gain_plus_net_dividends is not none %}
-    <div class="stat__value {% if portfolio_net_gain_plus_net_dividends > 0 %}gain{% elif portfolio_net_gain_plus_net_dividends < 0 %}loss{% endif %}">&pound;{% if portfolio_net_gain_plus_net_dividends < 0 %}-{% elif portfolio_net_gain_plus_net_dividends > 0 %}+{% endif %}{{ portfolio_net_gain_plus_net_dividends | abs | money }}</div>
+    <div class="stat__value {% if portfolio_net_gain_plus_net_dividends > 0 %}gain{% elif portfolio_net_gain_plus_net_dividends < 0 %}loss{% endif %}">{% if portfolio_net_gain_plus_net_dividends < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_plus_net_dividends | abs | money }}</div>
     {% if estimated_net_dividends_gbp is not none %}
     <span class="stat-caption">Adds estimated net dividends of &pound;{{ estimated_net_dividends_gbp | money }}.</span>
     {% endif %}
@@ -397,7 +397,7 @@
             {% endif %}
             <div class="position-detail-line position-detail-line--total">
               <span><strong>Portfolio Impact</strong></span>
-              <span><strong>{% if daily.value_change_gbp < 0 %}-{% elif daily.value_change_gbp > 0 %}+{% endif %}&pound;{{ daily.value_change_gbp | abs | money }}{% if daily.value_change_native is not none and daily.native_currency %} / {% if daily.value_change_native < 0 %}-{% elif daily.value_change_native > 0 %}+{% endif %}{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.value_change_native | abs | money }}{% endif %}</strong></span>
+              <span><strong>{% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }}{% if daily.value_change_native is not none and daily.native_currency %} / {% if daily.value_change_native < 0 %}-{% endif %}{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.value_change_native | abs | money }}{% endif %}</strong></span>
             </div>
           </div>
         </div>
@@ -480,7 +480,7 @@
     <span>
       P&amp;L (Economic)
       <strong class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">
-        {% if ss.sellable_net_gain_gbp < 0 %}-{% elif ss.sellable_net_gain_gbp > 0 %}+{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}
+        {% if ss.sellable_net_gain_gbp < 0 %}-{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}
       </strong>
     </span>
     {% endif %}
@@ -489,20 +489,20 @@
       <summary>
         <span>Economic Gain vs True Cost (Sellable Only)</span>
         {% if ss.sellable_net_gain_gbp is not none %}
-        <span class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.sellable_net_gain_gbp < 0 %}-{% elif ss.sellable_net_gain_gbp > 0 %}+{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}</span>
+        <span class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.sellable_net_gain_gbp < 0 %}-{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}</span>
         {% endif %}
       </summary>
       <div class="unrealised-gains-body">
         {% if ss.forfeit_risk_market_value_gbp is not none %}
         <div class="unrealised-gain-item">
           <span class="unrealised-gain-label" title="Market value of matched shares subject to forfeiture. Represents the value at risk if forfeiture conditions are triggered.">Forfeiture Risk</span>
-          <span class="unrealised-gain-value {% if ss.forfeit_risk_market_value_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.forfeit_risk_market_value_gbp < 0 %}-{% elif ss.forfeit_risk_market_value_gbp > 0 %}+{% endif %}&pound;{{ ss.forfeit_risk_market_value_gbp | abs | money }}</span>
+          <span class="unrealised-gain-value {% if ss.forfeit_risk_market_value_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.forfeit_risk_market_value_gbp < 0 %}-{% endif %}&pound;{{ ss.forfeit_risk_market_value_gbp | abs | money }}</span>
         </div>
         {% endif %}
         {% if ss.locked_unrealised_gain_economic_gbp is not none %}
         <div class="unrealised-gain-item">
           <span class="unrealised-gain-label" title="Gain on locked shares (vesting). Based on market value minus true cost (including employment tax already paid).">Locked Gain</span>
-          <span class="unrealised-gain-value {% if ss.locked_unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.locked_unrealised_gain_economic_gbp < 0 %}-{% elif ss.locked_unrealised_gain_economic_gbp > 0 %}+{% endif %}&pound;{{ ss.locked_unrealised_gain_economic_gbp | abs | money }}</span>
+          <span class="unrealised-gain-value {% if ss.locked_unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.locked_unrealised_gain_economic_gbp < 0 %}-{% endif %}&pound;{{ ss.locked_unrealised_gain_economic_gbp | abs | money }}</span>
         </div>
         {% endif %}
       </div>
@@ -635,7 +635,7 @@
             </td>
             <td class="num decision-pin decision-pin-secondary {% if row.sell_now_economic_result is not none and row.sell_now_economic_result > 0 %}gain{% elif row.sell_now_economic_result is not none and row.sell_now_economic_result < 0 %}loss{% endif %}">
               {% if row.sell_now_economic_result is not none %}
-              {% if row.sell_now_economic_result < 0 %}-{% elif row.sell_now_economic_result > 0 %}+{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}
+              {% if row.sell_now_economic_result < 0 %}-{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}
               {% elif row.sellability_status == "LOCKED" %}
               <span class="badge badge-neutral">Locked</span>
               {% else %}
@@ -669,7 +669,7 @@
                   {% if row.next_milestone_gain is not none %}
                   <div class="position-detail-line position-detail-line--total">
                     <span><strong>Gain if held</strong></span>
-                    <span><strong>{% if row.next_milestone_gain < 0 %}-{% elif row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}</strong></span>
+                    <span><strong>{% if row.next_milestone_gain < 0 %}-{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}</strong></span>
                   </div>
                   {% endif %}
                   {% if row.next_milestone_date %}
@@ -686,7 +686,7 @@
             </td>
             <td class="num {% if row.next_milestone_gain is not none and row.next_milestone_gain > 0 %}gain{% elif row.next_milestone_gain is not none and row.next_milestone_gain < 0 %}loss{% endif %}">
               {% if row.next_milestone_gain is not none %}
-              {% if row.next_milestone_gain < 0 %}-{% elif row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}
+              {% if row.next_milestone_gain < 0 %}-{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}
               {% else %}
               <span class="muted">{{ row.next_milestone_reason or "Unavailable" }}</span>
               {% endif %}
@@ -718,7 +718,7 @@
                   {% if row.long_term_gain is not none %}
                   <div class="position-detail-line position-detail-line--total">
                     <span><strong>Gain long-term</strong></span>
-                    <span><strong>{% if row.long_term_gain < 0 %}-{% elif row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | abs | money }}</strong></span>
+                    <span><strong>{% if row.long_term_gain < 0 %}-{% endif %}&pound;{{ row.long_term_gain | abs | money }}</strong></span>
                   </div>
                   {% endif %}
                   {% if row.long_term_date %}
@@ -735,7 +735,7 @@
             </td>
             <td class="num {% if row.long_term_gain is not none and row.long_term_gain > 0 %}gain{% elif row.long_term_gain is not none and row.long_term_gain < 0 %}loss{% endif %}">
               {% if row.long_term_gain is not none %}
-              {% if row.long_term_gain < 0 %}-{% elif row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | abs | money }}
+              {% if row.long_term_gain < 0 %}-{% endif %}&pound;{{ row.long_term_gain | abs | money }}
               {% else %}
               <span class="muted">{{ row.long_term_reason or "Unavailable" }}</span>
               {% endif %}
@@ -870,17 +870,17 @@
       <div class="position-card__section">
         <div class="position-card__label">Sell Today</div>
         <div class="position-card__value">Net If Sold Today {% if row.net_cash_if_sold is not none %}&pound;{{ row.net_cash_if_sold | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
-        <div class="position-card__value">Gain If Sold Today {% if row.sell_now_economic_result is not none %}{% if row.sell_now_economic_result < 0 %}-{% elif row.sell_now_economic_result > 0 %}+{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
+        <div class="position-card__value">Gain If Sold Today {% if row.sell_now_economic_result is not none %}{% if row.sell_now_economic_result < 0 %}-{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
       </div>
       <div class="position-card__section">
         <div class="position-card__label">Next Milestone</div>
         <div class="position-card__value">Net If Held {% if row.next_milestone_net is not none %}&pound;{{ row.next_milestone_net | money }}{% else %}{{ row.next_milestone_reason or "Unavailable" }}{% endif %}</div>
-        <div class="position-card__value">Gain If Held {% if row.next_milestone_gain is not none %}{% if row.next_milestone_gain < 0 %}-{% elif row.next_milestone_gain > 0 %}+{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}{% else %}{{ row.next_milestone_reason or "Unavailable" }}{% endif %}</div>
+        <div class="position-card__value">Gain If Held {% if row.next_milestone_gain is not none %}{% if row.next_milestone_gain < 0 %}-{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}{% else %}{{ row.next_milestone_reason or "Unavailable" }}{% endif %}</div>
       </div>
       <div class="position-card__section">
         <div class="position-card__label">When Long-Term Status Met</div>
         <div class="position-card__value">Net If Long-Term {% if row.long_term_net is not none %}&pound;{{ row.long_term_net | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
-        <div class="position-card__value">Gain If Long-Term {% if row.long_term_gain is not none %}{% if row.long_term_gain < 0 %}-{% elif row.long_term_gain > 0 %}+{% endif %}&pound;{{ row.long_term_gain | abs | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
+        <div class="position-card__value">Gain If Long-Term {% if row.long_term_gain is not none %}{% if row.long_term_gain < 0 %}-{% endif %}&pound;{{ row.long_term_gain | abs | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
       </div>
       <div class="position-card__section">
         <div class="position-card__label">Notes</div>
@@ -1571,3 +1571,5 @@
 })();
 </script>
 {% endblock %}
+
+

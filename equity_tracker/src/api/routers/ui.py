@@ -4782,12 +4782,35 @@ def _render_settings_page(
         local_started = started_at_utc.astimezone()
         started_at_display = local_started.strftime("%Y-%m-%d %H:%M:%S %Z")
 
+    try:
+        from ...services.twelve_data_catalog_service import TwelveDataCatalogService
+        from ...services.twelve_data_stream_service import TwelveDataStreamService
+
+        stream_health = TwelveDataStreamService.health_snapshot()
+        catalog_last_synced_at = TwelveDataCatalogService.last_synced_at()
+        catalog_last_synced_display = (
+            catalog_last_synced_at.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+            if isinstance(catalog_last_synced_at, datetime)
+            else None
+        )
+    except Exception:
+        stream_health = {
+            "enabled": False,
+            "connected": False,
+            "symbols": [],
+            "last_error": "Diagnostics unavailable.",
+            "last_message_at": None,
+        }
+        catalog_last_synced_display = None
+
     context = {
         "request": request,
         "settings": settings,
         "tax_years": available_tax_years(),
         "settings_completeness": _settings_completeness_payload(settings),
         "server_started_at_display": started_at_display,
+        "stream_health": stream_health,
+        "catalog_last_synced_display": catalog_last_synced_display,
         **_flash(msg),
     }
     if error:

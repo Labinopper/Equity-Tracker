@@ -11,10 +11,58 @@
 {% if server_started_at_display %}
 <p class="muted">Server last started: <strong>{{ server_started_at_display }}</strong></p>
 {% endif %}
+{% set stream = stream_health or {} %}
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
+
+<div class="card">
+  <div class="card__header"><h2 class="card__title">Live Data Diagnostics</h2></div>
+  <div class="stats">
+    <div class="stat {% if stream.enabled and stream.connected %}stat--gain{% elif stream.enabled %}stat--warning{% else %}stat--accent{% endif %}">
+      <span class="stat__label">Twelve Data WebSocket</span>
+      <span class="stat__value">
+        {% if stream.enabled and stream.connected %}
+        Connected
+        {% elif stream.enabled %}
+        Fallback to polling
+        {% else %}
+        Disabled
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr>
+          <th>Active streamed symbols</th>
+          <td>
+            {% if stream.symbols %}
+            {{ stream.symbols | join(', ') }}
+            {% else %}
+            <span class="muted">None</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Last stream message</th>
+          <td>{{ stream.last_message_at or 'No stream message recorded' }}</td>
+        </tr>
+        <tr>
+          <th>Last stream error</th>
+          <td>{{ stream.last_error or 'None' }}</td>
+        </tr>
+        <tr>
+          <th>Catalogue last synced</th>
+          <td>{{ catalog_last_synced_display or 'Not synced yet' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Any symbol not actively streamed continues through the existing Twelve Data polling path automatically.</p>
+</div>
 
 {% set completeness = settings_completeness or {} %}
 {% set constrained = completeness.constrained_surfaces or [] %}

@@ -98,17 +98,45 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 def _seed_catalog_if_empty() -> None:
     """
-    Seed the security_catalog table from the bundled CSV if it is empty.
+    Backward-compatible wrapper for initial catalogue availability.
 
     Called after AppContext is initialised (lifespan startup or admin unlock).
     Non-fatal: logs a warning on failure instead of crashing.
     """
+    _ensure_security_catalog_available(force_refresh=False)
+
+
+def _ensure_security_catalog_available(*, force_refresh: bool) -> None:
+    """
+    Ensure the security catalogue exists.
+
+    When Twelve Data is configured, the catalogue is refreshed from the live
+    provider on startup and then weekly. If that fails and the table is empty,
+    the bundled CSV remains as a fallback.
+    """
     try:
         from ..app_context import AppContext as _AC
         from ..db.repository import SecurityCatalogRepository
+        from ..services.twelve_data_catalog_service import TwelveDataCatalogService
 
         with _AC.read_session() as sess:
             count = SecurityCatalogRepository(sess).count()
+
+        if TwelveDataCatalogService.is_configured():
+            try:
+                result = TwelveDataCatalogService.sync_if_due(force=force_refresh)
+            except Exception as exc:
+                logger.warning("Live catalogue sync failed; falling back to bundled seed if needed: %s", exc)
+                result = None
+            if result is not None:
+                logger.info(
+                    "Security catalogue synced from Twelve Data: inserted=%d updated=%d deleted=%d total=%d.",
+                    result.get("inserted", 0),
+                    result.get("updated", 0),
+                    result.get("deleted", 0),
+                    result.get("total", 0),
+                )
+                return
 
         if count == 0:
             with _AC.write_session() as sess:
@@ -243,6 +271,32 @@ async def _intraday_quote_refresh_task() -> None:
         await asyncio.sleep(_seconds_until_next_tick(5))
 
 
+async def _weekly_catalog_sync_task() -> None:
+    """
+    Background task: keep the Add Security catalogue fresh from Twelve Data.
+
+    Sync runs once on startup via the lifespan hook and then checks every 6
+    hours whether the weekly window has elapsed.
+    """
+    while True:
+        try:
+            if AppContext.is_initialized():
+                _ensure_security_catalog_available(force_refresh=False)
+        except Exception:
+            logger.exception("Weekly security catalogue sync failed.")
+        await asyncio.sleep(6 * 60 * 60)
+
+
+async def _twelve_data_stream_task() -> None:
+    from ..services.twelve_data_stream_service import TwelveDataStreamService
+
+    if not TwelveDataStreamService.is_enabled():
+        logger.info("Twelve Data WebSocket stream disabled by configuration.")
+        return
+
+    await TwelveDataStreamService.run_forever()
+
+
 def _log_backfill_result(label: str, result: dict) -> None:
     days = result.get("backfilled_days", 0)
     rate_limited = result.get("rate_limited", [])
@@ -294,7 +348,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
         AppContext.initialize(engine)
         _state.set_db_path(db_path)
         logger.info("Database auto-initialized from env vars: %s", Path(db_path_str).name)
-        _seed_catalog_if_empty()
+        _ensure_security_catalog_available(force_refresh=True)
     else:
         logger.info(
             "EQUITY_DB_PATH / EQUITY_DB_PASSWORD not set (or startup failed). "
@@ -303,15 +357,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
 
     history_task = asyncio.create_task(_nightly_history_task())
     intraday_task = asyncio.create_task(_intraday_quote_refresh_task())
+    catalog_task = asyncio.create_task(_weekly_catalog_sync_task())
+    stream_task = asyncio.create_task(_twelve_data_stream_task())
 
     yield
 
     history_task.cancel()
     intraday_task.cancel()
+    catalog_task.cancel()
+    stream_task.cancel()
     with suppress(asyncio.CancelledError):
         await history_task
     with suppress(asyncio.CancelledError):
         await intraday_task
+    with suppress(asyncio.CancelledError):
+        await catalog_task
+    with suppress(asyncio.CancelledError):
+        await stream_task
 
     _state.set_db_path(None)
     AppContext.lock()

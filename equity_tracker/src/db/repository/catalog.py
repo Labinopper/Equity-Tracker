@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import SecurityCatalog, _new_uuid
+from ..models import Security, SecurityCatalog, _new_uuid
 
 if TYPE_CHECKING:
     pass
@@ -110,6 +110,93 @@ class SecurityCatalogRepository:
             select(func.count()).select_from(SecurityCatalog)
         ).scalar_one()
         return result or 0
+
+    def sync_entries(self, entries: list[dict[str, str | None]]) -> dict[str, int]:
+        """
+        Upsert a full catalogue snapshot and prune stale unreferenced rows.
+
+        Existing rows keep their primary keys so Security.catalog_id references
+        remain valid across weekly refreshes.
+        """
+        existing_rows = list(self._s.execute(select(SecurityCatalog)).scalars())
+        existing_by_key = {
+            (row.symbol.upper(), row.exchange.upper()): row
+            for row in existing_rows
+        }
+        referenced_ids = {
+            catalog_id
+            for catalog_id in self._s.execute(
+                select(Security.catalog_id).where(Security.catalog_id.is_not(None))
+            ).scalars()
+            if catalog_id
+        }
+
+        seen_keys: set[tuple[str, str]] = set()
+        inserted = 0
+        updated = 0
+
+        for raw_entry in entries:
+            symbol = (raw_entry.get("symbol") or "").strip().upper()
+            name = (raw_entry.get("name") or "").strip()
+            exchange = (raw_entry.get("exchange") or "").strip().upper()
+            currency = (raw_entry.get("currency") or "").strip().upper()
+            if not symbol or not name or not exchange or len(currency) != 3:
+                continue
+
+            key = (symbol, exchange)
+            seen_keys.add(key)
+            existing = existing_by_key.get(key)
+            isin = (raw_entry.get("isin") or "").strip() or None
+            figi = (raw_entry.get("figi") or "").strip() or None
+
+            if existing is None:
+                new_row = SecurityCatalog(
+                    id=_new_uuid(),
+                    symbol=symbol,
+                    name=name,
+                    exchange=exchange,
+                    currency=currency,
+                    isin=isin,
+                    figi=figi,
+                )
+                self._s.add(new_row)
+                existing_by_key[key] = new_row
+                inserted += 1
+                continue
+
+            if (
+                existing.name != name
+                or existing.currency != currency
+                or existing.isin != isin
+                or existing.figi != figi
+            ):
+                existing.name = name
+                existing.currency = currency
+                existing.isin = isin
+                existing.figi = figi
+                updated += 1
+
+        deleted = 0
+        for row in existing_rows:
+            key = (row.symbol.upper(), row.exchange.upper())
+            if key in seen_keys or row.id in referenced_ids:
+                continue
+            self._s.delete(row)
+            deleted += 1
+
+        logger.info(
+            "Catalogue sync complete: inserted=%d updated=%d deleted=%d total=%d",
+            inserted,
+            updated,
+            deleted,
+            len(seen_keys),
+        )
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "deleted": deleted,
+            "total": len(seen_keys),
+        }
 
     # ── Write ─────────────────────────────────────────────────────────────
 

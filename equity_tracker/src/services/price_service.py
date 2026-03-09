@@ -1251,6 +1251,18 @@ class PriceService:
 
         minute_capacity_remaining = TwelveDataPriceService.remaining_minute_capacity(config)
         candidates = TwelveDataPriceService.build_scheduler_candidates(config)
+        try:
+            from .twelve_data_stream_service import TwelveDataStreamService
+
+            streamed_security_ids = TwelveDataStreamService.current_streamed_security_ids()
+        except Exception:
+            streamed_security_ids = set()
+        if streamed_security_ids:
+            candidates = [
+                candidate
+                for candidate in candidates
+                if candidate.security_id not in streamed_security_ids
+            ]
         candidate_by_security_id = {candidate.security_id: candidate for candidate in candidates}
         with AppContext.read_session() as sess:
             securities = SecurityRepository(sess).list_all()
