@@ -458,6 +458,7 @@ code, pre {
 }
 
 .security-header__actions {
+  --portfolio-badge-height: 1.75rem;
   display: flex;
   gap: 0.4rem;
   align-items: center;
@@ -468,6 +469,8 @@ code, pre {
 .daily-change {
   display: inline-flex;
   align-items: center;
+  min-height: var(--portfolio-badge-height);
+  box-sizing: border-box;
   gap: 0.3rem;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -514,6 +517,8 @@ code, pre {
 .daily-change-meta {
   display: inline-flex;
   align-items: center;
+  min-height: var(--portfolio-badge-height);
+  box-sizing: border-box;
   border-radius: 999px;
   border: 1px solid var(--border);
   padding: 0.16rem 0.5rem;
@@ -544,10 +549,86 @@ code, pre {
   background: var(--bg-card-alt);
 }
 
+.live-native-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--portfolio-badge-height);
+  box-sizing: border-box;
+  gap: 0.28rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-card-alt);
+  padding: 0.18rem 0.45rem;
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.live-native-pill__value {
+  color: var(--text-heading);
+  letter-spacing: -0.01em;
+}
+
+.live-native-pill__spark {
+  width: 11.1rem;
+  height: 1rem;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.live-native-pill__spark polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.live-native-pill--up {
+  color: var(--gain);
+  border-color: rgba(0, 209, 140, 0.25);
+}
+
+.live-native-pill--up .live-native-pill__value {
+  color: var(--text-heading);
+}
+
+.live-native-pill--up .live-native-pill__spark polyline {
+  stroke: var(--gain);
+}
+
+.live-native-pill--down {
+  color: var(--loss);
+  border-color: rgba(240, 56, 79, 0.25);
+}
+
+.live-native-pill--down .live-native-pill__value {
+  color: var(--text-heading);
+}
+
+.live-native-pill--down .live-native-pill__spark polyline {
+  stroke: var(--loss);
+}
+
+.live-native-pill--flat {
+  color: var(--text-muted);
+}
+
+.live-native-pill--flat .live-native-pill__value {
+  color: var(--text-heading);
+}
+
+.live-native-pill--flat .live-native-pill__spark polyline {
+  stroke: currentColor;
+}
+
 /* Market status badge — compact indicator for market open/closed */
 .market-status {
   display: inline-flex;
   align-items: center;
+  min-height: var(--portfolio-badge-height);
+  box-sizing: border-box;
   border-radius: 999px;
   border: 1px solid var(--border);
   padding: 0.16rem 0.5rem;
@@ -695,7 +776,7 @@ tr:hover td { background: var(--bg-hover); }
 }
 
 .portfolio-position-table thead .pin-left {
-  z-index: 5;
+  z-index: 6;
   background: var(--bg-card-alt);
 }
 
@@ -760,9 +841,14 @@ tr:hover td { background: var(--bg-hover); }
   position: sticky;
   z-index: 2;
   box-shadow: -1px 0 0 var(--border);
+  background-clip: padding-box;
+  overflow: hidden;
 }
 
 .portfolio-position-table tbody .decision-pin {
+  position: static;
+  z-index: auto;
+  box-shadow: none;
   background: var(--bg-card);
 }
 
@@ -771,7 +857,7 @@ tr:hover td { background: var(--bg-hover); }
 }
 
 .portfolio-position-table thead .decision-pin {
-  z-index: 5;
+  z-index: 4;
   background: var(--bg-card-alt);
 }
 
@@ -890,6 +976,12 @@ tr:hover td { background: var(--bg-hover); }
 
 .position-detail-line:last-child {
   margin-bottom: 0;
+}
+
+.position-detail-divider {
+  height: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0.3rem 0 0.35rem;
 }
 
 .position-detail-line--total {

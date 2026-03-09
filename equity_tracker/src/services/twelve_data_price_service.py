@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 _API_BASE_URL = "https://api.twelvedata.com"
 _API_TIMEOUT_SECS = 10.0
-_DEFAULT_MAX_CALLS_PER_MINUTE = 40
+_DEFAULT_MAX_CALLS_PER_MINUTE = 50
 _DEFAULT_EXTENDED_HOURS = False
 _QUOTE_SOURCE_PREFIX = "twelvedata:"
 _USD_EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "ARCA", "IEX", "XNYS", "XNAS"}
@@ -62,6 +62,15 @@ class TwelveDataQuote:
 
 
 @dataclass(frozen=True)
+class TwelveDataDailyClose:
+    symbol: str
+    exchange: str | None
+    currency: str
+    close: Decimal
+    price_date: date
+
+
+@dataclass(frozen=True)
 class MarketWindow:
     is_open: bool
     minutes_until_close: int
@@ -73,6 +82,7 @@ class RefreshCandidate:
     ticker: str
     exchange: str | None
     weight: Decimal
+    is_market_open: bool
     minutes_until_close: int
     last_refreshed_at: datetime | None
 
@@ -182,16 +192,22 @@ def build_refresh_plan(
     max_calls_per_minute: int,
     now_utc: datetime,
 ) -> list[RefreshPlanItem]:
-    open_candidates = [candidate for candidate in candidates if candidate.minutes_until_close > 0]
-    if not open_candidates or minute_capacity_remaining <= 0:
+    all_candidates = list(candidates)
+    if not all_candidates or minute_capacity_remaining <= 0:
         return []
-    refresh_interval_seconds = max(
+    open_refresh_interval_seconds = max(
         5,
         math.ceil((60 * max(1, tracked_instrument_count)) / max(1, max_calls_per_minute)),
     )
+    closed_refresh_interval_seconds = 10 * 60
 
     due_items: list[RefreshPlanItem] = []
-    for candidate in open_candidates:
+    for candidate in all_candidates:
+        refresh_interval_seconds = (
+            open_refresh_interval_seconds
+            if candidate.is_market_open
+            else closed_refresh_interval_seconds
+        )
         if candidate.last_refreshed_at is None:
             overdue_score = Decimal("999999")
         else:
@@ -335,7 +351,11 @@ class TwelveDataPriceService:
         if not isinstance(payload, dict):
             raise TwelveDataServiceError(f"Unexpected Twelve Data quote payload for {ticker!r}.")
 
-        close = _parse_decimal(payload.get("close"), field_name="close")
+        raw_price = payload.get("price")
+        raw_close = payload.get("close")
+        price_field = raw_price if raw_price not in {None, ""} else raw_close
+        field_name = "price" if raw_price not in {None, ""} else "close"
+        close = _parse_decimal(price_field, field_name=field_name)
         timestamp_text = str(payload.get("datetime") or "").strip()
         if not timestamp_text:
             raise TwelveDataServiceError("Missing Twelve Data 'datetime' field.")
@@ -423,6 +443,70 @@ class TwelveDataPriceService:
         return results, errors
 
     @staticmethod
+    def fetch_daily_closes(
+        *,
+        ticker: str,
+        exchange: str | None,
+        api_key: str,
+        outputsize: int = 8,
+        end_date: date | None = None,
+    ) -> list[TwelveDataDailyClose]:
+        params = {
+            "symbol": _build_symbol(ticker, exchange),
+            "interval": "1day",
+            "outputsize": max(1, outputsize),
+            "apikey": api_key,
+        }
+        if end_date is not None:
+            params["end_date"] = end_date.isoformat()
+
+        with httpx.Client(base_url=_API_BASE_URL, timeout=_API_TIMEOUT_SECS) as client:
+            response = client.get("/time_series", params=params)
+            response.raise_for_status()
+            payload = response.json()
+
+        if not isinstance(payload, dict):
+            raise TwelveDataServiceError("Unexpected Twelve Data daily close response.")
+        if payload.get("status") == "error":
+            raise TwelveDataServiceError(payload.get("message") or "Unknown Twelve Data API error.")
+
+        meta = payload.get("meta") or {}
+        values = payload.get("values")
+        if not isinstance(values, list):
+            raise TwelveDataServiceError("Missing Twelve Data daily close values.")
+
+        closes: list[TwelveDataDailyClose] = []
+        for entry in values:
+            if not isinstance(entry, dict):
+                continue
+            close = _parse_decimal(entry.get("close"), field_name="close")
+            raw_datetime = str(entry.get("datetime") or "").strip()
+            if not raw_datetime:
+                continue
+            try:
+                price_date = datetime.fromisoformat(raw_datetime.replace("Z", "+00:00")).date()
+            except ValueError:
+                try:
+                    price_date = datetime.strptime(raw_datetime, "%Y-%m-%d").date()
+                except ValueError:
+                    try:
+                        price_date = datetime.strptime(raw_datetime, "%Y-%m-%d %H:%M:%S").date()
+                    except ValueError as exc:
+                        raise TwelveDataServiceError(
+                            f"Invalid Twelve Data daily datetime: {raw_datetime!r}"
+                        ) from exc
+            closes.append(
+                TwelveDataDailyClose(
+                    symbol=str(meta.get("symbol") or ticker).strip().upper(),
+                    exchange=str(meta.get("exchange") or exchange or "").strip().upper() or None,
+                    currency=_normalize_currency(meta.get("currency")),
+                    close=close,
+                    price_date=price_date,
+                )
+            )
+        return closes
+
+    @staticmethod
     def build_scheduler_candidates(config: TwelveDataConfig) -> list[RefreshCandidate]:
         now_utc = _utc_now()
         with AppContext.read_session() as sess:
@@ -450,9 +534,6 @@ class TwelveDataPriceService:
                     now_utc=now_utc,
                     extended_hours=config.extended_hours,
                 )
-                if not window.is_open:
-                    continue
-
                 latest_price = price_repo.get_latest(security.id)
                 latest_snapshot = price_repo.get_latest_ticker_snapshot(security.id)
                 try:
@@ -469,6 +550,7 @@ class TwelveDataPriceService:
                         ticker=security.ticker,
                         exchange=security.exchange,
                         weight=max(weight, Decimal("1")),
+                        is_market_open=window.is_open,
                         minutes_until_close=window.minutes_until_close,
                         last_refreshed_at=latest_snapshot.observed_at if latest_snapshot is not None else None,
                     )

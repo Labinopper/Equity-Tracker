@@ -20,13 +20,19 @@
 <div class="card">
   <div class="card__header"><h2 class="card__title">Live Data Diagnostics</h2></div>
   <div class="stats">
-    <div class="stat {% if stream.enabled and stream.connected %}stat--gain{% elif stream.enabled %}stat--warning{% else %}stat--accent{% endif %}">
+    <div class="stat {% if stream.status in ['streaming', 'partial_streaming'] %}stat--gain{% elif stream.status in ['polling_fallback', 'disconnected'] %}stat--warning{% else %}stat--accent{% endif %}">
       <span class="stat__label">Twelve Data WebSocket</span>
       <span class="stat__value">
-        {% if stream.enabled and stream.connected %}
-        Connected
-        {% elif stream.enabled %}
+        {% if stream.status == 'streaming' %}
+        Streaming live
+        {% elif stream.status == 'partial_streaming' %}
+        Partial streaming + polling fallback
+        {% elif stream.status == 'polling_fallback' %}
         Fallback to polling
+        {% elif stream.status == 'connected_idle' %}
+        Connected, no eligible symbols
+        {% elif stream.status == 'disconnected' %}
+        Disconnected
         {% else %}
         Disabled
         {% endif %}
@@ -36,6 +42,26 @@
   <div class="table-wrap">
     <table>
       <tbody>
+        <tr>
+          <th>Transport connection</th>
+          <td>
+            {% if stream.connected %}
+            Connected
+            {% else %}
+            Not connected
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Top eligible stream targets</th>
+          <td>
+            {% if stream.desired_symbols %}
+            {{ stream.desired_symbols | join(', ') }}
+            {% else %}
+            <span class="muted">None</span>
+            {% endif %}
+          </td>
+        </tr>
         <tr>
           <th>Active streamed symbols</th>
           <td>
@@ -47,12 +73,53 @@
           </td>
         </tr>
         <tr>
+          <th>Last successful subscription</th>
+          <td>
+            {% if stream.last_successful_subscription %}
+            {{ stream.last_successful_subscription | join(', ') }}
+            {% else %}
+            <span class="muted">None recorded</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
           <th>Last stream message</th>
           <td>{{ stream.last_message_at or 'No stream message recorded' }}</td>
         </tr>
         <tr>
           <th>Last stream error</th>
           <td>{{ stream.last_error or 'None' }}</td>
+        </tr>
+        <tr>
+          <th>Rejected stream symbols</th>
+          <td>
+            {% if stream.rejected_symbols %}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Status</th>
+                    <th>Retry After</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in stream.rejected_symbols %}
+                  <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.status }}</td>
+                    <td>{{ row.eligible_after or 'Now' }}</td>
+                    <td>{{ row.last_failure_reason or 'Subscription rejected' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <span class="muted">None</span>
+            {% endif %}
+          </td>
         </tr>
         <tr>
           <th>Catalogue last synced</th>

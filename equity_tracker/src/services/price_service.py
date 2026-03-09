@@ -19,6 +19,7 @@ Design notes:
 from __future__ import annotations
 
 import logging
+import math
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -174,6 +175,13 @@ def _history_symbol_for_security(ticker: str, exchange: str | None) -> str:
     if ex in {"LSE", "XLON"} and "." not in symbol:
         return f"{symbol}.L"
     return symbol
+
+
+def _previous_weekday(d: date) -> date:
+    candidate = d - timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+    return candidate
 
 
 def _raise_if_rate_limited(exc: Exception) -> None:
@@ -477,6 +485,8 @@ class PriceService:
             price_repo.add_ticker_snapshot(
                 security_id=security_id,
                 price_date=price_date,
+                price_native=str(native_price),
+                currency=quote_currency,
                 price_gbp=str(price_gbp),
                 source=source,
                 direction=direction,
@@ -645,6 +655,134 @@ class PriceService:
                 end_date.isoformat(),
             )
         return rows_written
+
+    @staticmethod
+    def _sync_twelve_data_daily_window_for_security(
+        *,
+        security_id: str,
+        ticker: str,
+        currency: str,
+        exchange: str | None,
+        start_date: date,
+        end_date: date,
+    ) -> int:
+        config = TwelveDataPriceService.load_config()
+        if config is None or start_date > end_date:
+            return 0
+
+        ccy = currency.strip().upper()
+        equity_bars = TwelveDataPriceService.fetch_daily_closes(
+            ticker=ticker,
+            exchange=exchange,
+            api_key=config.api_key,
+            outputsize=max(2, (end_date - start_date).days + 4),
+            end_date=end_date,
+        )
+        TwelveDataPriceService.increment_credit_usage(1)
+        equity_by_date = {
+            bar.price_date: bar
+            for bar in equity_bars
+            if start_date <= bar.price_date <= end_date
+        }
+        if not equity_by_date:
+            return 0
+
+        fx_by_date: dict[date, Decimal] = {}
+        normalized_currency = ccy
+        if normalized_currency == "GBX":
+            normalized_currency = "GBP"
+        if normalized_currency != "GBP":
+            fx_bars = TwelveDataPriceService.fetch_daily_closes(
+                ticker=f"{normalized_currency}/GBP",
+                exchange=None,
+                api_key=config.api_key,
+                outputsize=max(2, (end_date - start_date).days + 4),
+                end_date=end_date,
+            )
+            TwelveDataPriceService.increment_credit_usage(1)
+            fx_by_date = {
+                bar.price_date: bar.close
+                for bar in fx_bars
+                if start_date <= bar.price_date <= end_date
+            }
+
+        rows_written = 0
+        with AppContext.write_session() as sess:
+            price_repo = PriceRepository(sess)
+            for price_date in sorted(equity_by_date):
+                equity_bar = equity_by_date[price_date]
+                native_close = equity_bar.close
+                quote_currency = ccy
+                if quote_currency == "GBX":
+                    native_close = (native_close / Decimal("100")).quantize(
+                        _GBP_DECIMAL_QUANT,
+                        rounding=ROUND_HALF_UP,
+                    )
+                    quote_currency = "GBP"
+
+                close_gbp: Decimal | None
+                if quote_currency == "GBP":
+                    close_gbp = native_close
+                else:
+                    fx_rate = fx_by_date.get(price_date)
+                    if fx_rate is None or fx_rate <= Decimal("0"):
+                        continue
+                    close_gbp = (native_close * fx_rate).quantize(
+                        _GBP_DECIMAL_QUANT,
+                        rounding=ROUND_HALF_UP,
+                    )
+
+                price_repo.upsert(
+                    security_id=security_id,
+                    price_date=price_date,
+                    close_price_original_ccy=str(native_close),
+                    close_price_gbp=str(close_gbp) if close_gbp is not None else None,
+                    currency=quote_currency,
+                    source="twelvedata:daily_close",
+                )
+                rows_written += 1
+
+        return rows_written
+
+    @staticmethod
+    def ensure_previous_official_close(
+        *,
+        security_id: str,
+        ticker: str,
+        currency: str,
+        exchange: str | None,
+        reference_date: date,
+    ):
+        expected_previous = _previous_weekday(reference_date)
+        with AppContext.read_session() as sess:
+            price_repo = PriceRepository(sess)
+            existing_previous = price_repo.get_latest_before(security_id, reference_date)
+            if existing_previous is not None and existing_previous.price_date == expected_previous:
+                return existing_previous
+
+        if TwelveDataPriceService.is_configured():
+            start_date = max(reference_date - timedelta(days=8), expected_previous - timedelta(days=4))
+            end_date = reference_date - timedelta(days=1)
+            if start_date <= end_date:
+                try:
+                    PriceService._sync_twelve_data_daily_window_for_security(
+                        security_id=security_id,
+                        ticker=ticker,
+                        currency=currency,
+                        exchange=exchange,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Could not repair previous official close for %s (%s): %s",
+                        ticker,
+                        security_id,
+                        exc,
+                    )
+
+        with AppContext.read_session() as sess:
+            return PriceRepository(sess).get_latest_before(security_id, reference_date)
 
     @staticmethod
     def _estimate_twelve_data_cost(
@@ -1431,6 +1569,101 @@ class PriceService:
             "fetched": fetched,
             "planned": len(plan),
             "remaining_calls": minute_capacity_remaining,
+            "tracked_instruments": tracked_instrument_count,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def refresh_fx_budgeted() -> dict:
+        config = TwelveDataPriceService.load_config()
+        if config is None or not _uses_twelve_data_fx():
+            return {
+                "enabled": False,
+                "fetched": 0,
+                "planned": 0,
+                "remaining_calls": 0,
+                "tracked_instruments": 0,
+                "errors": [],
+            }
+
+        minute_capacity_remaining = TwelveDataPriceService.remaining_minute_capacity(config)
+        if minute_capacity_remaining <= 0:
+            return {
+                "enabled": True,
+                "fetched": 0,
+                "planned": 0,
+                "remaining_calls": 0,
+                "tracked_instruments": 0,
+                "errors": [],
+            }
+
+        with AppContext.read_session() as sess:
+            securities = SecurityRepository(sess).list_all()
+            active_security_ids = {
+                str(lot.security_id)
+                for lot in sess.execute(select(Lot)).scalars()
+                if Decimal(str(lot.quantity_remaining or "0")) > Decimal("0")
+            }
+
+        active_pairs = sorted(
+            {
+                ((security.currency or "").strip().upper(), "GBP")
+                for security in securities
+                if security.id in active_security_ids
+                and ((security.currency or "").strip().upper() not in {"", "GBP", "GBX"})
+            }
+        )
+        tracked_instrument_count = len(active_pairs)
+        if not active_pairs:
+            return {
+                "enabled": True,
+                "fetched": 0,
+                "planned": 0,
+                "remaining_calls": minute_capacity_remaining,
+                "tracked_instruments": 0,
+                "errors": [],
+            }
+
+        refresh_interval_seconds = max(
+            5,
+            math.ceil((60 * max(1, tracked_instrument_count)) / max(1, config.max_calls_per_minute)),
+        )
+        due_pairs: list[tuple[str, str]] = []
+        now_utc = datetime.now(timezone.utc)
+        for from_currency, to_currency in active_pairs:
+            cached = FxService.peek_live_rate(from_currency, to_currency)
+            if cached is None or not cached.as_of:
+                due_pairs.append((from_currency, to_currency))
+                continue
+            try:
+                cached_at = datetime.strptime(cached.as_of, _FX_TS_FMT).replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                due_pairs.append((from_currency, to_currency))
+                continue
+            age_seconds = max(0.0, (now_utc - cached_at).total_seconds())
+            if age_seconds >= refresh_interval_seconds:
+                due_pairs.append((from_currency, to_currency))
+
+        planned_pairs = due_pairs[:minute_capacity_remaining]
+        fetched = 0
+        errors: list[dict] = []
+        for from_currency, to_currency in planned_pairs:
+            try:
+                FxService.get_rate(from_currency, to_currency)
+                fetched += 1
+            except Exception as exc:
+                errors.append(
+                    {
+                        "pair": f"{from_currency}/{to_currency}",
+                        "error": str(exc),
+                    }
+                )
+
+        return {
+            "enabled": True,
+            "fetched": fetched,
+            "planned": len(planned_pairs),
+            "remaining_calls": TwelveDataPriceService.remaining_minute_capacity(config),
             "tracked_instruments": tracked_instrument_count,
             "errors": errors,
         }

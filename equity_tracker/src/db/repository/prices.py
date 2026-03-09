@@ -66,6 +66,8 @@ class PriceRepository:
         *,
         security_id: str,
         price_date: date,
+        price_native: str | None = None,
+        currency: str | None = None,
         price_gbp: str,
         source: str | None = None,
         direction: str | None = None,
@@ -74,6 +76,11 @@ class PriceRepository:
     ) -> PriceTickerSnapshot:
         """
         Append a per-refresh ticker snapshot for UI freshness/staleness tracking.
+
+        To keep the intraday series meaningful, do not add a new row when the
+        latest stored snapshot for the same security/date/source has the same
+        native and GBP values. In that case the latest row remains the live
+        representation until the price actually moves.
         """
         snapshot_at = observed_at or datetime.now(tz=timezone.utc)
 
@@ -88,14 +95,38 @@ class PriceRepository:
             .limit(1)
         ).first()
         if existing is not None:
+            existing.price_native = price_native
+            existing.currency = currency
             existing.price_gbp = price_gbp
             existing.direction = direction
             existing.percent_change = percent_change
             return existing
 
+        latest_same_series = self._s.scalars(
+            select(PriceTickerSnapshot)
+            .where(
+                PriceTickerSnapshot.security_id == security_id,
+                PriceTickerSnapshot.price_date == price_date,
+                PriceTickerSnapshot.source == source,
+            )
+            .order_by(PriceTickerSnapshot.observed_at.desc())
+            .limit(1)
+        ).first()
+        if (
+            latest_same_series is not None
+            and latest_same_series.price_native == price_native
+            and latest_same_series.currency == currency
+            and latest_same_series.price_gbp == price_gbp
+        ):
+            latest_same_series.direction = direction
+            latest_same_series.percent_change = percent_change
+            return latest_same_series
+
         row = PriceTickerSnapshot(
             security_id=security_id,
             price_date=price_date,
+            price_native=price_native,
+            currency=currency,
             price_gbp=price_gbp,
             source=source,
             direction=direction,
@@ -177,6 +208,28 @@ class PriceRepository:
             .limit(1)
         )
         return self._s.scalars(stmt).first()
+
+    def list_recent_ticker_snapshots(
+        self,
+        security_id: str,
+        *,
+        limit: int | None = 16,
+        price_date: date | None = None,
+    ) -> list[PriceTickerSnapshot]:
+        """
+        Return the most recent per-refresh ticker snapshots for a security,
+        newest first.
+        """
+        stmt = (
+            select(PriceTickerSnapshot)
+            .where(PriceTickerSnapshot.security_id == security_id)
+            .order_by(PriceTickerSnapshot.observed_at.desc())
+        )
+        if price_date is not None:
+            stmt = stmt.where(PriceTickerSnapshot.price_date == price_date)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+        return list(self._s.scalars(stmt).all())
 
     def get_current_price_run_started_at(self, security_id: str) -> datetime | None:
         """

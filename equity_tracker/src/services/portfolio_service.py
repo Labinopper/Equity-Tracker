@@ -987,10 +987,17 @@ class PortfolioService:
                     _src = price_row.source or ""
                     _legacy_prefix = "google_sheets:"
                     _live_prefix = "yfinance:"
+                    _twelve_data_prefix = "twelvedata:"
                     _fx_sep = "|fx:"
-                    if _src.startswith(_legacy_prefix) or _src.startswith(_live_prefix):
+                    if (
+                        _src.startswith(_legacy_prefix)
+                        or _src.startswith(_live_prefix)
+                        or _src.startswith(_twelve_data_prefix)
+                    ):
                         if _src.startswith(_legacy_prefix):
                             _after = _src[len(_legacy_prefix):]
+                        elif _src.startswith(_twelve_data_prefix):
+                            _after = _src[len(_twelve_data_prefix):]
                         else:
                             _after = _src[len(_live_prefix):]
                         if _fx_sep in _after:
@@ -1012,6 +1019,23 @@ class PortfolioService:
                     else:
                         price_refreshed_at = None
                         sec_fx_as_of = None
+
+                    if native_currency not in {None, "GBP"} and current_price_native is not None:
+                        try:
+                            live_fx_quote = FxService.get_rate(native_currency, "GBP")
+                        except Exception:
+                            live_fx_quote = None
+                        if live_fx_quote is not None and live_fx_quote.rate > Decimal("0"):
+                            sec_fx_as_of = live_fx_quote.as_of or sec_fx_as_of
+                            current_price = (
+                                current_price_native * live_fx_quote.rate
+                            ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                            market_value = (total_qty * current_price).quantize(
+                                Decimal("0.01"), rounding=ROUND_HALF_UP
+                            )
+                            unrealised_cgt = market_value - total_cost
+                            unrealised_economic = market_value - total_true
+
                     price_is_stale = StalenessService.is_price_stale(
                         price_as_of,
                         exchange=security.exchange,

@@ -153,6 +153,51 @@ class FxService:
         return FxService.current_live_provider() == "twelve_data" and TwelveDataPriceService.is_configured()
 
     @staticmethod
+    def peek_live_rate(
+        from_currency: str,
+        to_currency: str,
+    ) -> FxQuote | None:
+        frm = _normalize_currency_code(from_currency)
+        to = _normalize_currency_code(to_currency)
+        if frm == to:
+            return FxQuote(
+                from_currency=frm,
+                to_currency=to,
+                rate=Decimal("1"),
+                as_of=None,
+                source="identity",
+                path=(f"{frm}2{to}",),
+            )
+        streamed = _get_streamed_quote(frm, to)
+        if streamed is not None:
+            return streamed
+        provider = FxService.current_live_provider()
+        cached = _get_cached_live_quote(provider, frm, to)
+        if cached is not None:
+            return cached
+        inverse_streamed = _get_streamed_quote(to, frm)
+        if inverse_streamed is not None and inverse_streamed.rate > 0:
+            return FxQuote(
+                from_currency=frm,
+                to_currency=to,
+                rate=Decimal("1") / inverse_streamed.rate,
+                as_of=inverse_streamed.as_of,
+                source=inverse_streamed.source,
+                path=inverse_streamed.path,
+            )
+        inverse_cached = _get_cached_live_quote(provider, to, frm)
+        if inverse_cached is not None and inverse_cached.rate > 0:
+            return FxQuote(
+                from_currency=frm,
+                to_currency=to,
+                rate=Decimal("1") / inverse_cached.rate,
+                as_of=inverse_cached.as_of,
+                source=inverse_cached.source,
+                path=inverse_cached.path,
+            )
+        return None
+
+    @staticmethod
     def record_stream_quote(
         *,
         from_currency: str,

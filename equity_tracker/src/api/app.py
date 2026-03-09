@@ -268,7 +268,37 @@ async def _intraday_quote_refresh_task() -> None:
         except Exception:
             logger.exception("Intraday budgeted refresh failed.")
 
-        await asyncio.sleep(_seconds_until_next_tick(5))
+        await asyncio.sleep(5)
+
+
+async def _fx_refresh_task() -> None:
+    """
+    Background task: refresh active FX pairs 24/7 under the shared Twelve Data minute cap.
+    """
+    from ..services.price_service import PriceService
+    from ..services.twelve_data_price_service import TwelveDataPriceService
+
+    if not TwelveDataPriceService.is_configured():
+        logger.info("Twelve Data FX refresh disabled; no API key configured.")
+        return
+
+    while True:
+        try:
+            if AppContext.is_initialized():
+                result = PriceService.refresh_fx_budgeted()
+                if result.get("fetched") or result.get("errors"):
+                    logger.info(
+                        "FX refresh: fetched=%d planned=%d remaining_calls=%d tracked_instruments=%d errors=%d.",
+                        result.get("fetched", 0),
+                        result.get("planned", 0),
+                        result.get("remaining_calls", 0),
+                        result.get("tracked_instruments", 0),
+                        len(result.get("errors", [])),
+                    )
+        except Exception:
+            logger.exception("FX budgeted refresh failed.")
+
+        await asyncio.sleep(5)
 
 
 async def _weekly_catalog_sync_task() -> None:
@@ -357,6 +387,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
 
     history_task = asyncio.create_task(_nightly_history_task())
     intraday_task = asyncio.create_task(_intraday_quote_refresh_task())
+    fx_task = asyncio.create_task(_fx_refresh_task())
     catalog_task = asyncio.create_task(_weekly_catalog_sync_task())
     stream_task = asyncio.create_task(_twelve_data_stream_task())
 
@@ -364,12 +395,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
 
     history_task.cancel()
     intraday_task.cancel()
+    fx_task.cancel()
     catalog_task.cancel()
     stream_task.cancel()
     with suppress(asyncio.CancelledError):
         await history_task
     with suppress(asyncio.CancelledError):
         await intraday_task
+    with suppress(asyncio.CancelledError):
+        await fx_task
     with suppress(asyncio.CancelledError):
         await catalog_task
     with suppress(asyncio.CancelledError):

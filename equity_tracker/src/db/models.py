@@ -709,8 +709,9 @@ class PriceTickerSnapshot(Base):
     """
     Per-refresh ticker snapshot used by the portfolio daily-change badge.
 
-    Stores the displayed GBP price and the computed daily direction/percent
-    at refresh time so UI freshness can be derived from DB history.
+    Stores both the native quote and displayed GBP price plus the computed
+    daily direction/percent at refresh time so UI freshness can be derived
+    from DB history without losing the true market-native tick series.
     """
 
     __tablename__ = "price_ticker_snapshots"
@@ -727,6 +728,8 @@ class PriceTickerSnapshot(Base):
         ForeignKey("securities.id", ondelete="CASCADE"), nullable=False
     )
     price_date: Mapped[date] = mapped_column(Date, nullable=False)
+    price_native: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
     price_gbp: Mapped[str] = mapped_column(String(30), nullable=False)
     direction: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     percent_change: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)

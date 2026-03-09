@@ -261,6 +261,7 @@ class SecurityDailyChange:
     value_change_gbp: Decimal | None
     current_as_of: date_type | None
     previous_as_of: date_type | None
+    official_close_as_of: date_type | None = None
     unavailable_reason: str | None = None
     price_last_changed_at: datetime | None = None
     freshness_text: str | None = None
@@ -278,6 +279,17 @@ class SecurityDailyChange:
     previous_price_gbp: Decimal | None = None
     current_price_native: Decimal | None = None
     previous_price_native: Decimal | None = None
+    stock_percent_change: Decimal | None = None
+    fx_percent_change: Decimal | None = None
+    current_fx_rate: Decimal | None = None
+    previous_fx_rate: Decimal | None = None
+    stock_value_change_gbp: Decimal | None = None
+    fx_value_change_gbp: Decimal | None = None
+    component_value_change_gbp: Decimal | None = None
+    component_percent_change: Decimal | None = None
+    component_basis_note: str | None = None
+    sparkline_path: str | None = None
+    sparkline_direction: str = "flat"
 
 
 # ---------------------------------------------------------------------------
@@ -885,9 +897,45 @@ def _price_row_native_value(price_row) -> Decimal | None:
         return None
 
 
+def _snapshot_native_value(snapshot_row) -> Decimal | None:
+    raw = getattr(snapshot_row, "price_native", None)
+    if raw is None:
+        return None
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
 def _utc_now() -> datetime:
     """Current UTC timestamp (helper for deterministic tests)."""
     return datetime.now(timezone.utc)
+
+
+def _build_sparkline_path(values: list[Decimal]) -> tuple[str | None, str]:
+    if len(values) < 2:
+        return None, "flat"
+    minimum = min(values)
+    maximum = max(values)
+    span = maximum - minimum
+    width = 111.0
+    height = 10.0
+    step_x = width / max(1, len(values) - 1)
+    points: list[str] = []
+    for index, value in enumerate(values):
+        x = index * step_x
+        if span == 0:
+            y = height / 2
+        else:
+            normalized = (value - minimum) / span
+            y = height - (float(normalized) * height)
+        points.append(f"{x:.2f},{y:.2f}")
+    direction = "flat"
+    if values[-1] > values[0]:
+        direction = "up"
+    elif values[-1] < values[0]:
+        direction = "down"
+    return " ".join(points), direction
 
 
 def _to_utc_aware(ts: datetime) -> datetime:
@@ -1034,6 +1082,7 @@ def _security_daily_change_unavailable(
         value_change_gbp=None,
         current_as_of=None,
         previous_as_of=None,
+        official_close_as_of=None,
         unavailable_reason=reason,
     )
 
@@ -1053,9 +1102,9 @@ def _build_security_daily_changes(
     now_utc = _utc_now()
     selected_as_of = as_of or now_utc.date()
     historical_mode = selected_as_of != now_utc.date()
-    with AppContext.read_session() as sess:
-        price_repo = PriceRepository(sess)
-        for ss in summary.securities:
+    for ss in summary.securities:
+        with AppContext.read_session() as sess:
+            price_repo = PriceRepository(sess)
             security_id = ss.security.id
             last_changed_at = price_repo.get_current_price_run_started_at(security_id)
             if historical_mode:
@@ -1106,70 +1155,87 @@ def _build_security_daily_changes(
                 changes[security_id] = daily
                 continue
 
-            previous_price_gbp: Decimal | None = None
-            current_as_of = latest_row.price_date
-            previous_as_of: date_type | None = None
-            latest_native = _price_row_native_value(latest_row)
-            previous_native: Decimal | None = None
-
-            # Prefer intraday ticker snapshots when two observations are available
-            # on the same latest price date. This preserves "No change" visibility
-            # while the market is open even when yesterday-vs-today close moved.
-            snap_rows = list(
-                sess.scalars(
-                    select(PriceTickerSnapshot)
-                    .where(PriceTickerSnapshot.security_id == security_id)
-                    .order_by(PriceTickerSnapshot.observed_at.desc())
-                    .limit(2)
-                ).all()
+            latest_snapshot = (
+                price_repo.get_latest_ticker_snapshot(security_id)
+                if not historical_mode
+                else None
             )
+            recent_snapshots = (
+                price_repo.list_recent_ticker_snapshots(
+                    security_id,
+                    limit=None,
+                    price_date=selected_as_of,
+                )
+                if not historical_mode
+                else []
+            )
+            recent_history_rows = price_repo.get_history_range(
+                security_id,
+                from_date=selected_as_of - timedelta(days=40),
+                to_date=selected_as_of,
+            )
+            live_price_gbp = latest_price_gbp
+            current_as_of = latest_row.price_date
+            latest_native = _price_row_native_value(latest_row)
+            component_basis_note: str | None = None
+            uses_live_snapshot = False
             if (
-                not historical_mode
-                and
-                len(snap_rows) >= 2
-                and snap_rows[0].price_date == latest_row.price_date
-                and snap_rows[1].price_date == latest_row.price_date
+                latest_snapshot is not None
+                and latest_snapshot.price_date == latest_row.price_date
             ):
                 try:
-                    snap_latest_price = Decimal(snap_rows[0].price_gbp)
-                    snap_previous_price = Decimal(snap_rows[1].price_gbp)
-                    if snap_previous_price > Decimal("0"):
-                        latest_price_gbp = snap_latest_price
-                        previous_price_gbp = snap_previous_price
-                        current_as_of = snap_rows[0].price_date
-                        previous_as_of = snap_rows[1].price_date
-                        # Native-currency intraday deltas are unavailable from
-                        # ticker snapshots because only GBP display price is stored.
-                        latest_native = None
-                        previous_native = None
+                    snapshot_price = Decimal(latest_snapshot.price_gbp)
                 except (InvalidOperation, TypeError, ValueError):
-                    previous_price_gbp = None
+                    snapshot_price = None
+                if snapshot_price is not None and snapshot_price > Decimal("0"):
+                    live_price_gbp = snapshot_price
+                    current_as_of = latest_snapshot.price_date
+                    uses_live_snapshot = True
+                    snapshot_native = _snapshot_native_value(latest_snapshot)
+                    if snapshot_native is not None and snapshot_native > Decimal("0"):
+                        latest_native = snapshot_native
+                    if live_price_gbp != latest_price_gbp:
+                        component_basis_note = (
+                            "Live GBP value is intraday. Official close values are shown separately."
+                        )
 
-            if previous_price_gbp is None:
-                previous_row = price_repo.get_latest_before(security_id, latest_row.price_date)
-                if previous_row is None:
-                    daily = _security_daily_change_unavailable(
-                        security_id,
-                        "Need at least two price dates.",
-                    )
-                    daily.price_last_changed_at = last_changed_at
-                    daily.freshness_text = freshness_text
-                    daily.freshness_level = freshness_level
-                    daily.freshness_title = freshness_title
-                    daily.market_status = market_status
-                    daily.market_opens_in = market_opens_in
-                    changes[security_id] = daily
-                    continue
-                previous_price_gbp = _price_row_gbp_value(previous_row)
-                previous_as_of = previous_row.price_date
-                if latest_native is None:
-                    latest_native = _price_row_native_value(latest_row)
-                previous_native = _price_row_native_value(previous_row)
+        if historical_mode:
+            with AppContext.read_session() as sess:
+                previous_row = PriceRepository(sess).get_latest_before(security_id, latest_row.price_date)
+        else:
+            previous_row = PriceService.ensure_previous_official_close(
+                security_id=security_id,
+                ticker=ss.security.ticker,
+                currency=ss.security.currency or "GBP",
+                exchange=ss.security.exchange,
+                reference_date=current_as_of,
+            )
 
-            if previous_price_gbp is None or previous_price_gbp <= Decimal("0"):
+        if previous_row is None:
+            daily = _security_daily_change_unavailable(
+                security_id,
+                "Need previous official close.",
+            )
+            daily.price_last_changed_at = last_changed_at
+            daily.freshness_text = freshness_text
+            daily.freshness_level = freshness_level
+            daily.freshness_title = freshness_title
+            daily.market_status = market_status
+            daily.market_opens_in = market_opens_in
+            changes[security_id] = daily
+            continue
+
+        previous_price_gbp = _price_row_gbp_value(previous_row)
+        official_close_as_of = previous_row.price_date
+        previous_as_of: date_type | None = previous_row.price_date
+        previous_native: Decimal | None = _price_row_native_value(previous_row)
+        component_current_price_gbp = live_price_gbp
+        component_previous_price_gbp: Decimal | None = previous_price_gbp
+
+        if previous_price_gbp is None or previous_price_gbp <= Decimal("0"):
                 daily = _security_daily_change_unavailable(
                     security_id,
-                    "Previous close unavailable.",
+                    "Previous official close unavailable.",
                 )
                 daily.price_last_changed_at = last_changed_at
                 daily.freshness_text = freshness_text
@@ -1180,57 +1246,134 @@ def _build_security_daily_changes(
                 changes[security_id] = daily
                 continue
 
-            delta_price = latest_price_gbp - previous_price_gbp
-            pct_change = (
-                (delta_price / previous_price_gbp) * Decimal("100")
+        delta_price = live_price_gbp - previous_price_gbp
+        pct_change = (
+            (delta_price / previous_price_gbp) * Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        value_change = _q2(delta_price * ss.total_quantity)
+
+        native_currency = ss.market_value_native_currency or None
+        if (
+            latest_native is not None
+            and previous_native is not None
+            and previous_native > Decimal("0")
+        ):
+            native_current_value = latest_native * ss.total_quantity
+            native_previous_value = previous_native * ss.total_quantity
+            value_change_native = _q2(native_current_value - native_previous_value)
+        else:
+            value_change_native = None
+
+        stock_percent_change: Decimal | None = None
+        fx_percent_change: Decimal | None = None
+        current_fx_rate: Decimal | None = None
+        previous_fx_rate: Decimal | None = None
+        stock_value_change_gbp: Decimal | None = None
+        fx_value_change_gbp: Decimal | None = None
+        component_value_change_gbp: Decimal | None = None
+        component_percent_change: Decimal | None = None
+        can_split_components = (
+            latest_native is not None
+            and previous_native is not None
+            and latest_native > Decimal("0")
+            and previous_native > Decimal("0")
+            and component_current_price_gbp is not None
+            and component_previous_price_gbp is not None
+            and component_previous_price_gbp > Decimal("0")
+        )
+        if can_split_components:
+            stock_percent_change = (
+                ((latest_native - previous_native) / previous_native) * Decimal("100")
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            value_change = _q2(delta_price * ss.total_quantity)
+            previous_fx_rate = (
+                component_previous_price_gbp / previous_native
+            ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+            current_fx_rate = (
+                component_current_price_gbp / latest_native
+            ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+            if previous_fx_rate > Decimal("0"):
+                fx_percent_change = (
+                    ((current_fx_rate - previous_fx_rate) / previous_fx_rate) * Decimal("100")
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                stock_only_current_gbp = (
+                    latest_native * previous_fx_rate
+                ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                stock_delta_per_share_gbp = stock_only_current_gbp - component_previous_price_gbp
+                stock_value_change_gbp = _q2(stock_delta_per_share_gbp * ss.total_quantity)
+                fx_value_change_gbp = _q2(value_change - stock_value_change_gbp)
+                component_value_change_gbp = _q2(
+                    stock_value_change_gbp + fx_value_change_gbp
+                )
+                previous_component_value_gbp = (
+                    component_previous_price_gbp * ss.total_quantity
+                )
+                if previous_component_value_gbp > Decimal("0"):
+                    component_percent_change = (
+                        (component_value_change_gbp / previous_component_value_gbp)
+                        * Decimal("100")
+                    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-            # Native-currency value change (uses original-CCY prices directly)
-            native_currency = ss.market_value_native_currency or None
-            if (
-                latest_native is not None
-                and previous_native is not None
-                and previous_native > Decimal("0")
-            ):
-                # Calculate portfolio values at previous and current prices to preserve precision
-                native_current_value = latest_native * ss.total_quantity
-                native_previous_value = previous_native * ss.total_quantity
-                value_change_native = _q2(native_current_value - native_previous_value)
-            else:
-                value_change_native = None
+        if delta_price > Decimal("0"):
+            direction = "up"
+            arrow = "▲"
+        elif delta_price < Decimal("0"):
+            direction = "down"
+            arrow = "▼"
+        else:
+            direction = "flat"
+            arrow = "→"
 
-            if delta_price > Decimal("0"):
-                direction = "up"
-                arrow = "▲"
-            elif delta_price < Decimal("0"):
-                direction = "down"
-                arrow = "▼"
-            else:
-                direction = "flat"
-                arrow = "→"
+        sparkline_values: list[Decimal] = []
+        if market_status and market_status.lower() == "open":
+            for snapshot in reversed(recent_snapshots):
+                snapshot_native = _snapshot_native_value(snapshot)
+                if snapshot_native is None or snapshot_native <= Decimal("0"):
+                    continue
+                sparkline_values.append(snapshot_native)
+        else:
+            native_by_date: dict[date_type, Decimal] = {}
+            for row in recent_history_rows:
+                native_value = _price_row_native_value(row)
+                if native_value is None or native_value <= Decimal("0"):
+                    continue
+                native_by_date[row.price_date] = native_value
+            for day in sorted(native_by_date.keys())[-16:]:
+                sparkline_values.append(native_by_date[day])
+        sparkline_path, _sparkline_window_direction = _build_sparkline_path(sparkline_values)
 
-            changes[security_id] = SecurityDailyChange(
-                security_id=security_id,
-                direction=direction,
-                arrow=arrow,
-                percent_change=pct_change,
-                value_change_gbp=value_change,
-                current_as_of=current_as_of,
-                previous_as_of=previous_as_of,
-                price_last_changed_at=last_changed_at,
-                freshness_text=freshness_text,
-                freshness_level=freshness_level,
-                freshness_title=freshness_title,
-                native_currency=native_currency,
-                value_change_native=value_change_native,
-                market_status=market_status,
-                market_opens_in=market_opens_in,
-                current_price_gbp=latest_price_gbp,
-                previous_price_gbp=previous_price_gbp,
-                current_price_native=latest_native,
-                previous_price_native=previous_native,
-            )
+        changes[security_id] = SecurityDailyChange(
+            security_id=security_id,
+            direction=direction,
+            arrow=arrow,
+            percent_change=pct_change,
+            value_change_gbp=value_change,
+            current_as_of=current_as_of,
+            previous_as_of=previous_as_of,
+            official_close_as_of=official_close_as_of,
+            price_last_changed_at=last_changed_at,
+            freshness_text=freshness_text,
+            freshness_level=freshness_level,
+            freshness_title=freshness_title,
+            native_currency=native_currency,
+            value_change_native=value_change_native,
+            market_status=market_status,
+            market_opens_in=market_opens_in,
+            current_price_gbp=live_price_gbp,
+            previous_price_gbp=previous_price_gbp,
+            current_price_native=latest_native,
+            previous_price_native=previous_native,
+            stock_percent_change=stock_percent_change,
+            fx_percent_change=fx_percent_change,
+            current_fx_rate=current_fx_rate,
+            previous_fx_rate=previous_fx_rate,
+            stock_value_change_gbp=stock_value_change_gbp,
+            fx_value_change_gbp=fx_value_change_gbp,
+            component_value_change_gbp=component_value_change_gbp,
+            component_percent_change=component_percent_change,
+            component_basis_note=component_basis_note,
+            sparkline_path=sparkline_path,
+            sparkline_direction=direction,
+        )
     return changes
 
 
@@ -2584,6 +2727,26 @@ async def home(
 ) -> HTMLResponse:
     if _is_locked():
         return _locked_response(request)
+    context = _build_portfolio_page_context(
+        request,
+        msg=msg,
+        as_of=as_of,
+    )
+    return templates.TemplateResponse(
+        request,
+        "portfolio.html",
+        context,
+    )
+
+
+def _build_portfolio_page_context(
+    request: Request,
+    *,
+    msg: str | None = None,
+    as_of: date_type | None = None,
+) -> dict:
+    if _is_locked():
+        raise RuntimeError("portfolio page context requested while locked")
     db_path = _state.get_db_path()
     settings = AppSettings.load(db_path) if db_path else None
     refresh_diag = _state.get_refresh_diagnostics()
@@ -2647,62 +2810,89 @@ async def home(
     behavioral_guardrails_total_count = len(behavioral_guardrails_raw)
     behavioral_guardrails_active_count = len(behavioral_guardrails)
     today = now_utc.date()
-    return templates.TemplateResponse(
+    return {
+        "request": request,
+        "summary": summary,
+        "settings": settings,
+        "price_stale_after_days": settings.price_stale_after_days if settings else 1,
+        "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
+        "security_daily_changes": security_daily_changes,
+        "portfolio_valuation_basis": _portfolio_valuation_basis(summary),
+        "position_rows_by_security": position_rows_by_security,
+        "portfolio_est_net_liquidity": portfolio_est_net_liquidity,
+        "portfolio_blocked_restricted_value": portfolio_blocked_restricted_value,
+        "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
+        "portfolio_sellable_employment_tax": portfolio_sellable_employment_tax,
+        "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
+        "portfolio_locked_value": exposure_snapshot.get("locked_capital_gbp"),
+        "portfolio_forfeitable_value": exposure_snapshot.get("forfeitable_capital_gbp"),
+        "portfolio_isa_wrapper_market_value_gbp": exposure_snapshot.get("isa_wrapper_market_value_gbp"),
+        "portfolio_taxable_wrapper_market_value_gbp": exposure_snapshot.get("taxable_wrapper_market_value_gbp"),
+        "portfolio_isa_wrapper_pct_of_total": exposure_snapshot.get("isa_wrapper_pct_of_total"),
+        "portfolio_taxable_wrapper_pct_of_total": exposure_snapshot.get("taxable_wrapper_pct_of_total"),
+        "portfolio_top_holding_ticker_gross": exposure_snapshot.get("top_holding_ticker_gross"),
+        "portfolio_top_holding_pct_gross": exposure_snapshot.get("top_holding_pct_gross"),
+        "portfolio_top_holding_ticker_sellable": exposure_snapshot.get("top_holding_ticker_sellable"),
+        "portfolio_top_holding_pct_sellable": exposure_snapshot.get("top_holding_pct_sellable"),
+        "portfolio_employer_ticker": exposure_snapshot.get("employer_ticker"),
+        "portfolio_employer_pct_of_gross": exposure_snapshot.get("employer_pct_of_gross"),
+        "portfolio_employer_pct_of_sellable": exposure_snapshot.get("employer_pct_of_sellable"),
+        "portfolio_total_sellable_market_value_gbp": exposure_snapshot.get("total_sellable_market_value_gbp"),
+        "portfolio_deployable_cash_gbp": exposure_snapshot.get("deployable_cash_gbp"),
+        "portfolio_deployable_capital_gbp": exposure_snapshot.get("deployable_capital_gbp"),
+        "portfolio_employer_share_of_deployable_pct": exposure_snapshot.get("employer_share_of_deployable_pct"),
+        "portfolio_employer_dependence_ratio_pct": exposure_snapshot.get("employer_dependence_ratio_pct"),
+        "portfolio_employer_income_dependency_proxy_gbp": exposure_snapshot.get("employer_income_dependency_proxy_gbp"),
+        "portfolio_employer_dependence_denominator_gbp": exposure_snapshot.get("employer_dependence_denominator_gbp"),
+        "portfolio_exposure_notes": exposure_snapshot.get("notes", []),
+        "portfolio_net_gain_plus_net_dividends": portfolio_net_gain_plus_net_dividends,
+        "dividend_adjusted_capital_at_risk_gbp": (
+            capital_stack_snapshot.get("dividend_adjusted_capital_at_risk_gbp")
+        ),
+        "estimated_net_dividends_gbp": estimated_net_dividends_gbp,
+        "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
+        "refresh_diag": refresh_diag,
+        "behavioral_guardrails": behavioral_guardrails,
+        "behavioral_guardrails_active_count": behavioral_guardrails_active_count,
+        "behavioral_guardrails_hidden_count": behavioral_guardrails_hidden_count,
+        "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
+        "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
+        "guardrail_snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
+        "page_as_of_date": (as_of or today).isoformat(),
+        "page_as_of_active": as_of is not None,
+        "selected_as_of": (as_of.isoformat() if as_of else ""),
+        "today": today,
+        **_flash(msg),
+    }
+
+
+@router.get("/portfolio/live-data", include_in_schema=False)
+async def portfolio_live_data(
+    request: Request,
+    as_of: date_type | None = Query(None),
+) -> JSONResponse:
+    if _is_locked():
+        return JSONResponse(
+            {"ok": False, "message": "Database is locked."},
+            status_code=423,
+        )
+    context = _build_portfolio_page_context(
         request,
-        "portfolio.html",
+        as_of=as_of,
+    )
+    root_html = templates.get_template("partials/portfolio_live_root.html").render(
+        context
+    )
+    return JSONResponse(
         {
-            "request": request,
-            "summary": summary,
-            "settings": settings,
-            "price_stale_after_days": settings.price_stale_after_days if settings else 1,
-            "fx_stale_after_minutes": settings.fx_stale_after_minutes if settings else 10,
-            "security_daily_changes": security_daily_changes,
-            "portfolio_valuation_basis": _portfolio_valuation_basis(summary),
-            "position_rows_by_security": position_rows_by_security,
-            "portfolio_est_net_liquidity": portfolio_est_net_liquidity,
-            "portfolio_blocked_restricted_value": portfolio_blocked_restricted_value,
-            "portfolio_net_gain_if_sold": portfolio_net_gain_if_sold,
-            "portfolio_sellable_employment_tax": portfolio_sellable_employment_tax,
-            "portfolio_sellable_true_cost": portfolio_sellable_true_cost,
-            "portfolio_locked_value": exposure_snapshot.get("locked_capital_gbp"),
-            "portfolio_forfeitable_value": exposure_snapshot.get("forfeitable_capital_gbp"),
-            "portfolio_isa_wrapper_market_value_gbp": exposure_snapshot.get("isa_wrapper_market_value_gbp"),
-            "portfolio_taxable_wrapper_market_value_gbp": exposure_snapshot.get("taxable_wrapper_market_value_gbp"),
-            "portfolio_isa_wrapper_pct_of_total": exposure_snapshot.get("isa_wrapper_pct_of_total"),
-            "portfolio_taxable_wrapper_pct_of_total": exposure_snapshot.get("taxable_wrapper_pct_of_total"),
-            "portfolio_top_holding_ticker_gross": exposure_snapshot.get("top_holding_ticker_gross"),
-            "portfolio_top_holding_pct_gross": exposure_snapshot.get("top_holding_pct_gross"),
-            "portfolio_top_holding_ticker_sellable": exposure_snapshot.get("top_holding_ticker_sellable"),
-            "portfolio_top_holding_pct_sellable": exposure_snapshot.get("top_holding_pct_sellable"),
-            "portfolio_employer_ticker": exposure_snapshot.get("employer_ticker"),
-            "portfolio_employer_pct_of_gross": exposure_snapshot.get("employer_pct_of_gross"),
-            "portfolio_employer_pct_of_sellable": exposure_snapshot.get("employer_pct_of_sellable"),
-            "portfolio_total_sellable_market_value_gbp": exposure_snapshot.get("total_sellable_market_value_gbp"),
-            "portfolio_deployable_cash_gbp": exposure_snapshot.get("deployable_cash_gbp"),
-            "portfolio_deployable_capital_gbp": exposure_snapshot.get("deployable_capital_gbp"),
-            "portfolio_employer_share_of_deployable_pct": exposure_snapshot.get("employer_share_of_deployable_pct"),
-            "portfolio_employer_dependence_ratio_pct": exposure_snapshot.get("employer_dependence_ratio_pct"),
-            "portfolio_employer_income_dependency_proxy_gbp": exposure_snapshot.get("employer_income_dependency_proxy_gbp"),
-            "portfolio_employer_dependence_denominator_gbp": exposure_snapshot.get("employer_dependence_denominator_gbp"),
-            "portfolio_exposure_notes": exposure_snapshot.get("notes", []),
-            "portfolio_net_gain_plus_net_dividends": portfolio_net_gain_plus_net_dividends,
-            "dividend_adjusted_capital_at_risk_gbp": (
-                capital_stack_snapshot.get("dividend_adjusted_capital_at_risk_gbp")
-            ),
-            "estimated_net_dividends_gbp": estimated_net_dividends_gbp,
-            "tax_inputs_incomplete": _tax_inputs_incomplete(settings),
-            "refresh_diag": refresh_diag,
-            "behavioral_guardrails": behavioral_guardrails,
-            "behavioral_guardrails_active_count": behavioral_guardrails_active_count,
-            "behavioral_guardrails_hidden_count": behavioral_guardrails_hidden_count,
-            "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
-            "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
-            "guardrail_snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
-            "page_as_of_date": (as_of or today).isoformat(),
-            "page_as_of_active": as_of is not None,
-            "today": today,
-            **_flash(msg),
-        },
+            "ok": True,
+            "root_html": root_html,
+            "guardrails": {
+                "active_count": context["behavioral_guardrails_active_count"],
+                "hidden_count": context["behavioral_guardrails_hidden_count"],
+                "total_count": context["behavioral_guardrails_total_count"],
+            },
+        }
     )
 
 

@@ -76,884 +76,15 @@
 {% endif %}
 
 <div id="portfolio-live-root">
-{% set valuation = portfolio_valuation_basis %}
-<div class="valuation-basis-strip">
-  <div class="valuation-basis-strip__title">Valuation Basis</div>
-  <div class="valuation-basis-strip__meta">
-    Price stale threshold: {{ price_stale_after_days }} day{% if price_stale_after_days != 1 %}s{% endif %}.
-    FX stale threshold: {{ fx_stale_after_minutes }} minute{% if fx_stale_after_minutes != 1 %}s{% endif %}.
-    <a href="{{ with_as_of('/data-quality', selected_as_of) }}">Open Data Quality</a>
-  </div>
-  <div class="valuation-basis-strip__items">
-    <span class="valuation-pill">
-      Price as of
-      {% if valuation.price_as_of_latest %}
-      <strong>{{ valuation.price_as_of_latest }}</strong>
-      {% else %}
-      <strong>Unavailable</strong>
-      {% endif %}
-      {% if valuation.price_dates_mixed and valuation.price_as_of_earliest %}
-      <span class="muted">(range starts {{ valuation.price_as_of_earliest }})</span>
-      {% endif %}
-    </span>
-    <span class="valuation-pill valuation-pill--neutral">
-      Coverage <strong>{{ valuation.price_tracked_count }}/{{ valuation.total_security_count }}</strong> priced
-    </span>
-    <span class="valuation-pill">
-      FX as of
-      {% if valuation.fx_as_of %}
-      <strong>{{ valuation.fx_as_of }}</strong>
-      {% else %}
-      <strong>N/A or missing</strong>
-      {% endif %}
-    </span>
-    {% if valuation.stale_price_count > 0 and valuation.missing_price_count > 0 %}
-    <span class="valuation-pill valuation-pill--warning">
-      Price basis issues: {{ valuation.stale_price_count }} stale, {{ valuation.missing_price_count }} missing
-    </span>
-    {% elif valuation.stale_price_count > 0 %}
-    <span class="valuation-pill valuation-pill--warning">
-      {{ valuation.stale_price_count }} stale price basis (&gt;{{ price_stale_after_days }}d)
-    </span>
-    {% elif valuation.missing_price_count > 0 %}
-    <span class="valuation-pill valuation-pill--warning">
-      {{ valuation.missing_price_count }} missing price basis
-    </span>
-    {% else %}
-    <span class="valuation-pill valuation-pill--ok">Price basis fresh</span>
-    {% endif %}
-    {% if valuation.fx_required_count > 0 %}
-      <span class="valuation-pill valuation-pill--neutral">
-        FX coverage <strong>{{ valuation.fx_as_of_count }}/{{ valuation.fx_required_count }}</strong>
-      </span>
-      {% if valuation.stale_fx_count > 0 and valuation.missing_fx_count > 0 %}
-      <span class="valuation-pill valuation-pill--warning">
-        FX basis issues: {{ valuation.stale_fx_count }} stale, {{ valuation.missing_fx_count }} missing
-      </span>
-      {% elif valuation.stale_fx_count > 0 %}
-      <span class="valuation-pill valuation-pill--warning">
-        {{ valuation.stale_fx_count }} stale FX basis (&gt;{{ fx_stale_after_minutes }}m)
-      </span>
-      {% elif valuation.missing_fx_count > 0 %}
-      <span class="valuation-pill valuation-pill--warning">FX basis incomplete</span>
-      {% elif valuation.fx_is_stale %}
-      <span class="valuation-pill valuation-pill--warning">FX basis stale</span>
-      {% else %}
-      <span class="valuation-pill valuation-pill--ok">FX basis fresh</span>
-      {% endif %}
-    {% else %}
-    <span class="valuation-pill valuation-pill--neutral">FX basis not required (GBP-only holdings)</span>
-    {% endif %}
-  </div>
-</div>
-
-<h2 class="stats-band-title">Actionable Today</h2>
-<p class="stats-band-subtitle">What is deployable now after deterministic structural drag.</p>
-<div class="stats stats-band">
-  <div class="stat stat--accent">
-    <div class="stat__label">Deployable Capital (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    <div class="stat__value">&pound;{{ portfolio_deployable_capital_gbp | money }}</div>
-    <span class="stat-caption">Sellable holdings &pound;{{ portfolio_total_sellable_market_value_gbp | money }} + deployable cash (GBP equivalent) &pound;{{ portfolio_deployable_cash_gbp | money }}</span>
-  </div>
-  <div class="stat stat--gain">
-    <div class="stat__label"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></div>
-    {% if portfolio_est_net_liquidity is not none %}
-    <div class="stat__value gain">&pound;{{ portfolio_est_net_liquidity | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></div>
-    {% if portfolio_sellable_employment_tax is not none %}
-    <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
-    <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    {% if portfolio_net_gain_if_sold is not none %}
-    <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat">
-    <div class="stat__label">Employer Share of Deployable Capital <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
-    {% if portfolio_employer_ticker %}
-    <span class="stat-caption">{{ portfolio_employer_ticker }} sellable market value over deployable capital pool.</span>
-    {% endif %}
-  </div>
-</div>
-
-<h2 class="stats-band-title">Risk and Context</h2>
-<p class="stats-band-subtitle">Structural exposure and wrapper context for interpretation, not immediate deployable cash.</p>
-<div class="stats stats-band">
-  <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
-    <div class="stat__label">Net Gain + Net Dividends <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_net_gain_plus_net_dividends is not none %}
-    <div class="stat__value {% if portfolio_net_gain_plus_net_dividends > 0 %}gain{% elif portfolio_net_gain_plus_net_dividends < 0 %}loss{% endif %}">{% if portfolio_net_gain_plus_net_dividends < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_plus_net_dividends | abs | money }}</div>
-    {% if estimated_net_dividends_gbp is not none %}
-    <span class="stat-caption">Adds estimated net dividends of &pound;{{ estimated_net_dividends_gbp | money }}.</span>
-    {% endif %}
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label" title="Sellability-locked value excluding forfeitable matched shares."><a href="/glossary#locked-capital">Locked Capital</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_locked_value is not none %}
-    <div class="stat__value warning-text">&pound;{{ portfolio_locked_value | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label" title="Matched shares inside forfeiture window."><a href="/glossary#forfeitable-capital">Forfeitable Capital</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_forfeitable_value is not none %}
-    <div class="stat__value warning-text">&pound;{{ portfolio_forfeitable_value | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat">
-    <div class="stat__label">Top Holding Concentration <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_top_holding_ticker_gross %}
-    <div class="stat__value">{{ "%.2f"|format(portfolio_top_holding_pct_gross) }}%</div>
-    <span class="stat-caption">{{ portfolio_top_holding_ticker_gross }} of gross; sellable pool {{ "%.2f"|format(portfolio_top_holding_pct_sellable) }}% ({{ portfolio_top_holding_ticker_sellable or '-' }})</span>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat">
-    <div class="stat__label">Employer Exposure <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_employer_ticker %}
-    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_pct_of_gross) }}%</div>
-    <span class="stat-caption">{{ portfolio_employer_ticker }} gross; sellable {{ "%.2f"|format(portfolio_employer_pct_of_sellable) }}%</span>
-    {% else %}
-    <div class="stat__value muted">Unconfigured</div>
-    <span class="stat-caption"><a href="/settings">Set employer ticker</a> to enable employer concentration metrics.</span>
-    {% endif %}
-  </div>
-  <div class="stat">
-    <div class="stat__label">Employer Dependence Ratio <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_dependence_ratio_pct) }}%</div>
-    <span class="stat-caption">({% if portfolio_employer_ticker %}{{ portfolio_employer_ticker }} equity{% else %}Employer equity{% endif %} + income proxy &pound;{{ portfolio_employer_income_dependency_proxy_gbp | money }}) / base &pound;{{ portfolio_employer_dependence_denominator_gbp | money }}</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">ISA Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_isa_wrapper_pct_of_total) }}%</div>
-    <span class="stat-caption">&pound;{{ portfolio_isa_wrapper_market_value_gbp | money }} in ISA holdings.</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Taxable Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_taxable_wrapper_pct_of_total) }}%</div>
-    <span class="stat-caption">&pound;{{ portfolio_taxable_wrapper_market_value_gbp | money }} outside ISA.</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Total Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if summary.total_market_value_gbp is not none %}
-    <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-</div>
-
-<h2 class="stats-band-title">Cost Basis Context</h2>
-<p class="stats-band-subtitle">Realised basis metrics for economic framing and reconciliation depth.</p>
-<div class="stats stats-band">
-  <div class="stat">
-    <div class="stat__label"><a href="/glossary#true-cost-acquisition">Total True Cost</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
-    <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label">
-      <a href="/glossary#dividend-adjusted-capital-at-risk">Dividend-Adjusted Capital at Risk</a> <span class="metric-tag metric-tag--realised">Realised</span>
-      <button class="info-button" aria-label="Dividend-adjusted capital at risk explanation">&#9432;</button>
-      <div class="tooltip">
-        <div class="tooltip-content">
-          Acquisition true cost minus portfolio-level estimated net dividends. This is separate from True Cost and does not alter tax/report cost basis calculations.
-        </div>
-      </div>
-    </div>
-    {% if dividend_adjusted_capital_at_risk_gbp is not none %}
-    <div class="stat__value warning-text">&pound;{{ dividend_adjusted_capital_at_risk_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-    {% if estimated_net_dividends_gbp is not none %}
-    <span class="stat-caption">Net dividends offset: &pound;{{ estimated_net_dividends_gbp | money }}</span>
-    {% endif %}
-  </div>
-  <div class="stat">
-    <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
-    <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
-  </div>
-</div>
-
-{% if portfolio_exposure_notes %}
-<div class="alert alert-info">
-  {% for note in portfolio_exposure_notes %}
-  <div>{{ note }}</div>
-  {% endfor %}
-</div>
-{% endif %}
-
-{% if behavioral_guardrails %}
-<div class="card" id="behavioral-guardrails">
-  <div class="card__header">
-    <h2 class="card__title">Behavioral Guardrails</h2>
-  </div>
-  <p class="muted">
-    Deterministic warnings for liquidity illusion, tax drag, ISA sheltering, and forfeiture timing.
-    Snoozes persist for {{ guardrail_snooze_max_days }} days, dismissals persist for up to {{ guardrail_dismiss_max_days }} days, and both reopen automatically if conditions materially change.
-  </p>
-  {% for guardrail in behavioral_guardrails %}
-  <div
-    class="alert {% if guardrail.severity == 'warning' %}alert-warning{% else %}alert-info{% endif %} guardrail-alert"
-    data-guardrail-id="{{ guardrail.id }}"
-    data-guardrail-hash="{{ guardrail.condition_hash }}"
-  >
-    <div><strong>{{ guardrail.title }}</strong></div>
-    <div>{{ guardrail.message }}</div>
-    <div class="form-actions">
-      <button type="button" class="btn btn-secondary btn-sm guardrail-snooze-btn">Snooze {{ guardrail_snooze_max_days }}d</button>
-      <button type="button" class="btn btn-secondary btn-sm guardrail-dismiss-btn">Dismiss</button>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-{% if not summary.securities %}
-<div class="empty-state">
-  <p>No securities yet.</p>
-  <a href="/portfolio/add-security" class="btn btn-primary empty-state-action">Add your first security</a>
-</div>
-{% else %}
-
-{% for ss in summary.securities %}
-<div class="card">
-  <div class="security-header">
-    <div class="security-header__left">
-      <span class="security-ticker">{{ ss.security.ticker }}</span>
-      <span class="security-name">{{ ss.security.name }}</span>
-      {% if ss.security.isin %}
-      <span class="muted mono-small">{{ ss.security.isin }}</span>
-      {% endif %}
-    </div>
-    {% set daily = security_daily_changes.get(ss.security.id) %}
-    <div class="security-header__actions">
-
-      {% if daily and daily.percent_change is not none and daily.value_change_gbp is not none %}
-      <span class="daily-change daily-change--{{ daily.direction }}">
-        <span class="daily-change__arrow">{{ daily.arrow }}</span>
-        <span class="daily-change__text">
-          {% if daily.direction == "up" %}
-          Up
-          {% elif daily.direction == "down" %}
-          Down
-          {% else %}
-          No Change{% if daily.market_status and daily.market_status | lower == "open" %} (Market Open){% endif %}
-          {% endif %}
-          {{ "%.2f"|format(daily.percent_change | abs) }}% ({% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }})
-        </span>
-        <button class="info-button" aria-label="Daily change breakdown">&#9432;</button>
-        <div class="tooltip">
-          <div class="tooltip-content">
-            {% if daily.previous_price_gbp is not none %}
-            <div class="position-detail-line">
-              <span>Prev Close (GBP)</span>
-              <span>&pound;{{ daily.previous_price_gbp | money }}</span>
-            </div>
-            {% endif %}
-            {% if daily.previous_price_native is not none and daily.native_currency and daily.native_currency != "GBP" %}
-            <div class="position-detail-line">
-              <span>Prev Close ({{ daily.native_currency }})</span>
-              <span>{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.previous_price_native | money }}</span>
-            </div>
-            {% endif %}
-            {% if daily.current_price_native is not none and daily.previous_price_native is not none and daily.native_currency and daily.native_currency != "GBP" %}
-            {% set stock_pct = (daily.current_price_native - daily.previous_price_native) / daily.previous_price_native * 100 %}
-            <div class="position-detail-line">
-              <span>Stock Movement</span>
-              <span>{{ "%.2f"|format(stock_pct) }}%</span>
-            </div>
-            {% if daily.percent_change is not none %}
-            {% set fx_pct = (1 + daily.percent_change / 100) / (1 + stock_pct / 100) * 100 - 100 %}
-            <div class="position-detail-line">
-              <span>FX Movement</span>
-              <span>{{ "%.2f"|format(fx_pct) }}%</span>
-            </div>
-            {% endif %}
-            {% elif daily.percent_change is not none %}
-            <div class="position-detail-line">
-              <span>Price Change</span>
-              <span>{{ "%.2f"|format(daily.percent_change) }}%</span>
-            </div>
-            {% endif %}
-            <div class="position-detail-line position-detail-line--total">
-              <span><strong>Portfolio Impact</strong></span>
-              <span><strong>{% if daily.value_change_gbp < 0 %}-{% endif %}&pound;{{ daily.value_change_gbp | abs | money }}{% if daily.value_change_native is not none and daily.native_currency %} / {% if daily.value_change_native < 0 %}-{% endif %}{% if daily.native_currency == "USD" %}${% elif daily.native_currency == "EUR" %}&euro;{% else %}{{ daily.native_currency }} {% endif %}{{ daily.value_change_native | abs | money }}{% endif %}</strong></span>
-            </div>
-          </div>
-        </div>
-      </span>
-      {% else %}
-      <span class="daily-change daily-change--muted" title="{{ daily.unavailable_reason if daily else 'No stored price yet.' }}">Daily change unavailable</span>
-      {% endif %}
-
-      {% if daily and daily.freshness_text %}
-      <span class="daily-change-meta daily-change-meta--{{ daily.freshness_level }}"
-            title="{{ daily.freshness_title or daily.freshness_text }}"
-            data-freshness-live="1"
-            data-changed-at="{{ daily.price_last_changed_at.isoformat() if daily.price_last_changed_at else '' }}"
-            data-stale-minutes="{{ 20 }}">
-        {{ daily.freshness_text }}
-      </span>
-      {% endif %}
-
-      {% if daily and daily.market_status %}
-      <span class="market-status market-status--{{ daily.market_status | lower }}"
-            title="{% if daily.market_opens_in %}Opens: {{ daily.market_opens_in }}{% else %}{{ daily.market_status }}{% endif %}">
-        {% if daily.market_status | lower == 'open' %}
-          Open
-        {% else %}
-          Closed{% if daily.market_opens_in %} (Opening in {{ daily.market_opens_in }}){% endif %}
-        {% endif %}
-      </span>
-      {% endif %}
-
-      <span class="muted security-currency">{{ ss.security.currency }}</span>
-      <a href="/portfolio/add-lot?security_id={{ ss.security.id }}" class="btn btn-secondary btn-sm">+ Lot</a>
-      <a href="/simulate?security_id={{ ss.security.id }}" class="btn btn-secondary btn-sm">Simulate</a>
-    </div>
-  </div>
-
-  {% set position_rows = position_rows_by_security.get(ss.security.id, []) %}
-  <details class="security-lots-toggle" data-security-id="{{ ss.security.id }}" open>
-    <summary>
-      <span class="security-lots-toggle__title">Lots</span>
-      <span class="security-lots-toggle__line">
-        {{ position_rows | length }} active lot{% if position_rows | length != 1 %}s{% endif %}
-      </span>
-        {% if ss.sellable_pure_market_value_gbp is not none or ss.espp_plus_pending_market_value_gbp is not none or ss.rsu_vesting_market_value_gbp is not none %}
-        <div class="lot-type-badges">
-          {% if ss.sellable_pure_market_value_gbp is not none %}
-          <span class="badge badge-gain">Sellable: &pound;{{ ss.sellable_pure_market_value_gbp | money }}</span>
-          {% endif %}
-          {% if ss.espp_plus_pending_market_value_gbp is not none %}
-          <span class="badge badge-warning">ESPP+ Maturing: &pound;{{ ss.espp_plus_pending_market_value_gbp | money }}</span>
-          {% endif %}
-          {% if ss.rsu_vesting_market_value_gbp is not none %}
-          <span class="badge badge-neutral">RSUs Vesting: &pound;{{ ss.rsu_vesting_market_value_gbp | money }}</span>
-          {% endif %}
-        </div>
-        {% endif %}
-    </summary>
-    <div class="security-lots-toggle__body">
-
-  <div class="security-meta">
-    <span>Total Quantity <strong>{{ "%.2f"|format(ss.total_quantity) }}</strong></span>
-    <span>Cost basis <strong>&pound;{{ ss.total_cost_basis_gbp | money }}</strong></span>
-    <span>True cost <strong>&pound;{{ ss.total_true_cost_gbp | money }}</strong></span>
-    {% if ss.current_price_native is not none and ss.market_value_native_currency %}
-    <span>
-      Price <strong>{% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}{{ ss.current_price_native | money }}</strong>
-      {% if ss.market_value_native_currency != "GBP" and ss.current_price_gbp is not none %}
-      / <strong>&pound;{{ ss.current_price_gbp | money }}</strong>
-      {% endif %}
-    </span>
-    {% endif %}
-    {% if ss.market_value_gbp is not none %}
-    <span>
-      Mkt value
-      {% if ss.market_value_native is not none and ss.market_value_native_currency and ss.market_value_native_currency != "GBP" %}
-      <strong>{% if ss.market_value_native_currency == "USD" %}${% elif ss.market_value_native_currency == "EUR" %}&euro;{% elif ss.market_value_native_currency == "GBP" %}&pound;{% else %}{{ ss.market_value_native_currency }}{% endif %}{{ ss.market_value_native | money }}</strong> /
-      {% endif %}
-      <strong>&pound;{{ ss.market_value_gbp | money }}</strong>
-    </span>
-    {% if ss.sellable_net_gain_gbp is not none %}
-    <span>
-      P&amp;L (Economic)
-      <strong class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">
-        {% if ss.sellable_net_gain_gbp < 0 %}-{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}
-      </strong>
-    </span>
-    {% endif %}
-    {% if ss.sellable_net_gain_gbp is not none or ss.locked_unrealised_gain_economic_gbp is not none or ss.forfeit_risk_market_value_gbp is not none %}
-    <details class="unrealised-gains-toggle">
-      <summary>
-        <span>Economic Gain vs True Cost (Sellable Only)</span>
-        {% if ss.sellable_net_gain_gbp is not none %}
-        <span class="{% if ss.sellable_net_gain_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.sellable_net_gain_gbp < 0 %}-{% endif %}&pound;{{ ss.sellable_net_gain_gbp | abs | money }}</span>
-        {% endif %}
-      </summary>
-      <div class="unrealised-gains-body">
-        {% if ss.forfeit_risk_market_value_gbp is not none %}
-        <div class="unrealised-gain-item">
-          <span class="unrealised-gain-label" title="Market value of matched shares subject to forfeiture. Represents the value at risk if forfeiture conditions are triggered.">Forfeiture Risk</span>
-          <span class="unrealised-gain-value {% if ss.forfeit_risk_market_value_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.forfeit_risk_market_value_gbp < 0 %}-{% endif %}&pound;{{ ss.forfeit_risk_market_value_gbp | abs | money }}</span>
-        </div>
-        {% endif %}
-        {% if ss.locked_unrealised_gain_economic_gbp is not none %}
-        <div class="unrealised-gain-item">
-          <span class="unrealised-gain-label" title="Gain on locked shares (vesting). Based on market value minus true cost (including employment tax already paid).">Locked Gain</span>
-          <span class="unrealised-gain-value {% if ss.locked_unrealised_gain_economic_gbp < 0 %}loss{% else %}gain{% endif %}">{% if ss.locked_unrealised_gain_economic_gbp < 0 %}-{% endif %}&pound;{{ ss.locked_unrealised_gain_economic_gbp | abs | money }}</span>
-        </div>
-        {% endif %}
-      </div>
-    </details>
-    {% endif %}
-    {% if ss.fx_as_of %}
-    <span class="muted mono-small {% if ss.fx_is_stale %}stale-flag{% endif %}">
-      FX as of {{ ss.fx_as_of }}{% if ss.fx_is_stale %} (stale >{{ fx_stale_after_minutes }}m){% endif %}
-    </span>
-    {% endif %}
-    {% endif %}
-  </div>
-
-  {% if position_rows %}
-  <div class="portfolio-position-desktop">
-    <div class="table-wrap portfolio-table-wrap">
-      <table class="portfolio-position-table">
-        <thead>
-          <tr>
-            <th class="pin-left pin-left-date">Date</th>
-            <th class="pin-left pin-left-scheme">Scheme</th>
-            <th class="pin-left pin-left-status">Status</th>
-            <th class="num">Qty</th>
-            <th class="num">Market Value</th>
-            <th class="num">True Cost</th>
-            <th class="decision-zone-head decision-pin decision-pin-primary">
-              Net If Sold Today
-              <span class="decision-chip-row">
-                <span class="formula-chip" title="Formula: market value - employment tax estimate - forfeited matched value.">Formula</span>
-                <a class="trace-chip" href="/reconcile#trace-contributing-lots">Trace</a>
-              </span>
-            </th>
-            <th class="num decision-pin decision-pin-secondary">
-              Gain If Sold Today
-              <span class="decision-chip-row">
-                <span class="formula-chip" title="Formula: net if sold today - paid true cost.">Formula</span>
-                <a class="trace-chip" href="/reconcile#trace-contributing-lots">Trace</a>
-              </span>
-            </th>
-            <th class="decision-zone-head">
-              Net If Held (Next Milestone)
-              <span class="decision-chip-row">
-                <span class="formula-chip" title="Formula: milestone market value - milestone employment tax estimate.">Formula</span>
-                <a class="trace-chip" href="/reconcile#trace-contributing-lots">Trace</a>
-              </span>
-            </th>
-            <th class="num">Gain If Held</th>
-            <th class="decision-zone-head">Net If Long-Term (5+ Years)</th>
-            <th class="num">Gain If Long-Term</th>
-            <th>Notes</th>
-            <th class="actions-head">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in position_rows %}
-          {% set has_forfeiture_risk = row.forfeiture_risk_days_remaining is not none %}
-          {% set show_locked_until = row.sellability_status == "LOCKED" and not has_forfeiture_risk %}
-          {% set warning_row = has_forfeiture_risk or row.has_tax_window or row.sellability_status == "LOCKED" %}
-          <tr
-            data-position-row="1"
-            data-order-index="{{ loop.index0 }}"
-            data-has-warning="{{ '1' if warning_row else '0' }}"
-            data-is-locked="{{ '1' if row.sellability_status == 'LOCKED' else '0' }}"
-            data-is-forfeiture="{{ '1' if has_forfeiture_risk else '0' }}"
-            data-net-sold="{{ row.net_cash_if_sold if row.net_cash_if_sold is not none else '' }}"
-            data-net-held="{{ row.next_milestone_net if row.next_milestone_net is not none else '' }}"
-            data-net-long="{{ row.long_term_net if row.long_term_net is not none else '' }}"
-            data-signal-rank="{% if row.decision_title == 'Profitable and sellable' %}2{% elif row.decision_title == 'Economic loss if sold' %}0{% else %}1{% endif %}"
-          >
-            <td class="mono-small pin-left pin-left-date">{{ row.acquisition_date }}</td>
-            <td class="position-scheme-cell pin-left pin-left-scheme">
-              <span class="position-scheme">{{ row.scheme_display }}</span>
-            </td>
-            <td class="pin-left pin-left-status">
-              <span class="status-stack">
-                {% if has_forfeiture_risk %}
-                <span class="badge badge-warning">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d left)</span>
-                {% elif row.sellability_status == "LOCKED" %}
-                <span class="badge badge-neutral">Locked</span>
-                {% else %}
-                <span class="badge badge-sellable">Sellable</span>
-                {% endif %}
-                {% if row.has_tax_window %}
-                <span class="badge badge-warning">Tax Window</span>
-                {% endif %}
-                {% if row.scheme_display == "ISA" %}
-                <span class="badge badge-sellable">Tax-sheltered</span>
-                {% endif %}
-                {% if show_locked_until and row.sellability_unlock_date %}
-                <span class="muted mono-small">Until {{ row.sellability_unlock_date }}</span>
-                {% endif %}
-              </span>
-            </td>
-            <td class="num qty-cell">{{ "%.2f"|format(row.total_qty) }}</td>
-            <td class="num">{% if row.total_mv is not none %}&pound;{{ row.total_mv | money }}{% else %}<span class="muted">Unavailable</span>{% endif %}</td>
-            <td class="num">&pound;{{ row.paid_true_cost | money }}</td>
-            <td class="decision-zone num decision-pin decision-pin-primary">
-              {% if row.net_cash_if_sold is not none %}
-              &pound;{{ row.net_cash_if_sold | money }}
-              <button class="info-button" aria-label="Net if sold today calculation">&#9432;</button>
-              <div class="tooltip">
-                <div class="tooltip-content">
-                  {% if row.total_mv is not none %}
-                  <div class="position-detail-line">
-                    <span>Market value</span>
-                    <span>&pound;{{ row.total_mv | money }}</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Employment tax est.</span>
-                    <span>&pound;{{ row.sell_now_employment_tax_est | money }}</span>
-                  </div>
-                  {% if row.sell_now_forfeited_match_value > 0 %}
-                  <div class="position-detail-line">
-                    <span>Forfeited matches (not sold)</span>
-                    <span>-&pound;{{ row.sell_now_forfeited_match_value | money }}</span>
-                  </div>
-                  {% endif %}
-                  <div class="position-detail-line position-detail-line--total">
-                    <span><strong>Net if sold today</strong></span>
-                    <span><strong>&pound;{{ row.net_cash_if_sold | money }}</strong></span>
-                  </div>
-                  {% endif %}
-                </div>
-              </div>
-              {% elif row.sellability_status == "LOCKED" %}
-              <span class="badge badge-neutral">Locked</span>
-              {% else %}
-              <span class="muted">Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}</span>
-              {% endif %}
-            </td>
-            <td class="num decision-pin decision-pin-secondary {% if row.sell_now_economic_result is not none and row.sell_now_economic_result > 0 %}gain{% elif row.sell_now_economic_result is not none and row.sell_now_economic_result < 0 %}loss{% endif %}">
-              {% if row.sell_now_economic_result is not none %}
-              {% if row.sell_now_economic_result < 0 %}-{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}
-              {% elif row.sellability_status == "LOCKED" %}
-              <span class="badge badge-neutral">Locked</span>
-              {% else %}
-              <span class="muted">Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}</span>
-              {% endif %}
-            </td>
-            <td class="decision-zone num">
-              {% if row.next_milestone_net is not none %}
-              &pound;{{ row.next_milestone_net | money }}
-              <button class="info-button" aria-label="Next milestone breakdown">&#9432;</button>
-              <div class="tooltip">
-                <div class="tooltip-content">
-                  {% if row.total_mv is not none %}
-                  <div class="position-detail-line">
-                    <span>Market value (at milestone)</span>
-                    <span>&pound;{{ row.total_mv | money }}</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Employment tax est.</span>
-                    <span>&pound;{{ (row.total_mv - row.next_milestone_net) | money }}</span>
-                  </div>
-                  {% endif %}
-                  <div class="position-detail-line position-detail-line--total">
-                    <span><strong>Net if held to milestone</strong></span>
-                    <span><strong>&pound;{{ row.next_milestone_net | money }}</strong></span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>True cost baseline</span>
-                    <span>&pound;{{ row.paid_true_cost | money }}</span>
-                  </div>
-                  {% if row.next_milestone_gain is not none %}
-                  <div class="position-detail-line position-detail-line--total">
-                    <span><strong>Gain if held</strong></span>
-                    <span><strong>{% if row.next_milestone_gain < 0 %}-{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}</strong></span>
-                  </div>
-                  {% endif %}
-                  {% if row.next_milestone_date %}
-                  <div class="position-detail-line">
-                    <span><strong>Until</strong></span>
-                    <span><strong>{{ row.next_milestone_date }}</strong></span>
-                  </div>
-                  {% endif %}
-                </div>
-              </div>
-              {% else %}
-              <span class="muted">{{ row.next_milestone_reason or "Unavailable" }}</span>
-              {% endif %}
-            </td>
-            <td class="num {% if row.next_milestone_gain is not none and row.next_milestone_gain > 0 %}gain{% elif row.next_milestone_gain is not none and row.next_milestone_gain < 0 %}loss{% endif %}">
-              {% if row.next_milestone_gain is not none %}
-              {% if row.next_milestone_gain < 0 %}-{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}
-              {% else %}
-              <span class="muted">{{ row.next_milestone_reason or "Unavailable" }}</span>
-              {% endif %}
-            </td>
-            <td class="decision-zone num">
-              {% if row.long_term_net is not none %}
-              &pound;{{ row.long_term_net | money }}
-              <button class="info-button" aria-label="Long-term breakdown">&#9432;</button>
-              <div class="tooltip">
-                <div class="tooltip-content">
-                  {% if row.total_mv is not none %}
-                  <div class="position-detail-line">
-                    <span>Market value (long-term)</span>
-                    <span>&pound;{{ row.total_mv | money }}</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Employment tax est.</span>
-                    <span>&pound;{{ (row.total_mv - row.long_term_net) | money }}</span>
-                  </div>
-                  {% endif %}
-                  <div class="position-detail-line position-detail-line--total">
-                    <span><strong>Net if held long-term</strong></span>
-                    <span><strong>&pound;{{ row.long_term_net | money }}</strong></span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>True cost baseline</span>
-                    <span>&pound;{{ row.paid_true_cost | money }}</span>
-                  </div>
-                  {% if row.long_term_gain is not none %}
-                  <div class="position-detail-line position-detail-line--total">
-                    <span><strong>Gain long-term</strong></span>
-                    <span><strong>{% if row.long_term_gain < 0 %}-{% endif %}&pound;{{ row.long_term_gain | abs | money }}</strong></span>
-                  </div>
-                  {% endif %}
-                  {% if row.long_term_date %}
-                  <div class="position-detail-line">
-                    <span><strong>Until</strong></span>
-                    <span><strong>{{ row.long_term_date }}</strong></span>
-                  </div>
-                  {% endif %}
-                </div>
-              </div>
-              {% else %}
-              <span class="muted">{{ row.long_term_reason or "Unavailable" }}</span>
-              {% endif %}
-            </td>
-            <td class="num {% if row.long_term_gain is not none and row.long_term_gain > 0 %}gain{% elif row.long_term_gain is not none and row.long_term_gain < 0 %}loss{% endif %}">
-              {% if row.long_term_gain is not none %}
-              {% if row.long_term_gain < 0 %}-{% endif %}&pound;{{ row.long_term_gain | abs | money }}
-              {% else %}
-              <span class="muted">{{ row.long_term_reason or "Unavailable" }}</span>
-              {% endif %}
-            </td>
-            <td class="notes-cell">
-              <div class="notes-cell__text">{{ row.notes }}</div>
-              <button class="info-button" aria-label="Lot details">&#9432;</button>
-              <div class="tooltip">
-                <div class="tooltip-content">
-                  {% for dls in row.detail_lots %}
-                  <div class="position-detail-line">
-                    <span><strong>
-                      {% if row.row_kind == "GROUPED_ESPP_PLUS" %}
-                      {% if dls.lot.matching_lot_id %}Matching Share{% else %}Paid Share{% endif %}
-                      {% else %}
-                      {{ row.scheme_display }}
-                      {% endif %}
-                    </strong></span>
-                    <span></span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Tax year</span>
-                    <span>{{ dls.lot.tax_year }}</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Acquisition date</span>
-                    <span>{{ dls.lot.acquisition_date }}</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Quantity</span>
-                    <span>{{ "%.2f"|format(dls.quantity_remaining) }} shares</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>Acq price per share</span>
-                    <span>&pound;{{ dls.lot.acquisition_price_gbp | money }}</span>
-                  </div>
-                  <div class="position-detail-line">
-                    <span>True cost per share</span>
-                    <span>&pound;{{ dls.true_cost_per_share_gbp | money }}</span>
-                  </div>
-                  {% if dls.market_value_gbp is not none %}
-                  <div class="position-detail-line">
-                    <span>Market value</span>
-                    <span>&pound;{{ dls.market_value_gbp | money }}</span>
-                  </div>
-                  {% endif %}
-                  <div class="position-detail-line">
-                    <span>Total true cost</span>
-                    <span>&pound;{{ dls.true_cost_total_gbp | money }}</span>
-                  </div>
-                  {% if not loop.last %}
-                  <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
-                  {% endif %}
-                  {% endfor %}
-                </div>
-              </div>
-            </td>
-            <td class="actions-cell">
-              <span class="lot-actions-menu">
-                <details class="lot-menu">
-                  <summary class="lot-menu__trigger" title="Lot actions" aria-label="Lot actions">...</summary>
-                  <div class="lot-menu__items">
-                    <a class="lot-menu__item" href="/portfolio/edit-lot?lot_id={{ row.action_lot_id }}">Edit</a>
-                    <a class="lot-menu__item" href="/portfolio/transfer-lot?lot_id={{ row.action_lot_id }}">Transfer</a>
-                    <a class="lot-menu__item" href="/audit?table_name=lots&record_id={{ row.action_lot_id }}">History</a>
-                  </div>
-                </details>
-              </span>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="portfolio-position-mobile">
-    {% for row in position_rows %}
-    {% set has_forfeiture_risk = row.forfeiture_risk_days_remaining is not none %}
-    {% set warning_row = has_forfeiture_risk or row.has_tax_window or row.sellability_status == "LOCKED" %}
-    <article
-      class="position-card"
-      data-position-row="1"
-      data-order-index="{{ loop.index0 }}"
-      data-has-warning="{{ '1' if warning_row else '0' }}"
-      data-is-locked="{{ '1' if row.sellability_status == 'LOCKED' else '0' }}"
-      data-is-forfeiture="{{ '1' if has_forfeiture_risk else '0' }}"
-      data-net-sold="{{ row.net_cash_if_sold if row.net_cash_if_sold is not none else '' }}"
-      data-net-held="{{ row.next_milestone_net if row.next_milestone_net is not none else '' }}"
-      data-net-long="{{ row.long_term_net if row.long_term_net is not none else '' }}"
-      data-signal-rank="{% if row.decision_title == 'Profitable and sellable' %}2{% elif row.decision_title == 'Economic loss if sold' %}0{% else %}1{% endif %}"
-    >
-      <div class="position-card__header">
-        <span class="decision-icon-cell" title="{{ row.decision_title }}">{{ row.decision_signal }}</span>
-        <span class="mono-small">{{ row.acquisition_date }}</span>
-        <span class="position-scheme">{{ row.scheme_display }}</span>
-        <span class="lot-actions-menu">
-          <details class="lot-menu">
-            <summary class="lot-menu__trigger" title="Lot actions" aria-label="Lot actions">...</summary>
-            <div class="lot-menu__items">
-              <a class="lot-menu__item" href="/portfolio/edit-lot?lot_id={{ row.action_lot_id }}">Edit</a>
-              <a class="lot-menu__item" href="/portfolio/transfer-lot?lot_id={{ row.action_lot_id }}">Transfer</a>
-              <a class="lot-menu__item" href="/audit?table_name=lots&record_id={{ row.action_lot_id }}">History</a>
-            </div>
-          </details>
-        </span>
-      </div>
-      <div class="position-card__section">
-        <div class="position-card__label">Identity</div>
-        <div class="position-card__value">
-          {% if has_forfeiture_risk %}
-          <span class="badge badge-warning">Forfeiture Risk ({{ row.forfeiture_risk_days_remaining }}d left)</span>
-          {% elif row.sellability_status == "LOCKED" %}
-          <span class="badge badge-neutral">Locked</span>
-          {% else %}
-          <span class="badge badge-sellable">Sellable</span>
-          {% endif %}
-          {% if row.has_tax_window %}
-          <span class="badge badge-warning">Tax Window</span>
-          {% endif %}
-          {% if row.scheme_display == "ISA" %}
-          <span class="badge badge-sellable">Tax-sheltered</span>
-          {% endif %}
-        </div>
-      </div>
-      <div class="position-card__section">
-        <div class="position-card__label">Position</div>
-        <div class="position-card__value">Qty {{ "%.2f"|format(row.total_qty) }}</div>
-        <div class="position-card__value">Market Value {% if row.total_mv is not none %}&pound;{{ row.total_mv | money }}{% else %}Unavailable{% endif %}</div>
-        <div class="position-card__value">True Cost &pound;{{ row.paid_true_cost | money }}</div>
-      </div>
-      <div class="position-card__section">
-        <div class="position-card__label">Sell Today</div>
-        <div class="position-card__value">Net If Sold Today {% if row.net_cash_if_sold is not none %}&pound;{{ row.net_cash_if_sold | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
-        <div class="position-card__value">Gain If Sold Today {% if row.sell_now_economic_result is not none %}{% if row.sell_now_economic_result < 0 %}-{% endif %}&pound;{{ row.sell_now_economic_result | abs | money }}{% elif row.sellability_status == "LOCKED" %}Locked{% else %}Est. Net Proceeds unavailable: {{ (row.reason_unavailable or "unavailable") | lower }}{% endif %}</div>
-      </div>
-      <div class="position-card__section">
-        <div class="position-card__label">Next Milestone</div>
-        <div class="position-card__value">Net If Held {% if row.next_milestone_net is not none %}&pound;{{ row.next_milestone_net | money }}{% else %}{{ row.next_milestone_reason or "Unavailable" }}{% endif %}</div>
-        <div class="position-card__value">Gain If Held {% if row.next_milestone_gain is not none %}{% if row.next_milestone_gain < 0 %}-{% endif %}&pound;{{ row.next_milestone_gain | abs | money }}{% else %}{{ row.next_milestone_reason or "Unavailable" }}{% endif %}</div>
-      </div>
-      <div class="position-card__section">
-        <div class="position-card__label">When Long-Term Status Met</div>
-        <div class="position-card__value">Net If Long-Term {% if row.long_term_net is not none %}&pound;{{ row.long_term_net | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
-        <div class="position-card__value">Gain If Long-Term {% if row.long_term_gain is not none %}{% if row.long_term_gain < 0 %}-{% endif %}&pound;{{ row.long_term_gain | abs | money }}{% else %}{{ row.long_term_reason or "Unavailable" }}{% endif %}</div>
-      </div>
-      <div class="position-card__section">
-        <div class="position-card__label">Notes</div>
-        <div class="position-card__value">{{ row.notes }}</div>
-        <button class="info-button" aria-label="Lot details">&#9432;</button>
-        <div class="tooltip">
-          <div class="tooltip-content">
-            {% for dls in row.detail_lots %}
-            <div class="position-detail-line">
-              <span><strong>
-                {% if row.row_kind == "GROUPED_ESPP_PLUS" %}
-                {% if dls.lot.matching_lot_id %}Matching Share{% else %}Paid Share{% endif %}
-                {% else %}
-                {{ row.scheme_display }}
-                {% endif %}
-              </strong></span>
-              <span></span>
-            </div>
-            <div class="position-detail-line">
-              <span>Tax year</span>
-              <span>{{ dls.lot.tax_year }}</span>
-            </div>
-            <div class="position-detail-line">
-              <span>Acquisition date</span>
-              <span>{{ dls.lot.acquisition_date }}</span>
-            </div>
-            <div class="position-detail-line">
-              <span>Quantity</span>
-              <span>{{ "%.2f"|format(dls.quantity_remaining) }} shares</span>
-            </div>
-            <div class="position-detail-line">
-              <span>Acq price per share</span>
-              <span>&pound;{{ dls.lot.acquisition_price_gbp | money }}</span>
-            </div>
-            <div class="position-detail-line">
-              <span>True cost per share</span>
-              <span>&pound;{{ dls.true_cost_per_share_gbp | money }}</span>
-            </div>
-            {% if dls.market_value_gbp is not none %}
-            <div class="position-detail-line">
-              <span>Market value</span>
-              <span>&pound;{{ dls.market_value_gbp | money }}</span>
-            </div>
-            {% endif %}
-            <div class="position-detail-line">
-              <span>Total true cost</span>
-              <span>&pound;{{ dls.true_cost_total_gbp | money }}</span>
-            </div>
-            {% if not loop.last %}
-            <div style="margin-top: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.15rem;"></div>
-            {% endif %}
-            {% endfor %}
-          </div>
-        </div>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="muted no-lots-note">No active lots.</p>
-  {% endif %}
-    </div>
-  </details>
-</div>
-{% endfor %}
-{% endif %}
+{% include "partials/portfolio_live_root.html" %}
 </div>
 
 <script>
 (function () {
-  var INTERVAL = 60;
-  var countdown = INTERVAL;
-  var inFlight = false;
+  var VIEW_SYNC_INTERVAL_MS = 5000;
+  var LIVE_DATA_PATH = "/portfolio/live-data";
+  var refreshInFlight = false;
+  var viewSyncInFlight = false;
   var SECURITY_VISIBILITY_KEY = "portfolio.security_visibility.v1";
   var VIEW_PREFS_KEY = "portfolio.view_prefs.v1";
   var manualForm = document.getElementById("manual-refresh-form");
@@ -964,6 +95,10 @@
   var viewHelpText = document.getElementById("portfolio-help-text");
   var viewVisibleCount = document.getElementById("portfolio-visible-count");
   var liveRoot = document.getElementById("portfolio-live-root");
+
+  function buildLiveDataUrl() {
+    return LIVE_DATA_PATH + window.location.search;
+  }
 
   function loadSecurityVisibilityState() {
     try {
@@ -1390,15 +525,94 @@
     stateEl.className = "refresh-state " + cls;
   }
 
-  function resetCountdown() {
-    countdown = INTERVAL;
+  function updateGuardrailCounts(guardrails) {
+    var countPill = document.getElementById("guardrail-count-pill");
+    var activeCountEl = document.getElementById("guardrail-active-count");
+    var hiddenCountEl = document.getElementById("guardrail-hidden-count");
+    if (activeCountEl) {
+      activeCountEl.textContent = String(guardrails.active_count || 0);
+    }
+    if (countPill) {
+      countPill.classList.toggle("guardrail-count-pill--warning", (guardrails.active_count || 0) > 0);
+      countPill.classList.toggle("guardrail-count-pill--ok", (guardrails.active_count || 0) <= 0);
+    }
+    if ((guardrails.hidden_count || 0) > 0) {
+      if (!hiddenCountEl && countPill) {
+        hiddenCountEl = document.createElement("span");
+        hiddenCountEl.className = "guardrail-count-pill__meta";
+        hiddenCountEl.id = "guardrail-hidden-count";
+        countPill.appendChild(hiddenCountEl);
+      }
+      if (hiddenCountEl) {
+        hiddenCountEl.textContent = String(guardrails.hidden_count) + " suppressed";
+      }
+    } else if (hiddenCountEl) {
+      hiddenCountEl.remove();
+    }
+  }
+
+  function replaceLiveSections(payload) {
+    if (!liveRoot) {
+      return;
+    }
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(payload.root_html || "", "text/html");
+    var nextSummary = doc.getElementById("portfolio-live-summary");
+    var nextSecurities = doc.getElementById("portfolio-live-securities");
+    var currentSummary = document.getElementById("portfolio-live-summary");
+    var currentSecurities = document.getElementById("portfolio-live-securities");
+    if (!nextSummary || !nextSecurities || !currentSummary || !currentSecurities) {
+      throw new Error("Updated portfolio live sections missing");
+    }
+    currentSummary.innerHTML = nextSummary.innerHTML;
+    currentSecurities.innerHTML = nextSecurities.innerHTML;
+    if (payload.guardrails) {
+      updateGuardrailCounts(payload.guardrails);
+    }
+    wireSecurityVisibilityPersistence();
+    applyPortfolioViewPrefs(loadViewPrefs());
+    bindGuardrailLifecycle();
+    updateFreshnessTimers();
+  }
+
+  function fetchLiveData() {
+    return fetch(buildLiveDataUrl(), {
+      headers: {
+        "X-Requested-With": "fetch",
+        "Accept": "application/json"
+      },
+      cache: "no-store"
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          throw new Error("HTTP " + resp.status);
+        }
+        return resp.json();
+      });
+  }
+
+  function syncLiveView() {
+    if (viewSyncInFlight || refreshInFlight) {
+      return;
+    }
+    viewSyncInFlight = true;
+    fetchLiveData()
+      .then(function (payload) {
+        replaceLiveSections(payload);
+      })
+      .catch(function () {
+        // Keep the current view; next poll will retry.
+      })
+      .finally(function () {
+        viewSyncInFlight = false;
+      });
   }
 
   function doRefresh() {
-    if (inFlight) {
+    if (refreshInFlight || viewSyncInFlight) {
       return;
     }
-    inFlight = true;
+    refreshInFlight = true;
     setState("Updating", "refresh-state-updating");
 
     fetch("/prices/refresh", { method: "POST" })
@@ -1414,41 +628,16 @@
         } else {
           setState("Success", "refresh-state-success");
         }
-        resetCountdown();
-        return fetch(window.location.pathname + window.location.search, {
-          headers: {
-            "X-Requested-With": "fetch"
-          },
-          cache: "no-store"
-        });
+        return fetchLiveData();
       })
-      .then(function (resp) {
-        if (!resp || !resp.ok) {
-          throw new Error(resp ? ("HTTP " + resp.status) : "Refresh view unavailable");
-        }
-        return resp.text();
-      })
-      .then(function (html) {
-        if (!liveRoot) {
-          return;
-        }
-        var parser = new DOMParser();
-        var doc = parser.parseFromString(html, "text/html");
-        var nextRoot = doc.getElementById("portfolio-live-root");
-        if (!nextRoot) {
-          throw new Error("Updated portfolio fragment missing");
-        }
-        liveRoot.innerHTML = nextRoot.innerHTML;
-        wireSecurityVisibilityPersistence();
-        applyPortfolioViewPrefs(loadViewPrefs());
-        bindGuardrailLifecycle();
+      .then(function (payload) {
+        replaceLiveSections(payload);
       })
       .catch(function (err) {
         setState("Error", "refresh-state-error");
-        resetCountdown();
       })
       .finally(function () {
-        inFlight = false;
+        refreshInFlight = false;
       });
   }
 
@@ -1512,16 +701,8 @@
 
   setState("Idle", "refresh-state-idle");
 
-  setInterval(function () {
-    updateFreshnessTimers();
-    if (inFlight) {
-      return;
-    }
-    countdown -= 1;
-    if (countdown <= 0) {
-      doRefresh();
-    }
-  }, 1000);
+  setInterval(updateFreshnessTimers, 1000);
+  setInterval(syncLiveView, VIEW_SYNC_INTERVAL_MS);
 })();
 
 (function () {

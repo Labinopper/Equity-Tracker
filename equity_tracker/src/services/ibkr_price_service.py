@@ -251,6 +251,8 @@ def _ingest_one(sess: Session, price_repo: PriceRepository,
     price_repo.add_ticker_snapshot(
         security_id=security.id,
         price_date=snap_date,
+        price_native=price_native_str,
+        currency=currency,
         price_gbp=price_gbp_str,
         source=source,
         observed_at=snapshot_dt,
