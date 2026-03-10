@@ -476,8 +476,14 @@ class LotTransferEvent(Base):
 
     __tablename__ = "lot_transfer_events"
     __table_args__ = (
-        CheckConstraint(_SCHEME_CHECK, name="ck_lot_transfer_events_source_scheme"),
-        CheckConstraint(_SCHEME_CHECK, name="ck_lot_transfer_events_destination_scheme"),
+        CheckConstraint(
+            "source_scheme IN ('RSU','ESPP','ESPP_PLUS','SIP_PARTNERSHIP','SIP_MATCHING','SIP_DIVIDEND','BROKERAGE','ISA')",
+            name="ck_lot_transfer_events_source_scheme",
+        ),
+        CheckConstraint(
+            "destination_scheme IN ('RSU','ESPP','ESPP_PLUS','SIP_PARTNERSHIP','SIP_MATCHING','SIP_DIVIDEND','BROKERAGE','ISA')",
+            name="ck_lot_transfer_events_destination_scheme",
+        ),
         Index(
             "ix_lot_transfer_events_security_date",
             "security_id",
