@@ -168,6 +168,9 @@ class Security(Base):
     dividend_reference_events: Mapped[list[DividendReferenceEvent]] = relationship(
         back_populates="security", lazy="select", cascade="all, delete-orphan"
     )
+    lot_transfer_events: Mapped[list[LotTransferEvent]] = relationship(
+        back_populates="security", lazy="select", cascade="all, delete-orphan"
+    )
     price_history: Mapped[list[PriceHistory]] = relationship(
         back_populates="security", lazy="select", cascade="all, delete-orphan"
     )
@@ -456,6 +459,75 @@ class LotDisposal(Base):
 
     transaction: Mapped[Transaction] = relationship(back_populates="lot_disposals")
     lot: Mapped[Lot] = relationship(back_populates="lot_disposals")
+
+
+# ---------------------------------------------------------------------------
+# lot_transfer_events
+# ---------------------------------------------------------------------------
+
+class LotTransferEvent(Base):
+    """
+    Append-only transfer history for non-disposal custody/scheme moves.
+
+    This preserves historical quantity and timing independently of the current
+    lot state so ex-date entitlement and other date-specific reconstructions do
+    not rely on shadow-lot note parsing.
+    """
+
+    __tablename__ = "lot_transfer_events"
+    __table_args__ = (
+        CheckConstraint(_SCHEME_CHECK, name="ck_lot_transfer_events_source_scheme"),
+        CheckConstraint(_SCHEME_CHECK, name="ck_lot_transfer_events_destination_scheme"),
+        Index(
+            "ix_lot_transfer_events_security_date",
+            "security_id",
+            "transfer_date",
+        ),
+        Index(
+            "ix_lot_transfer_events_source_lot_date",
+            "source_lot_id",
+            "transfer_date",
+        ),
+        Index(
+            "ix_lot_transfer_events_destination_lot_date",
+            "destination_lot_id",
+            "transfer_date",
+        ),
+        UniqueConstraint("external_id", name="uq_lot_transfer_events_external_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    security_id: Mapped[str] = mapped_column(
+        ForeignKey("securities.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_lot_id: Mapped[str] = mapped_column(
+        ForeignKey("lots.id", ondelete="RESTRICT"), nullable=False
+    )
+    destination_lot_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("lots.id", ondelete="SET NULL"), nullable=True
+    )
+    source_scheme: Mapped[str] = mapped_column(String(20), nullable=False)
+    destination_scheme: Mapped[str] = mapped_column(String(20), nullable=False)
+    transfer_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[str] = mapped_column(String(30), nullable=False)
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    external_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+    security: Mapped[Security] = relationship(back_populates="lot_transfer_events")
+    source_lot: Mapped[Lot] = relationship(
+        Lot,
+        foreign_keys=[source_lot_id],
+        lazy="select",
+    )
+    destination_lot: Mapped[Optional[Lot]] = relationship(
+        Lot,
+        foreign_keys=[destination_lot_id],
+        lazy="select",
+    )
 
 
 # ---------------------------------------------------------------------------

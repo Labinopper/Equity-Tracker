@@ -26,6 +26,7 @@ from ..db.models import LotDisposal, Transaction
 from ..db.repository import (
     DividendEntryRepository,
     DividendReferenceEventRepository,
+    LotTransferEventRepository,
     LotRepository,
     SecurityRepository,
 )
@@ -40,7 +41,12 @@ _FX_Q = Decimal("0.000001")
 _VALID_TREATMENTS = frozenset({"TAXABLE", "ISA_EXEMPT"})
 _GBP = "GBP"
 _IBKR_META_PREFIX = "IBKR_META:"
-_TRANSFER_DATE_RE = re.compile(r"\bon (\d{4}-\d{2}-\d{2})\b")
+_LEGACY_TRANSFER_LINE_RE = re.compile(
+    r"Transferred\s+(?P<qty>[0-9]+(?:\.[0-9]+)?)\s+shares\s+to\s+BROKERAGE\s+"
+    r"\(FIFO\s+from\s+ESPP\s+source\s+lot\s+(?P<source_lot_id>[0-9a-f\-]{36})\s+on\s+"
+    r"(?P<transfer_date>\d{4}-\d{2}-\d{2})\)\.",
+    re.IGNORECASE,
+)
 
 
 def _q_money(value: Decimal) -> Decimal:
@@ -251,35 +257,72 @@ def _normalize_currency(value: str | None) -> str:
 
 
 def _is_transfer_shadow_lot(lot: Any) -> bool:
-    return bool(
-        getattr(lot, "import_source", None) == "ui_transfer_to_brokerage"
-        or (
-            getattr(lot, "external_id", None) is not None
-            and str(getattr(lot, "external_id")).startswith("transfer-origin-lot:")
-        )
-    )
-
-
-def _source_lot_id_for_transfer_shadow(lot: Any) -> str | None:
     external_id = str(getattr(lot, "external_id", None) or "").strip()
-    prefix = "transfer-origin-lot:"
-    if not external_id.startswith(prefix):
-        return None
-    source_lot_id = external_id[len(prefix) :].strip()
-    return source_lot_id or None
+    return external_id.startswith("transfer-origin-lot:")
 
 
-def _transfer_date_for_lot(lot: Any) -> date | None:
-    notes = str(getattr(lot, "notes", None) or "").strip()
-    if not notes:
-        return None
-    match = _TRANSFER_DATE_RE.search(notes)
-    if match is None:
-        return None
-    try:
-        return date.fromisoformat(match.group(1))
-    except ValueError:
-        return None
+def _ensure_transfer_event_backfill_for_security(security_id: str) -> None:
+    with AppContext.write_session() as sess:
+        lot_repo = LotRepository(sess)
+        transfer_repo = LotTransferEventRepository(sess)
+        lots = lot_repo.get_all_lots_for_security(security_id)
+        if not lots:
+            return
+        existing_events = transfer_repo.list_for_security(security_id)
+        existing_keys = {
+            (
+                str(event.source_lot_id),
+                str(event.destination_lot_id or ""),
+                str(event.source_scheme or "").strip().upper(),
+                str(event.destination_scheme or "").strip().upper(),
+                event.transfer_date,
+                str(event.quantity),
+            )
+            for event in existing_events
+        }
+
+        for lot in lots:
+            if not _is_transfer_shadow_lot(lot):
+                continue
+            notes = str(getattr(lot, "notes", None) or "")
+            if not notes.strip():
+                continue
+            for index, match in enumerate(_LEGACY_TRANSFER_LINE_RE.finditer(notes), start=1):
+                source_lot_id = match.group("source_lot_id").strip()
+                try:
+                    qty = Decimal(match.group("qty"))
+                    transfer_date = date.fromisoformat(match.group("transfer_date"))
+                except (InvalidOperation, ValueError):
+                    continue
+                dedupe_key = (
+                    source_lot_id,
+                    str(lot.id),
+                    "ESPP",
+                    "BROKERAGE",
+                    transfer_date,
+                    str(qty),
+                )
+                if dedupe_key in existing_keys:
+                    continue
+                external_id = (
+                    f"legacy-transfer-backfill:{lot.id}:{source_lot_id}:"
+                    f"{transfer_date.isoformat()}:{index}:{str(qty)}"
+                )
+                if transfer_repo.get_by_external_id(external_id) is not None:
+                    continue
+                transfer_repo.add(
+                    security_id=security_id,
+                    source_lot_id=source_lot_id,
+                    destination_lot_id=lot.id,
+                    source_scheme="ESPP",
+                    destination_scheme="BROKERAGE",
+                    transfer_date=transfer_date,
+                    quantity=qty,
+                    source="legacy_note_backfill",
+                    external_id=external_id,
+                    notes=match.group(0).strip(),
+                )
+                existing_keys.add(dedupe_key)
 
 
 def _eligible_quantity_on_ex_date(
@@ -336,15 +379,20 @@ def _eligible_quantities_by_holding_bucket_on_ex_date(
     security_id: str,
     ex_dividend_date: date,
 ) -> dict[str, Decimal]:
+    _ensure_transfer_event_backfill_for_security(security_id)
+
     with AppContext.read_session() as sess:
         lot_repo = LotRepository(sess)
+        transfer_repo = LotTransferEventRepository(sess)
         lots = lot_repo.get_all_lots_for_security(security_id)
         if not lots:
             return {}
 
         lot_ids = [lot.id for lot in lots]
+        transfer_events = transfer_repo.list_for_security(security_id)
         disposal_events_by_lot: dict[str, list[tuple[date, Decimal]]] = {}
-        transfer_events_by_source_lot: dict[str, list[tuple[date, Decimal]]] = {}
+        transfer_events_by_source_lot: dict[str, list[Any]] = {}
+        transfer_events_by_destination_lot: dict[str, list[Any]] = {}
         if lot_ids:
             rows = sess.execute(
                 select(
@@ -363,30 +411,13 @@ def _eligible_quantities_by_holding_bucket_on_ex_date(
                 if qty <= Decimal("0"):
                     continue
                 disposal_events_by_lot.setdefault(str(lot_id), []).append((transaction_date, qty))
-
-        for lot in lots:
-            if not _is_transfer_shadow_lot(lot):
-                continue
-            source_lot_id = _source_lot_id_for_transfer_shadow(lot)
-            transfer_date = _transfer_date_for_lot(lot)
-            shadow_qty = _to_decimal(getattr(lot, "quantity_remaining", None))
-            if (
-                source_lot_id is None
-                or transfer_date is None
-                or shadow_qty is None
-                or shadow_qty <= Decimal("0")
-            ):
-                continue
-            transfer_events_by_source_lot.setdefault(source_lot_id, []).append(
-                (transfer_date, shadow_qty)
-            )
+        for event in transfer_events:
+            transfer_events_by_source_lot.setdefault(event.source_lot_id, []).append(event)
+            if event.destination_lot_id:
+                transfer_events_by_destination_lot.setdefault(event.destination_lot_id, []).append(event)
 
     eligible_by_bucket: dict[str, Decimal] = {}
     for lot in lots:
-        is_transfer_shadow = _is_transfer_shadow_lot(lot)
-        transfer_date = _transfer_date_for_lot(lot) if is_transfer_shadow else None
-        if is_transfer_shadow and transfer_date is not None and ex_dividend_date < transfer_date:
-            continue
         if lot.acquisition_date >= ex_dividend_date:
             continue
         current_qty = _to_decimal(lot.quantity_remaining)
@@ -396,13 +427,38 @@ def _eligible_quantities_by_holding_bucket_on_ex_date(
         for transaction_date, qty in disposal_events_by_lot.get(lot.id, []):
             if transaction_date > ex_dividend_date:
                 reconstructed_qty += qty
-        if not is_transfer_shadow:
-            for event_date, qty in transfer_events_by_source_lot.get(lot.id, []):
-                if event_date > ex_dividend_date:
-                    reconstructed_qty += qty
+        for event in transfer_events_by_source_lot.get(lot.id, []):
+            event_qty = _to_decimal(event.quantity)
+            if event_qty is None or event_qty <= Decimal("0"):
+                continue
+            if event.transfer_date > ex_dividend_date:
+                reconstructed_qty += event_qty
+        for event in transfer_events_by_destination_lot.get(lot.id, []):
+            if event.destination_lot_id == event.source_lot_id:
+                continue
+            event_qty = _to_decimal(event.quantity)
+            if event_qty is None or event_qty <= Decimal("0"):
+                continue
+            if event.transfer_date > ex_dividend_date:
+                reconstructed_qty -= event_qty
         if reconstructed_qty <= Decimal("0"):
             continue
         bucket = _holding_bucket_for_lot(lot)
+        self_transfer_events = sorted(
+            (
+                event
+                for event in transfer_events_by_source_lot.get(lot.id, [])
+                if event.destination_lot_id == lot.id
+            ),
+            key=lambda event: (event.transfer_date, event.created_at, event.id),
+        )
+        if self_transfer_events:
+            bucket = self_transfer_events[0].source_scheme
+            for event in self_transfer_events:
+                if event.transfer_date <= ex_dividend_date:
+                    bucket = event.destination_scheme
+                else:
+                    break
         eligible_by_bucket[bucket] = eligible_by_bucket.get(bucket, Decimal("0")) + reconstructed_qty
 
     return {

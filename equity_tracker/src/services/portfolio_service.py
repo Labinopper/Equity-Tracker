@@ -56,6 +56,7 @@ from ..db.repository import (
     AuditRepository,
     DisposalRepository,
     EmploymentTaxEventRepository,
+    LotTransferEventRepository,
     LotRepository,
     PriceRepository,
     SecurityRepository,
@@ -2056,6 +2057,7 @@ class PortfolioService:
         with AppContext.write_session() as sess:
             lot_repo = LotRepository(sess)
             employment_tax_event_repo = EmploymentTaxEventRepository(sess)
+            lot_transfer_event_repo = LotTransferEventRepository(sess)
             audit = AuditRepository(sess)
             lot = lot_repo.require_by_id(lot_id)
             security = SecurityRepository(sess).require_by_id(lot.security_id)
@@ -2102,6 +2104,37 @@ class PortfolioService:
 
             def _broker_transfer_external_id(source_lot_id: str) -> str:
                 return f"transfer-origin-lot:{source_lot_id}"
+
+            def _record_transfer_event(
+                *,
+                source_lot: Lot,
+                destination_lot: Lot | None,
+                source_scheme: str,
+                destination_scheme: str,
+                transfer_date: date,
+                move_qty: Decimal,
+                source_name: str,
+                notes: str | None = None,
+            ) -> None:
+                external_id = (
+                    f"lot-transfer:{source_lot.id}:"
+                    f"{destination_lot.id if destination_lot is not None else 'self'}:"
+                    f"{transfer_date.isoformat()}:{str(move_qty)}:{destination_scheme}"
+                )
+                if lot_transfer_event_repo.get_by_external_id(external_id) is not None:
+                    return
+                lot_transfer_event_repo.add(
+                    security_id=source_lot.security_id,
+                    source_lot_id=source_lot.id,
+                    destination_lot_id=(destination_lot.id if destination_lot is not None else None),
+                    source_scheme=source_scheme,
+                    destination_scheme=destination_scheme,
+                    transfer_date=transfer_date,
+                    quantity=move_qty,
+                    source=source_name,
+                    external_id=external_id,
+                    notes=notes,
+                )
 
             def _try_phase_a_currency(value: str | None) -> str | None:
                 try:
@@ -2275,6 +2308,16 @@ class PortfolioService:
                         transfer_line,
                         resolved_transfer_currency,
                     )
+                    _record_transfer_event(
+                        source_lot=src,
+                        destination_lot=broker_lot,
+                        source_scheme="ESPP",
+                        destination_scheme="BROKERAGE",
+                        transfer_date=today,
+                        move_qty=move_qty,
+                        source_name="ui_transfer_to_brokerage",
+                        notes=transfer_line,
+                    )
                     if primary_transferred_lot is None:
                         primary_transferred_lot = broker_lot
 
@@ -2446,6 +2489,17 @@ class PortfolioService:
                     ),
                     source="ui_transfer_to_brokerage",
                 )
+
+            _record_transfer_event(
+                source_lot=lot,
+                destination_lot=lot,
+                source_scheme=source_scheme,
+                destination_scheme="BROKERAGE",
+                transfer_date=today,
+                move_qty=full_lot_qty,
+                source_name="ui_transfer_to_brokerage",
+                notes=transfer_note,
+            )
 
             new_values = {
                 "scheme_type": lot.scheme_type,

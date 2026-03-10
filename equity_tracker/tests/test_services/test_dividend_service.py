@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from src.app_context import AppContext
+from src.db.models import Lot
+from src.db.repository import LotRepository, LotTransferEventRepository
 from src.services.dividend_service import DividendService
+from src.services.dividend_service import _eligible_quantities_by_holding_bucket_on_ex_date
 from src.services.portfolio_service import PortfolioService
 from src.settings import AppSettings
 
@@ -173,4 +177,176 @@ def test_net_dividend_timeline_returns_cumulative_portfolio_and_security_maps(ap
     assert timeline["net_dividends_by_security_gbp"][sec_b.id] == "20.00"
     assert timeline["cumulative_net_dividends_by_security"][sec_a.id] == {
         "2026-01-01": "30.00"
+    }
+
+
+def test_ex_dividend_eligibility_uses_transfer_events_without_double_counting_legacy_backfill(app_context):
+    sec = PortfolioService.add_security(
+        ticker="IBM",
+        name="IBM",
+        currency="USD",
+        exchange="NYSE",
+        is_manual_override=True,
+    )
+
+    note1 = (
+        "Transferred 2.00 shares to BROKERAGE "
+        "(FIFO from ESPP source lot source-1 on 2026-02-02)."
+    )
+    note2 = (
+        "Transferred 2.00 shares to BROKERAGE "
+        "(FIFO from ESPP source lot source-2 on 2026-02-13)."
+    )
+
+    with AppContext.write_session() as sess:
+        lot_repo = LotRepository(sess)
+        transfer_repo = LotTransferEventRepository(sess)
+
+        source_1 = Lot(
+            id="source-1",
+            security_id=sec.id,
+            grant_id=None,
+            scheme_type="ESPP",
+            tax_year="2025-26",
+            acquisition_date=date(2026, 1, 6),
+            quantity="2.07",
+            quantity_remaining="0.07",
+            acquisition_price_gbp="100.00",
+            true_cost_per_share_gbp="100.00",
+            fmv_at_acquisition_gbp=None,
+            acquisition_price_original_ccy="100.00",
+            original_currency="USD",
+            broker_currency="USD",
+            fx_rate_at_acquisition="0.80",
+            fx_rate_source="test",
+            broker_reference=None,
+            import_source=None,
+            external_id=None,
+            notes=note1,
+        )
+        broker_1 = Lot(
+            id="broker-1",
+            security_id=sec.id,
+            grant_id=None,
+            scheme_type="BROKERAGE",
+            tax_year="2025-26",
+            acquisition_date=date(2026, 1, 6),
+            quantity="2.00",
+            quantity_remaining="2.00",
+            acquisition_price_gbp="100.00",
+            true_cost_per_share_gbp="100.00",
+            fmv_at_acquisition_gbp=None,
+            acquisition_price_original_ccy="100.00",
+            original_currency="USD",
+            broker_currency="USD",
+            fx_rate_at_acquisition="0.80",
+            fx_rate_source="test",
+            broker_reference=None,
+            import_source="ui_transfer_to_brokerage",
+            external_id="transfer-origin-lot:source-1",
+            notes=note1,
+        )
+        source_2 = Lot(
+            id="source-2",
+            security_id=sec.id,
+            grant_id=None,
+            scheme_type="ESPP",
+            tax_year="2025-26",
+            acquisition_date=date(2026, 2, 6),
+            quantity="2.16",
+            quantity_remaining="0.16",
+            acquisition_price_gbp="100.00",
+            true_cost_per_share_gbp="100.00",
+            fmv_at_acquisition_gbp=None,
+            acquisition_price_original_ccy="100.00",
+            original_currency="USD",
+            broker_currency="USD",
+            fx_rate_at_acquisition="0.80",
+            fx_rate_source="test",
+            broker_reference=None,
+            import_source=None,
+            external_id=None,
+            notes=note2,
+        )
+        broker_2 = Lot(
+            id="broker-2",
+            security_id=sec.id,
+            grant_id=None,
+            scheme_type="BROKERAGE",
+            tax_year="2025-26",
+            acquisition_date=date(2026, 2, 6),
+            quantity="2.00",
+            quantity_remaining="2.00",
+            acquisition_price_gbp="100.00",
+            true_cost_per_share_gbp="100.00",
+            fmv_at_acquisition_gbp=None,
+            acquisition_price_original_ccy="100.00",
+            original_currency="USD",
+            broker_currency="USD",
+            fx_rate_at_acquisition="0.80",
+            fx_rate_source="test",
+            broker_reference=None,
+            import_source="ui_transfer_to_brokerage",
+            external_id="transfer-origin-lot:source-2",
+            notes=note2,
+        )
+        espp_plus = Lot(
+            id="espp-plus",
+            security_id=sec.id,
+            grant_id=None,
+            scheme_type="ESPP_PLUS",
+            tax_year="2025-26",
+            acquisition_date=date(2026, 1, 6),
+            quantity="1.57",
+            quantity_remaining="1.57",
+            acquisition_price_gbp="100.00",
+            true_cost_per_share_gbp="100.00",
+            fmv_at_acquisition_gbp=None,
+            acquisition_price_original_ccy="100.00",
+            original_currency="USD",
+            broker_currency="USD",
+            fx_rate_at_acquisition="0.80",
+            fx_rate_source="test",
+            broker_reference=None,
+            import_source=None,
+            external_id=None,
+            notes=None,
+        )
+        for row in (source_1, broker_1, source_2, broker_2, espp_plus):
+            lot_repo.add(row)
+
+        transfer_repo.add(
+            security_id=sec.id,
+            source_lot_id="source-1",
+            destination_lot_id="broker-1",
+            source_scheme="ESPP",
+            destination_scheme="BROKERAGE",
+            transfer_date=date(2026, 2, 2),
+            quantity=Decimal("2.00"),
+            source="test",
+            external_id="event-1",
+            notes=note1,
+        )
+        transfer_repo.add(
+            security_id=sec.id,
+            source_lot_id="source-2",
+            destination_lot_id="broker-2",
+            source_scheme="ESPP",
+            destination_scheme="BROKERAGE",
+            transfer_date=date(2026, 2, 13),
+            quantity=Decimal("2.00"),
+            source="test",
+            external_id="event-2",
+            notes=note2,
+        )
+
+    quantities = _eligible_quantities_by_holding_bucket_on_ex_date(
+        security_id=sec.id,
+        ex_dividend_date=date(2026, 2, 10),
+    )
+
+    assert quantities == {
+        "BROKERAGE": Decimal("2.00"),
+        "ESPP": Decimal("2.23"),
+        "ESPP_PLUS": Decimal("1.57"),
     }

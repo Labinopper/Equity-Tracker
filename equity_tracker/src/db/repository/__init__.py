@@ -21,6 +21,7 @@ from .catalog import SecurityCatalogRepository
 from .dividends import DividendEntryRepository, DividendReferenceEventRepository
 from .disposals import DisposalRepository
 from .employment_tax_events import EmploymentTaxEventRepository
+from .lot_transfer_events import LotTransferEventRepository
 from .lots import LotRepository
 from .prices import PriceRepository
 from .scenario_snapshots import ScenarioSnapshotRepository
@@ -34,6 +35,7 @@ __all__ = [
     "DividendReferenceEventRepository",
     "DisposalRepository",
     "EmploymentTaxEventRepository",
+    "LotTransferEventRepository",
     "LotRepository",
     "PriceRepository",
     "ScenarioSnapshotRepository",
