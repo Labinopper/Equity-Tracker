@@ -2,13 +2,26 @@
 {% block title %}Audit Log - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>Audit Log</h1></div>
-<p class="muted page-intro">
-  Append-only record of all data mutations. Newest entries first.
-</p>
+<div class="page-title">
+  <div class="page-title__heading"><h1>Audit Log</h1></div>
+  <div class="page-actions">
+    <a href="/reconcile" class="btn btn-secondary btn-sm">Reconcile</a>
+  </div>
+</div>
 
-<!-- Filter bar -->
-<form method="get" action="/audit" class="filter-bar">
+<h2 class="stats-band-title title-help">
+  Mutation Trail
+  <button class="info-button" type="button" aria-label="Audit Log info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Append-only mutation record. Use this page to trace exactly what changed, when it changed, and which table/record was affected.
+    </div>
+  </div>
+</h2>
+
+<details class="card net-panel" open>
+<summary>Filters</summary>
+<form method="get" action="/audit" class="filter-bar" style="margin-top:0.9rem;">
   <label for="table_name" class="filter-label">Filter by table:</label>
   <select id="table_name" name="table_name" onchange="this.form.submit()">
     <option value="">All tables</option>
@@ -27,6 +40,7 @@
   <a href="/audit" class="btn btn-secondary btn-sm">Clear filter</a>
   {% endif %}
 </form>
+</details>
 
 {% if filter_error %}
 <div class="alert alert-error">{{ filter_error }}</div>
@@ -48,7 +62,8 @@
   {% if active_record_id %} (record {{ active_record_id }}){% endif %}.
 </div>
 {% else %}
-<div class="card">
+<details class="card net-panel" open>
+  <summary>Mutation Ledger</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -130,8 +145,17 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/reconcile" class="valuation-pill">
+      <strong>Open Reconcile</strong>
+    </a>
+  </div>
+</details>
 
 {% endblock %}
 

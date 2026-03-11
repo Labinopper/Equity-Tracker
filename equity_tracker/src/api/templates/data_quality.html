@@ -2,9 +2,25 @@
 {% block title %}Data Quality - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><div><h1>Data Quality</h1><p class="muted">Staleness, missing-input diagnostics, and modelling impact by surface.</p></div></div>
+<div class="page-title">
+  <div class="page-title__heading"><h1>Data Quality</h1></div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/settings" class="btn btn-secondary btn-sm">Settings</a>
+  </div>
+</div>
 
-<div class="stats">
+<h2 class="stats-band-title title-help">
+  Remediation Pressure
+  <button class="info-button" type="button" aria-label="Data Quality info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic staleness and missing-input map across the current modelling surfaces. Use this page to decide what to fix first, not just to count broken inputs.
+    </div>
+  </div>
+</h2>
+
+<div class="stats stats-band">
   <div class="stat"><span class="stat__label">Stale Price Securities</span><span class="stat__value">{{ payload.summary.stale_price_security_count }}</span></div>
   <div class="stat"><span class="stat__label">Stale FX Securities</span><span class="stat__value">{{ payload.summary.stale_fx_security_count }}</span></div>
   <div class="stat stat--warning"><span class="stat__label">Missing Price Securities</span><span class="stat__value">{{ payload.summary.missing_price_security_count }}</span></div>
@@ -14,26 +30,26 @@
 
 {% set stale_total = payload.summary.stale_price_security_count + payload.summary.stale_fx_security_count %}
 {% set missing_total = payload.summary.missing_price_security_count + payload.summary.missing_price_lot_count %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+<details class="card net-panel" open>
+  <summary>Trend Context</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Stale vs Missing Input Pressure</th><td class="num">{{ stale_total }} / {{ missing_total }}</td></tr>
     <tr><th>Tax Plan Unpriced Lots</th><td class="num">{{ payload.tax_plan_freshness.unpriced_lot_count }}</td></tr>
     <tr><th>Scenario/Simulate Missing Tax Estimates</th><td class="num">{{ payload.summary.missing_tax_estimate_lot_count }}</td></tr>
   </tbody></table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+<details class="card net-panel">
+  <summary>Action Links</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Refresh market inputs</th><td><a href="/">Open Portfolio Refresh Controls</a></td></tr>
     <tr><th>Adjust staleness thresholds</th><td><a href="/settings">Open Settings</a></td></tr>
     <tr><th>Check cross-surface impact</th><td><a href="/reconcile">Open Reconcile</a></td></tr>
   </tbody></table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Impact by Surface</h2></div>
+<details class="card net-panel" open>
+  <summary>Impact by Surface</summary>
   <div class="table-wrap"><table>
     <thead><tr><th>Surface</th><th>Issue</th><th class="num">Count</th><th>Severity</th></tr></thead>
     <tbody>
@@ -47,18 +63,30 @@
       {% endfor %}
     </tbody>
   </table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Tax Plan Freshness Cross-Check</h2></div>
+<details class="card net-panel">
+  <summary>Tax Plan Freshness Cross-Check</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Stale Price Securities</th><td>{{ payload.tax_plan_freshness.stale_price_security_count }}</td></tr>
     <tr><th>Stale FX Securities</th><td>{{ payload.tax_plan_freshness.stale_fx_security_count }}</td></tr>
     <tr><th>Unpriced Lots</th><td>{{ payload.tax_plan_freshness.unpriced_lot_count }}</td></tr>
   </tbody></table></div>
-</div>
+</details>
 
 {% if payload.notes %}
-<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+<details class="card net-panel"><summary>Notes</summary><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/settings" class="valuation-pill">
+      <strong>Open Settings</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}

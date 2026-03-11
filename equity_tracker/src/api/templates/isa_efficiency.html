@@ -3,13 +3,26 @@
 
 {% block content %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>ISA Efficiency</h1>
-    <p class="muted">Tax-shelter allocation and headroom lens.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/cash" class="btn btn-secondary btn-sm">Cash</a>
+    <a href="/portfolio/add-lot" class="btn btn-secondary btn-sm">+ Lot</a>
   </div>
 </div>
 
-<div class="stats">
+<h2 class="stats-band-title title-help">
+  Wrapper Headroom
+  <button class="info-button" type="button" aria-label="ISA Efficiency info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic ISA shelter and headroom view. Use this page to judge remaining wrapper capacity and how much taxable exposure could still be moved into the ISA.
+    </div>
+  </div>
+</h2>
+
+<div class="stats stats-band">
   <div class="stat stat--accent"><span class="stat__label">Active Tax Year</span><span class="stat__value">{{ payload.active_tax_year }}</span></div>
   <div class="stat"><span class="stat__label">ISA Market Value</span><span class="stat__value">&pound;{{ payload.isa_market_value_gbp|money }}</span></div>
   <div class="stat"><span class="stat__label">Taxable Market Value</span><span class="stat__value">&pound;{{ payload.taxable_market_value_gbp|money }}</span></div>
@@ -25,33 +38,45 @@
 {% set headroom = payload.estimated_isa_headroom_gbp|float %}
 {% set utilization_pct = ((contributions / allowance) * 100) if allowance > 0 else 0 %}
 {% set headroom_pct = ((headroom / allowance) * 100) if allowance > 0 else 0 %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+<details class="card net-panel" open>
+  <summary>Trend Context</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Allowance Utilization</th><td class="num">{{ utilization_pct|round(2) }}%</td></tr>
     <tr><th>Headroom Remaining</th><td class="num">{{ headroom_pct|round(2) }}%</td></tr>
     <tr><th>Wrapper Split (ISA vs Taxable)</th><td class="num">{{ payload.isa_ratio_pct }}% / {{ (100 - (payload.isa_ratio_pct|float))|round(2) }}%</td></tr>
   </tbody></table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+<details class="card net-panel">
+  <summary>Action Links</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Route GBP cash into ISA</th><td><a href="/cash">Open Cash Ledger</a></td></tr>
     <tr><th>Add next ISA lot</th><td><a href="/portfolio/add-lot">Open Add Lot</a></td></tr>
     <tr><th>Review allowance assumptions</th><td><a href="/settings">Open Settings</a></td></tr>
   </tbody></table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Tax-Year Context</h2></div>
+<details class="card net-panel">
+  <summary>Tax-Year Context</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Tax Year Start</th><td>{{ payload.tax_year_start }}</td></tr>
     <tr><th>Tax Year End</th><td>{{ payload.tax_year_end }}</td></tr>
   </tbody></table></div>
-</div>
+</details>
 
 {% if payload.notes %}
-<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+<details class="card net-panel"><summary>Notes</summary><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/cash" class="valuation-pill">
+      <strong>Open Cash</strong>
+    </a>
+    <a href="/settings" class="valuation-pill">
+      <strong>Open Settings</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}

@@ -9,7 +9,7 @@
 {% set currency = history_data.currency or 'GBP' %}
 
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <a href="/history" class="muted" style="font-size:0.82rem;">&larr; All Securities</a>
     <h1>{{ history_data.ticker }} <span class="muted" style="font-weight:400;font-size:1rem;">{{ history_data.name }}</span></h1>
     <p class="muted">
@@ -17,7 +17,7 @@
       {% if history_data.exchange %}&nbsp;&middot;&nbsp;{{ history_data.exchange }}{% endif %}
     </p>
   </div>
-  <div class="history-range-btns">
+  <div class="page-actions history-range-btns">
     <button type="button" class="btn btn-secondary btn-sm history-range-btn history-range-btn--active" data-range="all">All</button>
     <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="365d">1Y</button>
     <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="90d">90D</button>
@@ -31,7 +31,17 @@
 </div>
 {% else %}
 
-<div class="stats">
+<h2 class="stats-band-title title-help">
+  Single-Name Forensics
+  <button class="info-button" type="button" aria-label="Security History info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Single-security price, value, quantity, and decomposition history. Use this page to understand one name’s lifecycle rather than the portfolio-level trend.
+    </div>
+  </div>
+</h2>
+
+<div class="stats stats-band">
   {% if stats.current_price_gbp %}
   <div class="stat">
     <div class="stat__label">Current Price (GBP)</div>
@@ -179,10 +189,8 @@
 </div>
 
 {% if major_shift_rows %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Major Shift Decomposition</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Major Shift Decomposition</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -209,14 +217,12 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
 {% if lot_events %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Acquisitions</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Acquisitions</summary>
   <button type="button" class="btn btn-secondary btn-sm" id="history-security-table-toggle">Show table</button>
   <div id="history-security-table-wrap" class="table-wrap" hidden>
     <table>
@@ -257,17 +263,26 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
 {% if history_data.notes %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Notes</h2></div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <ul class="muted">
     {% for note in history_data.notes %}<li>{{ note }}</li>{% endfor %}
   </ul>
-</div>
+</details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/history" class="valuation-pill">
+      <strong>Open History</strong>
+    </a>
+  </div>
+</details>
 
 {% endif %}
 {% endblock %}

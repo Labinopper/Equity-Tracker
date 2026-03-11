@@ -5,16 +5,62 @@
 {% set widgets = analytics_summary.widgets %}
 {% set focus_groups = analytics_summary.focus_groups or [] %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Analytics</h1>
-    <p class="muted">Configurable chart widgets for portfolio structure, tax posture, risk stress, and timeline timing.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/risk" class="btn btn-secondary btn-sm">Risk</a>
   </div>
 </div>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Decision Focus</h2>
+<h2 class="stats-band-title title-help">
+  Analytics Surface
+  <button class="info-button" type="button" aria-label="Analytics info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Decision-support charts for structure, tax posture, timing, stress, and attribution. Use focus presets first, then expose only the widgets that earn screen space.
+    </div>
   </div>
+</h2>
+
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Signal surface</strong>
+    <span class="muted">Hide noise before drilling into tables</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Chart mode</strong>
+    <span class="muted">Widget visibility persists in this browser</span>
+  </span>
+</div>
+
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Available Widgets</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Signal</span></span>
+    </div>
+    <div class="stat__value">{{ widgets|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Focus Presets</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Signal</span></span>
+    </div>
+    <div class="stat__value">{{ focus_groups|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Critical Widgets</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--warning">Required</span></span>
+    </div>
+    <div class="stat__value">1+</div>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Decision Focus</summary>
   <div class="analytics-focus-row">
     <button type="button" class="btn btn-secondary btn-sm analytics-focus-btn" data-focus-id="all">All</button>
     {% for focus in focus_groups %}
@@ -24,12 +70,10 @@
     {% endfor %}
   </div>
   <p class="muted" id="analytics-focus-description">Use focus presets to reduce chart noise while keeping widget visibility settings intact.</p>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Widget Visibility</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Widget Visibility</summary>
   <div class="table-wrap">
     <table class="analytics-widget-visibility-table">
       <thead>
@@ -157,7 +201,7 @@
   <div id="analytics-critical-warning" class="alert alert-warning" hidden>
     Critical widgets cannot all be hidden. One critical widget has been kept visible.
   </div>
-</div>
+</details>
 
 <div class="analytics-widget-grid">
 <div class="card analytics-widget" data-widget-id="portfolio-value-time">
@@ -686,10 +730,8 @@
 </div>
 
 {% if analytics_summary.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -701,8 +743,19 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/risk" class="valuation-pill">
+      <strong>Open Risk</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}
 
 {% block extra_scripts %}

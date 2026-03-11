@@ -2,10 +2,16 @@
 {% block title %}Economic Gain - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>Economic Gain Report</h1></div>
-<p class="muted page-intro">
-  Uses <em>true cost per share</em> instead of CGT cost basis &mdash; most relevant when acquisition-time tax (e.g. income tax at vest, ESPP discounts) creates a gap between what you paid and the CGT cost basis.
-</p>
+<div class="page-title">
+  <div class="page-title__heading">
+    <h1>Economic Gain Report</h1>
+    <p class="muted">Realised disposal performance using true cost rather than CGT basis.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/cgt" class="btn btn-secondary btn-sm">CGT Report</a>
+    <a href="/per-scheme" class="btn btn-secondary btn-sm">Per Scheme</a>
+  </div>
+</div>
 
 <form method="get" action="/economic-gain" class="tax-year-selector">
   <label for="economic-tax-year" class="filter-label">Tax Year</label>
@@ -28,8 +34,17 @@
   </div>
 </form>
 
-<!-- Summary stats -->
-<div class="stats">
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Realised Economic Outcome
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About economic gain summary">i</span>
+      <span class="tooltip__content">Compares realised proceeds against true cost. The delta vs CGT basis highlights where acquisition-time tax or discounts changed the economic picture.</span>
+    </span>
+  </div>
+</section>
+
+<div class="stats stats-band">
   <div class="stat">
     <div class="stat__label">Taxable Disposals <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">{{ report.disposal_lines | length }}</div>
@@ -77,7 +92,8 @@
   {% endif %}
 </div>
 {% else %}
-<div class="card">
+<details class="card net-panel" open>
+  <summary>Disposal Comparison Ledger</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -119,11 +135,14 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
-<p class="muted panel-note">
-  For CGT filing purposes, see the <a href="/cgt">CGT Report &rarr;</a> &mdash; figures will differ as CGT uses cost basis, not true cost.
-</p>
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted panel-note">
+    For HMRC filing use <a href="/cgt">CGT Report</a>. Figures differ because CGT uses allowable cost, not true cost.
+  </p>
+</details>
 
 {% endblock %}

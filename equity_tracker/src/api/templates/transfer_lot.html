@@ -3,12 +3,29 @@
 
 {% block content %}
 <div class="page-title">
-  <h1>Transfer Lot</h1>
+  <div class="page-title__heading">
+    <h1>Transfer Lot</h1>
+    <p class="muted">Move holdings into Brokerage while preserving FIFO history and transfer-event audit detail.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/reconcile" class="btn btn-secondary btn-sm">Reconcile</a>
+  </div>
 </div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
+
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Transfer Impact
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About transfer impact">i</span>
+      <span class="tooltip__content">Transfers preserve FIFO history. ESPP uses whole-share FIFO from the oldest active pool; ESPP+ and RSU have stricter transfer rules and may change tax or forfeiture exposure.</span>
+    </span>
+  </div>
+</section>
 
 <div class="card">
   <div class="card__header">
@@ -73,14 +90,15 @@
       </div>
     </div>
 
-    <div class="alert alert-warning transfer-warning">
+    <details class="alert alert-warning transfer-warning">
+      <summary>Transfer Rules</summary>
       <strong>Transfer rules:</strong>
       <br>ESPP transfers keep original lot pricing, must use whole shares, and follow FIFO from the oldest active ESPP lot.
       <br>ESPP partial transfer splits custody (ESPP remainder + BROKERAGE lot). Final remainder transfer merges into the same source-linked broker lot.
       <br>ESPP+ transfers can forfeit still-locked matched shares and make employment tax eligible at transfer time.
       <br>RSU transfers are allowed only after vest.
       <br>Transfers into ISA are not supported. Use dispose then Add Lot in ISA.
-    </div>
+    </details>
 
     <div class="edit-summary">
       <div class="edit-summary__title">Transfer Summary</div>
@@ -149,6 +167,14 @@
     </div>
   </form>
 </div>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted">
+    This workflow records explicit transfer events for later dividend and entitlement reconstruction.
+    Review downstream effects on <a href="/risk">Risk</a> and <a href="/reconcile">Reconcile</a> if the transfer materially changes custody mix.
+  </p>
+</details>
 
 <script>
 (function () {

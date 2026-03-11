@@ -3,9 +3,8 @@
 
 {% block content %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Scenario Lab</h1>
-    <p class="muted">Build multi-leg disposal scenarios, apply price sensitivity, and compare outcomes side-by-side.</p>
   </div>
   <div class="page-actions">
     <form method="get" action="/scenario-lab" class="inline-form">
@@ -19,23 +18,26 @@
   </div>
 </div>
 
-{% set model_scope = {
-  "inputs": [
-    "User-defined scenario legs, FIFO lot state, optional deterministic price shock",
-    "Configured tax settings for employment-tax estimate path"
-  ],
-  "assumptions": [
-    "Execution mode is explicit: independent or sequential",
-    "Shock is deterministic and uniformly applied"
-  ],
-  "exclusions": [
-    "No return forecasting",
-    "No timing optimization or advisory output"
-  ]
-} %}
-{% include "partials/model_scope_card.html" %}
+<h2 class="stats-band-title title-help">
+  Scenario Comparison
+  <button class="info-button" type="button" aria-label="Scenario Lab info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic multi-leg disposal comparison. Use this page to test quantity, price shock, and execution-order consequences before turning anything into a sell plan or a real disposal.
+    </div>
+  </div>
+</h2>
 
-<p class="muted">As of {{ scenario_context.as_of_date }}. Generated {{ scenario_context.generated_at_utc }}.</p>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill">
+    <strong>As of</strong>
+    <span class="muted">{{ scenario_context.as_of_date }}</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Generated</strong>
+    <span class="muted">{{ scenario_context.generated_at_utc }}</span>
+  </span>
+</div>
 
 {% if scenario_context.hide_values %}
 <div class="card">
@@ -45,10 +47,27 @@
   <p class="muted">{{ scenario_context.hidden_reason }}</p>
 </div>
 {% else %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Build Scenario</h2>
+<div class="stats stats-band">
+  <div class="stat">
+    <span class="stat__label">Available Securities</span>
+    <span class="stat__value">{{ scenario_context.securities|length }}</span>
   </div>
+  <div class="stat">
+    <span class="stat__label">Recent Scenarios</span>
+    <span class="stat__value">{{ scenario_context.recent_scenarios|length }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Execution Modes</span>
+    <span class="stat__value">2</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Price Shock Range</span>
+    <span class="stat__value">&plusmn;30%</span>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Build Scenario</summary>
   <form id="scenario-run-form" class="inline-form">
     <div class="form-grid">
       <div class="form-field">
@@ -133,14 +152,12 @@
     </div>
   </form>
   <p class="form-hint">Leave price blank to use latest market price. Remove legs that are no longer part of the run.</p>
-</div>
+</details>
 
 <div id="scenario-error" class="alert alert-error" hidden></div>
 
-<div id="scenario-result-card" class="card" hidden>
-  <div class="card__header">
-    <h2 class="card__title" id="scenario-result-title">Scenario Result</h2>
-  </div>
+<details id="scenario-result-card" class="card net-panel" hidden open>
+  <summary id="scenario-result-title">Scenario Result</summary>
   <div class="stats">
     <div class="stat stat--accent">
       <span class="stat__label">Total Net After Employment Tax</span>
@@ -205,12 +222,10 @@
       <tbody id="scenario-notes-body"></tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Scenario Comparison</h2>
-  </div>
+<details class="card net-panel" open>
+  <summary>Scenario Comparison</summary>
   <div class="form-grid">
     <div class="form-field">
       <label for="scenario-compare-left">Scenario A</label>
@@ -242,12 +257,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Recent Scenarios</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Recent Scenarios</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -270,14 +283,12 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
 {% if scenario_context.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -289,8 +300,35 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+{% set model_scope = {
+  "inputs": [
+    "User-defined scenario legs, FIFO lot state, optional deterministic price shock",
+    "Configured tax settings for employment-tax estimate path"
+  ],
+  "assumptions": [
+    "Execution mode is explicit: independent or sequential",
+    "Shock is deterministic and uniformly applied"
+  ],
+  "exclusions": [
+    "No return forecasting",
+    "No timing optimization or advisory output"
+  ]
+} %}
+{% include "partials/model_scope_card.html" %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/sell-plan" class="valuation-pill">
+      <strong>Open Sell Plan</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}
 
 {% block extra_scripts %}

@@ -5,7 +5,6 @@
 <div class="page-title">
   <div>
     <h1>Capital Stack</h1>
-    <p class="muted">Deterministic holdings-capital decomposition from gross value to net deployable capital.</p>
   </div>
   <div class="page-actions">
     <form method="get" action="/capital-stack" class="inline-form">
@@ -16,11 +15,31 @@
       <a href="/capital-stack" class="btn btn-secondary btn-sm">Today</a>
       {% endif %}
     </form>
-    <button type="button" class="btn btn-secondary btn-sm" data-decision-brief-download data-decision-brief-as-of="{{ stack.as_of_date }}" data-default-label="Download brief JSON">Download brief JSON</button>
+    <a href="{{ with_as_of('/', selected_as_of) }}" class="btn btn-secondary btn-sm">Portfolio</a>
   </div>
 </div>
 
-<p class="muted">As of {{ stack.as_of_date }}.</p>
+<h2 class="stats-band-title title-help">
+  Deployable Reality
+  <button class="info-button" type="button" aria-label="Capital Stack info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic holdings-capital decomposition from gross value to net deployable capital.
+    </div>
+  </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--ok">
+    <strong>Actionable counterpart to Net Value</strong>
+    <span class="muted">Shows what is actually deployable today</span>
+  </span>
+  {% if tax_inputs_incomplete %}
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Tax inputs incomplete</strong>
+    <span class="muted">Net deployable may understate drag</span>
+  </span>
+  {% endif %}
+</div>
 
 {% if tax_inputs_incomplete %}
 <div class="alert alert-warning">
@@ -29,13 +48,12 @@
 </div>
 {% endif %}
 
-<div class="stats">
-  <div class="stat">
-    <div class="stat__label">Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">&pound;{{ stack.gross_market_value_gbp | money }}</div>
-  </div>
+<div class="stats stats-band">
   <div class="stat stat--gain">
-    <div class="stat__label">Holdings Net Deployable Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main">Holdings Net Deployable Today</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
     {% if stack.holdings_net_deployable_today_gbp is not none %}
     <div class="stat__value gain">&pound;{{ stack.holdings_net_deployable_today_gbp | money }}</div>
     {% else %}
@@ -43,23 +61,106 @@
     {% endif %}
   </div>
   <div class="stat stat--accent">
-    <div class="stat__label">Deployable Cash (Broker + Bank, GBP Equivalent) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Deployable Cash <button class="info-button" aria-label="Deployable Cash explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Broker and bank cash only, converted to GBP where needed.
+        </div>
+      </div>
+    </div>
     <div class="stat__value">&pound;{{ stack.gbp_deployable_cash_gbp | money }}</div>
   </div>
   <div class="stat stat--gain">
-    <div class="stat__label">Combined Deployable (Holdings + Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Combined Deployable <button class="info-button" aria-label="Combined Deployable explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Holdings net deployable plus deployable GBP-equivalent cash.
+        </div>
+      </div>
+    </div>
     {% if stack.combined_deployable_with_cash_gbp is not none %}
     <div class="stat__value gain">&pound;{{ stack.combined_deployable_with_cash_gbp | money }}</div>
     {% else %}
     <div class="stat__value muted">Unavailable</div>
     {% endif %}
   </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      <span class="stat__label-main">Locked Capital</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value warning-text">&pound;{{ stack.locked_capital_gbp | money }}</div>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      <span class="stat__label-main">Forfeitable Capital</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value warning-text">&pound;{{ stack.forfeitable_capital_gbp | money }}</div>
+  </div>
+</div>
+
+<section class="page-section">
+  <div class="page-section__title">Formula Layers And Context</div>
+</section>
+
+<div class="stats stats-band">
   <div class="stat">
-    <div class="stat__label">True Cost (Acquisition) <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main">Gross Market Value</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value">&pound;{{ stack.gross_market_value_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Hypothetical Liquid Capital</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value">&pound;{{ stack.hypothetical_liquid_gbp | money }}</div>
+    <span class="stat-caption">{{ stack.hypothetical_liquid_quantity }} shares.</span>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      <span class="stat__label-main">Estimated Employment Tax</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    {% if stack.estimated_employment_tax_gbp is not none %}
+    <div class="stat__value warning-text">&pound;{{ stack.estimated_employment_tax_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">Unavailable</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Estimated CGT</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">&pound;{{ stack.estimated_cgt_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Estimated Fees</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">&pound;{{ stack.estimated_fees_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">True Cost (Acquisition)</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+    </div>
     <div class="stat__value">&pound;{{ stack.true_cost_acquisition_gbp | money }}</div>
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label">Dividend-Adjusted Capital at Risk <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main">Dividend-Adjusted Capital at Risk</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+    </div>
     {% if stack.dividend_adjusted_capital_at_risk_gbp is not none %}
     <div class="stat__value warning-text">&pound;{{ stack.dividend_adjusted_capital_at_risk_gbp | money }}</div>
     {% else %}
@@ -67,7 +168,10 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Estimated Net Dividends (Portfolio-Level Offset) <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main">Estimated Net Dividends</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+    </div>
     {% if stack.estimated_net_dividends_gbp is not none %}
     <div class="stat__value">&pound;{{ stack.estimated_net_dividends_gbp | money }}</div>
     {% else %}
@@ -75,16 +179,16 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">CGT Marginal Rate Used</div>
+    <div class="stat__label">
+      <span class="stat__label-main">CGT Marginal Rate Used</span>
+    </div>
     <div class="stat__value">{{ "%.2f"|format(stack.cgt_marginal_rate * 100) }}%</div>
     <span class="stat-caption">{{ stack.cgt_rate_source }}</span>
   </div>
 </div>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Stack Formula</h2>
-  </div>
+<details class="card net-panel" open>
+  <summary>Stack Formula</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -181,12 +285,10 @@
     Hypothetical liquid quantity: {{ stack.hypothetical_liquid_quantity }} shares.
     Fee model sample: {{ stack.fee_model.historical_fee_sample_qty }} shares, total fees &pound;{{ stack.fee_model.historical_fee_sample_total_gbp | money }}, avg/share &pound;{{ stack.fee_model.avg_fee_per_share_gbp | money }}.
   </p>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Cash Balances by Currency</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Cash Balances by Currency</summary>
   {% if stack.cash_totals_by_currency %}
   <div class="table-wrap">
     <table>
@@ -219,18 +321,27 @@
   {% else %}
   <p class="muted">No cash ledger balances recorded.</p>
   {% endif %}
-</div>
+</details>
 
 {% if stack.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace lots</strong>
+    </a>
+    <a href="{{ with_as_of('/net-value', selected_as_of) }}" class="valuation-pill">
+      <strong>Open Net Value</strong>
+    </a>
+    <button type="button" class="valuation-pill" data-decision-brief-download data-decision-brief-as-of="{{ stack.as_of_date }}" data-default-label="Download brief JSON">
+      <strong>Download brief JSON</strong>
+    </button>
   </div>
   <ul>
     {% for note in stack.notes %}
     <li>{{ note }}</li>
     {% endfor %}
   </ul>
-</div>
+</details>
 {% endif %}
 {% endblock %}

@@ -3,15 +3,29 @@
 
 {% block content %}
 <div class="page-title">
-  <h1>Add Lot</h1>
+  <div class="page-title__heading">
+    <h1>Add Lot</h1>
+    <p class="muted">Create a new tracked holding with the right scheme, quantity, price basis, and custody context.</p>
+  </div>
   <div class="page-actions">
-    <a href="/dividends#add-dividend" class="btn btn-secondary btn-sm">+ Dividend</a>
+    <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
+    <a href="/glossary" class="btn btn-secondary btn-sm">Glossary</a>
   </div>
 </div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
+
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Lot Input
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About add lot">i</span>
+      <span class="tooltip__content">This workflow sets acquisition dates, scheme type, quantity, cost basis, and scheme-specific metadata. Add only the lot you can evidence, not an inferred aggregate.</span>
+    </span>
+  </div>
+</section>
 
 <div class="card">
   <form id="add-lot-form" method="post" action="/portfolio/add-lot">
@@ -404,6 +418,14 @@
     </div>
   </form>
 </div>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted">
+    Use <a href="/portfolio/add-security">Add Security</a> first if the instrument is not already tracked.
+    Use <a href="/glossary">Glossary</a> for cost-basis and scheme-term definitions.
+  </p>
+</details>
 
 <style>
 /* Prevent .form-field { display: flex } from overriding the hidden attribute */

@@ -23,15 +23,86 @@
 {%- endmacro %}
 
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Cash Ledger</h1>
-    <p class="muted">Deterministic multi-currency cash balances by container (BROKER, ISA, BANK) with append-only audit entries.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/capital-stack" class="btn btn-secondary btn-sm">Capital Stack</a>
   </div>
 </div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
+
+{% set ns = namespace(non_gbp_count=0, broker_bank_rows=0) %}
+{% for row in dashboard.balances %}
+  {% if row.currency != 'GBP' %}
+    {% set ns.non_gbp_count = ns.non_gbp_count + 1 %}
+  {% endif %}
+  {% if row.container in ['BROKER', 'BANK'] %}
+    {% set ns.broker_bank_rows = ns.broker_bank_rows + 1 %}
+  {% endif %}
+{% endfor %}
+
+<h2 class="stats-band-title title-help">
+  Cash Reality
+  <button class="info-button" type="button" aria-label="Cash Ledger info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Operational cash view by container and currency. ISA destination remains GBP-only, and non-GBP transfers require explicit FX provenance.
+    </div>
+  </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--ok">
+    <strong>Append-only cash ledger</strong>
+    <span class="muted">Balances come only from recorded entries</span>
+  </span>
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>ISA transfers are GBP only</strong>
+    <span class="muted">Non-GBP paths require FX rate and source</span>
+  </span>
+</div>
+
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Balance Rows</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Operational</span></span>
+    </div>
+    <span class="stat__value">{{ dashboard.balances|length }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Currencies Tracked</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Operational</span></span>
+    </div>
+    <span class="stat__value">{{ dashboard.totals_by_currency|length if dashboard.totals_by_currency else 0 }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Deployable Cash Rows</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <span class="stat__value">{{ ns.broker_bank_rows }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Non-GBP Balances</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--warning">Needs FX provenance</span></span>
+    </div>
+    <span class="stat__value">{{ ns.non_gbp_count }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Ledger Entries</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Audit</span></span>
+    </div>
+    <span class="stat__value">{{ dashboard.entries|length }}</span>
+  </div>
+</div>
 
 <div class="card">
   <div class="card__header">
@@ -106,10 +177,8 @@
   {% endif %}
 </div>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Add Cash Entry</h2>
-  </div>
+<details class="card net-panel" open>
+  <summary>Add Cash Entry</summary>
   <form method="post" action="/cash/entry">
     <div class="form-grid">
       <div class="form-field">
@@ -149,12 +218,10 @@
       <button type="submit" class="btn btn-primary">Record Cash Entry</button>
     </div>
   </form>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">GBP-Only ISA Transfer Workflow</h2>
-  </div>
+<details class="card net-panel" open>
+  <summary>GBP-Only ISA Transfer Workflow</summary>
   <p class="muted">
     ISA transfer destination is always GBP. Non-GBP source cash requires explicit FX rate + fee provenance and creates conversion entries before transfer.
   </p>
@@ -244,12 +311,10 @@
       <button type="submit" class="btn btn-primary">Record ISA Transfer</button>
     </div>
   </form>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Ledger Entries (Most Recent First)</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Ledger Entries (Most Recent First)</summary>
   {% if dashboard.entries %}
   <div class="table-wrap">
     <table>
@@ -286,7 +351,36 @@
   {% else %}
   <p class="muted">No cash ledger entries yet.</p>
   {% endif %}
-</div>
+</details>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/capital-stack" class="valuation-pill">
+      <strong>Open Capital Stack</strong>
+    </a>
+    <span class="valuation-pill">
+      <strong>Totals</strong>
+      <span class="muted">
+        {% if dashboard.totals_by_currency %}
+          {% for row in dashboard.totals_by_currency %}
+            {% if row.currency == 'GBP' %}
+            GBP {{ signed_currency_amount(row.currency, row.balance) }}
+            {% else %}
+            {{ signed_currency_amount(row.currency, row.balance) }}
+            {% endif %}
+            {% if not loop.last %} | {% endif %}
+          {% endfor %}
+        {% else %}
+          None
+        {% endif %}
+      </span>
+    </span>
+  </div>
+</details>
 
 <script>
 (function () {

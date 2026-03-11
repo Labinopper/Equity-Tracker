@@ -3,9 +3,8 @@
 
 {% block content %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Risk</h1>
-    <p class="muted">Concentration, liquidity mix, and simple stress outcomes from current portfolio state.</p>
   </div>
   <div class="page-actions">
     <form method="get" action="/risk" class="inline-form">
@@ -16,63 +15,131 @@
       <a href="/risk" class="btn btn-secondary btn-sm">Today</a>
       {% endif %}
     </form>
-    <button type="button" class="btn btn-secondary btn-sm" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">Download brief JSON</button>
+    <a href="{{ with_as_of('/', selected_as_of) }}" class="btn btn-secondary btn-sm">Portfolio</a>
   </div>
 </div>
-<p class="muted">As of {{ page_as_of_date }}. Concentration, lock, and optionality outputs use the selected date context.</p>
 
-<div class="stats">
-  <div class="stat stat--accent">
-    <span class="stat__label">Total Market Value</span>
-    <span class="stat__value">&pound;{{ risk_summary.total_market_value_gbp|money }}</span>
+<h2 class="stats-band-title title-help">
+  Structural Risk
+  <button class="info-button" type="button" aria-label="Risk info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Concentration, optionality, and deployability constraints from the current portfolio state. This page is structural, not predictive.
+    </div>
   </div>
-  <div class="stat">
-    <span class="stat__label">ISA Wrapper Allocation</span>
-    <span class="stat__value">{{ risk_summary.wrapper_allocation.isa_pct_of_total }}%</span>
-  </div>
-  <div class="stat">
-    <span class="stat__label">Taxable Wrapper Allocation</span>
-    <span class="stat__value">{{ risk_summary.wrapper_allocation.taxable_pct_of_total }}%</span>
-  </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Structural view</strong>
+    <span class="muted">Focus on concentration, lock, and optionality constraints</span>
+  </span>
+  {% if valuation.price_as_of_latest %}
+  <span class="valuation-pill {% if valuation.stale_price_count > 0 or valuation.missing_price_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+    <strong>Price basis</strong>
+    <span class="muted">{{ valuation.price_as_of_latest }}</span>
+  </span>
+  {% endif %}
+  {% if valuation.fx_required_count > 0 and valuation.fx_as_of_latest %}
+  <span class="valuation-pill {% if valuation.stale_fx_count > 0 or valuation.missing_fx_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+    <strong>FX basis</strong>
+    <span class="muted">{{ valuation.fx_as_of_latest }}</span>
+  </span>
+  {% endif %}
+</div>
+
+<div class="stats stats-band">
   <div class="stat stat--warning">
-    <span class="stat__label">Top Holding (Gross)</span>
+    <div class="stat__label">
+      <span class="stat__label-main">Top Holding (Gross)</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
     <span class="stat__value">{{ risk_summary.top_holding_pct }}%</span>
   </div>
   <div class="stat stat--warning">
-    <span class="stat__label">Top Holding (Sellable Pool)</span>
+    <div class="stat__label">
+      <span class="stat__label-main">Top Holding (Sellable Pool)</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
     <span class="stat__value">{{ risk_summary.top_holding_sellable_pct }}%</span>
   </div>
-  <div class="stat">
-    <span class="stat__label">Sellable</span>
-    <span class="stat__value">&pound;{{ risk_summary.liquidity.sellable_gbp|money }}</span>
-  </div>
-  <div class="stat">
-    <span class="stat__label">Locked</span>
-    <span class="stat__value">&pound;{{ risk_summary.liquidity.locked_gbp|money }}</span>
-  </div>
-  <div class="stat">
-    <span class="stat__label">At Risk</span>
-    <span class="stat__value">&pound;{{ risk_summary.liquidity.at_risk_gbp|money }}</span>
-  </div>
   <div class="stat stat--accent">
-    <span class="stat__label">Deployable Capital</span>
+    <div class="stat__label">
+      <span class="stat__label-main">Deployable Capital</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
     <span class="stat__value">&pound;{{ risk_summary.deployable.deployable_capital_gbp|money }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Employer Share of Deployable</span>
-    <span class="stat__value">{{ risk_summary.deployable.employer_share_of_deployable_pct }}%</span>
-  </div>
-  <div class="stat">
-    <span class="stat__label">Employer Dependence Ratio</span>
+    <div class="stat__label">
+      <span class="stat__label-main">Employer Dependence Ratio</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
     <span class="stat__value">{{ risk_summary.employer_dependence.ratio_pct }}%</span>
   </div>
   <div class="stat stat--accent">
-    <span class="stat__label">Optionality Index</span>
+    <div class="stat__label">
+      <span class="stat__label-main">Optionality Index</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
     <span class="stat__value">{{ risk_summary.optionality_index.score }} / 100</span>
   </div>
 </div>
 
-{% set valuation = risk_summary.valuation_basis %}
+<section class="page-section">
+  <div class="page-section__title">Structural Breakdown</div>
+</section>
+
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Total Market Value</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ risk_summary.total_market_value_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Employer Share of Deployable</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <span class="stat__value">{{ risk_summary.deployable.employer_share_of_deployable_pct }}%</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">ISA Wrapper Allocation</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Structural</span></span>
+    </div>
+    <span class="stat__value">{{ risk_summary.wrapper_allocation.isa_pct_of_total }}%</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Taxable Wrapper Allocation</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Structural</span></span>
+    </div>
+    <span class="stat__value">{{ risk_summary.wrapper_allocation.taxable_pct_of_total }}%</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Sellable</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ risk_summary.liquidity.sellable_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Locked</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ risk_summary.liquidity.locked_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">At Risk</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ risk_summary.liquidity.at_risk_gbp|money }}</span>
+  </div>
+</div>
 
 <div class="card" id="alert-center">
   <div class="card__header">
@@ -220,10 +287,8 @@
   {% endif %}
 </div>
 
-<div class="card" id="concentration-guardrails">
-  <div class="card__header">
-    <h2 class="card__title">Concentration Guardrails</h2>
-  </div>
+<details class="card net-panel" open id="concentration-guardrails">
+  <summary>Concentration Guardrails</summary>
   <p class="muted">Thresholds are configured in Settings and evaluated deterministically against current gross and sellable exposure.</p>
   <div class="table-wrap">
     <table>
@@ -256,12 +321,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Forfeiture Heatmap</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Forfeiture Heatmap</summary>
   <p class="muted">Security by time-bucket view of ESPP+ matched-share value still inside forfeiture windows.</p>
   <div class="table-wrap">
     <table>
@@ -306,12 +369,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Rebalance Friction (Deterministic)</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Rebalance Friction</summary>
   <p class="muted">Quantifies concentration reduction constrained by currently sellable employer lots and current tax assumptions.</p>
   <div class="table-wrap">
     <table>
@@ -358,12 +419,10 @@
   {% if risk_summary.rebalance_friction.note %}
   <p class="muted">{{ risk_summary.rebalance_friction.note }}</p>
   {% endif %}
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Wrapper Allocation Strip</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Wrapper Allocation Strip</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -387,12 +446,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Optionality Index</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Optionality Index</summary>
   <p class="muted">Deterministic flexibility score based on sellability, forfeiture, concentration, ISA ratio, and config completeness.</p>
   <form method="get" action="/risk" class="inline-form">
     <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
@@ -469,12 +526,10 @@
   {% if risk_summary.optionality_index.notes %}
   <p class="muted">{{ risk_summary.optionality_index.notes[0] }}</p>
   {% endif %}
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Future Optionality Timeline</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Future Optionality Timeline</summary>
   <p class="muted">Static-valuation timeline using known lock and forfeiture dates only.</p>
   <div class="table-wrap">
     <table>
@@ -523,12 +578,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Deployable Capital Breakdown</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Deployable Capital Breakdown</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -561,12 +614,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Employer Dependence Ratio Formula</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Employer Dependence Ratio Formula</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -600,12 +651,10 @@
     </table>
   </div>
   <p class="muted">Formula: (Employer Equity + Income Dependency Proxy) / (Gross Market Value + Deployable GBP Cash + Income Dependency Proxy).</p>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Top Holdings Concentration</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Top Holdings Concentration</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -632,12 +681,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Scheme Concentration</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Scheme Concentration</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -664,12 +711,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Liquidity Mix</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Liquidity Mix</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -703,12 +748,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Stress Test (Hypothetical)</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Stress Test</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -727,13 +770,11 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
 {% if risk_summary.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -745,6 +786,22 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="{{ with_as_of('/', selected_as_of) }}" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <button type="button" class="valuation-pill" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">
+      <strong>Download brief JSON</strong>
+    </button>
+    <span class="valuation-pill">
+      <strong>As of</strong>
+      <span class="muted">{{ page_as_of_date }}</span>
+    </span>
+  </div>
+</details>
 {% endblock %}

@@ -3361,7 +3361,12 @@ async def net_value(
         summary=summary,
         as_of=as_of,
     )
-    deployable_today_gbp = capital_stack_snapshot.get("net_deployable_today_gbp")
+    deployable_today_holdings_gbp = capital_stack_snapshot.get("net_deployable_today_gbp")
+    deployable_today_cash_gbp = capital_stack_snapshot.get("gbp_deployable_cash_gbp")
+    deployable_today_gbp = capital_stack_snapshot.get("combined_deployable_with_cash_gbp")
+    locked_capital_gbp = capital_stack_snapshot.get("locked_capital_gbp")
+    forfeitable_capital_gbp = capital_stack_snapshot.get("forfeitable_capital_gbp")
+    hypothetical_liquid_quantity = capital_stack_snapshot.get("hypothetical_liquid_quantity")
     net_vs_deployable_delta_gbp: Decimal | None = None
     if (
         sell_all_metrics.get("net_value_gbp") is not None
@@ -3383,7 +3388,12 @@ async def net_value(
             "request": request,
             "sell_all_metrics": sell_all_metrics,
             "deployable_today_gbp": deployable_today_gbp,
+            "deployable_today_holdings_gbp": deployable_today_holdings_gbp,
+            "deployable_today_cash_gbp": deployable_today_cash_gbp,
             "net_vs_deployable_delta_gbp": net_vs_deployable_delta_gbp,
+            "locked_capital_gbp": locked_capital_gbp,
+            "forfeitable_capital_gbp": forfeitable_capital_gbp,
+            "hypothetical_liquid_quantity": hypothetical_liquid_quantity,
             "nv_securities": nv_securities,
             "nv_rows_by_security": nv_rows_by_security,
             "settings": settings,

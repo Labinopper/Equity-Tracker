@@ -2,7 +2,13 @@
 {% block title %}Employment Tax Events - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><div><h1>Employment Tax Events</h1><p class="muted">Persisted + derived employment-tax trail by tax year.</p></div></div>
+<div class="page-title">
+  <div class="page-title__heading"><h1>Employment Tax Events</h1></div>
+  <div class="page-actions">
+    <a href="/tax-plan" class="btn btn-secondary btn-sm">Tax Plan</a>
+    <a href="/simulate" class="btn btn-secondary btn-sm">Simulate</a>
+  </div>
+</div>
 
 {% set latest_year = payload.tax_year_rows[0] if payload.tax_year_rows else None %}
 {% set prior_year = payload.tax_year_rows[1] if payload.tax_year_rows and payload.tax_year_rows|length > 1 else None %}
@@ -10,8 +16,33 @@
 {% set prior_tax_total = prior_year.estimated_tax_total_gbp|float if prior_year else 0 %}
 {% set latest_delta = latest_tax_total - prior_tax_total %}
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+<h2 class="stats-band-title title-help">
+  Event Trail
+  <button class="info-button" type="button" aria-label="Employment Tax Events info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Persisted and derived employment-tax event trail by tax year. Use this page to verify tax-event buildup and trace back to disposal or persisted event sources.
+    </div>
+  </div>
+</h2>
+
+<div class="stats stats-band">
+  <div class="stat">
+    <span class="stat__label">Latest Tax Year</span>
+    <span class="stat__value">{{ latest_year.tax_year if latest_year else '-' }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Latest Tax Total</span>
+    <span class="stat__value">{% if latest_year %}&pound;{{ latest_year.estimated_tax_total_gbp|money }}{% else %}-{% endif %}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Derived Disposal Rows</span>
+    <span class="stat__value">{{ payload.event_rows|selectattr("event_source", "equalto", "DERIVED_DISPOSAL")|list|length }}</span>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Trend Context</summary>
   <div class="table-wrap"><table><tbody>
     <tr>
       <th>Latest Tax Year vs Prior Tax Year</th>
@@ -22,19 +53,19 @@
     <tr><th>Latest Tax Year Event Count</th><td class="num">{{ latest_year.event_count if latest_year else 0 }}</td></tr>
     <tr><th>Derived Disposal Rows</th><td class="num">{{ payload.event_rows|selectattr("event_source", "equalto", "DERIVED_DISPOSAL")|list|length }}</td></tr>
   </tbody></table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+<details class="card net-panel">
+  <summary>Action Links</summary>
   <div class="table-wrap"><table><tbody>
     <tr><th>Tax-year planning context</th><td><a href="/tax-plan">Open Tax Plan</a></td></tr>
     <tr><th>Pre-commit disposal check</th><td><a href="/simulate">Open Simulate Disposal</a></td></tr>
     <tr><th>Mutation audit trace</th><td><a href="/audit?table_name=employment_tax_events">Open Employment Tax Audit</a></td></tr>
   </tbody></table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Tax-Year Totals</h2></div>
+<details class="card net-panel" open>
+  <summary>Tax-Year Totals</summary>
   <div class="table-wrap"><table>
     <thead><tr><th>Tax Year</th><th class="num">Event Count</th><th class="num">Estimated Tax Total</th></tr></thead>
     <tbody>
@@ -51,10 +82,10 @@
       {% endif %}
     </tbody>
   </table></div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Event Ledger</h2></div>
+<details class="card net-panel">
+  <summary>Event Ledger</summary>
   <div class="table-wrap"><table>
     <thead><tr><th>Date</th><th>Tax Year</th><th>Source</th><th>Security</th><th>Event Type</th><th class="num">Est. Tax</th><th>Note</th></tr></thead>
     <tbody>
@@ -75,9 +106,21 @@
       {% endif %}
     </tbody>
   </table></div>
-</div>
+</details>
 
 {% if payload.notes %}
-<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+<details class="card net-panel"><summary>Notes</summary><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/tax-plan" class="valuation-pill">
+      <strong>Open Tax Plan</strong>
+    </a>
+    <a href="/simulate" class="valuation-pill">
+      <strong>Open Simulate Disposal</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}

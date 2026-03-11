@@ -3,23 +3,63 @@
 
 {% block content %}
 <div class="page-title">
-  <h1>Per Scheme</h1>
+  <div class="page-title__heading">
+    <h1>Per Scheme</h1>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/dividends" class="btn btn-secondary btn-sm">Dividends</a>
+  </div>
 </div>
 
-<p class="muted net-intro">
-  Current rows use the same "if sold now" logic as Portfolio, including ESPP+ forfeiture effects.
-  Historic rows are based on committed disposal records.
-</p>
+<h2 class="stats-band-title title-help">
+  Scheme Decomposition
+  <button class="info-button" type="button" aria-label="Per Scheme info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Current rows use the same "if sold now" logic as Portfolio, including ESPP+ forfeiture effects. Historic rows are based on committed disposal records.
+    </div>
+  </div>
+</h2>
 
 {% if not scheme_reports %}
 <div class="empty-state">
   <p>No scheme activity yet.</p>
 </div>
 {% else %}
-<div class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Scheme Visibility</h2>
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Schemes Visible</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ scheme_reports|length }}</div>
   </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Current Lots</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Open inventory</span></span>
+    </div>
+    <div class="stat__value">{{ scheme_reports|sum(attribute='current.lot_count') }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Historic Disposal Events</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Historic</span></span>
+    </div>
+    <div class="stat__value">{{ scheme_reports|sum(attribute='historic.disposal_count') }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Schemes With Forfeiture Risk</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--warning">Hypothetical</span></span>
+    </div>
+    <div class="stat__value">{{ scheme_reports|selectattr('current.potential_forfeiture_value_gbp')|rejectattr('current.potential_forfeiture_value_gbp', 'equalto', 0)|list|length }}</div>
+  </div>
+</div>
+
+<details class="card net-panel">
+  <summary>Scheme Visibility</summary>
   <div class="inline-field-row">
     {% for sr in scheme_reports %}
     <label class="badge">
@@ -34,10 +74,11 @@
     {% endfor %}
   </div>
   <p class="form-hint">Selection persists in this browser.</p>
-</div>
+</details>
 
 {% for sr in scheme_reports %}
-<div class="card card-spaced" data-scheme-card="{{ sr.scheme_type }}">
+<details class="card card-spaced net-panel" data-scheme-card="{{ sr.scheme_type }}" open>
+  <summary>{{ sr.display_name }}</summary>
   <div class="card__header">
     <div class="card__title">{{ sr.display_name }}</div>
     <div class="security-header__actions">
@@ -201,9 +242,21 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endfor %}
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/dividends" class="valuation-pill">
+      <strong>Open Dividends</strong>
+    </a>
+  </div>
+</details>
 
 <script>
 (function () {

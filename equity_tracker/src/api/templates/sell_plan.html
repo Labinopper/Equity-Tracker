@@ -3,13 +3,12 @@
 
 {% block content %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Sell Plan</h1>
-    <p class="muted">Deterministic staged-disposal planner (method profiles, no market prediction).</p>
   </div>
   <div class="page-actions">
-    <a href="/calendar" class="btn btn-secondary btn-sm">View in Calendar</a>
-    <a href="/glossary#sell-execution-methods" class="btn btn-secondary btn-sm">Method Glossary</a>
+    <a href="/simulate" class="btn btn-secondary btn-sm">Simulate Disposal</a>
+    <a href="/calendar" class="btn btn-secondary btn-sm">Calendar</a>
   </div>
 </div>
 
@@ -17,15 +16,59 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<div class="alert alert-info">
-  Recommended flow: run <a href="/simulate">Simulate Disposal</a> first, then create, approve, and export staged orders.
-  Method scope and exclusions: <a href="/glossary#sell-execution-methods">Glossary &rarr;</a>
+<h2 class="stats-band-title title-help">
+  Execution Planning
+  <button class="info-button" type="button" aria-label="Sell Plan info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic staged-disposal planning. Recommended flow: simulate first, then create, approve, and export staged orders. Method details live in the sell-execution glossary.
+    </div>
+  </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Planning surface</strong>
+    <span class="muted">No market prediction or optimisation engine</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Suggested flow</strong>
+    <span class="muted"><a href="/simulate">Simulate</a> -> plan -> approve -> export</span>
+  </span>
 </div>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Create Plan</h2>
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Existing Plans</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ plans|length }}</div>
   </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Approved Plans</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ plans|selectattr('is_approved')|list|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Draft Plans</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value">{{ plans|rejectattr('is_approved')|list|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Sellable Securities</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ securities|length }}</div>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Create Plan</summary>
   <form method="post" action="/sell-plan">
     <div class="form-grid">
       <div class="form-field">
@@ -151,12 +194,10 @@
       <a href="/sell-plan" class="btn btn-secondary">Reset</a>
     </div>
   </form>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Existing Plans</h2>
-  </div>
+<details class="card net-panel" open>
+  <summary>Existing Plans</summary>
   {% if plans %}
     {% for plan in plans %}
     <div id="plan-{{ plan.plan_id }}" class="card{% if selected_plan_id and selected_plan_id == plan.plan_id %} card--highlight{% endif %}">
@@ -481,7 +522,22 @@
   {% else %}
     <p class="muted">No sell plans yet.</p>
   {% endif %}
-</div>
+</details>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/simulate" class="valuation-pill">
+      <strong>Open Simulate Disposal</strong>
+    </a>
+    <a href="/calendar" class="valuation-pill">
+      <strong>Open Calendar</strong>
+    </a>
+    <a href="/glossary#sell-execution-methods" class="valuation-pill">
+      <strong>Method Glossary</strong>
+    </a>
+  </div>
+</details>
 
 <script>
 (function () {

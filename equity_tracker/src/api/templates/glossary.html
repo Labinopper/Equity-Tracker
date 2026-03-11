@@ -2,10 +2,26 @@
 {% block title %}Glossary - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>Glossary</h1></div>
-<p class="muted page-intro">
-  Plain-English definitions of key terms used across this app.
-</p>
+<div class="page-title">
+  <div class="page-title__heading">
+    <h1>Glossary</h1>
+    <p class="muted">Support surface for cost basis, tax, liquidity, and execution terms used across the app.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/settings" class="btn btn-secondary btn-sm">Settings</a>
+  </div>
+</div>
+
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Reference Terms
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About glossary">i</span>
+      <span class="tooltip__content">Use this page to resolve meaning, not to make decisions. Each entry links back to the pages where the term materially affects interpretation.</span>
+    </span>
+  </div>
+</section>
 
 <div class="card">
   <div class="card__header"><h2 class="card__title">Gains and Cost Terms</h2></div>
@@ -192,7 +208,8 @@
   </div>
 </div>
 
-<div id="sell-execution-methods" class="card">
+<details id="sell-execution-methods" class="card net-panel">
+  <summary>Sell Execution Methods (Model Scope)</summary>
   <div class="card__header"><h2 class="card__title">Sell Execution Methods (Model Scope)</h2></div>
   <div class="table-wrap">
     <table>
@@ -224,6 +241,13 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted">
+    Reverse links are embedded in each term so you can jump back to the page where the term is used operationally.
+  </p>
+</details>
 
 {% endblock %}

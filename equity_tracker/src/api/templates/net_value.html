@@ -5,16 +5,6 @@
 <div class="page-title">
   <div class="page-title__heading">
     <h1>Net Value</h1>
-
-    <span class="title-help">
-      <button class="info-button" type="button" aria-label="Net Value info">ℹ</button>
-
-      <div class="tooltip tooltip--title">
-        <div class="tooltip-content">
-          Hypothetical net value if all active lots were sold today. Not actionable liquidity. Includes locked and forfeiture-restricted shares.
-        </div>
-      </div>
-    </span>
   </div>
 
   <div class="page-actions">
@@ -26,84 +16,40 @@
       <a href="/net-value" class="btn btn-secondary btn-sm">Today</a>
       {% endif %}
     </form>
-    <button onclick="window.print()" class="btn btn-secondary btn-sm">Print</button>
-    <button type="button" class="btn btn-secondary btn-sm" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">Download brief JSON</button>
-    <button type="button" class="btn btn-secondary btn-sm" id="nv-audit-json-btn">Download audit JSON</button>
+    <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="btn btn-secondary btn-sm">Capital Stack</a>
   </div>
 </div>
-<p class="muted">As of {{ page_as_of_date }}. Uses the latest stored price on or before the selected date for the hypothetical sell-all view.</p>
 
-{% set model_scope = {
-  "inputs": [
-    "Current market values for all active lots",
-    "Sellable-lot employment tax estimate model"
-  ],
-  "assumptions": [
-    "Sell-all framing is hypothetical and includes locked/forfeitable value",
-    "Employment tax estimate is applied to sellable lots only"
-  ],
-  "exclusions": [
-    "No execution staging assumptions",
-    "No forward pricing assumptions"
-  ]
-} %}
-{% include "partials/model_scope_card.html" %}
-<p class="muted">
-  Trace key totals:
-  <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}">Contributing lots</a> |
-  <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}">Recent mutations</a>
-</p>
-
-{% if sell_all_metrics.fx_conversion_basis or sell_all_metrics.fx_as_of %}
-<div class="alert {% if sell_all_metrics.fx_is_stale %}alert-warning{% else %}alert-info{% endif %}">
-  {% if sell_all_metrics.fx_is_stale %}Warning: {% endif %}
-  {% if sell_all_metrics.fx_conversion_basis %}{{ sell_all_metrics.fx_conversion_basis }}{% endif %}
-  {% if sell_all_metrics.fx_as_of %}
-  {% if sell_all_metrics.fx_conversion_basis %} {% endif %}FX as of {{ sell_all_metrics.fx_as_of }}
-  {% endif %}
-  {% if sell_all_metrics.fx_is_stale and sell_all_metrics.fx_as_of %}
-  (stale &gt;{{ fx_stale_after_minutes }}m); refresh prices to update.
-  {% endif %}
-</div>
-{% endif %}
-
-<div class="stats">
-  <div class="stat">
-    <div class="stat__label"><a href="/glossary#hypothetical-full-liquidation">Gross Market Value (All Lots)</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></div>
-    {% if sell_all_metrics.gross_market_value_gbp is not none %}
-    <div class="stat__value">&pound;{{ sell_all_metrics.gross_market_value_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label">
-      <a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Lots; Sell-All Context)</a>
-      <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
-      <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a>
-      <button class="info-button" aria-label="Estimated Employment Tax explanation">ℹ</button>
-      <div class="tooltip">
-        <div class="tooltip-content">
-          Estimated on currently sellable lots only, then applied in this hypothetical sell-all view.
-          Includes Income Tax, National Insurance, plus Student Loan where scheme rules apply.
-        </div>
-      </div>
+<h2 class="stats-band-title title-help">
+  Hypothetical Sell-All
+  <button class="info-button" type="button" aria-label="Net Value info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Hypothetical net value if all active lots were sold today. Not actionable liquidity. Includes locked and forfeiture-restricted shares.
     </div>
-    {% if sell_all_metrics.est_employment_tax_gbp is not none %}
-    <div class="stat__value warning-text">&pound;{{ sell_all_metrics.est_employment_tax_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
   </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Not actionable liquidity</strong>
+    <span class="muted">Use Capital Stack for deployable reality</span>
+  </span>
+  {% if tax_inputs_incomplete %}
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Tax inputs incomplete</strong>
+    <span class="muted">Estimate may understate drag</span>
+  </span>
+  {% endif %}
+</div>
+
+<div class="stats stats-band">
   <div class="stat stat--gain">
-    <div class="stat__label">
-      <a href="/glossary#hypothetical-full-liquidation">Hypothetical Net Value (All Lots &ndash; Not Actionable)</a>
-      <span class="metric-tag metric-tag--hypothetical">Hypothetical</span>
-      <button class="info-button" aria-label="Hypothetical Net Value explanation">ℹ</button>
+    <div class="stat__label title-help">
+      <span class="stat__label-main"><a href="/glossary#hypothetical-full-liquidation">Hypothetical Net Value</a> <button class="info-button" aria-label="Hypothetical Net Value explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
       <div class="tooltip">
         <div class="tooltip-content">
-          Gross market value minus estimated employment tax.
-          Includes locked and forfeiture-restricted shares.
+          Gross market value minus estimated employment tax. Includes locked and forfeiture-restricted shares.
         </div>
       </div>
     </div>
@@ -118,27 +64,112 @@
     {% endif %}
   </div>
   <div class="stat stat--accent">
-    <div class="stat__label">Deployable Today (From Capital Stack) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Deployable Today <button class="info-button" aria-label="Deployable Today explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Current deployable counterpart from Capital Stack. Includes holdings deployable today plus deployable GBP cash.
+        </div>
+      </div>
+    </div>
     {% if deployable_today_gbp is not none %}
     <div class="stat__value">&pound;{{ deployable_today_gbp | money }}</div>
-    <span class="stat-caption"><a href="{{ with_as_of('/capital-stack', selected_as_of) }}">Open Capital Stack</a> for full holdings-to-deployable formula.</span>
+    <span class="stat-caption">Holdings &pound;{{ deployable_today_holdings_gbp | money }} + cash &pound;{{ deployable_today_cash_gbp | money }}.</span>
     {% else %}
     <div class="stat__value muted">Unavailable</div>
     <span class="stat-caption"><a href="{{ with_as_of('/capital-stack', selected_as_of) }}">Open Capital Stack</a> to inspect missing inputs.</span>
     {% endif %}
   </div>
   <div class="stat {% if net_vs_deployable_delta_gbp is not none and net_vs_deployable_delta_gbp > 0 %}stat--warning{% else %}stat--accent{% endif %}">
-    <div class="stat__label">Net Value vs Deployable Today Delta <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Net Value vs Deployable Delta <button class="info-button" aria-label="Net Value vs Deployable Delta explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          The non-actionable gap between hypothetical sell-all value and what is actually deployable today.
+        </div>
+      </div>
+    </div>
     {% if net_vs_deployable_delta_gbp is not none %}
     <div class="stat__value {% if net_vs_deployable_delta_gbp > 0 %}warning-text{% endif %}">&pound;{{ net_vs_deployable_delta_gbp | money }}</div>
-    <span class="stat-caption">Represents the non-actionable gap between hypothetical sell-all net and deployable capital today.</span>
     {% else %}
     <div class="stat__value muted">Unavailable</div>
     <span class="stat-caption">Delta requires both hypothetical net value and deployable-today estimate.</span>
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis (All Lots)</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main"><a href="/glossary#hypothetical-full-liquidation">Gross Market Value</a></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></span>
+    </div>
+    {% if sell_all_metrics.gross_market_value_gbp is not none %}
+    <div class="stat__value">&pound;{{ sell_all_metrics.gross_market_value_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label title-help">
+      <span class="stat__label-main"><a href="/glossary#employment-tax">Estimated Employment Tax</a> <button class="info-button" aria-label="Estimated Employment Tax explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Estimated on currently sellable lots only, then applied in this hypothetical sell-all view. Includes Income Tax, National Insurance, plus Student Loan where scheme rules apply.
+        </div>
+      </div>
+    </div>
+    {% if sell_all_metrics.est_employment_tax_gbp is not none %}
+    <div class="stat__value warning-text">&pound;{{ sell_all_metrics.est_employment_tax_gbp | money }}</div>
+    {% else %}
+    <div class="stat__value muted">-</div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Hypothetical Liquid Quantity</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value">{{ hypothetical_liquid_quantity }}</div>
+  </div>
+</div>
+
+<h2 class="stats-band-title title-help">
+  Why It Is Not Deployable
+  <button class="info-button" type="button" aria-label="Why It Is Not Deployable explanation">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Structural deductions and constraints that explain the gap between hypothetical sell-all value and deployable capital.
+    </div>
+  </div>
+</h2>
+<div class="stats stats-band">
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      <span class="stat__label-main"><a href="/glossary#locked-capital">Locked Capital</a></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value warning-text">&pound;{{ locked_capital_gbp | money }}</div>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      <span class="stat__label-main"><a href="/glossary#forfeitable-capital">Forfeitable Capital</a></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <div class="stat__value warning-text">&pound;{{ forfeitable_capital_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Deployable Cash</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">&pound;{{ deployable_today_cash_gbp | money }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main"><a href="/glossary#cost-basis">Total Cost Basis</a></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+    </div>
     <div class="stat__value">&pound;{{ sell_all_metrics.cost_basis_gbp | money }}</div>
   </div>
 </div>
@@ -149,6 +180,78 @@
   <a href="/settings">Configure in Settings</a>
 </div>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace lots</strong>
+    </a>
+    <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace mutations</strong>
+    </a>
+    <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="valuation-pill">
+      <strong>Open Capital Stack</strong>
+    </a>
+    <button onclick="window.print()" class="valuation-pill" type="button">
+      <strong>Print</strong>
+    </button>
+    <button type="button" class="valuation-pill" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">
+      <strong>Download brief JSON</strong>
+    </button>
+    <button type="button" class="valuation-pill" id="nv-audit-json-btn">
+      <strong>Download audit JSON</strong>
+    </button>
+  </div>
+  {% set model_scope = {
+    "inputs": [
+      "Current market values for all active lots",
+      "Sellable-lot employment tax estimate model"
+    ],
+    "assumptions": [
+      "Sell-all framing is hypothetical and includes locked/forfeitable value",
+      "Employment tax estimate is applied to sellable lots only"
+    ],
+    "exclusions": [
+      "No execution staging assumptions",
+      "No forward pricing assumptions"
+    ]
+  } %}
+  <div style="margin-top: 0.9rem;">
+    {% include "partials/model_scope_card.html" %}
+  </div>
+  {% if sell_all_metrics.fx_conversion_basis or sell_all_metrics.fx_as_of %}
+  <div class="valuation-basis-strip" style="margin-top: 0.9rem;">
+    <div class="valuation-basis-strip__title title-help">
+      Data Basis
+      <button class="info-button" aria-label="Net Value data basis explanation">&#9432;</button>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Basis used for the hypothetical sell-all view. This is reference context, not a decision metric.
+        </div>
+      </div>
+    </div>
+    <div class="valuation-basis-strip__items">
+      <span class="valuation-pill">
+        As Of
+        <strong>{{ page_as_of_date }}</strong>
+      </span>
+      {% if sell_all_metrics.fx_conversion_basis %}
+      <span class="valuation-pill">
+        FX basis
+        <strong>{{ sell_all_metrics.fx_conversion_basis }}</strong>
+      </span>
+      {% endif %}
+      {% if sell_all_metrics.fx_as_of %}
+      <span class="valuation-pill {% if sell_all_metrics.fx_is_stale %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
+        FX as of
+        <strong>{{ sell_all_metrics.fx_as_of }}</strong>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</details>
 
 {% if not nv_securities %}
 <div class="empty-state"><p>No securities with active lots.</p></div>
@@ -179,7 +282,7 @@
           {% endif %}
           {{ "%.2f"|format(daily.percent_change | abs) }}% 
         </span>
-        <button class="info-button" aria-label="Daily change breakdown">ℹ</button>
+        <button class="info-button" aria-label="Daily change breakdown">?</button>
         <div class="tooltip">
           <div class="tooltip-content">
             {% if daily.previous_price_gbp is not none %}
@@ -322,7 +425,7 @@
           <th class="num">True Cost</th>
           <th class="num">
             P&amp;L
-            <button class="info-button" aria-label="Accounting P&amp;L explanation">ℹ</button>
+            <button class="info-button" aria-label="Accounting P&amp;L explanation">?</button>
             <div class="tooltip">
               <div class="tooltip-content">
                 Market value minus cost basis. Accounting view only — not a CGT disposal figure.

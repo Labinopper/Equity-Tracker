@@ -4,48 +4,37 @@
 {% block content %}
 {% set countdowns = calendar.countdowns %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Calendar</h1>
-    <p class="muted">Upcoming vest, forfeiture, reminder, guardrail, sell-plan tranche, and tax-year events with value-at-stake context.</p>
   </div>
   <div class="page-actions">
-    <form method="get" action="/calendar" class="filter-bar inline-form">
-      <label for="as_of">As Of</label>
-      <input id="as_of" name="as_of" type="date" value="{{ calendar_filters.as_of }}">
-      <label for="days">Horizon</label>
-      <select id="days" name="days" onchange="this.form.submit()">
-        <option value="90" {{ 'selected' if calendar.horizon_days == 90 }}>90 days</option>
-        <option value="180" {{ 'selected' if calendar.horizon_days == 180 }}>180 days</option>
-        <option value="400" {{ 'selected' if calendar.horizon_days == 400 }}>400 days</option>
-        <option value="730" {{ 'selected' if calendar.horizon_days == 730 }}>2 years</option>
-        <option value="1460" {{ 'selected' if calendar.horizon_days == 1460 }}>4 years</option>
-      </select>
-      <label for="sell_plan_id">Sell Plan ID</label>
-      <input id="sell_plan_id" name="sell_plan_id" type="text" value="{{ calendar_filters.sell_plan_id }}" placeholder="optional">
-      <label for="sell_method">Method</label>
-      <select id="sell_method" name="sell_method">
-        <option value="" {{ 'selected' if not calendar_filters.sell_method }}>All</option>
-        <option value="CALENDAR_TRANCHES" {{ 'selected' if calendar_filters.sell_method == 'CALENDAR_TRANCHES' }}>Calendar Tranches</option>
-        <option value="THRESHOLD_BANDS" {{ 'selected' if calendar_filters.sell_method == 'THRESHOLD_BANDS' }}>Threshold Bands</option>
-        <option value="LIMIT_LADDER" {{ 'selected' if calendar_filters.sell_method == 'LIMIT_LADDER' }}>Limit Ladder</option>
-        <option value="BROKER_ALGO" {{ 'selected' if calendar_filters.sell_method == 'BROKER_ALGO' }}>Broker Algo (TWAP/VWAP)</option>
-      </select>
-      <label for="sell_status">Status</label>
-      <select id="sell_status" name="sell_status">
-        <option value="" {{ 'selected' if not calendar_filters.sell_status }}>Active (Planned + Due)</option>
-        <option value="PLANNED" {{ 'selected' if calendar_filters.sell_status == 'PLANNED' }}>Planned</option>
-        <option value="DUE" {{ 'selected' if calendar_filters.sell_status == 'DUE' }}>Due</option>
-        <option value="EXECUTED" {{ 'selected' if calendar_filters.sell_status == 'EXECUTED' }}>Executed</option>
-        <option value="CANCELLED" {{ 'selected' if calendar_filters.sell_status == 'CANCELLED' }}>Cancelled</option>
-      </select>
-      <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
-    </form>
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/sell-plan" class="btn btn-secondary btn-sm">Sell Plan</a>
   </div>
 </div>
 
-<p class="muted">As of {{ calendar.as_of_date }}. Generated {{ calendar.generated_at_utc }}.</p>
+<h2 class="stats-band-title title-help">
+  Operational Timing
+  <button class="info-button" type="button" aria-label="Calendar info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Open timing obligations across vesting, forfeiture, reminders, tax-year deadlines, and sell-plan execution. Completed events remain visible until you explicitly reopen or filter them out.
+    </div>
+  </div>
+</h2>
 
-<div class="stats">
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill">
+    <strong>As of</strong>
+    <span class="muted">{{ calendar.as_of_date }}</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Generated</strong>
+    <span class="muted">{{ calendar.generated_at_utc }}</span>
+  </span>
+</div>
+
+<div class="stats stats-band">
   <div class="stat stat--accent">
     <span class="stat__label">{{ countdowns.next_vest.label }}</span>
     {% if countdowns.next_vest.days_until is not none %}
@@ -97,6 +86,41 @@
     <span class="stat-caption">{{ calendar.horizon_days }} day window</span>
   </div>
 </div>
+
+<details class="card net-panel">
+  <summary>Filters</summary>
+  <form method="get" action="/calendar" class="filter-bar inline-form" style="margin-top:0.9rem;">
+    <label for="as_of">As Of</label>
+    <input id="as_of" name="as_of" type="date" value="{{ calendar_filters.as_of }}">
+    <label for="days">Horizon</label>
+    <select id="days" name="days" onchange="this.form.submit()">
+      <option value="90" {{ 'selected' if calendar.horizon_days == 90 }}>90 days</option>
+      <option value="180" {{ 'selected' if calendar.horizon_days == 180 }}>180 days</option>
+      <option value="400" {{ 'selected' if calendar.horizon_days == 400 }}>400 days</option>
+      <option value="730" {{ 'selected' if calendar.horizon_days == 730 }}>2 years</option>
+      <option value="1460" {{ 'selected' if calendar.horizon_days == 1460 }}>4 years</option>
+    </select>
+    <label for="sell_plan_id">Sell Plan ID</label>
+    <input id="sell_plan_id" name="sell_plan_id" type="text" value="{{ calendar_filters.sell_plan_id }}" placeholder="optional">
+    <label for="sell_method">Method</label>
+    <select id="sell_method" name="sell_method">
+      <option value="" {{ 'selected' if not calendar_filters.sell_method }}>All</option>
+      <option value="CALENDAR_TRANCHES" {{ 'selected' if calendar_filters.sell_method == 'CALENDAR_TRANCHES' }}>Calendar Tranches</option>
+      <option value="THRESHOLD_BANDS" {{ 'selected' if calendar_filters.sell_method == 'THRESHOLD_BANDS' }}>Threshold Bands</option>
+      <option value="LIMIT_LADDER" {{ 'selected' if calendar_filters.sell_method == 'LIMIT_LADDER' }}>Limit Ladder</option>
+      <option value="BROKER_ALGO" {{ 'selected' if calendar_filters.sell_method == 'BROKER_ALGO' }}>Broker Algo (TWAP/VWAP)</option>
+    </select>
+    <label for="sell_status">Status</label>
+    <select id="sell_status" name="sell_status">
+      <option value="" {{ 'selected' if not calendar_filters.sell_status }}>Active (Planned + Due)</option>
+      <option value="PLANNED" {{ 'selected' if calendar_filters.sell_status == 'PLANNED' }}>Planned</option>
+      <option value="DUE" {{ 'selected' if calendar_filters.sell_status == 'DUE' }}>Due</option>
+      <option value="EXECUTED" {{ 'selected' if calendar_filters.sell_status == 'EXECUTED' }}>Executed</option>
+      <option value="CANCELLED" {{ 'selected' if calendar_filters.sell_status == 'CANCELLED' }}>Cancelled</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+  </form>
+</details>
 
 <div class="card">
   <div class="card__header">
@@ -210,10 +234,8 @@
 </div>
 
 {% if calendar.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -225,6 +247,17 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/sell-plan" class="valuation-pill">
+      <strong>Open Sell Plan</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}

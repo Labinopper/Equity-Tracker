@@ -2,7 +2,16 @@
 {% block title %}CGT Report - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>CGT Report</h1></div>
+<div class="page-title">
+  <div class="page-title__heading">
+    <h1>CGT Report</h1>
+    <p class="muted">Filing-year realised capital gains, losses, and any computed CGT due.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/tax-plan" class="btn btn-secondary btn-sm">Tax Plan</a>
+    <a href="/economic-gain" class="btn btn-secondary btn-sm">Economic Gain</a>
+  </div>
+</div>
 
 <form method="get" action="/cgt" class="tax-year-selector">
   <input type="hidden" name="include_tax_due" value="{{ 'true' if include_tax_due else 'false' }}">
@@ -67,8 +76,17 @@
 </div>
 {% endif %}
 
-<!-- Summary stats -->
-<div class="stats">
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Filing Summary
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About CGT report summary">i</span>
+      <span class="tooltip__content">Shows realised taxable disposals for the selected tax year. ISA disposals stay excluded from CGT totals.</span>
+    </span>
+  </div>
+</section>
+
+<div class="stats stats-band">
   <div class="stat">
     <div class="stat__label">Taxable Disposals <span class="metric-tag metric-tag--realised">Realised</span></div>
     <div class="stat__value">{{ report.disposal_lines | length }}</div>
@@ -100,7 +118,6 @@
 </div>
 {% endif %}
 
-<!-- Disposal lines table -->
 {% if not report.disposal_lines %}
 <div class="empty-state">
   {% if report.isa_exempt_proceeds_gbp > 0 %}
@@ -110,7 +127,8 @@
   {% endif %}
 </div>
 {% else %}
-<div class="card">
+<details class="card net-panel" open>
+  <summary>Taxable Disposal Ledger</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -142,14 +160,13 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
-<!-- CGT due panel -->
 {% if report.cgt_result %}
 {% set r = report.cgt_result %}
-<div class="cgt-panel">
-  <h3>CGT Due - {{ active_year }}</h3>
+<details class="cgt-panel" open>
+  <summary>CGT Due - {{ active_year }}</summary>
   <div class="cgt-grid">
     <div class="cgt-item">
       <div class="cgt-item__label">Annual Exempt Amount</div>
@@ -183,7 +200,7 @@
     <ul>{% for note in r.notes %}<li>{{ note }}</li>{% endfor %}</ul>
   </div>
   {% endif %}
-</div>
+</details>
 {% elif include_tax_due %}
 <div class="alert alert-info alert-top">
   CGT due calculation requires income settings to be saved.
@@ -191,9 +208,12 @@
 </div>
 {% endif %}
 
-<p class="muted panel-note">
-  For true P&amp;L comparison (accounting for acquisition-time tax), see the <a href="/economic-gain">Economic Gain Report &rarr;</a>
-</p>
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted panel-note">
+    For true P&amp;L comparison, see the <a href="/economic-gain">Economic Gain Report</a>.
+    Use <a href="/tax-plan">Tax Plan</a> for timing decisions rather than filing-year reporting.
+  </p>
+</details>
 
 {% endblock %}
-

@@ -16,9 +16,8 @@
 {%- endmacro %}
 
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Tax Plan</h1>
-    <p class="muted">Tax-year realization planner with lot-level projections and April rollover comparison.</p>
   </div>
   <div class="page-actions">
     <form method="get" action="/tax-plan" class="inline-form">
@@ -29,32 +28,9 @@
       <a href="/tax-plan" class="btn btn-secondary btn-sm">Today</a>
       {% endif %}
     </form>
-    <button type="button" class="btn btn-secondary btn-sm" data-decision-brief-download data-decision-brief-as-of="{{ tax_plan.as_of_date }}" data-include-current-query="true" data-default-label="Download brief JSON">Download brief JSON</button>
+    <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="btn btn-secondary btn-sm">Capital Stack</a>
   </div>
 </div>
-
-{% set model_scope = {
-  "inputs": [
-    "Configured income/tax settings, disposal history, active lot inventory",
-    "Current market values and freshness diagnostics"
-  ],
-  "assumptions": [
-    "Assumption-quality labels are explicit per projection block",
-    "Sale projections use deterministic formula logic"
-  ],
-  "exclusions": [
-    "No probabilistic modelling",
-    "No recommendation engine"
-  ]
-} %}
-{% include "partials/model_scope_card.html" %}
-<p class="muted">
-  Trace key totals:
-  <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}">Contributing lots</a> |
-  <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}">Recent mutations</a>
-</p>
-
-<p class="muted">As of {{ tax_plan.as_of_date }}. Generated {{ tax_plan.generated_at_utc }}.</p>
 
 {% if tax_inputs_incomplete %}
 <div class="alert alert-warning">
@@ -73,27 +49,178 @@
 {% else %}
 {% set realised = tax_plan.summary.realised_to_date %}
 {% set cross_year = tax_plan.summary.cross_year_comparison %}
-<div class="stats">
+{% set comp = tax_plan.compensation_plan %}
+
+<h2 class="stats-band-title title-help">
+  Tax-Year Timing
+  <button class="info-button" type="button" aria-label="Tax Plan info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Decision-first view of UK tax-year disposal timing. Focus on allowance headroom, timing deltas, and pension-driven tax reduction before drilling into lot tables.
+    </div>
+  </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Hypothetical planning surface</strong>
+    <span class="muted">Use with lot projections and assumption quality</span>
+  </span>
+  {% if tax_inputs_incomplete %}
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Tax inputs incomplete</strong>
+    <span class="muted">Payroll drag may be understated</span>
+  </span>
+  {% endif %}
+  {% if comp.sale_assumption.uncovered_sale_gbp and comp.sale_assumption.uncovered_sale_gbp != '0.00' %}
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Planned sale exceeds sellable pool</strong>
+    <span class="muted">Excess &pound;{{ comp.sale_assumption.uncovered_sale_gbp|money }} assumed full gain</span>
+  </span>
+  {% endif %}
+</div>
+
+{% set timing = comp.timing_comparison %}
+<div class="stats stats-band">
   <div class="stat stat--accent">
-    <span class="stat__label">Active Tax Year</span>
+    <div class="stat__label">
+      <span class="stat__label-main">Active Tax Year</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
     <span class="stat__value">{{ tax_plan.active_tax_year }}</span>
   </div>
   <div class="stat">
-    <span class="stat__label">Net Gain to Date <span class="metric-tag metric-tag--realised">Realised</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></span>
-    <span class="stat__value">&pound;{{ realised.net_gain_gbp|money }}</span>
-  </div>
-  <div class="stat stat--warning">
-    <span class="stat__label"><a href="/glossary#aea">Remaining AEA</a> <span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    <div class="stat__label title-help">
+      <span class="stat__label-main"><a href="/glossary#aea">Remaining AEA</a> <button class="info-button" aria-label="Remaining AEA explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Headroom remaining in the current tax year's Annual Exempt Amount after realised gains to date.
+        </div>
+      </div>
+    </div>
     <span class="stat__value">&pound;{{ realised.remaining_aea_gbp|money }}</span>
   </div>
-  <div class="stat">
-    <span class="stat__label">Incremental CGT Difference If Wait <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+  <div class="stat stat--warning">
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Incremental CGT Difference If Wait <button class="info-button" aria-label="Incremental CGT Difference If Wait explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          CGT delta between selling before tax-year end and selling after rollover. Positive means waiting increases net retained cash.
+        </div>
+      </div>
+    </div>
     <span class="stat__value">&pound;{{ cross_year.incremental_cgt_difference_if_wait_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Sell Next Year vs This Year <button class="info-button" aria-label="Sell Next Year vs This Year explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Net cash difference between selling next tax year and selling this tax year under the current pension level.
+        </div>
+      </div>
+    </div>
+    <span class="stat__value">&pound;{{ comp.comparison.sell_next_vs_sell_delta_gbp|money }}</span>
+  </div>
+  <div class="stat stat--warning">
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Sell + Pension vs Sell Delta <button class="info-button" aria-label="Sell plus pension explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Net cash improvement from pairing the planned sale with extra pension sacrifice rather than selling alone this tax year.
+        </div>
+      </div>
+    </div>
+    <span class="stat__value">&pound;{{ comp.comparison.sell_with_pension_vs_sell_delta_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Combined Tax Saved by Extra Pension <button class="info-button" aria-label="Combined Tax Saved by Extra Pension explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Combined payroll and CGT reduction attributable to the extra pension assumption in the current what-if.
+        </div>
+      </div>
+    </div>
+    <span class="stat__value">&pound;{{ comp.comparison.combined_tax_saved_by_extra_pension_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label title-help">
+      <span class="stat__label-main"><a href="/glossary#ani-adjusted-net-income">ANI Reduction from Extra Pension</a> <button class="info-button" aria-label="ANI Reduction explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Adjusted Net Income reduction from the extra pension input. This matters for personal allowance taper and related marginal tax behaviour.
+        </div>
+      </div>
+    </div>
+    <span class="stat__value">&pound;{{ comp.comparison.ani_reduction_from_extra_pension_gbp|money }}</span>
   </div>
 </div>
 
-{% set comp = tax_plan.compensation_plan %}
-{% set timing = comp.timing_comparison %}
+<h2 class="stats-band-title title-help">
+  Current Position
+  <button class="info-button" type="button" aria-label="Current tax position explanation">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Realised tax-year position and current sale-gain basis used by the planning scenarios.
+    </div>
+  </div>
+</h2>
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Net Gain to Date</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span> <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}" class="muted">Trace</a></span>
+    </div>
+    <span class="stat__value">&pound;{{ realised.net_gain_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Planned Sale Amount</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ comp.inputs.sell_amount_gbp|money }}</span>
+  </div>
+  <div class="stat {% if comp.sale_assumption.uncovered_sale_gbp and comp.sale_assumption.uncovered_sale_gbp != '0.00' %}stat--warning{% endif %}">
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Uncovered Sale Amount <button class="info-button" aria-label="Uncovered sale amount explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Portion of the planned sale amount above the currently sellable taxable market pool. The planner currently assumes this excess behaves as full gain.
+        </div>
+      </div>
+    </div>
+    <span class="stat__value {% if comp.sale_assumption.uncovered_sale_gbp and comp.sale_assumption.uncovered_sale_gbp != '0.00' %}warning-text{% endif %}">&pound;{{ comp.sale_assumption.uncovered_sale_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Sellable Taxable Market Pool</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ comp.sale_assumption.sellable_market_value_pool_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Estimated Sale Gain</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">&pound;{{ comp.sale_assumption.estimated_gain_gbp|money }}</span>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Estimated Gain Ratio</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    <span class="stat__value">{{ comp.sale_assumption.estimated_gain_ratio_pct }}%</span>
+  </div>
+</div>
+
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Compensation What-If (IT / NI / SL + CGT)</h2>
@@ -159,7 +286,7 @@
   </p>
 </div>
 
-<div class="stats">
+<div class="stats stats-band">
   <div class="stat">
     <span class="stat__label">Sell vs Hold Net Cash Delta (+ = sell better) <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     <span class="stat__value">&pound;{{ comp.comparison.sell_vs_hold_net_cash_delta_gbp|money }}</span>
@@ -186,10 +313,8 @@
   </div>
 </div>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Sale Gain Assumption</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Sale Gain Assumption</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -206,6 +331,14 @@
           <td>&pound;{{ comp.sale_assumption.sellable_market_value_pool_gbp|money }}</td>
         </tr>
         <tr>
+          <th>Covered by Pool</th>
+          <td>&pound;{{ comp.sale_assumption.covered_by_pool_gbp|money }}</td>
+        </tr>
+        <tr>
+          <th>Uncovered Sale Amount</th>
+          <td>&pound;{{ comp.sale_assumption.uncovered_sale_gbp|money }}</td>
+        </tr>
+        <tr>
           <th>Estimated Sale Cost Basis</th>
           <td>&pound;{{ comp.sale_assumption.estimated_cost_basis_gbp|money }}</td>
         </tr>
@@ -220,12 +353,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Compensation Scenarios</h2>
-  </div>
+<details class="card net-panel" open>
+  <summary>Compensation Scenarios</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -316,13 +447,11 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
 {% if comp.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Compensation Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Compensation Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -334,13 +463,11 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Assumptions</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Tax-Year Assumptions</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -391,12 +518,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Sell Before vs After April</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Sell Before vs After April</summary>
   <p class="muted">Assumption quality: {{ assumption_badge(cross_year.assumption_quality) }}</p>
   <div class="table-wrap">
     <table>
@@ -436,12 +561,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Per-Lot Projection</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Per-Lot Projection</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -524,14 +647,12 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
 
 {% if tax_plan.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Planner Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -543,6 +664,51 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace lots</strong>
+    </a>
+    <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace mutations</strong>
+    </a>
+    <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="valuation-pill">
+      <strong>Open Capital Stack</strong>
+    </a>
+    <button type="button" class="valuation-pill" data-decision-brief-download data-decision-brief-as-of="{{ tax_plan.as_of_date }}" data-include-current-query="true" data-default-label="Download brief JSON">
+      <strong>Download brief JSON</strong>
+    </button>
+  </div>
+  {% set model_scope = {
+    "inputs": [
+      "Configured income and tax settings, disposal history, and active lot inventory",
+      "Current market values and freshness diagnostics"
+    ],
+    "assumptions": [
+      "Assumption-quality labels are explicit per projection block",
+      "Sale projections use deterministic formula logic"
+    ],
+    "exclusions": [
+      "No probabilistic modelling",
+      "No recommendation engine"
+    ]
+  } %}
+  <div style="margin-top: 0.9rem;">
+    {% include "partials/model_scope_card.html" %}
+  </div>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <span class="valuation-pill">
+      <strong>As of</strong>
+      <span class="muted">{{ tax_plan.as_of_date }}</span>
+    </span>
+    <span class="valuation-pill">
+      <strong>Generated</strong>
+      <span class="muted">{{ tax_plan.generated_at_utc }}</span>
+    </span>
+  </div>
+</details>
 {% endblock %}

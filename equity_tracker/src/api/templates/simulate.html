@@ -2,10 +2,15 @@
 {% block title %}Simulate Disposal &mdash; Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>Simulate Disposal</h1></div>
-<p class="muted page-intro-lg">
-  Preview FIFO allocation and realised gains. Commit only when the result is fully allocated.
-</p>
+<div class="page-title">
+  <div class="page-title__heading">
+    <h1>Simulate Disposal</h1>
+  </div>
+  <div class="page-actions">
+    <a href="/sell-plan" class="btn btn-secondary btn-sm">Sell Plan</a>
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+  </div>
+</div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
@@ -28,7 +33,52 @@
 </div>
 {% endif %}
 
-<div class="card">
+<h2 class="stats-band-title title-help">
+  Disposal Preview
+  <button class="info-button" type="button" aria-label="Simulate Disposal info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      FIFO-based disposal preview before commit. This page is the pre-commit consequence check for quantity, price, tax, fees, and forfeiture.
+    </div>
+  </div>
+</h2>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>Pre-commit surface</strong>
+    <span class="muted">Commit only when fully allocated and consequences are acceptable</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>FIFO enforced</strong>
+    <span class="muted">Whole shares only</span>
+  </span>
+</div>
+
+<div class="stats stats-band">
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Sellable Securities</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ securities|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Scheme Filters</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ scheme_types|select|list|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Linked Sell Plan</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Context</span></span>
+    </div>
+    <div class="stat__value">{{ 'Yes' if linked_sell_plan and linked_sell_plan.plan_id else 'No' }}</div>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Simulation Inputs</summary>
   <form method="post" action="/simulate">
     <div class="form-grid">
 
@@ -95,7 +145,7 @@
       <a href="/" class="btn btn-secondary">Cancel</a>
     </div>
   </form>
-</div>
+</details>
 
 <!-- Result -->
 {% if result %}
@@ -208,8 +258,9 @@
     </ul>
   </details>
 
-  <h3 class="section-title-sm">FIFO Allocations</h3>
-  <div class="table-wrap">
+  <details class="card net-panel" open>
+    <summary>FIFO Allocations</summary>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -261,7 +312,8 @@
       </tfoot>
       {% endif %}
     </table>
-  </div>
+    </div>
+  </details>
 
   {% if tax_status.applicable and not tax_status.estimate_available %}
   <p class="muted note-small-top">
@@ -314,11 +366,8 @@
 
   {# Exit summary panel: cash flow, paid-share performance, and scheme impact #}
   {% if exit_summary and (result.forfeiture_warnings or exit_summary.employment_tax_due_gbp > 0 or exit_summary.broker_fees_gbp > 0) %}
-  <div class="card exit-summary-card">
-    <div class="card__header">
-      <span class="card__title">Exit Summary</span>
-    </div>
-
+  <details class="card net-panel exit-summary-card" open>
+    <summary>Exit Summary</summary>
     <div class="exit-summary">
       <section class="exit-summary__section">
         <h4 class="exit-summary__heading">1) Cash Flow</h4>
@@ -379,19 +428,16 @@
         <p class="muted exit-summary__note">Total Economic Outcome combines cash flow, true economic cost, and scheme incentive effects.</p>
       </section>
     </div>
-  </div>
+  </details>
   {% endif %}
 
 </div>
 
 <!-- Commit form -- only shown when fully allocated -->
 {% if result.is_fully_allocated %}
-<div class="card card-commit">
-  <div class="card__header">
-    <span class="card__title">Commit Disposal</span>
-    <span class="muted commit-note">Writes to database &mdash; cannot be undone</span>
-  </div>
-
+<details class="card net-panel card-commit" open>
+  <summary>Commit Disposal</summary>
+  <p class="muted commit-note">Writes to database and cannot be undone.</p>
   <form method="post" action="/simulate/commit">
     <!-- Hidden carry-over from simulation -->
     <input type="hidden" name="security_id"        value="{{ prev.security_id }}">
@@ -460,7 +506,7 @@
       <a href="/simulate" class="btn btn-secondary">Start Again</a>
     </div>
   </form>
-</div>
+</details>
 {% else %}
 <div class="alert alert-info alert-top">
   Partial allocation &mdash; fix the shortfall before committing.
@@ -469,6 +515,21 @@
 {% endif %}
 
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/sell-plan" class="valuation-pill">
+      <strong>Open Sell Plan</strong>
+    </a>
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/settings" class="valuation-pill">
+      <strong>Tax Settings</strong>
+    </a>
+  </div>
+</details>
 
 <script>
 (function () {

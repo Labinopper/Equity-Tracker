@@ -50,41 +50,41 @@ Use the `Page Template Standard (Reference: Portfolio)` in `docs/STRATEGIC_DOCUM
 | Review | Page | Status | Notes |
 |---|---|---|---|
 | R1 | Portfolio (`/`) | Complete | Current reference template. |
-| R2 | Net Value (`/net-value`) | Pending | Assess top-band hierarchy, copy density, and context placement. |
-| R3 | Capital Stack (`/capital-stack`) | Pending | Assess whether the formula chain remains primary and utilities remain secondary. |
-| R4 | Cash (`/cash`) | Pending | Assess operational actions vs explanatory density and basis placement. |
-| R5 | Sell Plan (`/sell-plan`) | Pending | Assess planning controls vs context/diagnostics separation. |
-| R6 | Simulate Disposal (`/simulate`) | Pending | Assess result hierarchy, provenance placement, and action semantics. |
-| R7 | Per Scheme (`/per-scheme`) | Pending | Assess decomposition clarity and drill-down structure. |
-| R8 | Tax Plan (`/tax-plan`) | Pending | Assess decision-first hierarchy vs assumptions/diagnostics. |
-| R9 | Risk (`/risk`) | Pending | Assess risk band ordering, critical widget visibility, and page-context placement. |
-| R10 | Analytics (`/analytics`) | Pending | Assess signal prioritization and hidden-critical-content risk. |
-| R11 | Calendar (`/calendar`) | Pending | Assess operational timing clarity and event-context density. |
-| R12 | Scenario Lab (`/scenario-lab`) | Pending | Assess comparison hierarchy and assumption/context segregation. |
-| R13 | History (`/history`) | Pending | Assess trend clarity vs diagnostic overhead. |
-| R14 | Security History (`/history/{security_id}`) | Pending | Assess single-name forensic view against the template where applicable. |
-| R15 | CGT Report (`/cgt`) | Pending | Assess filing summary prominence and context relegation. |
-| R16 | Economic Gain Report (`/economic-gain`) | Pending | Assess comparative framing and tag placement. |
-| R17 | Dividends (`/dividends`) | Pending | Assess expected vs actual workflow prominence and context placement. |
-| R18 | Insights (`/insights`) | Pending | Assess whether it behaves as a synthesis surface or still as a hub. |
-| R19 | Capital Efficiency (`/capital-efficiency`) | Pending | Assess component ordering and narrative density. |
-| R20 | Employment Exit (`/employment-exit`) | Pending | Assess matrix/action framing and assumption placement. |
-| R21 | ISA Efficiency (`/isa-efficiency`) | Pending | Assess wrapper decision-first structure. |
-| R22 | Fee Drag (`/fee-drag`) | Pending | Assess drag signal prominence and low-frequency detail placement. |
-| R23 | Data Quality (`/data-quality`) | Pending | Assess remediation-first design and diagnostic density. |
-| R24 | Employment Tax Events (`/employment-tax-events`) | Pending | Assess event trail usefulness and trace-link prominence. |
-| R25 | Reconcile (`/reconcile`) | Pending | Assess reconciliation path clarity and drill-down ordering. |
-| R26 | Basis Timeline (`/basis-timeline`) | Pending | Assess contributor salience and low-signal table density. |
-| R27 | Pension (`/pension`) | Pending | Assess planning-first layout and diagnostic relegation. |
-| R28 | Audit Log (`/audit`) | Pending | Assess filtering utility vs readability burden. |
-| R29 | Add Lot (`/portfolio/add-lot`) | Pending | Assess input workflow hierarchy and preview/context positioning. |
-| R30 | Transfer Lot (`/portfolio/transfer-lot`) | Pending | Assess transfer impact prominence and secondary context placement. |
-| R31 | Edit Lot (`/portfolio/edit-lot`) | Pending | Assess correction flow hierarchy and diff visibility. |
-| R32 | Add Security (`/portfolio/add-security`) | Pending | Assess search/add workflow priority and metadata burden. |
-| R33 | Settings (`/settings`) | Pending | Assess assumption controls vs secondary diagnostics/connection info. |
-| R34 | Glossary (`/glossary`) | Pending | Assess usability as support surface and reverse-link clarity. |
-| R35 | Login (`/auth/login`) | Pending | Assess minimal auth clarity and warning density. |
-| R36 | Locked (`locked.html`) | Pending | Assess recovery steps prominence and diagnostic clutter. |
+| R2 | Net Value (`/net-value`) | Complete | Reframed as a hypothetical sell-all surface with deployable delta, deductions band, and bottom page context. |
+| R3 | Capital Stack (`/capital-stack`) | Complete | Re-centered deployable reality, moved utilities/context down, and relegated formula/cash tables to collapsibles. |
+| R4 | Cash (`/cash`) | Complete | Added an operational top band, kept entry workflows central, and moved audit-heavy ledger context down. |
+| R5 | Sell Plan (`/sell-plan`) | Complete | Reframed as an execution-planning surface, promoted plan state counts, and pushed glossary/context links to the bottom. |
+| R6 | Simulate Disposal (`/simulate`) | Complete | Reworked as a pre-commit disposal surface with clearer inputs, FIFO/result hierarchy, and bottom-page context. |
+| R7 | Per Scheme (`/per-scheme`) | Complete | Reframed as scheme decomposition, added top summary stats, and converted each scheme into a drill-down card. |
+| R8 | Tax Plan (`/tax-plan`) | Complete | Reworked to a timing-first summary, kept what-if planning central, and pushed assumptions/trace/export into lower sections. |
+| R9 | Risk (`/risk`) | Complete | Reordered to structural-risk-first, kept alerts central, and pushed dense formulas/tables into lower collapsibles. |
+| R10 | Analytics (`/analytics`) | Complete | Reframed as a signal surface, promoted focus/visibility controls, and pushed notes/context down. |
+| R11 | Calendar (`/calendar`) | Complete | Reworked as an operational timing surface, moved filters below the primary countdown band, and lowered notes/context. |
+| R12 | Scenario Lab (`/scenario-lab`) | Complete | Reframed around deterministic comparison first, moved model scope/context lower, and promoted scenario/result hierarchy. |
+| R13 | History (`/history`) | Complete | Reframed as a trend surface, promoted summary stats and charts, and pushed securities/table/context into lower drill-downs. |
+| R14 | Security History (`/history/{security_id}`) | Complete | Reframed as a single-name forensic surface with top summary stats, lower decomposition sections, and bottom page context. |
+| R15 | CGT Report (`/cgt`) | Complete | Reframed around filing-year realised totals first, with disposal ledger and context lowered. |
+| R16 | Economic Gain Report (`/economic-gain`) | Complete | Reframed around realised economic outcome first, with CGT comparison and ledger detail below. |
+| R17 | Dividends (`/dividends`) | Complete | Reframed around confirmation workflow first, promoted actual/forecast summary, and pushed reminder/maintenance context lower. |
+| R18 | Insights (`/insights`) | Complete | Converted from a page directory into a signal-first synthesis surface with urgent items, input-pressure summary, and strategic links below. |
+| R19 | Capital Efficiency (`/capital-efficiency`) | Complete | Reworked around structural-drag summary first, with components/context lower and clearer action links. |
+| R20 | Employment Exit (`/employment-exit`) | Complete | Reframed around exit scenario output first, with inputs and comparison/context separated below. |
+| R21 | ISA Efficiency (`/isa-efficiency`) | Complete | Reworked around wrapper-efficiency signal first, with assumptions/context lowered. |
+| R22 | Fee Drag (`/fee-drag`) | Complete | Reframed around drag signal first, with detail/context moved into lower sections. |
+| R23 | Data Quality (`/data-quality`) | Complete | Reworked as a remediation-first surface with diagnostics pushed below the primary status band. |
+| R24 | Employment Tax Events (`/employment-tax-events`) | Complete | Reframed as an event-trail surface with top summary stats, lower tax-year/event ledgers, and bottom page context. |
+| R25 | Reconcile (`/reconcile`) | Complete | Reworked around reconciliation path first, with trace sections demoted into drill-down areas. |
+| R26 | Basis Timeline (`/basis-timeline`) | Complete | Reframed as a basis-attribution surface with summary stats first and dense tables moved lower. |
+| R27 | Pension (`/pension`) | Complete | Reworked around retirement-position summary first, with assumptions, ledger, and context lowered. |
+| R28 | Audit Log (`/audit`) | Complete | Reworked as a mutation-trail surface with filters and ledger in structured collapsibles. |
+| R29 | Add Lot (`/portfolio/add-lot`) | Complete | Reframed as a lot-input workflow with clearer purpose, actions, and bottom-page context. |
+| R30 | Transfer Lot (`/portfolio/transfer-lot`) | Complete | Reworked around transfer impact first, with rules and downstream context demoted below the core workflow. |
+| R31 | Edit Lot (`/portfolio/edit-lot`) | Complete | Reframed as a correction workflow with explicit downstream impact and audit context. |
+| R32 | Add Security (`/portfolio/add-security`) | Complete | Reworked around catalogue-first instrument selection with manual override and lower page context. |
+| R33 | Settings (`/settings`) | Complete | Reworked around modelling inputs first, with diagnostics/completeness as lower operational sections. |
+| R34 | Glossary (`/glossary`) | Complete | Reframed as a support/reference surface with clearer reverse-link context and model-scope relegation. |
+| R35 | Login (`/auth/login`) | Complete | Kept minimal auth flow primary and collapsed recovery guidance into optional support detail. |
+| R36 | Locked (`locked.html`) | Complete | Kept recovery path primary and collapsed secondary recovery detail into structured guidance. |
 
 ## Definition of Done (Current + Next)
 

@@ -3,12 +3,29 @@
 
 {% block content %}
 <div class="page-title">
-  <h1>Edit Lot</h1>
+  <div class="page-title__heading">
+    <h1>Edit Lot</h1>
+    <p class="muted">Correct an existing lot while previewing quantity, basis, and downstream reporting impact.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/reconcile" class="btn btn-secondary btn-sm">Reconcile</a>
+    <a href="/audit" class="btn btn-secondary btn-sm">Audit</a>
+  </div>
 </div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
+
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Correction Flow
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About edit lot">i</span>
+      <span class="tooltip__content">This form is for corrections, not new acquisitions. Use it when source dates, prices, quantities, or true cost were recorded incorrectly and you need the downstream impact preview before saving.</span>
+    </span>
+  </div>
+</section>
 
 <div class="card">
   <div class="card__header">
@@ -106,6 +123,13 @@
     </div>
   </form>
 </div>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted">
+    Corrections update downstream views including <a href="/">Portfolio</a>, <a href="/history">History</a>, <a href="/reconcile">Reconcile</a>, and <a href="/audit">Audit</a>.
+  </p>
+</details>
 
 <script>
 (function () {

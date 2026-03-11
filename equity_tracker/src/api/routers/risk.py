@@ -134,6 +134,7 @@ async def risk_page(
         {
             "request": request,
             "risk_summary": summary,
+            "valuation": summary.valuation_basis,
             "settings": settings,
             "optionality_weights": (
                 {k: str(v) for k, v in summary.optionality_index.weights_pct.items()}

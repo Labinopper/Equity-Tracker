@@ -8,11 +8,11 @@
 {% set major_shift_rows = history_data.major_shift_rows or [] %}
 
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>History</h1>
-    <p class="muted">Accurate portfolio value over time, reconstructed from your lot acquisition and disposal history.</p>
   </div>
-  <div class="history-range-btns">
+  <div class="page-actions history-range-btns">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
     <button type="button" class="btn btn-secondary btn-sm history-range-btn history-range-btn--active" data-range="all">All</button>
     <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="365d">1Y</button>
     <button type="button" class="btn btn-secondary btn-sm history-range-btn" data-range="90d">90D</button>
@@ -27,7 +27,17 @@
 {% else %}
 
 {# ── Summary stats ──────────────────────────────────────────────────────── #}
-<div class="stats">
+<h2 class="stats-band-title title-help">
+  Portfolio Trend
+  <button class="info-button" type="button" aria-label="History info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Reconstructed portfolio value, gain, and movement history from lots, disposals, dividends, and stored price data. Use this page for trend and shift analysis rather than current deployable decisions.
+    </div>
+  </div>
+</h2>
+
+<div class="stats stats-band">
   {% if stats.current_price_gbp %}
   <div class="stat">
     <div class="stat__label">Current Value</div>
@@ -88,10 +98,8 @@
 
 {# ── Per-security sparklines ────────────────────────────────────────────── #}
 {% if per_security %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Securities</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Securities</summary>
   <p class="muted">Click a card to see the full price chart for that security.</p>
   <div class="history-sparkline-grid" id="sparkline-grid">
     {% for sec in per_security %}
@@ -106,7 +114,7 @@
     </a>
     {% endfor %}
   </div>
-</div>
+</details>
 {% endif %}
 
 <div class="security-history-grid">
@@ -214,10 +222,8 @@
 </div>
 {# ── Portfolio table (show/hide) ────────────────────────────────────────── #}
 {% if major_shift_rows %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Major Shift Decomposition</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Major Shift Decomposition</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -244,12 +250,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Data Table</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Data Table</summary>
   <button type="button" class="btn btn-secondary btn-sm" id="history-table-toggle">Show table</button>
   <div id="history-table-wrap" class="table-wrap" hidden>
     <table>
@@ -291,16 +295,25 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
 {% if history_data.notes %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Notes</h2></div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <ul class="muted">
     {% for note in history_data.notes %}<li>{{ note }}</li>{% endfor %}
   </ul>
-</div>
+</details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+  </div>
+</details>
 
 {% endif %}{# has_data #}
 {% endblock %}

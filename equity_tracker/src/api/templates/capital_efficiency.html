@@ -3,15 +3,26 @@
 
 {% block content %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Capital Efficiency</h1>
-    <p class="muted">Deterministic structural drag decomposition.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/capital-stack" class="btn btn-secondary btn-sm">Capital Stack</a>
+    <a href="/fee-drag" class="btn btn-secondary btn-sm">Fee Drag</a>
   </div>
 </div>
 
-{% include "partials/model_scope_card.html" %}
+<h2 class="stats-band-title title-help">
+  Structural Drag
+  <button class="info-button" type="button" aria-label="Capital Efficiency info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic decomposition of capital drag from fees, tax friction, and structural constraints. Use this page to understand what is persistently reducing retained capital.
+    </div>
+  </div>
+</h2>
 
-<div class="stats">
+<div class="stats stats-band">
   <div class="stat stat--accent">
     <span class="stat__label">Capital Base</span>
     <span class="stat__value">&pound;{{ payload.capital_base_gbp|money }}</span>
@@ -35,8 +46,8 @@
 </div>
 
 {% set annualized_delta = payload.annualized_drag_rate_pct|float - payload.structural_drag_rate_pct|float %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+<details class="card net-panel" open>
+  <summary>Trend Context</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -59,10 +70,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+<details class="card net-panel">
+  <summary>Action Links</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -72,10 +83,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Drag Components</h2></div>
+<details class="card net-panel" open>
+  <summary>Drag Components</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -96,10 +107,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Fee Realization Context</h2></div>
+<details class="card net-panel">
+  <summary>Fee Realization Context</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -110,12 +121,26 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
 {% if payload.notes %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Notes</h2></div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div>
-</div>
+</details>
 {% endif %}
+
+{% include "partials/model_scope_card.html" %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/capital-stack" class="valuation-pill">
+      <strong>Open Capital Stack</strong>
+    </a>
+    <a href="/fee-drag" class="valuation-pill">
+      <strong>Open Fee Drag</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}

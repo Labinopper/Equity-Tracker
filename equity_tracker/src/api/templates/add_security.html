@@ -2,11 +2,30 @@
 {% block title %}Add Security - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><h1>Add Security</h1></div>
+<div class="page-title">
+  <div class="page-title__heading">
+    <h1>Add Security</h1>
+    <p class="muted">Add a tracked instrument from the local synced catalogue, or fall back to a manual override when needed.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/portfolio/add-lot" class="btn btn-secondary btn-sm">+ Lot</a>
+    <a href="/glossary" class="btn btn-secondary btn-sm">Glossary</a>
+  </div>
+</div>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
+
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Instrument Selection
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About add security">i</span>
+      <span class="tooltip__content">Prefer the synced catalogue to avoid duplicate or ambiguous instruments. Manual override should be used only when the security cannot be resolved locally.</span>
+    </span>
+  </div>
+</section>
 
 <div class="card">
   <form method="post" action="/portfolio/add-security" id="add-security-form">
@@ -157,6 +176,14 @@
 
   </form>
 </div>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <p class="muted">
+    The local catalogue is synced from Twelve Data and used to reduce ticker ambiguity across US and UK listings.
+    After adding the security, use <a href="/portfolio/add-lot">Add Lot</a> to create an actual holding.
+  </p>
+</details>
 
 <script id="existing-security-index-json" type="application/json">{{ (existing_security_index or []) | tojson }}</script>
 

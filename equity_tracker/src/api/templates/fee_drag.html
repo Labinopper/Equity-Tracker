@@ -2,9 +2,25 @@
 {% block title %}Fee Drag - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><div><h1>Fee Drag Ledger</h1><p class="muted">Broker-fee drag versus proceeds and economic gain.</p></div></div>
+<div class="page-title">
+  <div class="page-title__heading"><h1>Fee Drag Ledger</h1></div>
+  <div class="page-actions">
+    <a href="/sell-plan" class="btn btn-secondary btn-sm">Sell Plan</a>
+    <a href="/reconcile" class="btn btn-secondary btn-sm">Reconcile</a>
+  </div>
+</div>
 
-<div class="stats">
+<h2 class="stats-band-title title-help">
+  Execution Friction
+  <button class="info-button" type="button" aria-label="Fee Drag info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Realized broker-fee drag against proceeds and economic gain. Use this page to see whether execution friction is structurally small or materially reducing retained value.
+    </div>
+  </div>
+</h2>
+
+<div class="stats stats-band">
   <div class="stat"><span class="stat__label">Gross Proceeds</span><span class="stat__value">&pound;{{ payload.totals.gross_proceeds_gbp|money }}</span></div>
   <div class="stat stat--warning"><span class="stat__label">Broker Fees</span><span class="stat__value">&pound;{{ payload.totals.broker_fees_gbp|money }}</span></div>
   <div class="stat"><span class="stat__label">Fee % of Proceeds</span><span class="stat__value">{{ payload.totals.fee_pct_of_proceeds }}%</span></div>
@@ -15,8 +31,8 @@
 {% set latest_fee_pct = payload.tax_year_rows[0].fee_pct_of_proceeds|float if payload.tax_year_rows else 0 %}
 {% set all_time_fee_pct = payload.totals.fee_pct_of_proceeds|float %}
 {% set fee_pct_delta = latest_fee_pct - all_time_fee_pct %}
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Trend Context</h2></div>
+<details class="card net-panel" open>
+  <summary>Trend Context</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -37,10 +53,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Action Links</h2></div>
+<details class="card net-panel">
+  <summary>Action Links</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -50,10 +66,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">By Tax Year</h2></div>
+<details class="card net-panel" open>
+  <summary>By Tax Year</summary>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Tax Year</th><th class="num">Transactions</th><th class="num">Proceeds</th><th class="num">Fees</th><th class="num">Fee %</th><th class="num">Economic Gain</th><th class="num">Economic After Fees</th></tr></thead>
@@ -76,10 +92,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Transaction Ledger</h2></div>
+<details class="card net-panel">
+  <summary>Transaction Ledger</summary>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Date</th><th>Tax Year</th><th>Security</th><th class="num">Qty</th><th class="num">Proceeds</th><th class="num">Fees</th><th class="num">Fee %</th><th class="num">Economic Gain</th></tr></thead>
@@ -103,9 +119,21 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
 {% if payload.notes %}
-<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+<details class="card net-panel"><summary>Notes</summary><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></details>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/sell-plan" class="valuation-pill">
+      <strong>Open Sell Plan</strong>
+    </a>
+    <a href="/reconcile" class="valuation-pill">
+      <strong>Open Reconcile</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}

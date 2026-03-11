@@ -200,6 +200,14 @@ async def api_allocation_planner(
 async def insights_page(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    settings = _load_settings()
+    db_path = _state.get_db_path()
+    digest = NotificationDigestService.get_digest(
+        settings=settings,
+        db_path=db_path,
+        max_items=6,
+    )
+    data_quality = StrategicService.get_data_quality(settings=settings)
 
     links = [
         {
@@ -306,6 +314,8 @@ async def insights_page(request: Request) -> HTMLResponse:
         {
             "request": request,
             "links": links,
+            "digest": digest,
+            "data_quality": data_quality,
             "model_scope": {
                 "inputs": ["Read-only strategic pages derived from core portfolio/tax services"],
                 "assumptions": ["Deterministic formulas only"],

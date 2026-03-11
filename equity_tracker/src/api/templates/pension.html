@@ -3,27 +3,31 @@
 
 {% block content %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Pension</h1>
-    <p class="muted">Append-only pension contribution ledger with deterministic retirement projection and tracked-wealth context.</p>
+    <p class="muted">Deterministic pension tracking, contribution history, and retirement-target projection.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/capital-stack" class="btn btn-secondary btn-sm">Capital Stack</a>
+    <a href="/calendar" class="btn btn-secondary btn-sm">Calendar</a>
   </div>
 </div>
-
-{% include "partials/model_scope_card.html" %}
-
-<p class="muted">
-  Trace key totals:
-  <a href="#pension-assumptions">Assumptions</a> |
-  <a href="#pension-validation">Value validation</a> |
-  <a href="#pension-ledger">Contribution ledger</a> |
-  <a href="{{ payload.trace_links.wealth_context }}">Capital Stack context</a>
-</p>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<div class="stats">
+<section class="page-section">
+  <div class="page-section__title with-info">
+    Retirement Position
+    <span class="tooltip">
+      <span class="tooltip__trigger" tabindex="0" aria-label="About pension summary">i</span>
+      <span class="tooltip__content">Shows current pension value, recorded inputs, target pot, and retirement horizon. Assumptions and ledger detail sit lower on the page.</span>
+    </span>
+  </div>
+</section>
+
+<div class="stats stats-band">
   <div class="stat stat--accent">
     <div class="stat__label">Current Pension Value <span class="metric-tag metric-tag--actionable">Actionable</span></div>
     <div class="stat__value">&pound;{{ payload.current_pension_value_gbp | money }}</div>
@@ -151,7 +155,8 @@
   </form>
 </div>
 
-<div class="card">
+<details class="card net-panel">
+  <summary>Tracked Wealth Context</summary>
   <div class="card__header">
     <h2 class="card__title">Tracked Wealth Context</h2>
   </div>
@@ -178,7 +183,7 @@
     </table>
   </div>
   <p class="muted">Pension context is informational. Deployability remains governed by Capital Stack and Cash.</p>
-</div>
+</details>
 
 <div class="card">
   <div class="card__header">
@@ -237,7 +242,8 @@
   </div>
 </div>
 
-<div class="card">
+<details class="card net-panel">
+  <summary>Add Contribution</summary>
   <div class="card__header">
     <h2 class="card__title">Add Contribution</h2>
   </div>
@@ -273,7 +279,7 @@
       <button type="submit" class="btn btn-primary">Add Contribution</button>
     </div>
   </form>
-</div>
+</details>
 
 <details class="card net-panel" id="pension-ledger">
   <summary>
@@ -316,6 +322,18 @@
   {% else %}
   <p class="muted">No pension contributions recorded yet.</p>
   {% endif %}
+</details>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  {% include "partials/model_scope_card.html" %}
+  <p class="muted">
+    Trace key totals:
+    <a href="#pension-assumptions">Assumptions</a> |
+    <a href="#pension-validation">Value validation</a> |
+    <a href="#pension-ledger">Contribution ledger</a> |
+    <a href="{{ payload.trace_links.wealth_context }}">Capital Stack context</a>
+  </p>
 </details>
 
 <div class="card">

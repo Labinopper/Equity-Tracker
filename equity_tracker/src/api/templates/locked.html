@@ -17,14 +17,14 @@
       <p>
         No portfolio data can be loaded until the database is unlocked.
       </p>
-      <div class="locked-checklist">
-        <h2>Recovery checklist</h2>
+      <details class="locked-checklist" open>
+        <summary><h2>Recovery checklist</h2></summary>
         <ol>
           <li>Unlock with <code>POST /admin/unlock</code> if you are running in manual unlock mode.</li>
           <li>For auto-open mode, verify <code>EQUITY_DB_PATH</code> and <code>EQUITY_DB_PASSWORD</code>, then restart the server.</li>
           <li>Retry this page after unlock succeeds.</li>
         </ol>
-      </div>
+      </details>
       <p class="muted">
         If unlock still fails, check the latest server logs for database open errors and path/password mismatch details.
       </p>

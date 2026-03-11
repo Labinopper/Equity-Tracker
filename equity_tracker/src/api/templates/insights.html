@@ -1,21 +1,157 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Insights - Equity Tracker{% endblock %}
 
 {% block content %}
+{% set digest_summary = digest.summary or {} %}
+{% set dq_summary = data_quality.summary or {} %}
 <div class="page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Insights</h1>
-    <p class="muted">Strategic analysis and workflow surfaces.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/risk" class="btn btn-secondary btn-sm">Risk</a>
   </div>
 </div>
 
-{% include "partials/model_scope_card.html" %}
-
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Strategic Pages</h2>
+<h2 class="stats-band-title title-help">
+  Strategic Summary
+  <button class="info-button" type="button" aria-label="Insights info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Prioritized summary of actionable pressure across thresholds, stale inputs, and upcoming timing items. Use this page to decide where to go next, not as a directory of every strategic surface.
+    </div>
   </div>
-  <p class="muted">Each page includes a deterministic comparison lens and a direct next-action link.</p>
+</h2>
+
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill">
+    <strong>As of</strong>
+    <span class="muted">{{ digest.as_of_date }}</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Generated</strong>
+    <span class="muted">{{ digest.generated_at_utc }}</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Digest Horizon</strong>
+    <span class="muted">{{ digest.horizon_days }} days</span>
+  </span>
+</div>
+
+<div class="stats stats-band">
+  <div class="stat stat--warning">
+    <div class="stat__label">
+      <span class="stat__label-main">Urgent Items</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+    </div>
+    <div class="stat__value">{{ digest_summary.total_entries or 0 }}</div>
+    <div class="stat-caption">{{ digest_summary.top_entry_title or 'Nothing urgent right now.' }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Threshold Breaches</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--warning">Risk</span></span>
+    </div>
+    <div class="stat__value">{{ digest_summary.threshold_breach_count or 0 }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Stale Inputs</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--warning">Data</span></span>
+    </div>
+    <div class="stat__value">{{ digest_summary.stale_data_count or 0 }}</div>
+    <div class="stat-caption">{{ dq_summary.stale_price_security_count or 0 }} stale price, {{ dq_summary.stale_fx_security_count or 0 }} stale FX.</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">
+      <span class="stat__label-main">Upcoming Timing Items</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Timing</span></span>
+    </div>
+    <div class="stat__value">{{ digest_summary.upcoming_event_count or 0 }}</div>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Attention Now</summary>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Category</th>
+          <th>Item</th>
+          <th>Surface</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if digest.entries %}
+          {% for item in digest.entries %}
+          <tr>
+            <td>{{ item.severity|title }}</td>
+            <td>{{ item.category.replace('_', ' ')|title }}</td>
+            <td>
+              <div>{{ item.title }}</div>
+              {% if item.message %}
+              <div class="muted">{{ item.message }}</div>
+              {% endif %}
+            </td>
+            <td>{{ item.source_surface }}</td>
+            <td>
+              <a href="{{ item.href }}">Open</a>
+              {% if item.event_date %}
+              <div class="muted">{{ item.event_date }}</div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="5" class="muted">No active strategic items right now.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="card net-panel">
+  <summary>Input Pressure</summary>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Surface</th>
+          <th>Issue</th>
+          <th class="num">Impact Count</th>
+          <th>Severity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in data_quality.impact_rows %}
+        <tr>
+          <td>{{ row.surface }}</td>
+          <td>{{ row.issue }}</td>
+          <td class="num">{{ row.impact_count }}</td>
+          <td>{{ row.severity }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="{{ digest.trace_links.data_quality }}" class="valuation-pill">
+      <strong>Open Data Quality</strong>
+    </a>
+    <a href="{{ digest.trace_links.alert_center }}" class="valuation-pill">
+      <strong>Open Alert Center</strong>
+    </a>
+  </div>
+</details>
+
+<details class="card net-panel">
+  <summary>Strategic Pages</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -40,5 +176,7 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
+
+{% include "partials/model_scope_card.html" %}
 {% endblock %}

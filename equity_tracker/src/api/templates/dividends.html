@@ -3,13 +3,12 @@
 
 {% block content %}
 <div class="page-title dividends-page-title">
-  <div>
+  <div class="page-title__heading">
     <h1>Dividends</h1>
-    <p class="muted">Track what is paid out vs withheld, while keeping tax-report totals and allocation context.</p>
   </div>
   <div class="page-actions">
     <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
-    <a href="/portfolio/add-lot" class="btn btn-secondary btn-sm">+ Lot</a>
+    <a href="/calendar" class="btn btn-secondary btn-sm">Calendar</a>
   </div>
 </div>
 
@@ -17,23 +16,50 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<p class="muted">As of {{ dividends.as_of_date }}. Generated {{ dividends.generated_at_utc }}.</p>
-
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Maintenance Tools Hidden</h2>
+<h2 class="stats-band-title title-help">
+  Dividend Workflow
+  <button class="info-button" type="button" aria-label="Dividends info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Confirm expected dividend events against what you actually received, then rely on the recorded ledger for reporting. Reference events stay separate from actual cash records.
+    </div>
   </div>
-  <p class="muted">
-    One-time historical maintenance actions (cash backfill and dividend relink) are intentionally hidden from the UI to reduce accidental rewrites of past records.
-  </p>
-  <span class="form-hint">The backend endpoints remain available for controlled recovery/migration work if needed later.</span>
+</h2>
+
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <span class="valuation-pill">
+    <strong>As of</strong>
+    <span class="muted">{{ dividends.as_of_date }}</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>Generated</strong>
+    <span class="muted">{{ dividends.generated_at_utc }}</span>
+  </span>
 </div>
 
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Security Dividend Reminder</h2>
+<div class="stats stats-band">
+  <div class="stat stat--warning">
+    <span class="stat__label">Awaiting Confirmation</span>
+    <span class="stat__value">{{ dividends.reference_summary.awaiting_count or 0 }}</span>
+    <span class="stat-caption">{{ dividends.reference_summary.upcoming_count or 0 }} upcoming event(s).</span>
   </div>
-  <form method="post" action="/dividends/reminder" class="inline-form">
+  <div class="stat stat--accent">
+    <span class="stat__label">Actual Net Paid Out</span>
+    <span class="stat__value">{% if not dividends.hide_values %}&pound;{{ dividends.summary.actual_net_paid_gbp|money }}{% else %}Hidden{% endif %}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Actual Gross Dividends</span>
+    <span class="stat__value">{% if not dividends.hide_values %}&pound;{{ dividends.summary.actual_gross_dividends_gbp|money }}{% else %}Hidden{% endif %}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Forecast 12M Dividends</span>
+    <span class="stat__value">{% if not dividends.hide_values %}&pound;{{ dividends.summary.forecast_12m_total_gbp|money }}{% else %}Hidden{% endif %}</span>
+  </div>
+</div>
+
+<details class="card net-panel">
+  <summary>Reminder Workflow</summary>
+  <form method="post" action="/dividends/reminder" class="inline-form" style="margin-top:0.9rem;">
     <label for="reminder_security_id">Security</label>
     <select id="reminder_security_id" name="security_id" required>
       <option value="">Select security</option>
@@ -59,7 +85,15 @@
     <button type="submit" class="btn btn-secondary btn-sm">Save Reminder</button>
   </form>
   <span class="form-hint">Leave date blank and save to clear.</span>
-</div>
+</details>
+
+<details class="card net-panel">
+  <summary>Maintenance Context</summary>
+  <p class="muted" style="margin-top:0.9rem;">
+    One-time historical maintenance actions are intentionally hidden from the UI to reduce accidental rewrites of past records.
+  </p>
+  <span class="form-hint">Backend recovery endpoints remain available for controlled migration work if needed later.</span>
+</details>
 
 <div class="card">
   <div class="card__header">
@@ -435,10 +469,8 @@
 {% endif %}
 
 {% if dividends.notes %}
-<div class="card">
-  <div class="card__header">
-    <h2 class="card__title">Notes</h2>
-  </div>
+<details class="card net-panel">
+  <summary>Notes</summary>
   <div class="table-wrap">
     <table>
       <tbody>
@@ -450,8 +482,22 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 {% endif %}
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/calendar" class="valuation-pill">
+      <strong>Open Calendar</strong>
+    </a>
+    <a href="/portfolio/add-lot" class="valuation-pill">
+      <strong>Open Add Lot</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}
 
 {% block extra_scripts %}

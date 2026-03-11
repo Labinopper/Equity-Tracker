@@ -2,17 +2,38 @@
 {% block title %}Reconcile - Equity Tracker{% endblock %}
 
 {% block content %}
-<div class="page-title"><div><h1>Cross-Page Reconciliation</h1><p class="muted">Why Portfolio, Net Value, Capital Stack, and Tax Plan differ.</p></div></div>
+<div class="page-title">
+  <div class="page-title__heading"><h1>Cross-Page Reconciliation</h1></div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/audit" class="btn btn-secondary btn-sm">Audit</a>
+  </div>
+</div>
 
-<p class="muted">
-  Trace paths:
-  <a href="#trace-drift-decomposition">Drift decomposition</a> |
-  <a href="#trace-contributing-lots">Contributing lots</a> |
-  <a href="#trace-audit-mutations">Recent audit mutations</a>
-</p>
+<h2 class="stats-band-title title-help">
+  Reconciliation Path
+  <button class="info-button" type="button" aria-label="Reconcile info">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Deterministic explanation of why Portfolio, Net Value, Capital Stack, and Tax Plan differ. Use this page to bridge scope differences before assuming a calculation bug.
+    </div>
+  </div>
+</h2>
 
-<div class="card">
-  <div class="card__header"><h2 class="card__title">Reconciliation Path</h2></div>
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  <a href="#trace-drift-decomposition" class="valuation-pill">
+    <strong>Drift decomposition</strong>
+  </a>
+  <a href="#trace-contributing-lots" class="valuation-pill">
+    <strong>Contributing lots</strong>
+  </a>
+  <a href="#trace-audit-mutations" class="valuation-pill">
+    <strong>Audit mutations</strong>
+  </a>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Reconciliation Path</summary>
   <div class="table-wrap"><table>
     <thead><tr><th>Step</th><th class="num">Amount</th><th>Scope Meaning</th></tr></thead>
     <tbody>
@@ -25,9 +46,9 @@
       {% endfor %}
     </tbody>
   </table></div>
-</div>
+</details>
 
-<div class="stats">
+<div class="stats stats-band">
   <div class="stat"><span class="stat__label">Reconciled Deployable</span><span class="stat__value">&pound;{{ payload.reconciled_deployable_capital_gbp|money }}</span></div>
   <div class="stat"><span class="stat__label">Reported Deployable</span><span class="stat__value">&pound;{{ payload.reported_deployable_capital_gbp|money }}</span></div>
   <div class="stat stat--warning"><span class="stat__label">Delta</span><span class="stat__value">&pound;{{ payload.reconciliation_delta_gbp|money }}</span></div>
@@ -36,11 +57,11 @@
 </div>
 
 {% if payload.notes %}
-<div class="card"><div class="card__header"><h2 class="card__title">Notes</h2></div><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></div>
+<details class="card net-panel"><summary>Notes</summary><div class="table-wrap"><table><tbody>{% for note in payload.notes %}<tr><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div></details>
 {% endif %}
 
-<div class="card" id="trace-drift-decomposition">
-  <div class="card__header"><h2 class="card__title">Trace: Prior-Snapshot Drift Decomposition</h2></div>
+<details class="card net-panel" id="trace-drift-decomposition" open>
+  <summary>Trace: Prior-Snapshot Drift Decomposition</summary>
   <form method="get" action="/reconcile" class="filter-bar">
     <label for="lookback_days" class="filter-label">Lookback (days):</label>
     <input id="lookback_days" name="lookback_days" type="number" min="7" max="365" value="{{ lookback_days }}">
@@ -101,10 +122,10 @@
   {% else %}
   <p class="muted">Drift decomposition is unavailable for the selected lookback window.</p>
   {% endif %}
-</div>
+</details>
 
-<div class="card" id="trace-contributing-lots">
-  <div class="card__header"><h2 class="card__title">Trace: Contributing Lots</h2></div>
+<details class="card net-panel" id="trace-contributing-lots">
+  <summary>Trace: Contributing Lots</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -141,10 +162,10 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
 
-<div class="card" id="trace-audit-mutations">
-  <div class="card__header"><h2 class="card__title">Trace: Recent Audit Mutations</h2></div>
+<details class="card net-panel" id="trace-audit-mutations">
+  <summary>Trace: Recent Audit Mutations</summary>
   <div class="table-wrap">
     <table>
       <thead>
@@ -175,5 +196,17 @@
       </tbody>
     </table>
   </div>
-</div>
+</details>
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="/" class="valuation-pill">
+      <strong>Open Portfolio</strong>
+    </a>
+    <a href="/audit" class="valuation-pill">
+      <strong>Open Audit</strong>
+    </a>
+  </div>
+</details>
 {% endblock %}
