@@ -337,71 +337,6 @@ class CalendarService:
                         }
                     )
 
-        dividend_payload = DividendService.get_summary(settings=settings, as_of=as_of_date)
-        for row in dividend_payload.get("reference_events") or []:
-            if str(row.get("status") or "") == "Recorded":
-                continue
-            ex_date_raw = str(row.get("ex_dividend_date") or "").strip()
-            if not ex_date_raw:
-                continue
-            try:
-                ex_date = date.fromisoformat(ex_date_raw)
-            except ValueError:
-                continue
-            payment_date_raw = str(row.get("payment_date") or "").strip()
-            if payment_date_raw:
-                try:
-                    event_date = date.fromisoformat(payment_date_raw)
-                    date_basis = "pay date"
-                except ValueError:
-                    event_date = ex_date + timedelta(days=28)
-                    date_basis = "estimated pay date"
-            elif ex_date <= as_of_date:
-                event_date = ex_date + timedelta(days=28)
-                date_basis = "estimated pay date"
-            else:
-                event_date = ex_date
-                date_basis = "ex-date"
-
-            event_id = (
-                f"dividend-confirm:{row.get('security_id')}:{row.get('holding_scope')}:"
-                f"{ex_date.isoformat()}"
-            )
-            state_row = state_by_event.get(event_id, {})
-            if not _in_horizon_or_recent(event_date, as_of=as_of_date, horizon_days=horizon_days):
-                continue
-
-            expected_value_gbp = row.get("expected_total_gbp")
-            events.append(
-                {
-                    "event_id": event_id,
-                    "event_type": _EVENT_DIVIDEND_CONFIRMATION,
-                    "event_date": event_date.isoformat(),
-                    "days_until": _days_until(event_date, as_of_date),
-                    "title": f"{row.get('ticker')}: Dividend confirmation",
-                    "subtitle": (
-                        f"Confirm {row.get('holding_scope_label')} receipt for ex-date {ex_date.isoformat()} "
-                        f"using {date_basis}."
-                    ),
-                    "security_id": row.get("security_id"),
-                    "ticker": row.get("ticker"),
-                    "scheme_type": row.get("holding_scope_label"),
-                    "lot_id": None,
-                    "quantity": row.get("expected_quantity"),
-                    "value_at_stake_gbp": expected_value_gbp,
-                    "has_live_value": expected_value_gbp is not None,
-                    "price_as_of": None,
-                    "price_is_stale": False,
-                    "fx_as_of": None,
-                    "fx_is_stale": False,
-                    "fx_basis_note": None,
-                    "deep_link": "/dividends",
-                    "action_label": "Open Dividends",
-                    "completed": bool(state_row.get("completed")),
-                    "completed_at_utc": state_row.get("completed_at_utc"),
-                }
-            )
-
             espp_total_qty = sum(
                 (
                     lot_summary.quantity_remaining
@@ -506,6 +441,71 @@ class CalendarService:
                         "action_label": "Open Transfer",
                     }
                 )
+
+        dividend_payload = DividendService.get_summary(settings=settings, as_of=as_of_date)
+        for row in dividend_payload.get("reference_events") or []:
+            if str(row.get("status") or "") == "Recorded":
+                continue
+            ex_date_raw = str(row.get("ex_dividend_date") or "").strip()
+            if not ex_date_raw:
+                continue
+            try:
+                ex_date = date.fromisoformat(ex_date_raw)
+            except ValueError:
+                continue
+            payment_date_raw = str(row.get("payment_date") or "").strip()
+            if payment_date_raw:
+                try:
+                    event_date = date.fromisoformat(payment_date_raw)
+                    date_basis = "pay date"
+                except ValueError:
+                    event_date = ex_date + timedelta(days=28)
+                    date_basis = "estimated pay date"
+            elif ex_date <= as_of_date:
+                event_date = ex_date + timedelta(days=28)
+                date_basis = "estimated pay date"
+            else:
+                event_date = ex_date
+                date_basis = "ex-date"
+
+            event_id = (
+                f"dividend-confirm:{row.get('security_id')}:{row.get('holding_scope')}:"
+                f"{ex_date.isoformat()}"
+            )
+            state_row = state_by_event.get(event_id, {})
+            if not _in_horizon_or_recent(event_date, as_of=as_of_date, horizon_days=horizon_days):
+                continue
+
+            expected_value_gbp = row.get("expected_total_gbp")
+            events.append(
+                {
+                    "event_id": event_id,
+                    "event_type": _EVENT_DIVIDEND_CONFIRMATION,
+                    "event_date": event_date.isoformat(),
+                    "days_until": _days_until(event_date, as_of_date),
+                    "title": f"{row.get('ticker')}: Dividend confirmation",
+                    "subtitle": (
+                        f"Confirm {row.get('holding_scope_label')} receipt for ex-date {ex_date.isoformat()} "
+                        f"using {date_basis}."
+                    ),
+                    "security_id": row.get("security_id"),
+                    "ticker": row.get("ticker"),
+                    "scheme_type": row.get("holding_scope_label"),
+                    "lot_id": None,
+                    "quantity": row.get("expected_quantity"),
+                    "value_at_stake_gbp": expected_value_gbp,
+                    "has_live_value": expected_value_gbp is not None,
+                    "price_as_of": None,
+                    "price_is_stale": False,
+                    "fx_as_of": None,
+                    "fx_is_stale": False,
+                    "fx_basis_note": None,
+                    "deep_link": "/dividends",
+                    "action_label": "Open Dividends",
+                    "completed": bool(state_row.get("completed")),
+                    "completed_at_utc": state_row.get("completed_at_utc"),
+                }
+            )
 
         tax_year_end = _next_tax_year_end(as_of_date)
         tax_year_start = tax_year_end + timedelta(days=1)
