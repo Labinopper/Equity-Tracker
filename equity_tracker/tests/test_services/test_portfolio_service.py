@@ -122,6 +122,39 @@ class TestGetPortfolioSummary:
         summary = PortfolioService.get_portfolio_summary()
         ss = next(s for s in summary.securities if s.security.ticker == "GOOG")
         assert ss.total_quantity == Decimal("0")
+
+
+class TestShareMatching:
+    def test_simulate_disposal_applies_same_day_rule_before_section_104_pool(
+        self, app_context
+    ):
+        sec = _add_basic_security("HMRCDAY")
+        _add_basic_lot(
+            sec.id,
+            acquisition_date=date(2024, 1, 1),
+            quantity="10",
+            acquisition_price="10.00",
+            true_cost="10.00",
+        )
+        _add_basic_lot(
+            sec.id,
+            acquisition_date=date(2024, 6, 1),
+            quantity="5",
+            acquisition_price="20.00",
+            true_cost="20.00",
+        )
+
+        result = PortfolioService.simulate_disposal(
+            security_id=sec.id,
+            quantity=Decimal("5"),
+            price_per_share_gbp=Decimal("30.00"),
+            as_of_date=date(2024, 6, 1),
+        )
+
+        assert result.is_fully_allocated
+        assert len(result.allocations) == 1
+        assert result.allocations[0].acquisition_date == date(2024, 6, 1)
+        assert result.total_cost_basis_gbp == Decimal("100.00")
         assert ss.active_lots == []
 
     def test_partial_disposal_reduces_cost_basis(self, app_context):

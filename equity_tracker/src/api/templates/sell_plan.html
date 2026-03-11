@@ -34,6 +34,10 @@
     <strong>Suggested flow</strong>
     <span class="muted"><a href="/simulate">Simulate</a> -> plan -> approve -> export</span>
   </span>
+  <span class="valuation-pill">
+    <strong>30-day caveat</strong>
+    <span class="muted">Projected CGT assumes no reacquisition within 30 days after each sale</span>
+  </span>
 </div>
 
 <div class="stats stats-band">
@@ -150,8 +154,12 @@
         <input id="reference_price_gbp" name="reference_price_gbp" type="text" placeholder="required for impact preview/notional checks" value="{{ form_defaults.reference_price_gbp }}">
       </div>
       <div class="form-field">
-        <label for="fee_per_tranche_gbp">Fee per Tranche (GBP)</label>
+        <label for="fee_per_tranche_gbp">Fee per Tranche Override (GBP)</label>
         <input id="fee_per_tranche_gbp" name="fee_per_tranche_gbp" type="text" value="{{ form_defaults.fee_per_tranche_gbp }}">
+        <span class="form-hint">Optional. Leave blank to use the configured broker schedule estimate.</span>
+        {% if fee_per_tranche_estimate and not form_defaults.fee_per_tranche_gbp %}
+        <span class="form-hint">Current estimate: &pound;{{ "%.2f" % fee_per_tranche_estimate.estimated_fee_gbp }} using {{ fee_per_tranche_estimate.pricing_model }}.</span>
+        {% endif %}
       </div>
 
       <div class="form-field" data-method-section="THRESHOLD_BANDS">
@@ -242,12 +250,16 @@
       {% set constraints = plan.constraints or {} %}
       {% set method_config = plan.method_config or {} %}
       {% set profile = plan.execution_profile or {} %}
+      {% set fee_label = constraints.fee_per_tranche_gbp or '0.00' %}
+      {% if fee_label == '0.00' and plan.impact_fee_per_tranche_gbp and plan.impact_fee_per_tranche_gbp != '0.00' %}
+      {% set fee_label = plan.impact_fee_per_tranche_gbp ~ ' (estimated)' %}
+      {% endif %}
       <p class="muted">
         Constraints: Min spacing {{ constraints.min_spacing_days or '-' }} day(s),
         Max daily qty {{ constraints.max_daily_quantity or '-' }},
         Max daily notional GBP {{ constraints.max_daily_notional_gbp or '-' }},
         Ref price GBP {{ constraints.reference_price_gbp or '-' }},
-        Fee/tranche GBP {{ constraints.fee_per_tranche_gbp or '0.00' }}.
+        Fee/tranche GBP {{ fee_label }}.
       </p>
       <p class="muted">
         Method config:
@@ -389,6 +401,7 @@
       {% endif %}
       {% if plan.impact_notes %}
       <div class="alert alert-warning">
+        <div>Projected tranche CGT assumes no future 30-day reacquisition unless that rebuy is later recorded.</div>
         {% for note in plan.impact_notes %}
         <div>{{ note }}</div>
         {% endfor %}

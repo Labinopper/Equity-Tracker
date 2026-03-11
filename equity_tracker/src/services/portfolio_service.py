@@ -31,8 +31,8 @@ from ..core.lot_engine.fifo import (
     ForfeitureWarning,
     LotForFIFO,
     SIPTaxEstimate,
-    allocate_fifo,
 )
+from ..core.lot_engine.uk_matching import allocate_uk_share_matching
 from ..core.tax_engine import (
     SIPEvent,
     SIPEventType,
@@ -105,7 +105,7 @@ class NetLiquidationEstimate:
 
     quantity                : Shares included in the estimate.
     market_value_gbp        : quantity × current price (GBP).
-    cost_basis_gbp          : FIFO cost basis for the quantity.
+    cost_basis_gbp          : disposal cost basis for the quantity.
     unrealised_gain_cgt_gbp : market_value − cost_basis (may be negative).
     est_cgt_gbp             : marginal_rate × max(unrealised_gain, 0).
     est_net_proceeds_gbp    : market_value − est_cgt.
@@ -1384,10 +1384,10 @@ class PortfolioService:
         use_live_true_cost: bool = True,
     ) -> FIFOResult:
         """
-        Run FIFO allocation without writing to the database.
+        Run UK share-matching allocation without writing to the database.
 
         Fetches active lots (optionally filtered by scheme_type / as_of_date),
-        runs FIFO, and returns the result enriched with Phase E forfeiture
+        runs same-day plus Section 104 matching, and returns the result enriched with Phase E forfeiture
         warnings and employment tax estimates. Use this to preview the full
         economic cost of a disposal before committing.
 
@@ -1395,7 +1395,7 @@ class PortfolioService:
             security_id        : Security to dispose of.
             quantity           : Number of shares to sell.
             price_per_share_gbp: Disposal price per share in GBP.
-            scheme_type        : Optional — restrict FIFO to a single scheme type
+            scheme_type        : Optional — restrict matching to a single scheme type
                                  (e.g. "SIP_PARTNERSHIP").
             as_of_date         : Optional — only consider lots acquired on or before
                                  this date; also used as the disposal date for tax
@@ -1406,7 +1406,7 @@ class PortfolioService:
                                  realised gains are reduced by fees exactly once.
             use_live_true_cost : When True, income-sensitive lot true cost may be
                                  recalculated using current settings; when False,
-                                 FIFO uses persisted lot.true_cost_per_share_gbp.
+                                 matching uses persisted lot.true_cost_per_share_gbp.
 
         Returns FIFOResult with forfeiture_warnings and sip_tax_estimates populated.
         Inspect .is_fully_allocated and .shortfall before calling commit_disposal().
@@ -1435,7 +1435,12 @@ class PortfolioService:
                 )
                 for lot in lots
             ]
-            result = allocate_fifo(fifo_lots, quantity, price_per_share_gbp)
+            result = allocate_uk_share_matching(
+                fifo_lots,
+                quantity,
+                price_per_share_gbp,
+                disposal_date=disposal_date,
+            )
             result = _apply_broker_fees_to_fifo_result(result, broker_fees_gbp)
 
             sold_lot_ids = {a.lot_id for a in result.allocations}
@@ -1496,7 +1501,7 @@ class PortfolioService:
         Estimate the net after-tax proceeds from selling ``quantity`` shares
         of a given security on ``as_of_date``.
 
-        Pure calculation — no DB writes. Uses FIFO order to determine which
+        Pure calculation — no DB writes. Uses the disposal matcher to determine which
         lots would be consumed, then applies a marginal CGT estimate (no AEA).
 
         Args:
@@ -1545,7 +1550,7 @@ class PortfolioService:
 
         notes: list[str] = [
             f"Hypothetical sale of {quantity} shares at £{current_price}/share.",
-            f"FIFO cost basis: £{cost_basis}. Unrealised gain: £{unrealised}.",
+            f"Matched cost basis: £{cost_basis}. Unrealised gain: £{unrealised}.",
             f"Marginal CGT rate: {marg * 100:.0f}% "
             f"({'from settings' if settings else 'fallback — no income settings saved'}).",
             "AEA not applied here; see full CGT report for AEA-adjusted figure.",
@@ -2542,10 +2547,10 @@ class PortfolioService:
         use_live_true_cost: bool = True,
     ) -> tuple[Transaction, list[LotDisposal]]:
         """
-        Run FIFO allocation and persist the disposal atomically.
+        Run disposal matching and persist the disposal atomically.
 
         Fetches active lots (filtered by scheme_type if provided), allocates
-        them FIFO, creates a DISPOSAL Transaction and per-lot LotDisposal records,
+        them using the disposal matcher, creates a DISPOSAL Transaction and per-lot LotDisposal records,
         and reduces each lot's quantity_remaining — all in a single session.
 
         Raises ValueError if there are insufficient active lots (shortfall > 0).
@@ -2555,7 +2560,7 @@ class PortfolioService:
             quantity           : Number of shares sold.
             price_per_share_gbp: Disposal price per share in GBP.
             transaction_date   : Settlement date (used for tax year classification).
-            scheme_type        : Optional — restrict FIFO to a single scheme type.
+            scheme_type        : Optional — restrict matching to a single scheme type.
             settings           : Optional AppSettings for live income-sensitive
                                  true-cost calculation during disposal commit.
             use_live_true_cost : When False, commit uses persisted lot true cost.
@@ -2595,7 +2600,12 @@ class PortfolioService:
                 )
                 for lot in lots
             ]
-            fifo_result = allocate_fifo(fifo_lots, quantity, price_per_share_gbp)
+            fifo_result = allocate_uk_share_matching(
+                fifo_lots,
+                quantity,
+                price_per_share_gbp,
+                disposal_date=transaction_date,
+            )
 
             if not fifo_result.is_fully_allocated:
                 raise ValueError(

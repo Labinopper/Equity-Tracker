@@ -65,6 +65,10 @@
     <strong>Hypothetical planning surface</strong>
     <span class="muted">Use with lot projections and assumption quality</span>
   </span>
+  <span class="valuation-pill">
+    <strong>30-day caveat</strong>
+    <span class="muted">Forward-looking CGT assumes no future reacquisition within 30 days</span>
+  </span>
   {% if tax_inputs_incomplete %}
   <span class="valuation-pill valuation-pill--warning">
     <strong>Tax inputs incomplete</strong>
@@ -226,6 +230,7 @@
     <h2 class="card__title">Compensation What-If (IT / NI / SL + CGT)</h2>
   </div>
   <p class="muted">Assumption quality: {{ assumption_badge(comp.assumption_quality) }}</p>
+  <p class="form-hint">Realised tax-year history uses HMRC matching from recorded transactions. Forward-looking sale scenarios remain indicative if you later reacquire within 30 days.</p>
   <form method="get" action="/tax-plan" class="inline-form">
     <input type="hidden" name="as_of" value="{{ selected_as_of or '' }}">
     <div class="form-grid">

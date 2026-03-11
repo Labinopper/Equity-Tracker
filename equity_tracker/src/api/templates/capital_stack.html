@@ -33,6 +33,10 @@
     <strong>Actionable counterpart to Net Value</strong>
     <span class="muted">Shows what is actually deployable today</span>
   </span>
+  <span class="valuation-pill">
+    <strong>30-day caveat</strong>
+    <span class="muted">Projected CGT assumes no reacquisition within 30 days after liquidation</span>
+  </span>
   {% if tax_inputs_incomplete %}
   <span class="valuation-pill valuation-pill--warning">
     <strong>Tax inputs incomplete</strong>
@@ -240,13 +244,13 @@
           <td>Estimated CGT</td>
           <td class="num">-&pound;{{ stack.estimated_cgt_gbp | money }}</td>
           <td>Tax drag</td>
-          <td>`max(taxable liquid gains, 0) * marginal CGT rate` (ISA excluded).</td>
+          <td>Tax-year projection after realised gains/losses, annual exemption, and share CGT bands.</td>
         </tr>
         <tr>
           <td>Estimated Fees</td>
           <td class="num">-&pound;{{ stack.estimated_fees_gbp | money }}</td>
           <td>Friction</td>
-          <td>{{ stack.fee_model.method }}.</td>
+          <td>{{ stack.fee_model.basis_note or stack.fee_model.method }}.</td>
         </tr>
         <tr>
           <td><strong>Net Deployable Capital Today</strong></td>
@@ -283,7 +287,7 @@
   </div>
   <p class="muted">
     Hypothetical liquid quantity: {{ stack.hypothetical_liquid_quantity }} shares.
-    Fee model sample: {{ stack.fee_model.historical_fee_sample_qty }} shares, total fees &pound;{{ stack.fee_model.historical_fee_sample_total_gbp | money }}, avg/share &pound;{{ stack.fee_model.avg_fee_per_share_gbp | money }}.
+    Fee estimate: {{ stack.fee_model.basis_note or stack.fee_model.method }}.
   </p>
 </details>
 

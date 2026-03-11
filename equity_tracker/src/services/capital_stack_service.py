@@ -13,16 +13,11 @@ from datetime import date as date_type
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import select
-
-from ..app_context import AppContext
-from ..core.tax_engine import get_bands, marginal_cgt_rate, tax_year_for_date
-from ..core.tax_engine.income_tax import personal_allowance
-from ..db.models import Transaction
 from ..settings import AppSettings
 from .cash_ledger_service import CONTAINER_BANK, CONTAINER_BROKER, CashLedgerService
 from .dividend_service import DividendService
 from .fx_service import FxService
+from .liquidation_tax_service import LiquidationTaxService
 from .portfolio_service import PortfolioService
 
 _MONEY_Q = Decimal("0.01")
@@ -38,10 +33,6 @@ def _q_money(value: Decimal) -> Decimal:
 
 def _q_shares(value: Decimal) -> Decimal:
     return value.quantize(_SHARE_Q, rounding=ROUND_HALF_UP)
-
-
-def _q_rate(value: Decimal) -> Decimal:
-    return value.quantize(_RATE_Q, rounding=ROUND_HALF_UP)
 
 
 def _to_decimal(value: object) -> Decimal | None:
@@ -98,75 +89,6 @@ def _deployable_cash_gbp_with_fx(cash_dashboard: dict[str, Any]) -> tuple[Decima
     return _q_money(total), notes
 
 
-def _marginal_cgt_rate_for_settings(
-    *,
-    settings: AppSettings | None,
-    as_of: date_type,
-) -> tuple[Decimal, str]:
-    if settings is None:
-        return _CGT_RATE_FALLBACK, "fallback_no_settings"
-
-    tax_year = settings.default_tax_year or tax_year_for_date(as_of)
-    try:
-        bands = get_bands(tax_year)
-    except Exception:
-        return _CGT_RATE_FALLBACK, "fallback_unknown_tax_year"
-
-    adjusted_net_income = (
-        settings.default_gross_income
-        - settings.default_pension_sacrifice
-        + settings.default_other_income
-    )
-    allowance = personal_allowance(bands, adjusted_net_income)
-    taxable_income = max(Decimal("0"), adjusted_net_income - allowance)
-    rate = marginal_cgt_rate(bands, taxable_income)
-    return _q_rate(rate), f"settings_{tax_year}"
-
-
-def _estimated_fee_model(hypothetical_liquid_quantity: Decimal) -> dict[str, Decimal | str]:
-    total_fees = Decimal("0")
-    total_qty = Decimal("0")
-    with AppContext.read_session() as sess:
-        txs = list(
-            sess.execute(
-                select(Transaction).where(
-                    Transaction.transaction_type == "DISPOSAL",
-                    Transaction.is_reversal.is_(False),
-                )
-            ).scalars()
-        )
-    for tx in txs:
-        if tx.broker_fees_gbp is None:
-            continue
-        fee = _to_decimal(tx.broker_fees_gbp)
-        qty = _to_decimal(tx.quantity)
-        if fee is None or qty is None or qty <= Decimal("0"):
-            continue
-        if fee < Decimal("0"):
-            continue
-        total_fees += fee
-        total_qty += qty
-
-    if total_qty <= Decimal("0") or hypothetical_liquid_quantity <= Decimal("0"):
-        return {
-            "estimated_fees_gbp": Decimal("0.00"),
-            "avg_fee_per_share_gbp": Decimal("0.00"),
-            "historical_fee_sample_qty": Decimal("0.0000"),
-            "historical_fee_sample_total_gbp": Decimal("0.00"),
-            "method": "no_historical_fee_sample",
-        }
-
-    avg_fee_per_share = total_fees / total_qty
-    estimated_fees = hypothetical_liquid_quantity * avg_fee_per_share
-    return {
-        "estimated_fees_gbp": _q_money(estimated_fees),
-        "avg_fee_per_share_gbp": _q_money(avg_fee_per_share),
-        "historical_fee_sample_qty": _q_shares(total_qty),
-        "historical_fee_sample_total_gbp": _q_money(total_fees),
-        "method": "historical_avg_fee_per_share",
-    }
-
-
 class CapitalStackService:
     @staticmethod
     def get_snapshot(
@@ -187,7 +109,6 @@ class CapitalStackService:
         locked_capital = Decimal("0")
         forfeitable_capital = Decimal("0")
         hypothetical_liquid = Decimal("0")
-        taxable_liquid_gain = Decimal("0")
         liquid_quantity = Decimal("0")
 
         employment_tax = Decimal("0")
@@ -223,21 +144,26 @@ class CapitalStackService:
                 else:
                     employment_tax += ls.est_employment_tax_on_lot_gbp
 
-                if ls.lot.scheme_type != "ISA":
-                    gain = mv - ls.cost_basis_total_gbp
-                    if gain > Decimal("0"):
-                        taxable_liquid_gain += gain
-
-        cgt_rate, cgt_rate_source = _marginal_cgt_rate_for_settings(
+        tax_projection = LiquidationTaxService.project_sell_now(
+            summary=portfolio,
             settings=settings,
             as_of=as_of_date,
         )
-        estimated_cgt = _q_money(taxable_liquid_gain * cgt_rate)
-
-        fee_model = _estimated_fee_model(liquid_quantity)
-        estimated_fees = fee_model["estimated_fees_gbp"]
-        if not isinstance(estimated_fees, Decimal):
-            estimated_fees = Decimal("0.00")
+        estimated_cgt = _q_money(
+            _to_decimal(tax_projection.get("incremental_cgt_gbp")) or Decimal("0")
+        )
+        estimated_fees = _q_money(
+            _to_decimal(tax_projection.get("estimated_fees_total_gbp")) or Decimal("0")
+        )
+        cgt_rate = _to_decimal(tax_projection.get("next_pound_cgt_rate")) or Decimal("0")
+        cgt_rate = cgt_rate.quantize(_RATE_Q, rounding=ROUND_HALF_UP)
+        cgt_rate_source = str(tax_projection.get("cgt_rate_source") or "tax_year_projection")
+        fee_details = tax_projection.get("fee_details") or []
+        fee_model = fee_details[0] if fee_details else {
+            "method": "no_supported_broker_schedule",
+            "pricing_model": getattr(settings, "broker_fee_model", "IBKR_UK_US_STOCK_FIXED"),
+            "basis_note": "No supported broker fee schedule could be applied to the current sellable holdings.",
+        }
 
         employment_tax_value = _q_money(employment_tax) if employment_tax_complete else None
         net_deployable = (
@@ -290,13 +216,26 @@ class CapitalStackService:
                 "Dividend adjustment uses portfolio-level net dividends (post estimated dividend tax) "
                 "without lot-level allocation; allocation engine is tracked separately."
             )
-        if fee_model.get("method") == "no_historical_fee_sample":
+        if estimated_cgt == Decimal("0.00"):
             notes.append(
-                "Estimated fees are zero until disposal history includes broker fees."
+                "Hypothetical CGT uses tax-year netting, annual exemption, and share CGT bands; "
+                "the current projection produces no incremental CGT."
             )
         else:
             notes.append(
-                "Estimated fees use historical average fee per disposed share."
+                "Hypothetical CGT uses tax-year netting, annual exemption, and share CGT bands."
+            )
+        if str(fee_model.get("method")) in {
+            "fee_estimation_disabled_or_unpriced",
+            "unsupported_market_schedule",
+            "no_supported_broker_schedule",
+        }:
+            notes.append(
+                "Estimated fees are zero because no supported broker fee schedule could be applied."
+            )
+        else:
+            notes.append(
+                "Estimated fees use a broker order schedule, not historical fee-per-share averages."
             )
         notes.extend(deployable_cash_notes)
 
@@ -312,13 +251,17 @@ class CapitalStackService:
             "estimated_cgt_gbp": estimated_cgt,
             "cgt_marginal_rate": cgt_rate,
             "cgt_rate_source": cgt_rate_source,
-            "taxable_liquid_gain_gbp": _q_money(taxable_liquid_gain),
+            "taxable_liquid_gain_gbp": _q_money(
+                _to_decimal(tax_projection.get("taxable_gain_gbp")) or Decimal("0")
+            ),
             "estimated_fees_gbp": _q_money(estimated_fees),
             "fee_model": {
-                "method": fee_model["method"],
-                "avg_fee_per_share_gbp": str(fee_model["avg_fee_per_share_gbp"]),
-                "historical_fee_sample_qty": str(fee_model["historical_fee_sample_qty"]),
-                "historical_fee_sample_total_gbp": str(fee_model["historical_fee_sample_total_gbp"]),
+                "method": str(fee_model.get("method") or "unknown"),
+                "pricing_model": str(fee_model.get("pricing_model") or ""),
+                "basis_note": str(fee_model.get("basis_note") or ""),
+                "avg_fee_per_share_gbp": "0.00",
+                "historical_fee_sample_qty": "0.0000",
+                "historical_fee_sample_total_gbp": "0.00",
             },
             "net_deployable_today_gbp": net_deployable,
             "holdings_net_deployable_today_gbp": net_deployable,

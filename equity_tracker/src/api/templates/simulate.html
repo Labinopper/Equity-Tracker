@@ -38,7 +38,7 @@
   <button class="info-button" type="button" aria-label="Simulate Disposal info">&#9432;</button>
   <div class="tooltip">
     <div class="tooltip-content">
-      FIFO-based disposal preview before commit. This page is the pre-commit consequence check for quantity, price, tax, fees, and forfeiture.
+      UK share-matching disposal preview before commit. This page is the pre-commit consequence check for quantity, price, tax, fees, and forfeiture.
     </div>
   </div>
 </h2>
@@ -48,8 +48,12 @@
     <span class="muted">Commit only when fully allocated and consequences are acceptable</span>
   </span>
   <span class="valuation-pill">
-    <strong>FIFO enforced</strong>
-    <span class="muted">Whole shares only</span>
+    <strong>UK matching enforced</strong>
+    <span class="muted">Same-day then Section 104 pool; whole shares only</span>
+  </span>
+  <span class="valuation-pill">
+    <strong>30-day caveat</strong>
+    <span class="muted">Preview assumes no reacquisition within 30 days after sale</span>
   </span>
 </div>
 
@@ -116,10 +120,10 @@
       </div>
 
       <div class="form-field">
-        <label for="broker_fees_gbp">Broker Fees (GBP)</label>
+        <label for="broker_fees_gbp">Broker Fees Override (GBP)</label>
         <input id="broker_fees_gbp" name="broker_fees_gbp" type="text"
                placeholder="0.00" value="{{ prev.broker_fees_gbp if prev else '' }}">
-        <span class="form-hint">Optional. Realised gains are reduced by this amount.</span>
+        <span class="form-hint">Optional. Leave blank to use the configured broker schedule estimate.</span>
       </div>
 
       <div class="form-field">
@@ -135,7 +139,7 @@
           {% endif %}
           {% endfor %}
         </select>
-        <span class="form-hint">Restrict FIFO to a single scheme type (optional).</span>
+        <span class="form-hint">Restrict disposal matching to a single scheme type (optional).</span>
       </div>
 
     </div>
@@ -184,6 +188,18 @@
     {% endif %}
     {% if prev and prev.price_per_share_gbp and selected_meta.latest_price_gbp and prev.price_per_share_gbp != selected_meta.latest_price_gbp %}
     | using manual disposal-price override
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if broker_fee_estimate %}
+  <div class="alert alert-info">
+    Broker fee estimate:
+    &pound;{{ "%.2f" % broker_fee_estimate.estimated_fee_gbp }}
+    using {{ broker_fee_estimate.pricing_model }}.
+    {{ broker_fee_estimate.basis_note }}
+    {% if prev and prev.broker_fees_gbp %}
+    Manual broker-fee override applied instead.
     {% endif %}
   </div>
   {% endif %}
@@ -253,13 +269,13 @@
     <summary class="muted">Why may values differ between pages?</summary>
     <ul class="muted" style="margin:0.5rem 0 0 1.25rem;font-size:0.85rem;">
       <li><strong>Portfolio:</strong> Estimated from stored market price and approximate employment tax.</li>
-      <li><strong>Simulate:</strong> Uses the price you enter; employment tax requires income settings; includes broker fees.</li>
+      <li><strong>Simulate:</strong> Uses the price you enter; employment tax requires income settings; includes broker fees; assumes no later 30-day reacquisition unless that rebuy is already recorded.</li>
       <li><strong>Net Value:</strong> Hypothetical full liquidation across all lots (including locked). No broker fees.</li>
     </ul>
   </details>
 
   <details class="card net-panel" open>
-    <summary>FIFO Allocations</summary>
+    <summary>Disposal Allocations</summary>
     <div class="table-wrap">
     <table>
       <thead>
@@ -457,7 +473,7 @@
         <label for="broker_fees_gbp_commit">Broker Fees (GBP)</label>
         <input id="broker_fees_gbp_commit" name="broker_fees_gbp" type="text"
                placeholder="0.00" value="{{ prev.broker_fees_gbp if prev else '' }}">
-        <span class="form-hint">Optional. Keep this aligned with simulation inputs.</span>
+        <span class="form-hint">Optional. Leave blank to use the configured broker schedule estimate at commit time.</span>
       </div>
 
       <div class="form-field">

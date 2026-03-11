@@ -194,6 +194,36 @@ class TestCgtSummary:
         assert line.total_gain_gbp == simulated.total_realised_gain_gbp
         assert line.total_gain_gbp == Decimal("500.00") - fee
 
+    def test_cgt_summary_applies_hmrc_30_day_matching_for_rebuy(self, app_context):
+        sec = _setup_security_and_lot(
+            "BEDBREAK",
+            quantity="100",
+            acquisition_price="10.00",
+            true_cost="10.00",
+            acquisition_date=date(2024, 1, 1),
+        )
+        _dispose(
+            sec.id,
+            quantity="100",
+            price="15.00",
+            transaction_date=date(2024, 6, 1),
+        )
+        PortfolioService.add_lot(
+            security_id=sec.id,
+            scheme_type="BROKERAGE",
+            acquisition_date=date(2024, 6, 15),
+            quantity=Decimal("100"),
+            acquisition_price_gbp=Decimal("14.00"),
+            true_cost_per_share_gbp=Decimal("14.00"),
+        )
+
+        report = ReportService.cgt_summary("2024-25")
+
+        assert len(report.disposal_lines) == 1
+        assert report.disposal_lines[0].total_gain_gbp == Decimal("100.00")
+        assert report.total_gains_gbp == Decimal("100.00")
+        assert report.net_gain_gbp == Decimal("100.00")
+
     def test_cgt_result_none_without_tax_context(self, app_context):
         sec = _setup_security_and_lot("NOCTX")
         _dispose(sec.id)

@@ -5,6 +5,8 @@ from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
 from src.api import _state
+from src.app_context import AppContext
+from src.db.repository.prices import PriceRepository
 from src.services.portfolio_service import PortfolioService
 from src.services.sell_plan_service import SellPlanService
 
@@ -36,6 +38,18 @@ def _add_brokerage_lot(client, security_id: str, quantity: str = "20") -> None:
         },
     )
     assert resp.status_code == 201, resp.text
+
+
+def _add_price(*, security_id: str, native: str, gbp: str, price_date: date) -> None:
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=security_id,
+            price_date=price_date,
+            close_price_original_ccy=native,
+            close_price_gbp=gbp,
+            currency="USD",
+            source="test-sell-plan-ui",
+        )
 
 
 def _add_espp_plus_pair(
@@ -258,6 +272,40 @@ def test_sell_plan_defaults_total_quantity_to_whole_sellable_max(client):
     page = client.get("/sell-plan")
     assert page.status_code == 200
     assert 'id="total_quantity"' in page.text
+
+
+def test_sell_plan_uses_estimated_fee_when_override_blank(client):
+    sec_id = _add_security(client, "SPLNFEE")
+    _add_brokerage_lot(client, sec_id, quantity="10")
+    _add_price(
+        security_id=sec_id,
+        native="20.00",
+        gbp="15.00",
+        price_date=date.today(),
+    )
+
+    start_date = (date.today() + timedelta(days=1)).isoformat()
+    create = client.post(
+        "/sell-plan",
+        data={
+            "security_id": sec_id,
+            "total_quantity": "6",
+            "tranche_count": "2",
+            "start_date": start_date,
+            "cadence_days": "14",
+            "min_spacing_days": "1",
+            "reference_price_gbp": "15.00",
+            "fee_per_tranche_gbp": "",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    plan_id = parse_qs(urlparse(create.headers["location"]).query)["plan_id"][0]
+
+    page = client.get(f"/sell-plan?plan_id={plan_id}")
+    assert page.status_code == 200
+    assert "estimated" in page.text
+    assert "&pound;0.75" in page.text
     assert 'value="20"' in page.text
     assert 'data-max-qty="20"' in page.text
 

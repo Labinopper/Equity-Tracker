@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from ...app_context import AppContext
+from ...services.broker_fee_service import BrokerFeeService
 from ...services.portfolio_service import PortfolioService
 from ...services.sell_plan_service import (
     APPROVAL_STATUS_APPROVED,
@@ -96,6 +97,10 @@ def _sellable_securities(summary) -> list[dict]:
                 "name": security_summary.security.name,
                 "sellable_quantity": sellable_whole,
                 "reference_price_gbp": security_summary.current_price_gbp,
+                "reference_price_native": security_summary.current_price_native,
+                "security_currency": (
+                    security_summary.security.currency or "GBP"
+                ).strip().upper(),
             }
         )
     rows.sort(key=lambda row: row["ticker"])
@@ -133,6 +138,66 @@ def _safe_decimal(value: object) -> Decimal:
 
 def _q_money(value: Decimal) -> Decimal:
     return value.quantize(_MONEY_Q, rounding=ROUND_HALF_UP)
+
+
+def _estimate_fee_per_tranche(
+    *,
+    security_row: dict | None,
+    total_quantity: Decimal | None,
+    tranche_count: int | None,
+    reference_price_gbp: Decimal | None,
+    settings: AppSettings | None,
+) -> dict | None:
+    if (
+        security_row is None
+        or total_quantity is None
+        or tranche_count is None
+        or tranche_count <= 0
+        or total_quantity <= Decimal("0")
+        or reference_price_gbp is None
+        or reference_price_gbp <= Decimal("0")
+    ):
+        return None
+    tranche_qty = _floor_whole(total_quantity / Decimal(tranche_count))
+    if tranche_qty <= Decimal("0"):
+        tranche_qty = Decimal("1")
+
+    latest_native_raw = security_row.get("reference_price_native")
+    latest_gbp_raw = security_row.get("reference_price_gbp")
+    native_price: Decimal | None = None
+    latest_gbp: Decimal | None = None
+    try:
+        if latest_native_raw is not None:
+            native_price = Decimal(str(latest_native_raw))
+    except InvalidOperation:
+        native_price = None
+    try:
+        if latest_gbp_raw is not None:
+            latest_gbp = Decimal(str(latest_gbp_raw))
+    except InvalidOperation:
+        latest_gbp = None
+
+    derived_native_price = native_price
+    if (
+        native_price is not None
+        and latest_gbp is not None
+        and native_price > Decimal("0")
+        and latest_gbp > Decimal("0")
+    ):
+        fx_gbp_per_native = latest_gbp / native_price
+        if fx_gbp_per_native > Decimal("0"):
+            derived_native_price = reference_price_gbp / fx_gbp_per_native
+
+    estimate = BrokerFeeService.estimate_order_fee(
+        security_currency=str(security_row.get("security_currency") or "").strip().upper(),
+        quantity=tranche_qty,
+        price_native=derived_native_price,
+        price_gbp=reference_price_gbp,
+        settings=settings,
+    )
+    if estimate.get("estimated_fee_gbp", Decimal("0.00")) <= Decimal("0.00"):
+        return None
+    return estimate
 
 
 def _build_plan_adherence_panel(
@@ -305,7 +370,7 @@ def _default_form_values(
         "max_daily_notional_gbp": "",
         "min_spacing_days": "7",
         "reference_price_gbp": reference_price_gbp,
-        "fee_per_tranche_gbp": "0.00",
+        "fee_per_tranche_gbp": "",
         "threshold_upper_pct": "70.00",
         "threshold_target_pct": "40.00",
         "threshold_review_days": "7",
@@ -412,6 +477,26 @@ def _render_sell_plan_page(
         total_quantity=default_total_qty,
         reference_price_gbp=default_ref_price,
     )
+    parsed_total_qty = _safe_decimal(form_defaults.get("total_quantity"))
+    parsed_tranche_count = None
+    try:
+        parsed_tranche_count = int(str(form_defaults.get("tranche_count") or "").strip())
+    except ValueError:
+        parsed_tranche_count = None
+    parsed_reference_price = None
+    try:
+        raw_reference_price = str(form_defaults.get("reference_price_gbp") or "").strip()
+        if raw_reference_price:
+            parsed_reference_price = Decimal(raw_reference_price)
+    except InvalidOperation:
+        parsed_reference_price = None
+    fee_per_tranche_estimate = _estimate_fee_per_tranche(
+        security_row=selected_security,
+        total_quantity=parsed_total_qty,
+        tranche_count=parsed_tranche_count,
+        reference_price_gbp=parsed_reference_price,
+        settings=settings,
+    )
 
     return templates.TemplateResponse(
         request,
@@ -426,6 +511,7 @@ def _render_sell_plan_page(
             "selected_plan_id": selected_plan_id or "",
             "today_iso": today.isoformat(),
             "form_defaults": form_defaults,
+            "fee_per_tranche_estimate": fee_per_tranche_estimate,
             "method_options": _METHOD_LABELS,
             "profile_options": {
                 PROFILE_HYBRID_DE_RISK: "Hybrid De-Risk (Recommended)",
@@ -488,7 +574,7 @@ async def sell_plan_create(
     max_daily_notional_gbp: str = Form(""),
     min_spacing_days: str = Form(""),
     reference_price_gbp: str = Form(""),
-    fee_per_tranche_gbp: str = Form("0"),
+    fee_per_tranche_gbp: str = Form(""),
     threshold_upper_pct: str = Form(""),
     threshold_target_pct: str = Form(""),
     threshold_review_days: str = Form(""),
@@ -653,6 +739,16 @@ async def sell_plan_create(
             status_code=422,
             previous_form=previous_form,
         )
+    if parsed_fee is None:
+        parsed_fee_estimate = _estimate_fee_per_tranche(
+            security_row=selected_security,
+            total_quantity=quantity,
+            tranche_count=count,
+            reference_price_gbp=parsed_ref_price,
+            settings=settings,
+        )
+        if parsed_fee_estimate is not None:
+            parsed_fee = parsed_fee_estimate["estimated_fee_gbp"]
 
     parsed_threshold_upper, threshold_upper_err = _parse_optional_decimal(
         threshold_upper_pct,

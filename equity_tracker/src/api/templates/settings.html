@@ -116,6 +116,24 @@
       </div>
 
       <div class="form-field">
+        <label for="broker_fee_model">Broker Fee Model</label>
+        <select id="broker_fee_model" name="broker_fee_model">
+          <option value="IBKR_UK_US_STOCK_FIXED" {{ 'selected' if settings and settings.broker_fee_model == 'IBKR_UK_US_STOCK_FIXED' }}>IBKR UK US Stocks Fixed</option>
+          <option value="IBKR_UK_US_STOCK_TIERED" {{ 'selected' if settings and settings.broker_fee_model == 'IBKR_UK_US_STOCK_TIERED' }}>IBKR UK US Stocks Tiered</option>
+        </select>
+        <span class="form-hint">Used when Simulate, Sell Plan, and Capital Stack estimate disposal commissions automatically.</span>
+      </div>
+
+      <div class="form-field">
+        <label class="checkbox-inline">
+          <input type="checkbox" name="broker_fee_estimation_enabled" value="on"
+                 {{ 'checked' if not settings or settings.broker_fee_estimation_enabled }}>
+          Enable broker fee estimation
+        </label>
+        <span class="form-hint">When enabled, blank fee inputs use the selected broker schedule instead of assuming zero.</span>
+      </div>
+
+      <div class="form-field">
         <label for="price_stale_after_days">Price Stale After (days)</label>
         <input id="price_stale_after_days" name="price_stale_after_days" type="number" min="0"
                value="{{ settings.price_stale_after_days if settings else 1 }}">

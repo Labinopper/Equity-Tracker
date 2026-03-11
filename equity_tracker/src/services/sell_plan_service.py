@@ -22,11 +22,10 @@ from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from pathlib import Path
 from uuid import uuid4
 
-from ..core.tax_engine import calculate_cgt, get_bands, tax_year_for_date
-from ..core.tax_engine.income_tax import personal_allowance
 from ..settings import AppSettings
+from .broker_fee_service import BrokerFeeService
+from .liquidation_tax_service import LiquidationTaxService
 from .portfolio_service import PortfolioService
-from .report_service import ReportService
 
 _QTY_Q = Decimal("0.0001")
 _MONEY_Q = Decimal("0.01")
@@ -288,45 +287,71 @@ def _in_calendar_window(*, event_date: date_type, as_of: date_type, horizon_days
     return False
 
 
-def _taxable_income_ex_gains(
-    *,
-    tax_year: str,
-    settings: AppSettings | None,
-) -> Decimal:
-    if settings is None:
-        return Decimal("0")
-    bands = get_bands(tax_year)
-    adjusted_net_income = (
-        settings.default_gross_income
-        - settings.default_pension_sacrifice
-        + settings.default_other_income
-    )
-    allowance = personal_allowance(bands, adjusted_net_income)
-    return max(Decimal("0"), adjusted_net_income - allowance)
-
-
 def _cgt_baseline_state(
     *,
     tax_year: str,
     settings: AppSettings | None,
 ) -> dict[str, Decimal]:
-    report = ReportService.cgt_summary(tax_year)
-    cgt = calculate_cgt(
-        bands=get_bands(tax_year),
-        realised_gains=[report.total_gains_gbp] if report.total_gains_gbp > Decimal("0") else [],
-        realised_losses=[report.total_losses_gbp] if report.total_losses_gbp > Decimal("0") else [],
-        taxable_income_ex_gains=_taxable_income_ex_gains(
-            tax_year=tax_year,
-            settings=settings,
-        ),
-        prior_year_losses=Decimal("0"),
+    baseline = LiquidationTaxService.baseline_tax_year_state(
+        tax_year=tax_year,
+        settings=settings,
     )
     return {
-        "projected_total_gains_gbp": _q_money(report.total_gains_gbp),
-        "projected_total_losses_gbp": _q_money(report.total_losses_gbp),
-        "base_total_cgt_gbp": _q_money(cgt.total_cgt),
+        "projected_total_gains_gbp": _q_money(
+            _safe_decimal(baseline.get("realised_gains_ytd_gbp"))
+        ),
+        "projected_total_losses_gbp": _q_money(
+            _safe_decimal(baseline.get("realised_losses_ytd_gbp"))
+        ),
+        "base_total_cgt_gbp": _q_money(
+            _safe_decimal(baseline.get("base_total_cgt_gbp"))
+        ),
         "incremental_cgt_gbp": Decimal("0.00"),
     }
+
+
+def _estimate_plan_tranche_fee(
+    *,
+    plan: dict,
+    quantity: Decimal,
+    reference_price_gbp: Decimal,
+    settings: AppSettings | None,
+) -> Decimal:
+    if quantity <= Decimal("0") or reference_price_gbp <= Decimal("0"):
+        return Decimal("0.00")
+    summary = PortfolioService.get_portfolio_summary(
+        settings=settings,
+        use_live_true_cost=False,
+    )
+    security_id = str(plan.get("security_id") or "")
+    security_summary = next(
+        (row for row in summary.securities if row.security.id == security_id),
+        None,
+    )
+    if security_summary is None:
+        return Decimal("0.00")
+
+    latest_native = security_summary.current_price_native
+    latest_gbp = security_summary.current_price_gbp
+    derived_native_price = latest_native
+    if (
+        latest_native is not None
+        and latest_gbp is not None
+        and latest_native > Decimal("0")
+        and latest_gbp > Decimal("0")
+    ):
+        fx_gbp_per_native = latest_gbp / latest_native
+        if fx_gbp_per_native > Decimal("0"):
+            derived_native_price = reference_price_gbp / fx_gbp_per_native
+
+    estimate = BrokerFeeService.estimate_order_fee(
+        security_currency=security_summary.security.currency,
+        quantity=quantity,
+        price_native=derived_native_price,
+        price_gbp=reference_price_gbp,
+        settings=settings,
+    )
+    return _q_money(_safe_decimal(estimate.get("estimated_fee_gbp")))
 
 
 def _default_method_config(
@@ -1100,12 +1125,11 @@ class SellPlanService:
 
         reference_price = _safe_decimal_or_none(constraints.get("reference_price_gbp"))
         fee_per_tranche = _safe_decimal_or_none(constraints.get("fee_per_tranche_gbp"))
-        fee = _q_money(fee_per_tranche or Decimal("0"))
 
         out["impact_reference_price_gbp"] = (
             str(_q_money(reference_price)) if reference_price is not None else None
         )
-        out["impact_fee_per_tranche_gbp"] = str(fee)
+        out["impact_fee_per_tranche_gbp"] = str(_q_money(fee_per_tranche or Decimal("0")))
 
         notes: list[str] = []
         if reference_price is None:
@@ -1120,7 +1144,7 @@ class SellPlanService:
             return out
 
         today = date_type.today()
-        per_year_state: dict[str, dict[str, Decimal]] = {}
+        per_year_state: dict[str, dict[str, Decimal | list[Decimal]]] = {}
 
         cumulative_qty = Decimal("0")
         prev_proceeds = Decimal("0")
@@ -1132,6 +1156,7 @@ class SellPlanService:
         cumulative_cgt = Decimal("0")
         cumulative_fees = Decimal("0")
         cumulative_net = Decimal("0")
+        representative_fee = _q_money(fee_per_tranche or Decimal("0"))
 
         for tranche in tranches:
             qty = _safe_decimal(tranche.get("quantity"))
@@ -1182,48 +1207,48 @@ class SellPlanService:
             tax_year = tax_year_for_date(event_date)
 
             if tax_year not in per_year_state:
-                per_year_state[tax_year] = _cgt_baseline_state(
-                    tax_year=tax_year,
+                per_year_state[tax_year] = {
+                    **_cgt_baseline_state(tax_year=tax_year, settings=settings),
+                    "additional_gains": [],
+                    "additional_losses": [],
+                }
+
+            tranche_fee = _q_money(fee_per_tranche or Decimal("0"))
+            if tranche_fee <= Decimal("0"):
+                tranche_fee = _estimate_plan_tranche_fee(
+                    plan=plan,
+                    quantity=qty,
+                    reference_price_gbp=reference_price,
                     settings=settings,
                 )
+            if representative_fee <= Decimal("0") and tranche_fee > Decimal("0"):
+                representative_fee = tranche_fee
 
             year_state = per_year_state[tax_year]
-            if realised_gain >= Decimal("0"):
-                year_state["projected_total_gains_gbp"] = _q_money(
-                    year_state["projected_total_gains_gbp"] + realised_gain
-                )
+            gain_after_costs = _q_money(realised_gain - tranche_fee)
+            if gain_after_costs >= Decimal("0"):
+                gains = list(year_state["additional_gains"])
+                gains.append(gain_after_costs)
+                year_state["additional_gains"] = gains
             else:
-                year_state["projected_total_losses_gbp"] = _q_money(
-                    year_state["projected_total_losses_gbp"] + abs(realised_gain)
-                )
+                losses = list(year_state["additional_losses"])
+                losses.append(abs(gain_after_costs))
+                year_state["additional_losses"] = losses
 
-            cgt_projection = calculate_cgt(
-                bands=get_bands(tax_year),
-                realised_gains=(
-                    [year_state["projected_total_gains_gbp"]]
-                    if year_state["projected_total_gains_gbp"] > Decimal("0")
-                    else []
-                ),
-                realised_losses=(
-                    [year_state["projected_total_losses_gbp"]]
-                    if year_state["projected_total_losses_gbp"] > Decimal("0")
-                    else []
-                ),
-                taxable_income_ex_gains=_taxable_income_ex_gains(
-                    tax_year=tax_year,
-                    settings=settings,
-                ),
-                prior_year_losses=Decimal("0"),
+            cgt_projection = LiquidationTaxService.project_tax_year_incremental(
+                tax_year=tax_year,
+                settings=settings,
+                additional_gains=list(year_state["additional_gains"]),
+                additional_losses=list(year_state["additional_losses"]),
             )
             projected_incremental_cgt = _q_money(
-                cgt_projection.total_cgt - year_state["base_total_cgt_gbp"]
+                _safe_decimal(cgt_projection.get("incremental_cgt_gbp"))
             )
             tranche_cgt = _q_money(
                 projected_incremental_cgt - year_state["incremental_cgt_gbp"]
             )
             year_state["incremental_cgt_gbp"] = projected_incremental_cgt
 
-            tranche_fee = fee
             net = _q_money(gross - emp_tax - tranche_cgt - tranche_fee)
 
             cumulative_gross = _q_money(cumulative_gross + gross)
@@ -1241,6 +1266,7 @@ class SellPlanService:
             tranche["impact_note"] = None
             tranche["impact_available"] = True
 
+        out["impact_fee_per_tranche_gbp"] = str(_q_money(representative_fee))
         out["impact_totals"] = {
             "gross_proceeds_gbp": str(_q_money(cumulative_gross)),
             "employment_tax_gbp": str(_q_money(cumulative_emp_tax)),

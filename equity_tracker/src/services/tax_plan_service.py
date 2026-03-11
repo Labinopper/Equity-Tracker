@@ -1218,8 +1218,9 @@ class TaxPlanService:
                 "on both sides of the UK tax-year boundary."
             ),
             (
-                "HMRC same-day and 30-day share matching rules are not modelled; "
-                "results are indicative."
+                "HMRC same-day, 30-day, and Section 104 matching are modelled "
+                "for realised CGT baselines. Forward-looking scenarios remain "
+                "indicative when future reacquisitions are unknown."
             ),
         ]
         if stale_price_security_count > 0:

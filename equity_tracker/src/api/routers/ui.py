@@ -69,6 +69,7 @@ from ...db.repository import (
 )
 from ...services.fx_service import FxService
 from ...services.ibkr_price_service import IbkrPriceService
+from ...services.broker_fee_service import BrokerFeeService
 from ...services.capital_stack_service import CapitalStackService
 from ...services.exposure_service import ExposureService
 from ...services.alert_lifecycle_service import AlertLifecycleService
@@ -371,6 +372,35 @@ def _compute_exit_summary(
     }
 
 
+def _estimate_ui_broker_fee(
+    *,
+    security_row: dict | None,
+    quantity: Decimal,
+    price_per_share_gbp: Decimal,
+    settings: AppSettings | None,
+) -> dict | None:
+    if security_row is None:
+        return None
+    security_currency = str(security_row.get("security_currency") or "").strip().upper()
+    native_price_raw = security_row.get("latest_price_native")
+    native_price: Decimal | None = None
+    if native_price_raw not in (None, ""):
+        try:
+            native_price = Decimal(str(native_price_raw))
+        except InvalidOperation:
+            native_price = None
+    estimate = BrokerFeeService.estimate_order_fee(
+        security_currency=security_currency,
+        quantity=quantity,
+        price_native=native_price,
+        price_gbp=price_per_share_gbp,
+        settings=settings,
+    )
+    if estimate.get("estimated_fee_gbp", Decimal("0.00")) <= Decimal("0.00"):
+        return None
+    return estimate
+
+
 def _simulate_security_context(summary) -> list[dict]:
     """
     Build lightweight security rows for /simulate UI.
@@ -417,6 +447,12 @@ def _simulate_security_context(summary) -> list[dict]:
                     if ss.current_price_gbp is not None
                     else ""
                 ),
+                "latest_price_native": (
+                    str(ss.current_price_native)
+                    if ss.current_price_native is not None
+                    else ""
+                ),
+                "security_currency": (ss.security.currency or "GBP").strip().upper(),
                 "price_as_of": (
                     ss.price_as_of.isoformat() if ss.price_as_of is not None else ""
                 ),
@@ -4467,6 +4503,7 @@ async def simulate_form(
             },
             "simulate_meta": {s["id"]: s for s in securities},
             "exit_summary": None,
+            "broker_fee_estimate": None,
             "employment_tax_status": {
                 "applicable": False,
                 "estimate_available": True,
@@ -4507,6 +4544,7 @@ async def simulate_submit(
             "settings": settings,
             "tax_inputs_incomplete": tax_inputs_incomplete,
             "exit_summary": None,
+            "broker_fee_estimate": None,
             "employment_tax_status": {
                 "applicable": False,
                 "estimate_available": True,
@@ -4610,39 +4648,54 @@ async def simulate_submit(
             },
             status_code=422,
         )
-    try:
-        fees = Decimal(broker_fees_gbp.strip() or "0")
-    except InvalidOperation as exc:
-        return _render_simulate(
-            {
-                "result": None,
-                "error": f"Invalid broker fees value: {exc}",
-                "prev": {
-                    "security_id": security_id,
-                    "quantity": quantity,
-                    "price_per_share_gbp": resolved_price,
-                    "broker_fees_gbp": broker_fees_gbp,
-                    "scheme_type": scheme_type,
+    broker_fee_estimate = _estimate_ui_broker_fee(
+        security_row=selected,
+        quantity=qty,
+        price_per_share_gbp=price,
+        settings=settings,
+    )
+    raw_fee_text = broker_fees_gbp.strip()
+    if raw_fee_text:
+        try:
+            fees = Decimal(raw_fee_text)
+        except InvalidOperation as exc:
+            return _render_simulate(
+                {
+                    "result": None,
+                    "error": f"Invalid broker fees value: {exc}",
+                    "prev": {
+                        "security_id": security_id,
+                        "quantity": quantity,
+                        "price_per_share_gbp": resolved_price,
+                        "broker_fees_gbp": broker_fees_gbp,
+                        "scheme_type": scheme_type,
+                    },
                 },
-            },
-            status_code=422,
-        )
-    if fees < 0:
-        return _render_simulate(
-            {
-                "result": None,
-                "error": "Broker fees cannot be negative.",
-                "prev": {
-                    "security_id": security_id,
-                    "quantity": quantity,
-                    "price_per_share_gbp": resolved_price,
-                    "broker_fees_gbp": broker_fees_gbp,
-                    "scheme_type": scheme_type,
+                status_code=422,
+            )
+        if fees < 0:
+            return _render_simulate(
+                {
+                    "result": None,
+                    "error": "Broker fees cannot be negative.",
+                    "prev": {
+                        "security_id": security_id,
+                        "quantity": quantity,
+                        "price_per_share_gbp": resolved_price,
+                        "broker_fees_gbp": broker_fees_gbp,
+                        "scheme_type": scheme_type,
+                    },
                 },
-            },
-            status_code=422,
+                status_code=422,
+            )
+        fees_str = f"{fees:.2f}"
+    else:
+        fees = (
+            broker_fee_estimate["estimated_fee_gbp"]
+            if broker_fee_estimate is not None
+            else Decimal("0.00")
         )
-    fees_str = f"{fees:.2f}" if fees != 0 else ""
+        fees_str = ""
 
     try:
         result = PortfolioService.simulate_disposal(
@@ -4674,6 +4727,7 @@ async def simulate_submit(
                 broker_fees_gbp=fees,
             ),
             "employment_tax_status": employment_tax_status,
+            "broker_fee_estimate": broker_fee_estimate,
             "error": None,
             "prev": {
                 "security_id": security_id,
@@ -4726,6 +4780,18 @@ async def commit_disposal(
     try:
         db_path = _state.get_db_path()
         settings = AppSettings.load(db_path) if db_path else None
+        if fees is None:
+            summary = PortfolioService.get_portfolio_summary()
+            securities = _simulate_security_context(summary)
+            selected = next((row for row in securities if row["id"] == security_id), None)
+            fee_estimate = _estimate_ui_broker_fee(
+                security_row=selected,
+                quantity=qty,
+                price_per_share_gbp=price,
+                settings=settings,
+            )
+            if fee_estimate is not None:
+                fees = fee_estimate["estimated_fee_gbp"]
         preflight = PortfolioService.simulate_disposal(
             security_id=security_id,
             quantity=qty,
@@ -5261,6 +5327,8 @@ async def settings_submit(
     concentration_top_holding_alert_pct: str = Form("50"),
     concentration_employer_alert_pct: str = Form("40"),
     default_tax_year: str = Form(...),
+    broker_fee_model: str = Form("IBKR_UK_US_STOCK_FIXED"),
+    broker_fee_estimation_enabled: str = Form(""),
     price_stale_after_days: str = Form("1"),
     fx_stale_after_minutes: str = Form("10"),
     monthly_espp_input_reminder_enabled: str = Form(""),
@@ -5328,6 +5396,20 @@ async def settings_submit(
             error="Employer concentration alert threshold must be between 0 and 100.",
             status_code=422,
         )
+    broker_fee_model_clean = (
+        str(broker_fee_model or "IBKR_UK_US_STOCK_FIXED").strip().upper()
+        or "IBKR_UK_US_STOCK_FIXED"
+    )
+    if broker_fee_model_clean not in {
+        "IBKR_UK_US_STOCK_FIXED",
+        "IBKR_UK_US_STOCK_TIERED",
+    }:
+        return _render_settings_page(
+            request,
+            db_path,
+            error="Unsupported broker fee model.",
+            status_code=422,
+        )
 
     settings = AppSettings.load(db_path)
     settings.default_gross_income = gross
@@ -5339,6 +5421,13 @@ async def settings_submit(
     settings.concentration_top_holding_alert_pct = top_holding_alert_pct
     settings.concentration_employer_alert_pct = employer_alert_pct
     settings.default_tax_year = default_tax_year
+    settings.broker_fee_model = broker_fee_model_clean
+    settings.broker_fee_estimation_enabled = broker_fee_estimation_enabled.lower() in (
+        "on",
+        "true",
+        "1",
+        "yes",
+    )
     settings.price_stale_after_days = price_stale_days
     settings.fx_stale_after_minutes = fx_stale_minutes
     settings.monthly_espp_input_reminder_enabled = (

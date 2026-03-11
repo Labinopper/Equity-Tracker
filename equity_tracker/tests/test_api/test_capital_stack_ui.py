@@ -219,3 +219,49 @@ def test_capital_stack_combined_deployable_includes_gbp_cash(client, db_engine):
     page = client.get("/capital-stack")
     assert page.status_code == 200
     assert "Combined Deployable (Holdings + Cash)" in page.text
+
+
+def test_capital_stack_uses_tax_year_cgt_projection_and_order_fee_estimate(client, db_engine):
+    _, db_path = db_engine
+    settings = AppSettings.defaults_for(db_path)
+    settings.default_tax_year = "2025-26"
+    settings.default_gross_income = Decimal("65000")
+    settings.default_pension_sacrifice = Decimal("0")
+    settings.default_other_income = Decimal("10000")
+    settings.default_student_loan_plan = None
+    settings.save()
+
+    sec_id = _add_security(client, "CSTACKUSD", currency="USD")
+    _add_lot(
+        client,
+        security_id=sec_id,
+        scheme_type="BROKERAGE",
+        acquisition_date="2026-01-10",
+        quantity="10",
+        price="10.00",
+    )
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date.today(),
+            close_price_original_ccy="20.00",
+            close_price_gbp="15.00",
+            currency="USD",
+            source="test-capital-stack-ui-usd",
+        )
+
+    summary = PortfolioService.get_portfolio_summary(
+        settings=settings,
+        use_live_true_cost=False,
+    )
+    stack = CapitalStackService.get_snapshot(
+        settings=settings,
+        db_path=_state.get_db_path(),
+        summary=summary,
+    )
+
+    assert Decimal(str(stack["estimated_cgt_gbp"])) == Decimal("0.00")
+    assert Decimal(str(stack["estimated_fees_gbp"])) == Decimal("0.75")
+    assert Decimal(str(stack["taxable_liquid_gain_gbp"])) == Decimal("0.00")
+    assert stack["fee_model"]["method"] == "ibkr_uk_us_stock_fixed"

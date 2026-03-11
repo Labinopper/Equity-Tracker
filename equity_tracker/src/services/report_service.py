@@ -23,8 +23,8 @@ Design notes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal
+from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -112,6 +112,28 @@ class EconomicGainReport:
     isa_exempt_economic_gain_gbp: Decimal = Decimal("0")
 
 
+@dataclass
+class _HmrcAcquisition:
+    lot_id: str
+    acquisition_date: date
+    quantity_remaining: Decimal
+    cost_per_share_gbp: Decimal
+    added_to_pool: bool = False
+
+
+@dataclass(frozen=True)
+class _HmrcDisposal:
+    transaction_id: str
+    transaction_date: date
+    created_at: datetime
+    quantity: Decimal
+    net_proceeds_gbp: Decimal
+
+
+def _q_money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 # ---------------------------------------------------------------------------
 # ReportService
 # ---------------------------------------------------------------------------
@@ -125,6 +147,154 @@ class ReportService:
     """
 
     # ── Internal helpers ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _hmrc_gain_map_for_security(sess: Session, security_id: str) -> dict[str, Decimal]:
+        tx_repo = TransactionRepository(sess)
+        disp_repo = DisposalRepository(sess)
+
+        acquisitions = sorted(
+            [
+                _HmrcAcquisition(
+                    lot_id=lot.id,
+                    acquisition_date=lot.acquisition_date,
+                    quantity_remaining=Decimal(lot.quantity),
+                    cost_per_share_gbp=Decimal(lot.acquisition_price_gbp),
+                )
+                for lot in sess.execute(
+                    select(Lot)
+                    .where(Lot.security_id == security_id)
+                    .where(Lot.scheme_type != "ISA")
+                    .order_by(Lot.acquisition_date.asc(), Lot.id.asc())
+                ).scalars()
+            ],
+            key=lambda row: (row.acquisition_date, row.lot_id),
+        )
+
+        disposals: list[_HmrcDisposal] = []
+        for tx in tx_repo.list_for_security(security_id, transaction_type="DISPOSAL"):
+            lot_disposals = disp_repo.list_for_transaction(tx.id)
+            if not lot_disposals:
+                continue
+
+            taxable_qty = Decimal("0")
+            taxable_gross_proceeds = Decimal("0")
+            for lot_disposal in lot_disposals:
+                lot = sess.get(Lot, lot_disposal.lot_id)
+                if lot is None or lot.scheme_type == "ISA":
+                    continue
+                taxable_qty += Decimal(lot_disposal.quantity_allocated)
+                taxable_gross_proceeds += Decimal(lot_disposal.proceeds_gbp)
+
+            if taxable_qty <= Decimal("0"):
+                continue
+
+            tx_qty = Decimal(tx.quantity)
+            broker_fees = Decimal(tx.broker_fees_gbp or "0")
+            taxable_fee = (
+                _q_money(broker_fees * (taxable_qty / tx_qty))
+                if tx_qty > Decimal("0") and broker_fees > Decimal("0")
+                else Decimal("0.00")
+            )
+            disposals.append(
+                _HmrcDisposal(
+                    transaction_id=tx.id,
+                    transaction_date=tx.transaction_date,
+                    created_at=tx.created_at,
+                    quantity=taxable_qty,
+                    net_proceeds_gbp=_q_money(taxable_gross_proceeds - taxable_fee),
+                )
+            )
+
+        if not disposals:
+            return {}
+
+        acquisitions_by_date: dict[date, list[_HmrcAcquisition]] = {}
+        for acquisition in acquisitions:
+            acquisitions_by_date.setdefault(acquisition.acquisition_date, []).append(acquisition)
+
+        disposals_by_date: dict[date, list[_HmrcDisposal]] = {}
+        for disposal in disposals:
+            disposals_by_date.setdefault(disposal.transaction_date, []).append(disposal)
+
+        gain_by_tx_id: dict[str, Decimal] = {}
+        pool_quantity = Decimal("0")
+        pool_cost = Decimal("0")
+
+        for disposal_date in sorted(disposals_by_date):
+            same_day_acquisitions = acquisitions_by_date.get(disposal_date, [])
+
+            for acquisition in acquisitions:
+                if acquisition.added_to_pool:
+                    continue
+                if acquisition.acquisition_date >= disposal_date:
+                    continue
+                if acquisition.quantity_remaining <= Decimal("0"):
+                    acquisition.added_to_pool = True
+                    continue
+                pool_quantity += acquisition.quantity_remaining
+                pool_cost += acquisition.quantity_remaining * acquisition.cost_per_share_gbp
+                acquisition.added_to_pool = True
+
+            for disposal in sorted(
+                disposals_by_date.get(disposal_date, []),
+                key=lambda row: (row.created_at, row.transaction_id),
+            ):
+                remaining = disposal.quantity
+                matched_cost = Decimal("0")
+
+                for acquisition in same_day_acquisitions:
+                    if remaining <= Decimal("0"):
+                        break
+                    if acquisition.quantity_remaining <= Decimal("0"):
+                        continue
+                    matched_qty = min(remaining, acquisition.quantity_remaining)
+                    acquisition.quantity_remaining -= matched_qty
+                    remaining -= matched_qty
+                    matched_cost += matched_qty * acquisition.cost_per_share_gbp
+
+                if remaining > Decimal("0"):
+                    future_deadline = disposal_date + timedelta(days=30)
+                    future_acquisitions = [
+                        acquisition
+                        for acquisition in acquisitions
+                        if disposal_date < acquisition.acquisition_date <= future_deadline
+                        and acquisition.quantity_remaining > Decimal("0")
+                    ]
+                    future_acquisitions.sort(
+                        key=lambda row: (row.acquisition_date, row.lot_id)
+                    )
+                    for acquisition in future_acquisitions:
+                        if remaining <= Decimal("0"):
+                            break
+                        matched_qty = min(remaining, acquisition.quantity_remaining)
+                        acquisition.quantity_remaining -= matched_qty
+                        remaining -= matched_qty
+                        matched_cost += matched_qty * acquisition.cost_per_share_gbp
+
+                if remaining > Decimal("0") and pool_quantity > Decimal("0"):
+                    matched_qty = min(remaining, pool_quantity)
+                    average_cost = (
+                        pool_cost / pool_quantity if pool_quantity > Decimal("0") else Decimal("0")
+                    )
+                    matched_cost += matched_qty * average_cost
+                    pool_quantity -= matched_qty
+                    pool_cost -= matched_qty * average_cost
+                    remaining -= matched_qty
+
+                gain_by_tx_id[disposal.transaction_id] = _q_money(
+                    disposal.net_proceeds_gbp - _q_money(matched_cost)
+                )
+
+            for acquisition in same_day_acquisitions:
+                if acquisition.added_to_pool or acquisition.quantity_remaining <= Decimal("0"):
+                    acquisition.added_to_pool = True
+                    continue
+                pool_quantity += acquisition.quantity_remaining
+                pool_cost += acquisition.quantity_remaining * acquisition.cost_per_share_gbp
+                acquisition.added_to_pool = True
+
+        return gain_by_tx_id
 
     @staticmethod
     def _collect_disposal_lines(sess: Session, tax_year: str) -> list[DisposalLine]:
@@ -141,6 +311,7 @@ class ReportService:
         disposal_lines: list[DisposalLine] = []
 
         for security in sec_repo.list_all():
+            hmrc_gain_map = ReportService._hmrc_gain_map_for_security(sess, security.id)
             transactions = tx_repo.list_for_security(
                 security.id, transaction_type="DISPOSAL"
             )
@@ -186,7 +357,7 @@ class ReportService:
                     lot_disposals=lot_disposals,
                     total_quantity=total_qty,
                     total_proceeds_gbp=total_proceeds,
-                    total_gain_gbp=total_gain,
+                    total_gain_gbp=_q_money(hmrc_gain_map.get(tx.id, total_gain)),
                     total_economic_gain_gbp=total_economic,
                     isa_exempt_proceeds_gbp=isa_proceeds,
                     isa_exempt_gain_gbp=isa_gain,

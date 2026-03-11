@@ -54,6 +54,8 @@ class AppSettings:
     fx_stale_after_minutes: int
     monthly_espp_input_reminder_enabled: bool
     monthly_espp_input_reminder_day: int
+    broker_fee_model: str
+    broker_fee_estimation_enabled: bool
 
     def __init__(self) -> None:
         # Income defaults — all zero so the user must enter their own figures
@@ -74,6 +76,8 @@ class AppSettings:
         self.fx_stale_after_minutes = 10
         self.monthly_espp_input_reminder_enabled = False
         self.monthly_espp_input_reminder_day = 1
+        self.broker_fee_model = "IBKR_UK_US_STOCK_FIXED"
+        self.broker_fee_estimation_enabled = True
 
         # Internal — set by load(), not serialized under this name
         self._settings_path: Path = Path("settings.json")
@@ -134,6 +138,8 @@ class AppSettings:
             "fx_stale_after_minutes": self.fx_stale_after_minutes,
             "monthly_espp_input_reminder_enabled": self.monthly_espp_input_reminder_enabled,
             "monthly_espp_input_reminder_day": self.monthly_espp_input_reminder_day,
+            "broker_fee_model": self.broker_fee_model,
+            "broker_fee_estimation_enabled": self.broker_fee_estimation_enabled,
         }
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -201,6 +207,14 @@ class AppSettings:
             if raw_day > 28:
                 raw_day = 28
             self.monthly_espp_input_reminder_day = raw_day
+        if "broker_fee_model" in data:
+            self.broker_fee_model = str(
+                data["broker_fee_model"] or "IBKR_UK_US_STOCK_FIXED"
+            ).strip().upper()
+        if "broker_fee_estimation_enabled" in data:
+            self.broker_fee_estimation_enabled = bool(
+                data["broker_fee_estimation_enabled"]
+            )
 
 
 # ── Module helpers ───────────────────────────────────────────────────────────
