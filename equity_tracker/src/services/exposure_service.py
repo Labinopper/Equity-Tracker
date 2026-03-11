@@ -174,10 +174,10 @@ class ExposureService:
                     sellable_by_ticker.get(ticker, Decimal("0")) + lot_mv
                 )
 
-        gross_total_q = _q_money(total_gross_market)
         sellable_total_q = _q_money(total_sellable_market)
         locked_q = _q_money(locked_capital)
         forfeitable_q = _q_money(forfeitable_capital)
+        gross_total_q = _q_money(locked_q + forfeitable_q + sellable_total_q)
         wrapper_total = _q_money(isa_wrapper_market + taxable_wrapper_market)
 
         top_gross_ticker, top_gross_value = _top_bucket(gross_by_ticker)

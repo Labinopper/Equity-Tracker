@@ -247,6 +247,73 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 
 Backlog mirror and delivered-post-closure state: logged in `docs/todo.md`.
 
+# Page Template Standard (Reference: Portfolio)
+
+This section defines the reference template for high-signal decision surfaces. It is based on the current Portfolio page and should be used as the review standard for all major pages.
+
+## Template Objectives
+1. Keep the first visible band decision-first, not diagnostic-first.
+2. Separate `Actionable`, `Hypothetical`, and `Realised` concepts explicitly.
+3. Keep explanatory text out of the default read path unless it is operationally necessary right now.
+4. Make every major number auditable through tooltips, glossary links, trace links, or reconcile destinations.
+5. Push configuration state, exports, diagnostics, and page-context details below the primary decision content.
+
+## Template Layout
+1. Header area
+   - concise page title
+   - only high-relevance controls
+   - no utility/export actions mixed with primary actions
+2. Primary band
+   - immediate decision metrics only
+   - cards ordered by operational importance
+   - labels short; meaning carried by tooltips, tags, and links
+3. Secondary band
+   - structural or constraint-setting context
+   - kept visible only if it materially affects decisions on the page
+4. Collapsible context sections
+   - secondary structure
+   - cost basis / accounting context
+   - page context / settings / exports / diagnostics
+5. Page body
+   - detailed tables, rows, per-security views, workflows
+
+## Template Content Rules
+1. Visible by default
+   - values
+   - short labels
+   - warnings / missing-data states
+   - a small number of top actionable timing cues
+2. Tooltip / drill-down only
+   - formula text
+   - explanatory prose
+   - basis definitions
+   - low-frequency interpretation guidance
+3. Bottom-of-page context
+   - settings readiness
+   - data basis / freshness strip
+   - exports
+   - diagnostic links
+
+## Template Interaction Rules
+1. Tooltips must wrap over multiple lines and remain visually inside the page/card context.
+2. Tags such as `Actionable`, `Hypothetical`, and `Realised` should sit on a dedicated meta line below the card title.
+3. Exports and utility actions should survive dynamic page refreshes.
+4. Auto-refresh should patch live data in place rather than replacing the full page.
+
+## Template Review Checklist
+Use this when assessing another page against the Portfolio standard:
+
+1. Is the first visible band the actual decision band?
+2. Are primary actions separated from utility/export actions?
+3. Are labels short, with explanation moved into tooltips where appropriate?
+4. Are warnings kept visible while passive explanation is hidden?
+5. Are `Actionable`, `Hypothetical`, and `Realised` states explicit and placed consistently?
+6. Are settings readiness, basis/freshness, and diagnostics pushed to lower-priority sections?
+7. Are trace/reconcile links available for high-risk numbers?
+8. Are secondary metrics collapsed or visually subordinated?
+9. Does the page avoid repeating text the user does not need every time?
+10. Does the page preserve a clear audit path from headline number to source inputs?
+
 # Portfolio Refinement Focus (Current Template)
 
 ## PR1: Actionable-First Visual Hierarchy

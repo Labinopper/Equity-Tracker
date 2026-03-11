@@ -1858,6 +1858,12 @@ def _build_espp_plus_group_row(
         match_mv if match_effect == "FORFEITED" and match_mv is not None else Decimal("0.00")
     )
 
+    # Mixed ESPP+ rows with sellable employee-paid shares should remain actionable.
+    # A locked or forfeitable matched portion changes the economics, but it should
+    # not make the whole grouped row look fully locked to portfolio-level totals.
+    if paid_qty > Decimal("0") and match_effect in {"FORFEITED", "LOCKED"}:
+        sellability_status = "AT_RISK"
+
     if paid_cash is None:
         net_cash_if_sold = None
     elif match_effect == "INCLUDED":
@@ -2116,6 +2122,195 @@ def _portfolio_sellable_true_cost(
             if row.sellability_status != "LOCKED":
                 total += row.paid_true_cost
     return _q2(total)
+
+
+def _portfolio_actionable_metrics(summary) -> dict[str, Decimal | str | None]:
+    """
+    Canonical sellable/actionable metrics derived from lot summaries.
+
+    Uses lot-level data instead of grouped UI rows so the top band does not
+    depend on view-layer grouping semantics.
+    """
+    sellable_market_value = Decimal("0")
+    sellable_true_cost = Decimal("0")
+    sellable_employment_tax = Decimal("0")
+    sellable_net_liquidity = Decimal("0")
+    sellable_quantity = Decimal("0")
+    sellable_isa_market_value = Decimal("0")
+    sellable_taxable_market_value = Decimal("0")
+
+    has_sellable = False
+    tax_incomplete = False
+    net_incomplete = False
+
+    for security_summary in summary.securities:
+        for lot_summary in security_summary.active_lots:
+            if (lot_summary.sellability_status or "").upper() == "LOCKED":
+                continue
+            if lot_summary.market_value_gbp is None:
+                continue
+            has_sellable = True
+            lot_mv = _q2(lot_summary.market_value_gbp)
+            sellable_market_value += lot_mv
+            sellable_true_cost += _q2(lot_summary.true_cost_total_gbp)
+            sellable_quantity += Decimal(lot_summary.quantity_remaining)
+            if (lot_summary.lot.scheme_type or "").upper() == "ISA":
+                sellable_isa_market_value += lot_mv
+            else:
+                sellable_taxable_market_value += lot_mv
+
+            lot_tax = getattr(lot_summary, "est_employment_tax_on_lot_gbp", None)
+            if lot_tax is None:
+                tax_incomplete = True
+            else:
+                sellable_employment_tax += _q2(lot_tax)
+
+            lot_net = getattr(lot_summary, "est_net_proceeds_gbp", None)
+            if lot_net is None:
+                net_incomplete = True
+            else:
+                sellable_net_liquidity += _q2(lot_net)
+
+    sellable_market_value = _q2(sellable_market_value)
+    sellable_true_cost = _q2(sellable_true_cost)
+    sellable_isa_market_value = _q2(sellable_isa_market_value)
+    sellable_taxable_market_value = _q2(sellable_taxable_market_value)
+    sellable_whole_quantity = sellable_quantity.to_integral_value(rounding=ROUND_FLOOR)
+
+    employment_tax_value: Decimal | None
+    net_liquidity_value: Decimal | None
+    net_gain_value: Decimal | None
+    if not has_sellable:
+        employment_tax_value = None
+        net_liquidity_value = None
+        net_gain_value = None
+    else:
+        employment_tax_value = None if tax_incomplete else _q2(sellable_employment_tax)
+        net_liquidity_value = None if net_incomplete else _q2(sellable_net_liquidity)
+        net_gain_value = (
+            _q2(net_liquidity_value - sellable_true_cost)
+            if net_liquidity_value is not None
+            else None
+        )
+
+    tax_drag_pct: Decimal | None = None
+    if (
+        employment_tax_value is not None
+        and sellable_market_value > Decimal("0")
+    ):
+        tax_drag_pct = (
+            (employment_tax_value / sellable_market_value) * Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    isa_sellable_pct = Decimal("0.00")
+    taxable_sellable_pct = Decimal("0.00")
+    if sellable_market_value > Decimal("0"):
+        isa_sellable_pct = (
+            (sellable_isa_market_value / sellable_market_value) * Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        taxable_sellable_pct = (
+            (sellable_taxable_market_value / sellable_market_value) * Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    return {
+        "sellable_market_value_gbp": sellable_market_value,
+        "sellable_true_cost_gbp": sellable_true_cost,
+        "sellable_employment_tax_gbp": employment_tax_value,
+        "sellable_net_liquidity_gbp": net_liquidity_value,
+        "sellable_net_gain_gbp": net_gain_value,
+        "sellable_quantity": sellable_quantity,
+        "sellable_quantity_text": _quantity_text(sellable_quantity),
+        "sellable_whole_quantity": sellable_whole_quantity,
+        "sellable_whole_quantity_text": _quantity_text(sellable_whole_quantity),
+        "sellable_isa_market_value_gbp": sellable_isa_market_value,
+        "sellable_taxable_market_value_gbp": sellable_taxable_market_value,
+        "sellable_isa_pct": isa_sellable_pct,
+        "sellable_taxable_pct": taxable_sellable_pct,
+        "sellable_tax_drag_pct": tax_drag_pct,
+    }
+
+
+def _calendar_actionable_today_summary(*, as_of: date_type) -> dict[str, object]:
+    try:
+        payload = CalendarService.get_events_payload(as_of=as_of)
+    except Exception:
+        return {
+            "count": 0,
+            "label": "0 things to do",
+            "preview": [],
+        }
+
+    actionable_events: list[dict[str, str]] = []
+    for event in payload.get("events") or []:
+        if event.get("completed"):
+            continue
+        event_date_raw = str(event.get("event_date") or "").strip()
+        if not event_date_raw:
+            continue
+        try:
+            event_date = date_type.fromisoformat(event_date_raw)
+        except ValueError:
+            continue
+        if event_date <= as_of:
+            title = str(event.get("title") or "").strip()
+            scheme_type = str(event.get("scheme_type") or "").strip()
+            preview_title = title
+            if scheme_type and event.get("event_type") == "DIVIDEND_CONFIRMATION":
+                preview_title = f"{title} ({scheme_type})"
+            actionable_events.append(
+                {
+                    "event_date": event_date.isoformat(),
+                    "title": preview_title,
+                }
+            )
+
+    actionable_events.sort(key=lambda item: (item["event_date"], item["title"]))
+    actionable_count = len(actionable_events)
+    label = "1 thing to do" if actionable_count == 1 else f"{actionable_count} things to do"
+    return {
+        "count": actionable_count,
+        "label": label,
+        "preview": [event["title"] for event in actionable_events[:2] if event["title"]],
+    }
+
+
+def _portfolio_upcoming_timing_summary(*, as_of: date_type) -> list[dict[str, str]]:
+    try:
+        payload = CalendarService.get_events_payload(as_of=as_of)
+    except Exception:
+        return []
+
+    relevant_types = {"FORFEITURE_END", "VEST_DATE", "DIVIDEND_CONFIRMATION"}
+    upcoming: list[dict[str, str]] = []
+    for event in payload.get("events") or []:
+        if event.get("completed"):
+            continue
+        event_type = str(event.get("event_type") or "").strip().upper()
+        if event_type not in relevant_types:
+            continue
+        event_date_raw = str(event.get("event_date") or "").strip()
+        if not event_date_raw:
+            continue
+        try:
+            event_date = date_type.fromisoformat(event_date_raw)
+        except ValueError:
+            continue
+        if event_date < as_of:
+            continue
+        days_until = int(event.get("days_until", 0))
+        title = str(event.get("title") or "").strip()
+        subtitle = str(event.get("subtitle") or "").strip()
+        upcoming.append(
+            {
+                "event_date": event_date.isoformat(),
+                "title": title,
+                "subtitle": subtitle,
+                "days_label": "today" if days_until == 0 else f"in {days_until}d",
+            }
+        )
+
+    upcoming.sort(key=lambda item: (item["event_date"], item["title"]))
+    return upcoming[:2]
 
 
 def _scheme_display_name(scheme_type: str) -> str:
@@ -2772,13 +2967,14 @@ def _build_portfolio_page_context(
         summary,
         settings=settings,
     )
-    portfolio_est_net_liquidity = _portfolio_est_net_liquidity(position_rows_by_security)
+    actionable_metrics = _portfolio_actionable_metrics(summary)
+    portfolio_est_net_liquidity = actionable_metrics["sellable_net_liquidity_gbp"]
     portfolio_blocked_restricted_value = _portfolio_blocked_restricted_value(
         position_rows_by_security
     )
-    portfolio_net_gain_if_sold = _portfolio_net_gain_if_sold(position_rows_by_security)
-    portfolio_sellable_employment_tax = _portfolio_sellable_employment_tax(position_rows_by_security)
-    portfolio_sellable_true_cost = _portfolio_sellable_true_cost(position_rows_by_security)
+    portfolio_net_gain_if_sold = actionable_metrics["sellable_net_gain_gbp"]
+    portfolio_sellable_employment_tax = actionable_metrics["sellable_employment_tax_gbp"]
+    portfolio_sellable_true_cost = actionable_metrics["sellable_true_cost_gbp"]
     exposure_snapshot = ExposureService.get_snapshot(
         settings=settings,
         db_path=db_path,
@@ -2818,6 +3014,7 @@ def _build_portfolio_page_context(
     behavioral_guardrails_active_count = len(behavioral_guardrails)
     today = now_utc.date()
     calendar_actionable_today = _calendar_actionable_today_summary(as_of=today)
+    portfolio_upcoming_timing = _portfolio_upcoming_timing_summary(as_of=today)
     return {
         "request": request,
         "summary": summary,
@@ -2842,13 +3039,21 @@ def _build_portfolio_page_context(
         "portfolio_top_holding_pct_gross": exposure_snapshot.get("top_holding_pct_gross"),
         "portfolio_top_holding_ticker_sellable": exposure_snapshot.get("top_holding_ticker_sellable"),
         "portfolio_top_holding_pct_sellable": exposure_snapshot.get("top_holding_pct_sellable"),
+        "portfolio_total_gross_market_value_gbp": exposure_snapshot.get("total_gross_market_value_gbp"),
         "portfolio_employer_ticker": exposure_snapshot.get("employer_ticker"),
         "portfolio_employer_pct_of_gross": exposure_snapshot.get("employer_pct_of_gross"),
         "portfolio_employer_pct_of_sellable": exposure_snapshot.get("employer_pct_of_sellable"),
-        "portfolio_total_sellable_market_value_gbp": exposure_snapshot.get("total_sellable_market_value_gbp"),
+        "portfolio_total_sellable_market_value_gbp": actionable_metrics["sellable_market_value_gbp"],
         "portfolio_deployable_cash_gbp": exposure_snapshot.get("deployable_cash_gbp"),
         "portfolio_deployable_capital_gbp": exposure_snapshot.get("deployable_capital_gbp"),
         "portfolio_employer_share_of_deployable_pct": exposure_snapshot.get("employer_share_of_deployable_pct"),
+        "portfolio_sellable_quantity_text": actionable_metrics["sellable_quantity_text"],
+        "portfolio_sellable_whole_quantity_text": actionable_metrics["sellable_whole_quantity_text"],
+        "portfolio_sellable_tax_drag_pct": actionable_metrics["sellable_tax_drag_pct"],
+        "portfolio_sellable_isa_market_value_gbp": actionable_metrics["sellable_isa_market_value_gbp"],
+        "portfolio_sellable_taxable_market_value_gbp": actionable_metrics["sellable_taxable_market_value_gbp"],
+        "portfolio_sellable_isa_pct": actionable_metrics["sellable_isa_pct"],
+        "portfolio_sellable_taxable_pct": actionable_metrics["sellable_taxable_pct"],
         "portfolio_employer_dependence_ratio_pct": exposure_snapshot.get("employer_dependence_ratio_pct"),
         "portfolio_employer_income_dependency_proxy_gbp": exposure_snapshot.get("employer_income_dependency_proxy_gbp"),
         "portfolio_employer_dependence_denominator_gbp": exposure_snapshot.get("employer_dependence_denominator_gbp"),
@@ -2866,6 +3071,10 @@ def _build_portfolio_page_context(
         "behavioral_guardrails_total_count": behavioral_guardrails_total_count,
         "calendar_actionable_today_count": calendar_actionable_today["count"],
         "calendar_actionable_today_label": calendar_actionable_today["label"],
+        "calendar_actionable_today_preview": calendar_actionable_today["preview"],
+        "portfolio_upcoming_timing": portfolio_upcoming_timing,
+        "income_profile_configured": not _tax_inputs_incomplete(settings),
+        "employer_ticker_configured": bool(getattr(settings, "employer_ticker", "").strip()) if settings else False,
         "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,
         "guardrail_snooze_max_days": _GUARDRAIL_SNOOZE_MAX_DAYS,
         "page_as_of_date": (as_of or today).isoformat(),
@@ -4620,36 +4829,6 @@ def _cgt_assumption_badges(
         }
     )
     return badges
-
-
-def _calendar_actionable_today_summary(*, as_of: date_type) -> dict[str, int | str]:
-    try:
-        payload = CalendarService.get_events_payload(as_of=as_of)
-    except Exception:
-        return {
-            "count": 0,
-            "label": "0 things to do",
-        }
-
-    actionable_count = 0
-    for event in payload.get("events") or []:
-        if event.get("completed"):
-            continue
-        event_date_raw = str(event.get("event_date") or "").strip()
-        if not event_date_raw:
-            continue
-        try:
-            event_date = date_type.fromisoformat(event_date_raw)
-        except ValueError:
-            continue
-        if event_date <= as_of:
-            actionable_count += 1
-
-    label = "1 thing to do" if actionable_count == 1 else f"{actionable_count} things to do"
-    return {
-        "count": actionable_count,
-        "label": label,
-    }
 
 
 @router.get("/cgt", response_class=HTMLResponse, include_in_schema=False)

@@ -40,47 +40,13 @@
       {% endif %}
     </form>
     <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="btn btn-secondary btn-sm">Capital Stack</a>
-    <a href="{{ with_as_of('/tax-plan', selected_as_of) }}" class="btn btn-secondary btn-sm">Tax Plan</a>
-    <button type="button" class="btn btn-secondary btn-sm" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">Download brief JSON</button>
-    <button type="button" class="btn btn-secondary btn-sm" id="audit-json-btn">Download audit JSON</button>
     <a href="/portfolio/add-security" class="btn btn-secondary btn-sm">+ Security</a>
-    <a href="/dividends#add-dividend" class="btn btn-secondary btn-sm">+ Dividend</a>
     <a href="/portfolio/add-lot" class="btn btn-primary btn-sm">+ Lot</a>
   </div>
 </div>
 <p class="muted">As of {{ page_as_of_date }}. Uses the latest stored price on or before the selected date for holdings valuation and lock context.</p>
-
-{% set model_scope = {
-  "inputs": [
-    "Active lots, latest market prices, stored FX basis, configured tax inputs",
-    "Lot-level scheme metadata including lock and forfeiture windows"
-  ],
-  "assumptions": [
-    "Employment tax is estimated on sellable lots only",
-    "Locked and forfeitable values are separated from sellable liquidity"
-  ],
-  "exclusions": [
-    "No return forecasting",
-    "No buy/sell recommendation logic"
-  ]
-} %}
-{% set model_scope_collapsed = true %}
-{% include "partials/model_scope_card.html" %}
-<p class="muted">
-  Trace key totals:
-  <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}">Contributing lots</a> |
-  <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}">Recent mutations</a>
-</p>
-
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
-{% endif %}
-
-{% if tax_inputs_incomplete %}
-<div class="alert alert-warning">
-  Tax inputs are incomplete (gross income and other income are both zero or missing). Employment-tax estimates may understate your actual position.
-  <a href="/settings">Configure in Settings</a>
-</div>
 {% endif %}
 
 <div id="portfolio-live-root">
@@ -734,10 +700,14 @@
 })();
 
 (function () {
-  var btn = document.getElementById("audit-json-btn");
-  if (!btn) { return; }
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("#audit-json-btn");
+    if (!btn) { return; }
+    ev.preventDefault();
+    if (btn.disabled) {
+      return;
+    }
 
-  btn.addEventListener("click", function () {
     btn.disabled = true;
     btn.textContent = "Downloading\u2026";
 

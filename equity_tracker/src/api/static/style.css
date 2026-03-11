@@ -1020,17 +1020,23 @@ tr:hover td { background: var(--bg-hover); }
   display: none;
   position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: auto;
+  transform: none;
   margin-top: 0.2rem;
-  z-index: 1000;
+  z-index: 1200;
   background: var(--bg-card-alt);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.3rem 0.45rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 0.45rem 0.6rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   pointer-events: auto;
   width: max-content;
+  max-width: min(26rem, calc(100vw - 2rem));
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 /* Show tooltip on hover of button or tooltip itself */
@@ -1040,8 +1046,13 @@ tr:hover td { background: var(--bg-hover); }
 }
 
 .tooltip-content {
+  display: block;
   font-size: 0.74rem;
   color: var(--text-muted);
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .notes-cell {
@@ -1181,6 +1192,28 @@ tr:hover td.loss {
   color: var(--text-muted);
   margin-bottom: 0.3rem;
   font-weight: 600;
+  display: block;
+}
+
+.stat__label.title-help {
+  display: block;
+}
+
+.stat__label-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.stat__meta-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.28rem;
+  width: 100%;
 }
 
 .stat__label a {
@@ -1196,7 +1229,6 @@ tr:hover td.loss {
 .metric-tag {
   display: inline-flex;
   align-items: center;
-  margin-left: 0.35rem;
   padding: 0.08rem 0.4rem;
   border-radius: 999px;
   font-size: 0.6rem;
@@ -1822,6 +1854,55 @@ tr:hover td.loss {
 }
 
 .inline-form { margin: 0; }
+
+.inline-form label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-right: 0.2rem;
+}
+
+.inline-form input[type="date"] {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 2rem;
+  padding: 0.36rem 0.7rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(26,31,46,0.98), rgba(17,21,32,0.98));
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.inline-form input[type="date"]:hover {
+  border-color: var(--accent);
+}
+
+.inline-form input[type="date"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.inline-form input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(83%) sepia(10%) saturate(457%) hue-rotate(182deg) brightness(87%) contrast(90%);
+  cursor: pointer;
+  opacity: 0.9;
+}
+
+.inline-form input[type="date"]::-webkit-datetime-edit,
+.inline-form input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+.inline-form input[type="date"]::-webkit-datetime-edit-text,
+.inline-form input[type="date"]::-webkit-datetime-edit-month-field,
+.inline-form input[type="date"]::-webkit-datetime-edit-day-field,
+.inline-form input[type="date"]::-webkit-datetime-edit-year-field {
+  color: var(--text);
+}
 
 .dividends-page-title {
   margin-bottom: 1rem;
@@ -2907,5 +2988,6 @@ details.unrealised-gains-toggle > summary > span:last-child{
 /* optional: make title tooltips left-aligned instead of centered */
 .title-help .tooltip{
   left: 0;
+  right: auto;
   transform: none;
 }

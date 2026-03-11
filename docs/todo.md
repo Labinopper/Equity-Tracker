@@ -1,6 +1,6 @@
 # Next-Step TODO (Objective-Aligned)
 
-Last updated: `2026-03-07`
+Last updated: `2026-03-11`
 
 Scope guardrails:
 - Deterministic modelling only.
@@ -42,6 +42,49 @@ Execution mode (`2026-03-07`):
 
 - No tracked backlog items remain from the current strategic plan.
 - New work should be logged only after explicit reprioritization.
+
+## Page Review Track
+
+Use the `Page Template Standard (Reference: Portfolio)` in `docs/STRATEGIC_DOCUMENTATION.md` as the review baseline for each page below.
+
+| Review | Page | Status | Notes |
+|---|---|---|---|
+| R1 | Portfolio (`/`) | Complete | Current reference template. |
+| R2 | Net Value (`/net-value`) | Pending | Assess top-band hierarchy, copy density, and context placement. |
+| R3 | Capital Stack (`/capital-stack`) | Pending | Assess whether the formula chain remains primary and utilities remain secondary. |
+| R4 | Cash (`/cash`) | Pending | Assess operational actions vs explanatory density and basis placement. |
+| R5 | Sell Plan (`/sell-plan`) | Pending | Assess planning controls vs context/diagnostics separation. |
+| R6 | Simulate Disposal (`/simulate`) | Pending | Assess result hierarchy, provenance placement, and action semantics. |
+| R7 | Per Scheme (`/per-scheme`) | Pending | Assess decomposition clarity and drill-down structure. |
+| R8 | Tax Plan (`/tax-plan`) | Pending | Assess decision-first hierarchy vs assumptions/diagnostics. |
+| R9 | Risk (`/risk`) | Pending | Assess risk band ordering, critical widget visibility, and page-context placement. |
+| R10 | Analytics (`/analytics`) | Pending | Assess signal prioritization and hidden-critical-content risk. |
+| R11 | Calendar (`/calendar`) | Pending | Assess operational timing clarity and event-context density. |
+| R12 | Scenario Lab (`/scenario-lab`) | Pending | Assess comparison hierarchy and assumption/context segregation. |
+| R13 | History (`/history`) | Pending | Assess trend clarity vs diagnostic overhead. |
+| R14 | Security History (`/history/{security_id}`) | Pending | Assess single-name forensic view against the template where applicable. |
+| R15 | CGT Report (`/cgt`) | Pending | Assess filing summary prominence and context relegation. |
+| R16 | Economic Gain Report (`/economic-gain`) | Pending | Assess comparative framing and tag placement. |
+| R17 | Dividends (`/dividends`) | Pending | Assess expected vs actual workflow prominence and context placement. |
+| R18 | Insights (`/insights`) | Pending | Assess whether it behaves as a synthesis surface or still as a hub. |
+| R19 | Capital Efficiency (`/capital-efficiency`) | Pending | Assess component ordering and narrative density. |
+| R20 | Employment Exit (`/employment-exit`) | Pending | Assess matrix/action framing and assumption placement. |
+| R21 | ISA Efficiency (`/isa-efficiency`) | Pending | Assess wrapper decision-first structure. |
+| R22 | Fee Drag (`/fee-drag`) | Pending | Assess drag signal prominence and low-frequency detail placement. |
+| R23 | Data Quality (`/data-quality`) | Pending | Assess remediation-first design and diagnostic density. |
+| R24 | Employment Tax Events (`/employment-tax-events`) | Pending | Assess event trail usefulness and trace-link prominence. |
+| R25 | Reconcile (`/reconcile`) | Pending | Assess reconciliation path clarity and drill-down ordering. |
+| R26 | Basis Timeline (`/basis-timeline`) | Pending | Assess contributor salience and low-signal table density. |
+| R27 | Pension (`/pension`) | Pending | Assess planning-first layout and diagnostic relegation. |
+| R28 | Audit Log (`/audit`) | Pending | Assess filtering utility vs readability burden. |
+| R29 | Add Lot (`/portfolio/add-lot`) | Pending | Assess input workflow hierarchy and preview/context positioning. |
+| R30 | Transfer Lot (`/portfolio/transfer-lot`) | Pending | Assess transfer impact prominence and secondary context placement. |
+| R31 | Edit Lot (`/portfolio/edit-lot`) | Pending | Assess correction flow hierarchy and diff visibility. |
+| R32 | Add Security (`/portfolio/add-security`) | Pending | Assess search/add workflow priority and metadata burden. |
+| R33 | Settings (`/settings`) | Pending | Assess assumption controls vs secondary diagnostics/connection info. |
+| R34 | Glossary (`/glossary`) | Pending | Assess usability as support surface and reverse-link clarity. |
+| R35 | Login (`/auth/login`) | Pending | Assess minimal auth clarity and warning density. |
+| R36 | Locked (`locked.html`) | Pending | Assess recovery steps prominence and diagnostic clutter. |
 
 ## Definition of Done (Current + Next)
 

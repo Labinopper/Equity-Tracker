@@ -16,8 +16,11 @@ cannot occur.  If the project ever moves to threaded handlers, add a lock.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from ..app_context import AppContext
 
 _db_path: Path | None = None
 _refresh_last_success_at: str | None = None
@@ -33,7 +36,17 @@ def set_db_path(path: Path | None) -> None:
 
 def get_db_path() -> Path | None:
     """Return the current database file path, or None if the DB is locked."""
-    return _db_path
+    global _db_path
+    if _db_path is not None:
+        return _db_path
+    if not AppContext.is_initialized():
+        return None
+    env_db_path = os.environ.get("EQUITY_DB_PATH", "").strip()
+    if not env_db_path:
+        return None
+    resolved = Path(env_db_path)
+    _db_path = resolved
+    return resolved
 
 
 def _utc_now() -> datetime:

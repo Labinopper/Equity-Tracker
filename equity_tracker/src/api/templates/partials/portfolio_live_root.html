@@ -1,131 +1,137 @@
 {% set valuation = portfolio_valuation_basis %}
 <div id="portfolio-live-summary">
-<div class="valuation-basis-strip">
-  <div class="valuation-basis-strip__title">Data Basis</div>
-  <div class="valuation-basis-strip__meta">
-    Latest stored portfolio basis.
-    <a href="{{ with_as_of('/data-quality', selected_as_of) }}">Open Data Quality</a>
-  </div>
-  <div class="valuation-basis-strip__items">
-    <span class="valuation-pill">
-      Prices
-      {% if valuation.price_as_of_latest %}
-      <strong>{{ valuation.price_as_of_latest }}</strong>
-      {% else %}
-      <strong>Unavailable</strong>
-      {% endif %}
-      {% if valuation.price_dates_mixed and valuation.price_as_of_earliest %}
-      <span class="muted">(range starts {{ valuation.price_as_of_earliest }})</span>
-      {% endif %}
-    </span>
-    {% if valuation.fx_required_count > 0 %}
-    <span class="valuation-pill">
-      FX
-      {% if valuation.fx_as_of %}
-      <strong>{{ valuation.fx_as_of }}</strong>
-      {% else %}
-      <strong>N/A or missing</strong>
-      {% endif %}
-    </span>
-    {% endif %}
-    {% if valuation.stale_price_count > 0 and valuation.missing_price_count > 0 %}
-    <span class="valuation-pill valuation-pill--warning">
-      Price issues: {{ valuation.stale_price_count }} stale, {{ valuation.missing_price_count }} missing
-    </span>
-    {% elif valuation.stale_price_count > 0 %}
-    <span class="valuation-pill valuation-pill--warning">
-      {{ valuation.stale_price_count }} stale price{% if valuation.stale_price_count != 1 %}s{% endif %}
-    </span>
-    {% elif valuation.missing_price_count > 0 %}
-    <span class="valuation-pill valuation-pill--warning">
-      {{ valuation.missing_price_count }} missing price{% if valuation.missing_price_count != 1 %}s{% endif %}
-    </span>
-    {% else %}
-    <span class="valuation-pill valuation-pill--ok">Prices current</span>
-    {% endif %}
-    {% if valuation.fx_required_count > 0 %}
-      {% if valuation.stale_fx_count > 0 and valuation.missing_fx_count > 0 %}
-      <span class="valuation-pill valuation-pill--warning">
-        FX issues: {{ valuation.stale_fx_count }} stale, {{ valuation.missing_fx_count }} missing
-      </span>
-      {% elif valuation.stale_fx_count > 0 %}
-      <span class="valuation-pill valuation-pill--warning">
-        {{ valuation.stale_fx_count }} stale FX rate{% if valuation.stale_fx_count != 1 %}s{% endif %}
-      </span>
-      {% elif valuation.missing_fx_count > 0 %}
-      <span class="valuation-pill valuation-pill--warning">FX basis incomplete</span>
-      {% elif valuation.fx_is_stale %}
-      <span class="valuation-pill valuation-pill--warning">FX stale</span>
-      {% else %}
-      <span class="valuation-pill valuation-pill--ok">FX current</span>
-      {% endif %}
-    {% endif %}
-  </div>
-</div>
 
-<h2 class="stats-band-title">Actionable Today</h2>
-<p class="stats-band-subtitle">Deployable now after deterministic structural drag.</p>
+<h2 class="stats-band-title title-help">
+  Actionable Today
+  <button class="info-button" aria-label="Actionable Today explanation">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Sellable today after locked and forfeitable exclusions, with deterministic tax drag where applicable.
+    </div>
+  </div>
+</h2>
 <div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
   <a href="/calendar" class="valuation-pill {% if calendar_actionable_today_count > 0 %}valuation-pill--warning{% else %}valuation-pill--ok{% endif %}">
     <strong>{{ calendar_actionable_today_label }}</strong>
     <span class="muted">Open Calendar</span>
   </a>
+  {% for title in calendar_actionable_today_preview %}
+  <span class="valuation-pill valuation-pill--warning">
+    <strong>{{ title }}</strong>
+  </span>
+  {% endfor %}
 </div>
 <div class="stats stats-band">
   <div class="stat stat--accent">
-    <div class="stat__label">Deployable Capital (Holdings + GBP Cash) <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Deployable Capital <button class="info-button" aria-label="Deployable Capital explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Holdings plus GBP cash that can be acted on now. Sellable holdings &pound;{{ portfolio_total_sellable_market_value_gbp | money }} plus deployable cash &pound;{{ portfolio_deployable_cash_gbp | money }}. Excludes locked &pound;{{ portfolio_locked_value | money }} and forfeitable &pound;{{ portfolio_forfeitable_value | money }}.
+        </div>
+      </div>
+    </div>
     <div class="stat__value">&pound;{{ portfolio_deployable_capital_gbp | money }}</div>
-    <span class="stat-caption">Sellable holdings &pound;{{ portfolio_total_sellable_market_value_gbp | money }} + deployable cash (GBP equivalent) &pound;{{ portfolio_deployable_cash_gbp | money }}</span>
   </div>
   <div class="stat stat--gain">
-    <div class="stat__label"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main"><a href="/glossary#est-net-liquidity-sellable">Est. Net Liquidity (Sellable)</a> <button class="info-button" aria-label="Estimated net liquidity explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-contributing-lots" class="muted">Trace</a></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Estimated cash after selling what is sellable today. {{ portfolio_sellable_quantity_text }} share{% if portfolio_sellable_quantity_text != '1' %}s{% endif %} sellable today ({{ portfolio_sellable_whole_quantity_text }} whole). Taxable wrapper {{ "%.2f"|format(portfolio_sellable_taxable_pct) }}%; ISA {{ "%.2f"|format(portfolio_sellable_isa_pct) }}%.
+        </div>
+      </div>
+    </div>
     {% if portfolio_est_net_liquidity is not none %}
     <div class="stat__value gain">&pound;{{ portfolio_est_net_liquidity | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
+    <span class="stat-caption">Sellable proceeds are incomplete for one or more lots.</span>
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="IT + NIC + Student Loan where scheme rules apply."><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main"><a href="/glossary#employment-tax">Estimated Employment Tax (Sellable Only)</a> <button class="info-button" aria-label="Employment tax explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span> <a href="/reconcile#trace-audit-mutations" class="muted">Trace</a></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          IT + NIC + Student Loan where scheme rules apply.
+        </div>
+      </div>
+    </div>
     {% if portfolio_sellable_employment_tax is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
+    {% if portfolio_sellable_tax_drag_pct is not none %}
+    <span class="stat-caption">{{ "%.2f"|format(portfolio_sellable_tax_drag_pct) }}% drag.</span>
+    {% endif %}
     {% else %}
     <div class="stat__value muted">-</div>
+    <span class="stat-caption">Complete income settings to estimate employment tax.</span>
     {% endif %}
   </div>
   <div class="stat {% if portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold > 0 %}stat--gain{% elif portfolio_net_gain_if_sold is not none and portfolio_net_gain_if_sold < 0 %}stat--loss{% else %}stat--accent{% endif %}">
-    <div class="stat__label" title="Sellable lots only. Locked/forfeitable excluded.">Net Gain If Sold Today <span class="metric-tag metric-tag--actionable">Actionable</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Net Gain If Sold Today <button class="info-button" aria-label="Net Gain If Sold Today explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Sellable lots only. Locked and forfeitable value excluded. Net liquidity less sellable true cost of &pound;{{ portfolio_sellable_true_cost | money }}.
+        </div>
+      </div>
+    </div>
     {% if portfolio_net_gain_if_sold is not none %}
     <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
+    <span class="stat-caption">Sellable true-cost comparison is incomplete.</span>
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Employer Share of Deployable Capital <span class="metric-tag metric-tag--actionable">Actionable</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Employer Share of Deployable Capital <button class="info-button" aria-label="Employer Share of Deployable Capital explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          {{ portfolio_employer_ticker if portfolio_employer_ticker else "Employer" }} sellable market value over the deployable capital pool.
+        </div>
+      </div>
+    </div>
     {% if portfolio_employer_ticker %}
-    <span class="stat-caption">{{ portfolio_employer_ticker }} sellable market value over deployable capital pool.</span>
+    <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
+    {% else %}
+    <div class="stat__value muted">Unconfigured</div>
+    <span class="stat-caption"><a href="/settings">Set employer ticker</a> to track employer concentration.</span>
     {% endif %}
   </div>
 </div>
 
-<h2 class="stats-band-title">Portfolio Structure</h2>
-<p class="stats-band-subtitle">Exposure, lock state, wrappers, and contextual interpretation.</p>
-<div class="stats stats-band">
-  <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
-    <div class="stat__label">Net Gain + Net Dividends <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if portfolio_net_gain_plus_net_dividends is not none %}
-    <div class="stat__value {% if portfolio_net_gain_plus_net_dividends > 0 %}gain{% elif portfolio_net_gain_plus_net_dividends < 0 %}loss{% endif %}">{% if portfolio_net_gain_plus_net_dividends < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_plus_net_dividends | abs | money }}</div>
-    {% if estimated_net_dividends_gbp is not none %}
-    <span class="stat-caption">Adds estimated net dividends of &pound;{{ estimated_net_dividends_gbp | money }}.</span>
-    {% endif %}
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
+<h2 class="stats-band-title title-help">
+  Portfolio Structure
+  <button class="info-button" aria-label="Portfolio Structure explanation">&#9432;</button>
+  <div class="tooltip">
+    <div class="tooltip-content">
+      Structural exposures that shape what is actually moveable next.
+    </div>
   </div>
+</h2>
+{% if portfolio_upcoming_timing %}
+<div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+  {% for item in portfolio_upcoming_timing %}
+  <span class="valuation-pill">
+    <strong>{{ item.title }}</strong>
+    <span class="muted">{{ item.days_label }}</span>
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="stats stats-band">
   <div class="stat stat--warning">
-    <div class="stat__label" title="Sellability-locked value excluding forfeitable matched shares."><a href="/glossary#locked-capital">Locked Capital</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main"><a href="/glossary#locked-capital">Locked Capital</a></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
     {% if portfolio_locked_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_locked_value | money }}</div>
     {% else %}
@@ -133,7 +139,10 @@
     {% endif %}
   </div>
   <div class="stat stat--warning">
-    <div class="stat__label" title="Matched shares inside forfeiture window."><a href="/glossary#forfeitable-capital">Forfeitable Capital</a> <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label">
+      <span class="stat__label-main"><a href="/glossary#forfeitable-capital">Forfeitable Capital</a></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
     {% if portfolio_forfeitable_value is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_forfeitable_value | money }}</div>
     {% else %}
@@ -141,80 +150,144 @@
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Top Holding Concentration <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Top Holding Concentration <button class="info-button" aria-label="Top Holding Concentration explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          {{ portfolio_top_holding_ticker_gross }} of gross; sellable pool {{ "%.2f"|format(portfolio_top_holding_pct_sellable) }}% ({{ portfolio_top_holding_ticker_sellable or '-' }}).
+        </div>
+      </div>
+    </div>
     {% if portfolio_top_holding_ticker_gross %}
     <div class="stat__value">{{ "%.2f"|format(portfolio_top_holding_pct_gross) }}%</div>
-    <span class="stat-caption">{{ portfolio_top_holding_ticker_gross }} of gross; sellable pool {{ "%.2f"|format(portfolio_top_holding_pct_sellable) }}% ({{ portfolio_top_holding_ticker_sellable or '-' }})</span>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Employer Exposure <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Employer Exposure <button class="info-button" aria-label="Employer Exposure explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          {% if portfolio_employer_ticker %}{{ portfolio_employer_ticker }} gross; sellable {{ "%.2f"|format(portfolio_employer_pct_of_sellable) }}%.{% else %}Set employer ticker to enable employer concentration metrics.{% endif %}
+        </div>
+      </div>
+    </div>
     {% if portfolio_employer_ticker %}
     <div class="stat__value">{{ "%.2f"|format(portfolio_employer_pct_of_gross) }}%</div>
-    <span class="stat-caption">{{ portfolio_employer_ticker }} gross; sellable {{ "%.2f"|format(portfolio_employer_pct_of_sellable) }}%</span>
     {% else %}
     <div class="stat__value muted">Unconfigured</div>
-    <span class="stat-caption"><a href="/settings">Set employer ticker</a> to enable employer concentration metrics.</span>
     {% endif %}
   </div>
   <div class="stat">
-    <div class="stat__label">Employer Dependence Ratio <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
+    <div class="stat__label title-help">
+      <span class="stat__label-main">Employer Dependence Ratio <button class="info-button" aria-label="Employer Dependence Ratio explanation">&#9432;</button></span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          ({% if portfolio_employer_ticker %}{{ portfolio_employer_ticker }} equity{% else %}Employer equity{% endif %} + income proxy &pound;{{ portfolio_employer_income_dependency_proxy_gbp | money }}) / base &pound;{{ portfolio_employer_dependence_denominator_gbp | money }}.
+        </div>
+      </div>
+    </div>
     <div class="stat__value">{{ "%.2f"|format(portfolio_employer_dependence_ratio_pct) }}%</div>
-    <span class="stat-caption">({% if portfolio_employer_ticker %}{{ portfolio_employer_ticker }} equity{% else %}Employer equity{% endif %} + income proxy &pound;{{ portfolio_employer_income_dependency_proxy_gbp | money }}) / base &pound;{{ portfolio_employer_dependence_denominator_gbp | money }}</span>
   </div>
   <div class="stat">
-    <div class="stat__label">ISA Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_isa_wrapper_pct_of_total) }}%</div>
-    <span class="stat-caption">&pound;{{ portfolio_isa_wrapper_market_value_gbp | money }} in ISA holdings.</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Taxable Wrapper Allocation <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    <div class="stat__value">{{ "%.2f"|format(portfolio_taxable_wrapper_pct_of_total) }}%</div>
-    <span class="stat-caption">&pound;{{ portfolio_taxable_wrapper_market_value_gbp | money }} outside ISA.</span>
-  </div>
-  <div class="stat">
-    <div class="stat__label">Total Gross Market Value <span class="metric-tag metric-tag--hypothetical">Hypothetical</span></div>
-    {% if summary.total_market_value_gbp is not none %}
-    <div class="stat__value">&pound;{{ summary.total_market_value_gbp | money }}</div>
+    <div class="stat__label">
+      <span class="stat__label-main">Total Gross Market Value</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+    </div>
+    {% if portfolio_total_gross_market_value_gbp is not none %}
+    <div class="stat__value">&pound;{{ portfolio_total_gross_market_value_gbp | money }}</div>
     {% else %}
     <div class="stat__value muted">-</div>
     {% endif %}
   </div>
 </div>
 
-<h2 class="stats-band-title">Cost Basis</h2>
-<p class="stats-band-subtitle">Realised basis metrics for economic framing and reconciliation.</p>
-<div class="stats stats-band">
-  <div class="stat">
-    <div class="stat__label"><a href="/glossary#true-cost-acquisition">Total True Cost</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
-    <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
-  </div>
-  <div class="stat stat--warning">
-    <div class="stat__label">
-      <a href="/glossary#dividend-adjusted-capital-at-risk">Dividend-Adjusted Capital at Risk</a> <span class="metric-tag metric-tag--realised">Realised</span>
-      <button class="info-button" aria-label="Dividend-adjusted capital at risk explanation">&#9432;</button>
-      <div class="tooltip">
-        <div class="tooltip-content">
-          Acquisition true cost minus portfolio-level estimated net dividends. This is separate from True Cost and does not alter tax/report cost basis calculations.
+<details class="card net-panel">
+  <summary>Secondary Structure Context</summary>
+  <div class="stats stats-band" style="margin-top: 0.9rem;">
+    <div class="stat {% if portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends > 0 %}stat--gain{% elif portfolio_net_gain_plus_net_dividends is not none and portfolio_net_gain_plus_net_dividends < 0 %}stat--loss{% else %}stat--accent{% endif %}">
+      <div class="stat__label">
+        <span class="stat__label-main">Net Gain + Net Dividends</span>
+        <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+      </div>
+      {% if portfolio_net_gain_plus_net_dividends is not none %}
+      <div class="stat__value {% if portfolio_net_gain_plus_net_dividends > 0 %}gain{% elif portfolio_net_gain_plus_net_dividends < 0 %}loss{% endif %}">{% if portfolio_net_gain_plus_net_dividends < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_plus_net_dividends | abs | money }}</div>
+      {% if estimated_net_dividends_gbp is not none %}
+      <span class="stat-caption">Includes &pound;{{ estimated_net_dividends_gbp | money }} net dividends.</span>
+      {% endif %}
+      {% else %}
+      <div class="stat__value muted">-</div>
+      {% endif %}
+    </div>
+    <div class="stat">
+      <div class="stat__label title-help">
+        <span class="stat__label-main">ISA Wrapper Allocation <button class="info-button" aria-label="ISA Wrapper Allocation explanation">&#9432;</button></span>
+        <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+        <div class="tooltip">
+          <div class="tooltip-content">
+            &pound;{{ portfolio_isa_wrapper_market_value_gbp | money }} in ISA holdings.
+          </div>
         </div>
       </div>
+      <div class="stat__value">{{ "%.2f"|format(portfolio_isa_wrapper_pct_of_total) }}%</div>
     </div>
-    {% if dividend_adjusted_capital_at_risk_gbp is not none %}
-    <div class="stat__value warning-text">&pound;{{ dividend_adjusted_capital_at_risk_gbp | money }}</div>
-    {% else %}
-    <div class="stat__value muted">-</div>
-    {% endif %}
-    {% if estimated_net_dividends_gbp is not none %}
-    <span class="stat-caption">Net dividends offset: &pound;{{ estimated_net_dividends_gbp | money }}</span>
-    {% endif %}
+    <div class="stat">
+      <div class="stat__label title-help">
+        <span class="stat__label-main">Taxable Wrapper Allocation <button class="info-button" aria-label="Taxable Wrapper Allocation explanation">&#9432;</button></span>
+        <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+        <div class="tooltip">
+          <div class="tooltip-content">
+            &pound;{{ portfolio_taxable_wrapper_market_value_gbp | money }} outside ISA.
+          </div>
+        </div>
+      </div>
+      <div class="stat__value">{{ "%.2f"|format(portfolio_taxable_wrapper_pct_of_total) }}%</div>
+    </div>
   </div>
-  <div class="stat">
-    <div class="stat__label"><a href="/glossary#cost-basis">Total Cost Basis</a> <span class="metric-tag metric-tag--realised">Realised</span></div>
-    <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
+</details>
+
+<details class="card net-panel">
+  <summary>Cost Basis Context</summary>
+  <div class="stats stats-band" style="margin-top: 0.9rem;">
+    <div class="stat">
+      <div class="stat__label">
+        <span class="stat__label-main"><a href="/glossary#true-cost-acquisition">Total True Cost</a></span>
+        <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+      </div>
+      <div class="stat__value">&pound;{{ summary.total_true_cost_gbp | money }}</div>
+    </div>
+    <div class="stat stat--warning">
+      <div class="stat__label">
+        <span class="stat__label-main"><a href="/glossary#dividend-adjusted-capital-at-risk">Dividend-Adjusted Capital at Risk</a> <button class="info-button" aria-label="Dividend-adjusted capital at risk explanation">&#9432;</button></span>
+        <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+        <div class="tooltip">
+          <div class="tooltip-content">
+            Acquisition true cost minus portfolio-level estimated net dividends. This is separate from True Cost and does not alter tax/report cost basis calculations.
+          </div>
+        </div>
+      </div>
+      {% if dividend_adjusted_capital_at_risk_gbp is not none %}
+      <div class="stat__value warning-text">&pound;{{ dividend_adjusted_capital_at_risk_gbp | money }}</div>
+      {% else %}
+      <div class="stat__value muted">-</div>
+      {% endif %}
+      {% if estimated_net_dividends_gbp is not none %}
+      <span class="stat-caption">Offset &pound;{{ estimated_net_dividends_gbp | money }}</span>
+      {% endif %}
+    </div>
+    <div class="stat">
+      <div class="stat__label">
+        <span class="stat__label-main"><a href="/glossary#cost-basis">Total Cost Basis</a></span>
+        <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+      </div>
+      <div class="stat__value">&pound;{{ summary.total_cost_basis_gbp | money }}</div>
+    </div>
   </div>
-</div>
+</details>
 
 {% if portfolio_exposure_notes %}
 <div class="alert alert-info">
@@ -223,6 +296,110 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<details class="card net-panel">
+  <summary>Page Context</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <span class="valuation-pill {% if income_profile_configured %}valuation-pill--ok{% else %}valuation-pill--warning{% endif %}">
+      Income profile
+      <strong>{% if income_profile_configured %}Ready{% else %}Needs review{% endif %}</strong>
+    </span>
+    <span class="valuation-pill {% if employer_ticker_configured %}valuation-pill--ok{% else %}valuation-pill--warning{% endif %}">
+      Employer ticker
+      <strong>{% if employer_ticker_configured %}Set{% else %}Unset{% endif %}</strong>
+    </span>
+    <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace lots</strong>
+    </a>
+    <a href="{{ with_as_of('/reconcile#trace-audit-mutations', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace mutations</strong>
+    </a>
+    <a href="{{ with_as_of('/tax-plan', selected_as_of) }}" class="valuation-pill">
+      <strong>Open Tax Plan</strong>
+    </a>
+    <a href="{{ with_as_of('/data-quality', selected_as_of) }}" class="valuation-pill">
+      <strong>Open Data Quality</strong>
+    </a>
+    <button type="button" class="valuation-pill" data-decision-brief-download data-decision-brief-as-of="{{ page_as_of_date }}" data-default-label="Download brief JSON">
+      <strong>Download brief JSON</strong>
+    </button>
+    <button type="button" class="valuation-pill" id="audit-json-btn">
+      <strong>Download audit JSON</strong>
+    </button>
+  </div>
+  {% if tax_inputs_incomplete %}
+  <div class="alert alert-warning" style="margin-top: 0.9rem;">
+    Tax inputs are incomplete. Employment-tax estimates may understate your actual position.
+    <a href="/settings">Configure in Settings</a>
+  </div>
+  {% endif %}
+  <div class="valuation-basis-strip" style="margin-top: 0.9rem;">
+    <div class="valuation-basis-strip__title title-help">
+      Data Basis
+      <button class="info-button" aria-label="Data basis explanation">&#9432;</button>
+      <div class="tooltip">
+        <div class="tooltip-content">
+          Latest stored portfolio valuation basis used for the current page. This is reference context, not a decision metric.
+        </div>
+      </div>
+    </div>
+    <div class="valuation-basis-strip__items">
+      <span class="valuation-pill">
+        Prices
+        {% if valuation.price_as_of_latest %}
+        <strong>{{ valuation.price_as_of_latest }}</strong>
+        {% else %}
+        <strong>Unavailable</strong>
+        {% endif %}
+        {% if valuation.price_dates_mixed and valuation.price_as_of_earliest %}
+        <span class="muted">(range starts {{ valuation.price_as_of_earliest }})</span>
+        {% endif %}
+      </span>
+      {% if valuation.fx_required_count > 0 %}
+      <span class="valuation-pill">
+        FX
+        {% if valuation.fx_as_of %}
+        <strong>{{ valuation.fx_as_of }}</strong>
+        {% else %}
+        <strong>N/A or missing</strong>
+        {% endif %}
+      </span>
+      {% endif %}
+      {% if valuation.stale_price_count > 0 and valuation.missing_price_count > 0 %}
+      <span class="valuation-pill valuation-pill--warning">
+        Price issues: {{ valuation.stale_price_count }} stale, {{ valuation.missing_price_count }} missing
+      </span>
+      {% elif valuation.stale_price_count > 0 %}
+      <span class="valuation-pill valuation-pill--warning">
+        {{ valuation.stale_price_count }} stale price{% if valuation.stale_price_count != 1 %}s{% endif %}
+      </span>
+      {% elif valuation.missing_price_count > 0 %}
+      <span class="valuation-pill valuation-pill--warning">
+        {{ valuation.missing_price_count }} missing price{% if valuation.missing_price_count != 1 %}s{% endif %}
+      </span>
+      {% else %}
+      <span class="valuation-pill valuation-pill--ok">Prices current</span>
+      {% endif %}
+      {% if valuation.fx_required_count > 0 %}
+        {% if valuation.stale_fx_count > 0 and valuation.missing_fx_count > 0 %}
+        <span class="valuation-pill valuation-pill--warning">
+          FX issues: {{ valuation.stale_fx_count }} stale, {{ valuation.missing_fx_count }} missing
+        </span>
+        {% elif valuation.stale_fx_count > 0 %}
+        <span class="valuation-pill valuation-pill--warning">
+          {{ valuation.stale_fx_count }} stale FX rate{% if valuation.stale_fx_count != 1 %}s{% endif %}
+        </span>
+        {% elif valuation.missing_fx_count > 0 %}
+        <span class="valuation-pill valuation-pill--warning">FX basis incomplete</span>
+        {% elif valuation.fx_is_stale %}
+        <span class="valuation-pill valuation-pill--warning">FX stale</span>
+        {% else %}
+        <span class="valuation-pill valuation-pill--ok">FX current</span>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</details>
 
 {% if behavioral_guardrails %}
 <div class="card" id="behavioral-guardrails">
