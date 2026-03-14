@@ -63,6 +63,7 @@ from ..app_context import AppContext
 from ..beta.runtime_manager import initialize_beta_runtime, shutdown_beta_runtime
 from ..db.engine import DatabaseEngine
 from ..db.migration_manager import ensure_migrated
+from ..services.app_diagnostics_service import AppDiagnosticsService
 from . import _state
 from .auth import SessionExpired
 from .limiter import limiter
@@ -224,6 +225,13 @@ async def _nightly_history_task() -> None:
             _log_backfill_result("Startup", result)
         except Exception:
             logger.exception("Startup extended history backfill failed.")
+            AppDiagnosticsService.record(
+                severity="ERROR",
+                component="startup_history_backfill",
+                event_type="background_task",
+                title="Startup extended history backfill failed",
+                message_text="Extended history backfill failed during startup.",
+            )
 
     while True:
         sleep_secs = _seconds_until_11pm_uk()
@@ -239,6 +247,13 @@ async def _nightly_history_task() -> None:
             _log_backfill_result("Nightly", result)
         except Exception:
             logger.exception("Nightly extended history backfill failed.")
+            AppDiagnosticsService.record(
+                severity="ERROR",
+                component="nightly_history_backfill",
+                event_type="background_task",
+                title="Nightly extended history backfill failed",
+                message_text="Extended history backfill failed during nightly scheduler run.",
+            )
 
 
 async def _intraday_quote_refresh_task() -> None:
@@ -269,6 +284,13 @@ async def _intraday_quote_refresh_task() -> None:
                     )
         except Exception:
             logger.exception("Intraday budgeted refresh failed.")
+            AppDiagnosticsService.record(
+                severity="ERROR",
+                component="intraday_quote_refresh",
+                event_type="background_task",
+                title="Intraday quote refresh failed",
+                message_text="Budgeted intraday quote refresh failed.",
+            )
 
         await asyncio.sleep(5)
 
@@ -299,6 +321,13 @@ async def _fx_refresh_task() -> None:
                     )
         except Exception:
             logger.exception("FX budgeted refresh failed.")
+            AppDiagnosticsService.record(
+                severity="ERROR",
+                component="fx_refresh",
+                event_type="background_task",
+                title="FX refresh failed",
+                message_text="Budgeted FX refresh failed.",
+            )
 
         await asyncio.sleep(5)
 
@@ -316,6 +345,13 @@ async def _weekly_catalog_sync_task() -> None:
                 _ensure_security_catalog_available(force_refresh=False)
         except Exception:
             logger.exception("Weekly security catalogue sync failed.")
+            AppDiagnosticsService.record(
+                severity="ERROR",
+                component="weekly_catalog_sync",
+                event_type="background_task",
+                title="Weekly security catalogue sync failed",
+                message_text="Scheduled security catalogue sync failed.",
+            )
         await asyncio.sleep(6 * 60 * 60)
 
 
@@ -359,6 +395,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
         logger.error(
             "Failed to auto-open database from environment variables: %s", exc
         )
+        AppDiagnosticsService.record(
+            severity="ERROR",
+            component="app_startup",
+            event_type="db_open",
+            title="Failed to auto-open database from environment variables",
+            message_text=str(exc),
+        )
         engine = None
 
     if engine is not None:
@@ -372,6 +415,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
             except RuntimeError as exc:
                 logger.critical(
                     "Migration failed — database will not be initialized: %s", exc
+                )
+                AppDiagnosticsService.record(
+                    severity="ERROR",
+                    component="app_startup",
+                    event_type="migration",
+                    title="Database migration failed during startup",
+                    message_text=str(exc),
                 )
                 engine.dispose()
                 engine = None
@@ -412,7 +462,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     with suppress(asyncio.CancelledError):
         await stream_task
 
-    shutdown_beta_runtime()
+    shutdown_beta_runtime(stop_supervisor=False)
     _state.set_db_path(None)
     AppContext.lock()
     logger.info("Database connection closed on shutdown.")
@@ -509,6 +559,28 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSO
             "message": "A record with this identifier already exists.",
             "detail": str(exc.orig) if exc.orig else str(exc),
         },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled application exception on %s %s", request.method, request.url.path)
+    AppDiagnosticsService.record(
+        severity="ERROR",
+        component="http_request",
+        event_type="unhandled_exception",
+        title=f"Unhandled exception on {request.method} {request.url.path}",
+        message_text=str(exc) or exc.__class__.__name__,
+        context={
+            "method": request.method,
+            "path": request.url.path,
+            "query": str(request.url.query or ""),
+            "error_type": exc.__class__.__name__,
+        },
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal_error", "message": "An internal server error occurred."},
     )
 
 

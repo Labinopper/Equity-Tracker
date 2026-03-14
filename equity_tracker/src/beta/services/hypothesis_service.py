@@ -8,10 +8,11 @@ from sqlalchemy import desc, select
 
 from ..context import BetaContext
 from ..db.models import (
-    BetaDemoPosition,
     BetaHypothesis,
+    BetaHypothesisBeliefState,
+    BetaHypothesisDefinition,
     BetaHypothesisEvent,
-    BetaSignalCandidate,
+    BetaHypothesisFamily,
 )
 
 _DEFAULT_HYPOTHESES = (
@@ -146,6 +147,31 @@ class BetaHypothesisService:
             return {"refreshed": 0, "changed": 0}
 
         with BetaContext.write_session() as sess:
+            family_rows = {
+                row.family_code: row
+                for row in sess.scalars(select(BetaHypothesisFamily)).all()
+            }
+            definition_rows = list(sess.scalars(select(BetaHypothesisDefinition)).all())
+            belief_rows = {
+                row.hypothesis_definition_id: row
+                for row in sess.scalars(select(BetaHypothesisBeliefState)).all()
+            }
+            definitions_by_family: dict[str, list[BetaHypothesisDefinition]] = {}
+            for definition in definition_rows:
+                family = family_rows.get(
+                    next(
+                        (
+                            family_code
+                            for family_code, family_row in family_rows.items()
+                            if family_row.id == definition.family_id
+                        ),
+                        "",
+                    )
+                )
+                if family is None:
+                    continue
+                definitions_by_family.setdefault(family.family_code, []).append(definition)
+
             hypotheses = list(
                 sess.scalars(select(BetaHypothesis).order_by(BetaHypothesis.code.asc())).all()
             )
@@ -158,61 +184,53 @@ class BetaHypothesisService:
             changes_detail: list[dict[str, object]] = []
 
             for hypothesis in hypotheses:
-                candidates = list(
-                    sess.scalars(
-                        select(BetaSignalCandidate)
-                        .where(BetaSignalCandidate.hypothesis_id == hypothesis.id)
-                        .order_by(desc(BetaSignalCandidate.updated_at))
-                    ).all()
+                family = family_rows.get(hypothesis.code)
+                family_definitions = definitions_by_family.get(hypothesis.code, [])
+                definition_beliefs = [
+                    belief_rows.get(definition.id)
+                    for definition in family_definitions
+                    if belief_rows.get(definition.id) is not None
+                ]
+                candidate_count = len(family_definitions)
+                promoted_count = len([row for row in definition_beliefs if row.status == "VALIDATED"])
+                promising_count = len([row for row in definition_beliefs if row.status == "PROMISING"])
+                degraded_count = len([row for row in definition_beliefs if row.status in {"DEGRADED", "REJECTED"}])
+                avg_confidence = (
+                    sum(float(row.confidence_score or 0.0) for row in definition_beliefs) / len(definition_beliefs)
+                    if definition_beliefs
+                    else 0.0
                 )
-                candidate_ids = [row.id for row in candidates]
-                positions = []
-                if candidate_ids:
-                    positions = list(
-                        sess.scalars(
-                            select(BetaDemoPosition)
-                            .where(BetaDemoPosition.candidate_id.in_(candidate_ids))
-                            .order_by(desc(BetaDemoPosition.updated_at))
-                        ).all()
-                    )
-
-                candidate_count = len(candidates)
-                promoted_count = len([row for row in candidates if row.status == "PROMOTED"])
-                open_positions = [row for row in positions if row.status == "OPEN"]
-                closed_positions = [row for row in positions if row.status != "OPEN"]
-                confidence_values = [float(row.confidence_score or 0.0) for row in candidates]
-                edge_values = [float(row.expected_edge_score or 0.0) for row in candidates]
-                pnl_values = [_safe_float(row.pnl_pct) for row in closed_positions]
-                wins = len([value for value in pnl_values if value > 0.0])
-
-                avg_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0.0
-                avg_edge = sum(edge_values) / len(edge_values) if edge_values else 0.0
-                avg_pnl_pct = sum(pnl_values) / len(pnl_values) if pnl_values else 0.0
-                win_rate_pct = (wins / len(closed_positions) * 100.0) if closed_positions else 0.0
-                evidence_score = _score_hypothesis(
-                    candidate_count=candidate_count,
-                    promoted_count=promoted_count,
-                    open_positions=len(open_positions),
-                    closed_positions=len(closed_positions),
-                    avg_confidence=avg_confidence,
-                    avg_edge=avg_edge,
-                    win_rate_pct=win_rate_pct,
-                    avg_pnl_pct=avg_pnl_pct,
+                avg_edge = (
+                    sum(float(row.out_of_sample_strength or 0.0) for row in definition_beliefs) / len(definition_beliefs)
+                    if definition_beliefs
+                    else 0.0
                 )
-                next_status = _next_status(
-                    candidate_count=candidate_count,
-                    promoted_count=promoted_count,
-                    closed_positions=len(closed_positions),
-                    avg_confidence=avg_confidence,
-                    avg_edge=avg_edge,
-                    win_rate_pct=win_rate_pct,
-                    avg_pnl_pct=avg_pnl_pct,
+                avg_pnl_pct = (
+                    sum(float(row.in_sample_strength or 0.0) for row in definition_beliefs) / len(definition_beliefs)
+                    if definition_beliefs
+                    else 0.0
                 )
+                win_rate_pct = (
+                    sum(
+                        100.0
+                        for row in definition_beliefs
+                        if float(row.out_of_sample_strength or 0.0) > 0.0
+                    ) / len(definition_beliefs)
+                    if definition_beliefs
+                    else 0.0
+                )
+                evidence_score = round(avg_confidence * 100.0, 2)
+                next_status = "RESEARCH"
+                if promoted_count > 0:
+                    next_status = "PROMOTED"
+                elif family is not None and family.status != "ACTIVE":
+                    next_status = "SUSPENDED"
+                elif degraded_count and not promising_count:
+                    next_status = "SUSPENDED"
                 evidence_summary = (
-                    f"{candidate_count} candidates, {promoted_count} promoted, "
-                    f"{len(open_positions)} open / {len(closed_positions)} closed trades, "
-                    f"avg confidence {avg_confidence:.2f}, edge {avg_edge:.2f}, "
-                    f"win rate {win_rate_pct:.1f}%."
+                    f"{candidate_count} definitions, {promoted_count} validated, "
+                    f"{promising_count} promising, {degraded_count} degraded/rejected, "
+                    f"avg belief {avg_confidence:.2f}, avg OOS strength {avg_edge:.2f}."
                 )
                 previous_status = str(hypothesis.status or "RESEARCH")
                 previous_evidence = _safe_float(hypothesis.evidence_score)
@@ -249,14 +267,13 @@ class BetaHypothesisService:
                             ),
                             payload_json=json.dumps(
                                 {
-                                    "candidate_count": candidate_count,
-                                    "promoted_count": promoted_count,
-                                    "open_positions": len(open_positions),
-                                    "closed_positions": len(closed_positions),
+                                    "definition_count": candidate_count,
+                                    "validated_count": promoted_count,
+                                    "promising_count": promising_count,
+                                    "degraded_count": degraded_count,
                                     "avg_confidence": round(avg_confidence, 4),
-                                    "avg_edge": round(avg_edge, 4),
-                                    "win_rate_pct": round(win_rate_pct, 2),
-                                    "avg_pnl_pct": round(avg_pnl_pct, 2),
+                                    "avg_out_of_sample_strength": round(avg_edge, 4),
+                                    "avg_in_sample_strength": round(avg_pnl_pct, 2),
                                     "evidence_score": evidence_score,
                                 },
                                 sort_keys=True,
@@ -285,14 +302,13 @@ class BetaHypothesisService:
                             ),
                             payload_json=json.dumps(
                                 {
-                                    "candidate_count": candidate_count,
-                                    "promoted_count": promoted_count,
-                                    "open_positions": len(open_positions),
-                                    "closed_positions": len(closed_positions),
+                                    "definition_count": candidate_count,
+                                    "validated_count": promoted_count,
+                                    "promising_count": promising_count,
+                                    "degraded_count": degraded_count,
                                     "avg_confidence": round(avg_confidence, 4),
-                                    "avg_edge": round(avg_edge, 4),
-                                    "win_rate_pct": round(win_rate_pct, 2),
-                                    "avg_pnl_pct": round(avg_pnl_pct, 2),
+                                    "avg_out_of_sample_strength": round(avg_edge, 4),
+                                    "avg_in_sample_strength": round(avg_pnl_pct, 2),
                                     "evidence_score": evidence_score,
                                     "previous_evidence_score": previous_evidence,
                                 },
@@ -306,12 +322,12 @@ class BetaHypothesisService:
                         "code": hypothesis.code,
                         "status": next_status,
                         "evidence_score": evidence_score,
-                        "candidate_count": candidate_count,
-                        "promoted_count": promoted_count,
-                        "open_positions": len(open_positions),
-                        "closed_positions": len(closed_positions),
-                        "win_rate_pct": round(win_rate_pct, 2),
-                        "avg_pnl_pct": round(avg_pnl_pct, 2),
+                        "definition_count": candidate_count,
+                        "validated_count": promoted_count,
+                        "promising_count": promising_count,
+                        "degraded_count": degraded_count,
+                        "avg_belief_confidence": round(avg_confidence, 4),
+                        "avg_out_of_sample_strength": round(avg_edge, 4),
                     }
                 )
 

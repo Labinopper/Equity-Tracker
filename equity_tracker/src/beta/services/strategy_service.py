@@ -29,6 +29,44 @@ class BetaStrategyService:
         )
 
     @staticmethod
+    def suspend_active_strategy(
+        *,
+        sess,
+        model_version_id: str | None = None,
+        reason_code: str,
+        message_text: str,
+        payload: dict[str, object] | None = None,
+    ) -> BetaStrategyVersion | None:
+        stmt = select(BetaStrategyVersion).where(BetaStrategyVersion.is_active.is_(True))
+        if model_version_id is not None:
+            stmt = stmt.where(BetaStrategyVersion.model_version_id == model_version_id)
+        strategy = sess.scalar(
+            stmt.order_by(desc(BetaStrategyVersion.activated_at), desc(BetaStrategyVersion.created_at)).limit(1)
+        )
+        if strategy is None:
+            return None
+        previous_status = strategy.status
+        strategy.is_active = False
+        strategy.status = "SUSPENDED"
+        sess.add(
+            BetaStrategyEvent(
+                strategy_version_id=strategy.id,
+                event_type="SUSPENDED",
+                status_before=previous_status,
+                status_after=strategy.status,
+                message_text=message_text,
+                payload_json=json.dumps(
+                    {
+                        "reason_code": reason_code,
+                        **(payload or {}),
+                    },
+                    sort_keys=True,
+                ),
+            )
+        )
+        return strategy
+
+    @staticmethod
     def sync_model_strategy(
         *,
         sess,

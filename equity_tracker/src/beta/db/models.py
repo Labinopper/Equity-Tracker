@@ -67,6 +67,22 @@ class BetaJobRun(BetaBase):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class BetaPipelineSnapshot(BetaBase):
+    __tablename__ = "beta_pipeline_snapshots"
+    __table_args__ = (
+        Index("ix_beta_pipeline_snapshots_type_created", "snapshot_type", "created_at"),
+        Index("ix_beta_pipeline_snapshots_status", "overall_status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    snapshot_type: Mapped[str] = mapped_column(String(40), nullable=False, default="SUPERVISOR_CYCLE")
+    trigger_job_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    overall_status: Mapped[str] = mapped_column(String(20), nullable=False, default="BOOTSTRAPPING")
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+
 class BetaInstrument(BetaBase):
     __tablename__ = "beta_instruments"
     __table_args__ = (
@@ -111,6 +127,37 @@ class BetaUniverseMembership(BetaBase):
     reason_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     effective_from: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+
+class BetaResearchRanking(BetaBase):
+    __tablename__ = "beta_research_rankings"
+    __table_args__ = (
+        Index("ix_beta_research_rankings_scope_run_rank", "ranking_scope", "ranking_run_code", "rank_position"),
+        Index("ix_beta_research_rankings_status_created", "selection_status", "created_at"),
+        Index("ix_beta_research_rankings_symbol_created", "symbol", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    ranking_run_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    ranking_scope: Mapped[str] = mapped_column(String(40), nullable=False, default="UNIVERSE_SYNC")
+    instrument_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_instruments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    exchange: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sector_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    selection_status: Mapped[str] = mapped_column(String(20), nullable=False, default="DEFERRED")
+    rank_position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ranking_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    data_readiness_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    catalyst_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    hypothesis_relevance_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    diversification_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
 
 
@@ -456,6 +503,37 @@ class BetaValidationRun(BetaBase):
     avg_validation_sign_accuracy_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     avg_validation_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+
+class BetaTrainingDecision(BetaBase):
+    __tablename__ = "beta_training_decisions"
+    __table_args__ = (
+        Index("ix_beta_training_decisions_created", "created_at"),
+        Index("ix_beta_training_decisions_status_reason", "status_code", "reason_code", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    decision_type: Mapped[str] = mapped_column(String(40), nullable=False, default="DAILY_TRAINING")
+    status_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    performed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    trained: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    activated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    model_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_model_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    validation_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_validation_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    training_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    walkforward_window_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_sign_accuracy_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    walkforward_validation_sign_accuracy_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
 
@@ -924,6 +1002,224 @@ class BetaHypothesisEvent(BetaBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
 
 
+class BetaHypothesisFamily(BetaBase):
+    __tablename__ = "beta_hypothesis_families"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ACTIVE','PAUSED','ARCHIVED')",
+            name="ck_beta_hypothesis_families_status",
+        ),
+        UniqueConstraint("family_code", name="uq_beta_hypothesis_families_code"),
+        Index("ix_beta_hypothesis_families_status", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    family_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    family_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generator_type: Mapped[str] = mapped_column(String(40), nullable=False, default="TEMPLATE")
+    default_target_metric: Mapped[str] = mapped_column(String(80), nullable=False, default="fwd_5d_excess_return_pct")
+    default_holding_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    mutation_policy_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class BetaHypothesisDefinition(BetaBase):
+    __tablename__ = "beta_hypothesis_definitions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('CANDIDATE','PROMISING','VALIDATED','DEGRADED','REJECTED','ARCHIVED')",
+            name="ck_beta_hypothesis_definitions_status",
+        ),
+        CheckConstraint(
+            "expected_direction IN ('BULLISH','BEARISH','NEUTRAL','RISK_OFF')",
+            name="ck_beta_hypothesis_definitions_direction",
+        ),
+        UniqueConstraint("hypothesis_code", name="uq_beta_hypothesis_definitions_code"),
+        Index("ix_beta_hypothesis_definitions_status", "status", "updated_at"),
+        Index("ix_beta_hypothesis_definitions_family", "family_id", "updated_at"),
+        Index("ix_beta_hypothesis_definitions_parent", "parent_hypothesis_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    family_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_hypothesis_families.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    hypothesis_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    universe_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    entry_conditions_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    exit_conditions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    holding_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    target_metric: Mapped[str] = mapped_column(String(80), nullable=False, default="fwd_5d_excess_return_pct")
+    expected_direction: Mapped[str] = mapped_column(String(20), nullable=False, default="BULLISH")
+    feature_subset_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_hypothesis_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_hypothesis_definitions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    generation_source: Mapped[str] = mapped_column(String(40), nullable=False, default="TEMPLATE_SEED")
+    provenance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="CANDIDATE")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class BetaHypothesisTestRun(BetaBase):
+    __tablename__ = "beta_hypothesis_test_runs"
+    __table_args__ = (
+        Index("ix_beta_hypothesis_test_runs_definition", "hypothesis_definition_id", "created_at"),
+        Index("ix_beta_hypothesis_test_runs_created", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    hypothesis_definition_id: Mapped[str] = mapped_column(
+        ForeignKey("beta_hypothesis_definitions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dataset_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_dataset_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    model_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_model_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    validation_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_validation_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    baseline_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    test_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    test_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    sample_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched_instruments: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    average_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    median_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    win_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_drawdown_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_sign_accuracy_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    transaction_cost_bps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    transaction_cost_adjusted_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    walk_forward_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    out_of_sample_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    regime_slice_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+
+class BetaHypothesisBeliefState(BetaBase):
+    __tablename__ = "beta_hypothesis_belief_states"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('CANDIDATE','PROMISING','VALIDATED','DEGRADED','REJECTED','ARCHIVED')",
+            name="ck_beta_hypothesis_belief_states_status",
+        ),
+        Index("ix_beta_hypothesis_belief_states_status", "status", "confidence_score"),
+        Index("ix_beta_hypothesis_belief_states_updated", "updated_at"),
+    )
+
+    hypothesis_definition_id: Mapped[str] = mapped_column(
+        ForeignKey("beta_hypothesis_definitions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    in_sample_strength: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    out_of_sample_strength: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    degradation_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    last_validated_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="CANDIDATE")
+    supporting_test_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_hypothesis_test_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    contradicting_test_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_hypothesis_test_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class BetaSignalObservation(BetaBase):
+    __tablename__ = "beta_signal_observations"
+    __table_args__ = (
+        CheckConstraint(
+            "expected_direction IN ('BULLISH','BEARISH','NEUTRAL','RISK_OFF')",
+            name="ck_beta_signal_observations_direction",
+        ),
+        Index("ix_beta_signal_observations_definition", "hypothesis_definition_id", "observation_time"),
+        Index("ix_beta_signal_observations_instrument", "instrument_id", "observation_time"),
+        Index("ix_beta_signal_observations_status", "observation_status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    hypothesis_definition_id: Mapped[str] = mapped_column(
+        ForeignKey("beta_hypothesis_definitions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    hypothesis_test_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_hypothesis_test_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    instrument_id: Mapped[str] = mapped_column(
+        ForeignKey("beta_instruments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    observation_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    decision_date: Mapped[date] = mapped_column(Date, nullable=False)
+    matched_conditions_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    feature_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    regime_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prediction_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    expected_direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    expected_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    belief_confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    observation_status: Mapped[str] = mapped_column(String(30), nullable=False, default="MATCHED")
+    realized_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+
+class BetaRecommendationDecision(BetaBase):
+    __tablename__ = "beta_recommendation_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "decision_status IN ('WATCHING','RECOMMENDED','BLOCKED','DISMISSED','REJECTED')",
+            name="ck_beta_recommendation_decisions_status",
+        ),
+        Index("ix_beta_recommendation_decisions_status", "decision_status", "created_at"),
+        Index("ix_beta_recommendation_decisions_instrument", "instrument_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    signal_observation_id: Mapped[str] = mapped_column(
+        ForeignKey("beta_signal_observations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    candidate_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    instrument_id: Mapped[str] = mapped_column(
+        ForeignKey("beta_instruments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    decision_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    decision_reason_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    decision_reason_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    belief_confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    portfolio_constraint_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paper_trade_action: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    recommendation_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+
 class BetaSignalCandidate(BetaBase):
     __tablename__ = "beta_signal_candidates"
     __table_args__ = (
@@ -943,6 +1239,18 @@ class BetaSignalCandidate(BetaBase):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     instrument_id: Mapped[str | None] = mapped_column(ForeignKey("beta_instruments.id", ondelete="SET NULL"), nullable=True)
     hypothesis_id: Mapped[str | None] = mapped_column(ForeignKey("beta_hypotheses.id", ondelete="SET NULL"), nullable=True)
+    hypothesis_definition_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_hypothesis_definitions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    signal_observation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_signal_observations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    recommendation_decision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("beta_recommendation_decisions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="WATCHING")

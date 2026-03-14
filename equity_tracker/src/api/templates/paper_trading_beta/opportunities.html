@@ -11,6 +11,56 @@
 </section>
 
 <section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Tracked Core Signals</h2></div>
+  {% if dashboard.tracked_core_signals %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Candidate</th>
+          <th>Direction</th>
+          <th>Pred 5D %</th>
+          <th>Confidence</th>
+          <th>Edge</th>
+          <th>Signal Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.tracked_core_signals %}
+        <tr>
+          <td>
+            <strong>
+              {% if row.candidate_id %}
+              <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.symbol }}</a>
+              {% else %}
+              {{ row.symbol }}
+              {% endif %}
+            </strong>
+          </td>
+          <td>
+            {% if row.candidate_status %}
+            <span class="{{ badge_class(row.candidate_status) }}">{{ row.candidate_status }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{{ "%.2f"|format(row.predicted_return_5d or 0) }}</td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.rejection_reason or "No explicit note captured." }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No tracked-core score output is visible yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
   <div class="card__header"><h2 class="card__title">Hypothesis Families</h2></div>
   {% if dashboard.hypotheses %}
   <div class="table-wrap">

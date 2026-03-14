@@ -31,11 +31,13 @@ from ..db.models import (
     BetaStrategyVersion,
 )
 from .allocation_service import BetaAllocationService
+from .hypothesis_signal_service import BetaHypothesisSignalService
 from .risk_control_service import BetaRiskControlService
 from .session_service import BetaMarketSessionService
 from ..settings import BetaSettings
 from .hypothesis_service import BetaHypothesisService
 from .strategy_service import BetaStrategyService
+from .training_service import BetaTrainingService
 
 
 def _as_decimal(value: str | None) -> Decimal | None:
@@ -150,6 +152,13 @@ def _load_active_model(sess) -> dict | None:
         return None
     if len(means) != len(feature_names) or len(scales) != len(feature_names):
         return None
+    try:
+        notes = json.loads(row.notes_json or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        notes = {}
+    calibration = notes.get("confidence_calibration") if isinstance(notes, dict) else None
+    feature_clip_lows = notes.get("feature_clip_lows") if isinstance(notes, dict) else None
+    feature_clip_highs = notes.get("feature_clip_highs") if isinstance(notes, dict) else None
     return {
         "id": row.id,
         "version_code": row.version_code,
@@ -159,7 +168,102 @@ def _load_active_model(sess) -> dict | None:
         "scales": scales,
         "intercept": float(row.intercept_value or 0.0),
         "validation_sign_accuracy_pct": row.validation_sign_accuracy_pct,
+        "confidence_calibration": calibration if isinstance(calibration, dict) else {},
+        "feature_clip_lows": feature_clip_lows if isinstance(feature_clip_lows, list) else [],
+        "feature_clip_highs": feature_clip_highs if isinstance(feature_clip_highs, list) else [],
+        "notes": notes if isinstance(notes, dict) else {},
     }
+
+
+def _load_validated_baseline_policy(sess) -> dict | None:
+    row = sess.scalar(
+        select(BetaModelVersion)
+        .where(BetaModelVersion.model_name == BetaTrainingService._MODEL_NAME)
+        .order_by(desc(BetaModelVersion.created_at))
+        .limit(1)
+    )
+    if row is None:
+        return None
+    try:
+        notes = json.loads(row.notes_json or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(notes, dict):
+        return None
+    policy = notes.get("validated_baseline_policy")
+    if not isinstance(policy, dict):
+        return None
+    return {
+        "policy_name": policy.get("policy_name"),
+        "source_feature": policy.get("source_feature"),
+        "holdout_sign_accuracy_pct": policy.get("holdout_sign_accuracy_pct"),
+        "walkforward_sign_accuracy_pct": policy.get("walkforward_sign_accuracy_pct"),
+        "confidence_calibration": policy.get("confidence_calibration") if isinstance(policy.get("confidence_calibration"), dict) else {},
+        "version_code": row.version_code,
+    }
+
+
+def _confidence_from_calibration(calibration, default_accuracy_pct: float, predicted_return_pct: float) -> float:
+    if not isinstance(calibration, dict):
+        calibration = {}
+    abs_prediction = abs(float(predicted_return_pct))
+    bucket_confidence = None
+    for bucket in calibration.get("buckets", []):
+        if not isinstance(bucket, dict):
+            continue
+        min_value = float(bucket.get("min_abs_prediction_pct") or 0.0)
+        max_value = float(bucket.get("max_abs_prediction_pct") or min_value)
+        if min_value <= abs_prediction <= max_value:
+            bucket_confidence = float(bucket.get("sign_accuracy_pct") or 0.0) / 100.0
+            break
+    if bucket_confidence is None:
+        bucket_confidence = float(calibration.get("global_sign_accuracy_pct") or 0.0) / 100.0
+    if bucket_confidence <= 0.0:
+        bucket_confidence = float(default_accuracy_pct or 50.0) / 100.0
+    return min(0.95, max(0.35, bucket_confidence))
+
+
+def _calibrated_model_confidence(active_model: dict[str, object], predicted_return_pct: float) -> float:
+    return _confidence_from_calibration(
+        active_model.get("confidence_calibration"),
+        float(active_model.get("validation_sign_accuracy_pct") or 50.0),
+        predicted_return_pct,
+    )
+
+
+def _calibrated_baseline_confidence(policy: dict[str, object], predicted_return_pct: float) -> float:
+    return _confidence_from_calibration(
+        policy.get("confidence_calibration"),
+        float(policy.get("walkforward_sign_accuracy_pct") or policy.get("holdout_sign_accuracy_pct") or 50.0),
+        predicted_return_pct,
+    )
+
+
+def _baseline_policy_prediction(policy: dict[str, object], source_value: float | None) -> float | None:
+    policy_name = str(policy.get("policy_name") or "")
+    if policy_name == "zero_excess":
+        return 0.0
+    if source_value is None:
+        return None
+    if policy_name == "continuation_excess":
+        return float(source_value)
+    if policy_name == "mean_reversion_excess":
+        return float(source_value) * -1.0
+    return None
+
+
+def _heuristic_confidence(
+    *,
+    predicted_return_pct: float,
+    realized_vol: float,
+    news_score: float,
+    filing_score: float,
+) -> float:
+    stability_penalty = max(realized_vol, 0.005)
+    raw_confidence = min(0.75, max(0.0, abs(predicted_return_pct) / max(stability_penalty * 80, 1.25)))
+    raw_confidence += min(0.05, abs(news_score) / 25)
+    raw_confidence += min(0.05, abs(filing_score) / 20)
+    return min(0.58, max(0.25, raw_confidence))
 
 
 def _recent_news_context(sess, instrument_id: str) -> dict[str, object]:
@@ -314,7 +418,7 @@ class BetaScoringService:
     """Compute simple daily scores, watched candidates, and demo-position actions."""
 
     @staticmethod
-    def run_daily_shadow_cycle(settings: BetaSettings) -> dict[str, int]:
+    def run_daily_shadow_cycle(settings: BetaSettings, *, core_only: bool = False) -> dict[str, object]:
         if not BetaContext.is_initialized():
             return {
                 "scored": 0,
@@ -322,6 +426,8 @@ class BetaScoringService:
                 "candidates_created": 0,
                 "positions_opened": 0,
                 "positions_closed": 0,
+                "active_instruments": 0,
+                "scope": "CORE_TRACKED" if core_only else "FULL_UNIVERSE",
             }
 
         with BetaContext.write_session() as sess:
@@ -329,8 +435,11 @@ class BetaScoringService:
             risk_state = BetaRiskControlService.evaluate_recent_performance(sess, settings)
             entries_paused_before = bool(risk_state.demo_entries_paused)
             degradation_before = str(risk_state.degradation_status)
+            governance_result = BetaTrainingService.enforce_active_model_governance(sess)
             active_model = _load_active_model(sess)
             active_strategy = BetaStrategyService.get_active_strategy(sess)
+            validated_baseline_policy = _load_validated_baseline_policy(sess) if active_model is None else None
+            promotion_support_available = active_model is not None or validated_baseline_policy is not None
             feature_definition_ids: dict[str, str] = {}
             if active_model is not None:
                 feature_definition_ids = {
@@ -341,7 +450,18 @@ class BetaScoringService:
                         )
                     ).all()
                 }
-            instruments = list(sess.scalars(select(BetaInstrument).where(BetaInstrument.is_active.is_(True))).all())
+            baseline_policy_feature_definition_id = None
+            if validated_baseline_policy is not None:
+                source_feature = str(validated_baseline_policy.get("source_feature") or "")
+                if source_feature:
+                    feature_row = sess.scalar(
+                        select(BetaFeatureDefinition).where(BetaFeatureDefinition.feature_name == source_feature).limit(1)
+                    )
+                    baseline_policy_feature_definition_id = feature_row.id if feature_row is not None else None
+            instrument_stmt = select(BetaInstrument).where(BetaInstrument.is_active.is_(True))
+            if core_only:
+                instrument_stmt = instrument_stmt.where(BetaInstrument.core_security_id.is_not(None))
+            instruments = list(sess.scalars(instrument_stmt).all())
             if not instruments:
                 return {
                     "scored": 0,
@@ -349,16 +469,19 @@ class BetaScoringService:
                     "candidates_created": 0,
                     "positions_opened": 0,
                     "positions_closed": 0,
+                    "active_instruments": 0,
+                    "scope": "CORE_TRACKED" if core_only else "FULL_UNIVERSE",
                 }
 
             hypotheses_by_code = {
                 row.code: row
                 for row in sess.scalars(select(BetaHypothesis)).all()
             }
+            signal_runtime_context = BetaHypothesisSignalService.load_runtime_context(sess)
             strategy_confidence_min = float(active_strategy.min_confidence_score) if active_strategy is not None else 0.55
             strategy_edge_min = float(active_strategy.min_expected_edge_score) if active_strategy is not None else 0.20
             score_run = BetaScoreRun(
-                run_type="HEURISTIC_DAILY",
+                run_type="RESEARCH_SIGNAL_DAILY",
                 status="SUCCESS",
                 strategy_version_id=active_strategy.id if active_strategy is not None else None,
                 model_version_id=active_model["id"] if active_model is not None else None,
@@ -371,6 +494,13 @@ class BetaScoringService:
             candidates_created = 0
             positions_opened = 0
             positions_closed = 0
+            skipped_insufficient_bars = 0
+            skipped_invalid_close = 0
+            skipped_missing_features = 0
+            hypothesis_matches = 0
+            validated_hypothesis_matches = 0
+            signal_observations_created = 0
+            recommendation_decisions_created = 0
 
             for instrument in instruments:
                 open_position = sess.scalar(
@@ -390,11 +520,13 @@ class BetaScoringService:
                     ).all()
                 )
                 if len(bars) < 6:
+                    skipped_insufficient_bars += 1
                     continue
 
                 bars = list(reversed(bars))
                 closes = [_as_decimal(row.close_price_gbp) for row in bars]
                 if any(close is None or close <= 0 for close in closes):
+                    skipped_invalid_close += 1
                     continue
                 close_values = [close for close in closes if close is not None]
                 latest_bar = bars[-1]
@@ -431,13 +563,16 @@ class BetaScoringService:
                     if close_values[i - 1] > 0
                 ]
                 realized_vol = float(pstdev(returns[-5:])) if len(returns) >= 2 else 0.0
-                stability_penalty = max(realized_vol, 0.005)
                 model_prediction = None
                 model_feature_values: dict[str, float] = {}
                 missing_feature = True
+                baseline_prediction = None
+                baseline_source_value = None
                 if active_model is not None and feature_definition_ids:
                     feature_vector: list[float] = []
                     missing_feature = False
+                    clip_lows = active_model.get("feature_clip_lows") if isinstance(active_model, dict) else []
+                    clip_highs = active_model.get("feature_clip_highs") if isinstance(active_model, dict) else []
                     for feature_name in active_model["feature_names"]:
                         feature_definition_id = feature_definition_ids.get(feature_name)
                         if feature_definition_id is None:
@@ -454,8 +589,27 @@ class BetaScoringService:
                             missing_feature = True
                             break
                         numeric_value = float(feature_row.value_numeric)
+                        if len(clip_lows) == len(active_model["feature_names"]) and len(clip_highs) == len(active_model["feature_names"]):
+                            feature_idx = len(feature_vector)
+                            numeric_value = min(
+                                float(clip_highs[feature_idx]),
+                                max(float(clip_lows[feature_idx]), numeric_value),
+                            )
                         feature_vector.append(numeric_value)
                         model_feature_values[feature_name] = numeric_value
+                if active_model is None and validated_baseline_policy is not None:
+                    source_feature = str(validated_baseline_policy.get("source_feature") or "")
+                    if baseline_policy_feature_definition_id is not None:
+                        feature_row = sess.scalar(
+                            select(BetaFeatureValue).where(
+                                BetaFeatureValue.feature_definition_id == baseline_policy_feature_definition_id,
+                                BetaFeatureValue.instrument_id == instrument.id,
+                                BetaFeatureValue.feature_date == latest_bar.bar_date,
+                            )
+                        )
+                        if feature_row is not None and feature_row.value_numeric is not None:
+                            baseline_source_value = float(feature_row.value_numeric)
+                    baseline_prediction = _baseline_policy_prediction(validated_baseline_policy, baseline_source_value)
                 if not missing_feature:
                     standardized = []
                     for idx, raw_value in enumerate(feature_vector):
@@ -465,52 +619,77 @@ class BetaScoringService:
                         standardized[idx] * active_model["coefficients"][idx]
                         for idx in range(len(standardized))
                     )
+                elif active_model is not None:
+                    skipped_missing_features += 1
 
                 news_context = _recent_news_context(sess, instrument.id)
                 filing_context = _recent_filing_context(sess, instrument.id)
                 news_score = float(news_context["avg_sentiment"])
                 filing_score = float(filing_context["avg_sentiment"])
-                predicted_return_pct = model_prediction if model_prediction is not None else (five_day_return * 100)
-                predicted_return_pct += news_score + (filing_score * 1.5)
-                edge = predicted_return_pct / max(stability_penalty * 100, 0.5)
-                confidence = min(0.99, max(0.0, abs(predicted_return_pct) / max(stability_penalty * 60, 1.0)))
-                confidence = min(
-                    0.99,
-                    max(
-                        0.0,
-                        confidence
-                        + min(0.12, abs(news_score) / 15)
-                        + min(0.15, abs(filing_score) / 10),
-                    ),
-                )
+                if model_prediction is not None:
+                    prediction_source = "MODEL"
+                    predicted_return_pct = float(model_prediction)
+                    confidence = _calibrated_model_confidence(active_model, predicted_return_pct)
+                    confidence_source = "MODEL_CALIBRATION"
+                elif baseline_prediction is not None and validated_baseline_policy is not None:
+                    prediction_source = "VALIDATED_BASELINE"
+                    predicted_return_pct = float(baseline_prediction)
+                    confidence = _calibrated_baseline_confidence(validated_baseline_policy, predicted_return_pct)
+                    confidence_source = "BASELINE_CALIBRATION"
+                else:
+                    prediction_source = "HEURISTIC"
+                    predicted_return_pct = (five_day_return * 100) + news_score + (filing_score * 1.5)
+                    confidence = _heuristic_confidence(
+                        predicted_return_pct=predicted_return_pct,
+                        realized_vol=realized_vol,
+                        news_score=news_score,
+                        filing_score=filing_score,
+                    )
+                    confidence_source = "HEURISTIC_MAGNITUDE"
+                edge = predicted_return_pct / max(max(realized_vol, 0.005) * 100, 0.5)
 
                 direction = "NEUTRAL"
                 rejection_reason = None
-                recommendation = False
+                signal_qualified = False
 
-                if predicted_return_pct <= -3.0 or five_day_return <= -0.04 or one_day_return <= -0.025:
+                if prediction_source in {"MODEL", "VALIDATED_BASELINE"}:
+                    if predicted_return_pct <= -3.0:
+                        direction = "RISK_OFF"
+                        signal_qualified = confidence >= strategy_confidence_min
+                    elif predicted_return_pct >= 2.0:
+                        direction = "BULLISH"
+                        signal_qualified = confidence >= strategy_confidence_min and edge >= strategy_edge_min
+                        if not signal_qualified:
+                            rejection_reason = "Predicted return is positive but confidence or edge is below the activation floor."
+                    elif predicted_return_pct < -1.5:
+                        direction = "BEARISH"
+                        rejection_reason = "Predicted return is negative but below the risk-off threshold."
+                elif predicted_return_pct <= -3.0 or five_day_return <= -0.04 or one_day_return <= -0.025:
                     direction = "RISK_OFF"
-                    recommendation = confidence >= strategy_confidence_min
+                    signal_qualified = confidence >= strategy_confidence_min
                 elif predicted_return_pct >= 2.0 and one_day_return > -0.02:
                     direction = "BULLISH"
-                    recommendation = confidence >= strategy_confidence_min and edge >= strategy_edge_min
+                    signal_qualified = confidence >= strategy_confidence_min and edge >= strategy_edge_min
                 elif predicted_return_pct < -1.5 or five_day_return < -0.02:
                     direction = "BEARISH"
                     rejection_reason = "Momentum negative but below risk-off threshold."
                 else:
                     rejection_reason = "Signal below bullish edge threshold."
 
-                scored += 1
-                if recommendation:
-                    recommended += 1
+                support_allows_recommendation = prediction_source in {"MODEL", "VALIDATED_BASELINE"}
+                if signal_qualified and not support_allows_recommendation:
+                    rejection_reason = "Live support is heuristic-only and cannot drive a recommendation."
 
-                hypothesis_code = BetaHypothesisService.classify_hypothesis_code(
+                legacy_hypothesis_code = BetaHypothesisService.classify_hypothesis_code(
                     direction=direction,
                     news_context=news_context,
                     filing_context=filing_context,
                 )
-                hypothesis = hypotheses_by_code.get(hypothesis_code)
-                family_label = "Catalyst confirmation" if hypothesis_code == "CATALYST_CONFIRMATION" else "Trend recovery"
+                legacy_hypothesis = hypotheses_by_code.get(legacy_hypothesis_code)
+                family_label = (
+                    legacy_hypothesis.title if legacy_hypothesis is not None
+                    else ("Catalyst confirmation" if legacy_hypothesis_code == "CATALYST_CONFIRMATION" else "Trend recovery")
+                )
 
                 evidence = {
                     "one_day_return": round(one_day_return, 5),
@@ -525,11 +704,19 @@ class BetaScoringService:
                     "intraday_percent_change": intraday_percent_change,
                     "market_open": market_open,
                     "minutes_until_close": market_status["minutes_until_close"],
+                    "prediction_source": prediction_source,
+                    "confidence_source": confidence_source,
                     "model_version": active_model["version_code"] if active_model is not None else None,
+                    "validated_baseline_version": (
+                        validated_baseline_policy.get("version_code") if validated_baseline_policy is not None else None
+                    ),
+                    "validated_baseline_policy": validated_baseline_policy,
+                    "validated_baseline_source_value": baseline_source_value,
                     "strategy_version": active_strategy.version_code if active_strategy is not None else None,
                     "strategy_confidence_min": strategy_confidence_min,
                     "strategy_edge_min": strategy_edge_min,
                     "model_feature_values": model_feature_values,
+                    "model_calibration": active_model.get("confidence_calibration") if active_model is not None else None,
                     "market": instrument.market,
                     "benchmark_key": instrument.benchmark_key,
                     "sector_key": instrument.sector_key,
@@ -545,9 +732,76 @@ class BetaScoringService:
                     "recent_filing_negative": filing_context["recent_negative"],
                     "recent_filing_categories": filing_context["categories"],
                     "recent_filing_titles": filing_context["headline_titles"],
-                    "hypothesis_code": hypothesis_code,
-                    "hypothesis_title": hypothesis.title if hypothesis is not None else hypothesis_code,
+                    "legacy_hypothesis_code": legacy_hypothesis_code,
+                    "legacy_hypothesis_title": legacy_hypothesis.title if legacy_hypothesis is not None else legacy_hypothesis_code,
                 }
+
+                signal_result = BetaHypothesisSignalService.evaluate_live_matches(
+                    sess,
+                    context=signal_runtime_context,
+                    instrument=instrument,
+                    decision_date=latest_bar.bar_date,
+                    observation_time=mark_observed_at,
+                    evidence=evidence,
+                    direction=direction,
+                    confidence=confidence,
+                    edge=edge,
+                    predicted_return_pct=predicted_return_pct,
+                    prediction_source=prediction_source,
+                    signal_qualified=signal_qualified,
+                    candidate_promotion_allowed=support_allows_recommendation,
+                )
+                matched_definition = None
+                matched_family = None
+                matched_observation = None
+                recommendation_decision = None
+                hypothesis = legacy_hypothesis
+                if signal_result.get("matched"):
+                    hypothesis_matches += len(signal_result.get("matches") or [])
+                    best_match = signal_result.get("best_match") or {}
+                    matched_definition = best_match.get("definition")
+                    matched_family = best_match.get("family")
+                    matched_observation = best_match.get("observation")
+                    recommendation_decision = signal_result.get("decision")
+                    if matched_observation is not None:
+                        signal_observations_created += len(signal_result.get("matches") or [])
+                    if recommendation_decision is not None:
+                        recommendation_decisions_created += 1
+                    if signal_result.get("legacy_hypothesis") is not None:
+                        hypothesis = signal_result.get("legacy_hypothesis")
+                    if matched_family is not None:
+                        family_label = matched_family.family_name
+                    evidence["matched_hypothesis_code"] = matched_definition.hypothesis_code if matched_definition is not None else None
+                    evidence["matched_hypothesis_name"] = matched_definition.name if matched_definition is not None else None
+                    evidence["matched_hypothesis_status"] = str(best_match.get("belief_status") or "")
+                    evidence["matched_hypothesis_confidence"] = float(best_match.get("belief_confidence") or 0.0)
+                    evidence["matched_hypothesis_family_code"] = matched_family.family_code if matched_family is not None else None
+                    evidence["matched_hypothesis_match_count"] = len(signal_result.get("matches") or [])
+                    evidence["recommendation_decision_status"] = recommendation_decision.decision_status if recommendation_decision is not None else None
+                    evidence["recommendation_reason_code"] = recommendation_decision.decision_reason_code if recommendation_decision is not None else None
+                    evidence["recommendation_reason_text"] = recommendation_decision.decision_reason_text if recommendation_decision is not None else None
+                    if str(best_match.get("belief_status") or "") == "VALIDATED":
+                        validated_hypothesis_matches += 1
+                    if recommendation_decision is not None and recommendation_decision.decision_reason_text:
+                        rejection_reason = recommendation_decision.decision_reason_text
+                else:
+                    evidence["matched_hypothesis_code"] = None
+                    evidence["matched_hypothesis_name"] = None
+                    evidence["matched_hypothesis_status"] = None
+                    evidence["matched_hypothesis_confidence"] = None
+                    evidence["matched_hypothesis_family_code"] = None
+                    evidence["matched_hypothesis_match_count"] = 0
+                    evidence["recommendation_decision_status"] = "NO_MATCH"
+                    evidence["recommendation_reason_code"] = "no_validated_hypothesis_match"
+                    evidence["recommendation_reason_text"] = "No hypothesis match produced an actionable research decision."
+                    rejection_reason = rejection_reason or "No validated hypothesis matched current market state."
+
+                recommendation = bool(
+                    recommendation_decision is not None and recommendation_decision.decision_status == "RECOMMENDED"
+                )
+                scored += 1
+                if recommendation:
+                    recommended += 1
                 sess.add(
                     BetaScoreTape(
                         score_run_id=score_run.id,
@@ -670,56 +924,82 @@ class BetaScoringService:
                                     payload=evidence,
                                 )
 
-                if recommendation:
+                candidate_status = None
+                candidate_message = None
+                if recommendation_decision is not None:
+                    if recommendation_decision.decision_status == "RECOMMENDED":
+                        candidate_status = "PROMOTED"
+                        candidate_message = "Candidate created from validated hypothesis recommendation."
+                    elif recommendation_decision.decision_status == "WATCHING":
+                        candidate_status = "WATCHING"
+                        candidate_message = "Candidate created from validated hypothesis watch state."
+                    elif recommendation_decision.decision_status == "REJECTED":
+                        candidate_status = "REJECTED"
+                        candidate_message = recommendation_decision.decision_reason_text or "Candidate rejected by hypothesis governance."
+                    else:
+                        candidate_status = "DISMISSED"
+                        candidate_message = recommendation_decision.decision_reason_text or "Candidate blocked by hypothesis governance."
+
+                if candidate_status in {"PROMOTED", "WATCHING"}:
                     if candidate is None:
                         candidate = BetaSignalCandidate(
                             instrument_id=instrument.id,
                             hypothesis_id=hypothesis.id if hypothesis is not None else None,
+                            hypothesis_definition_id=matched_definition.id if matched_definition is not None else None,
+                            signal_observation_id=matched_observation.id if matched_observation is not None else None,
+                            recommendation_decision_id=recommendation_decision.id if recommendation_decision is not None else None,
                             symbol=instrument.symbol,
                             title=f"{instrument.symbol} {family_label} {direction.lower()} setup",
-                            status="PROMOTED" if confidence >= 0.72 else "WATCHING",
+                            status=candidate_status,
                             direction=direction,
                             confidence_score=confidence,
                             expected_edge_score=edge,
                             market=instrument.market,
                             evidence_summary=(
-                                f"Pred {predicted_return_pct:.2f}%; 1d return {one_day_return:.2%}; "
-                                f"volatility {realized_vol:.2%}."
+                                f"{matched_definition.hypothesis_code if matched_definition is not None else legacy_hypothesis_code}: "
+                                f"pred {predicted_return_pct:.2f}%, belief {float((signal_result.get('best_match') or {}).get('belief_confidence') or 0.0):.2f}."
                             ),
                             evidence_json=json.dumps(evidence, sort_keys=True),
                         )
                         sess.add(candidate)
                         sess.flush()
                         candidates_created += 1
+                        if recommendation_decision is not None:
+                            recommendation_decision.candidate_id = candidate.id
                         _record_candidate_event(
                             sess=sess,
                             candidate_id=candidate.id,
                             event_type="CREATED",
-                            message_text="Candidate created from heuristic daily score.",
+                            message_text=candidate_message or "Candidate created from hypothesis engine.",
                             payload=evidence,
                         )
                     else:
                         candidate.hypothesis_id = hypothesis.id if hypothesis is not None else None
-                        candidate.status = "PROMOTED" if confidence >= 0.72 else "WATCHING"
+                        candidate.hypothesis_definition_id = matched_definition.id if matched_definition is not None else None
+                        candidate.signal_observation_id = matched_observation.id if matched_observation is not None else None
+                        candidate.recommendation_decision_id = recommendation_decision.id if recommendation_decision is not None else None
+                        candidate.status = candidate_status
                         candidate.direction = direction
                         candidate.confidence_score = confidence
                         candidate.expected_edge_score = edge
                         candidate.title = f"{instrument.symbol} {family_label} {direction.lower()} setup"
                         candidate.evidence_summary = (
-                            f"Pred {predicted_return_pct:.2f}%; 1d return {one_day_return:.2%}; "
-                            f"volatility {realized_vol:.2%}."
+                            f"{matched_definition.hypothesis_code if matched_definition is not None else legacy_hypothesis_code}: "
+                            f"pred {predicted_return_pct:.2f}%, belief {float((signal_result.get('best_match') or {}).get('belief_confidence') or 0.0):.2f}."
                         )
                         candidate.evidence_json = json.dumps(evidence, sort_keys=True)
                         candidate.market = instrument.market
+                        if recommendation_decision is not None:
+                            recommendation_decision.candidate_id = candidate.id
                         _record_candidate_event(
                             sess=sess,
                             candidate_id=candidate.id,
                             event_type="UPDATED",
-                            message_text="Candidate refreshed from heuristic daily score.",
+                            message_text=candidate_message or "Candidate refreshed from hypothesis engine.",
                             payload=evidence,
                         )
 
-                    if settings.demo_execution_enabled and direction == "BULLISH":
+                    if recommendation and settings.demo_execution_enabled and direction == "BULLISH":
                         if open_position is None:
                             if not market_open:
                                 _record_candidate_event(
@@ -794,13 +1074,18 @@ class BetaScoringService:
                             open_position.expected_edge_score = edge
                 else:
                     if candidate is not None:
-                        candidate.status = "DISMISSED"
-                        candidate.rejection_reason = rejection_reason
+                        candidate.status = "REJECTED" if candidate_status == "REJECTED" else "DISMISSED"
+                        candidate.rejection_reason = rejection_reason or candidate_message
+                        candidate.hypothesis_definition_id = matched_definition.id if matched_definition is not None else candidate.hypothesis_definition_id
+                        candidate.signal_observation_id = matched_observation.id if matched_observation is not None else candidate.signal_observation_id
+                        candidate.recommendation_decision_id = recommendation_decision.id if recommendation_decision is not None else candidate.recommendation_decision_id
+                        if recommendation_decision is not None:
+                            recommendation_decision.candidate_id = candidate.id
                         _record_candidate_event(
                             sess=sess,
                             candidate_id=candidate.id,
-                            event_type="DISMISSED",
-                            message_text=rejection_reason or "Candidate dismissed by heuristic score.",
+                            event_type="REJECTED" if candidate_status == "REJECTED" else "DISMISSED",
+                            message_text=rejection_reason or candidate_message or "Candidate dismissed by hypothesis engine.",
                             payload=evidence,
                         )
 
@@ -831,17 +1116,38 @@ class BetaScoringService:
 
             ledger_state = BetaAllocationService.refresh_ledger_state(sess)
             risk_state = BetaRiskControlService.evaluate_recent_performance(sess, settings)
-            sess.flush()
-
-            return {
+            result = {
+                "scope": "CORE_TRACKED" if core_only else "FULL_UNIVERSE",
+                "active_instruments": len(instruments),
                 "scored": scored,
                 "recommended": recommended,
                 "candidates_created": candidates_created,
                 "positions_opened": positions_opened,
                 "positions_closed": positions_closed,
+                "skipped_insufficient_bars": skipped_insufficient_bars,
+                "skipped_invalid_close": skipped_invalid_close,
+                "skipped_missing_features": skipped_missing_features,
+                "hypothesis_matches": hypothesis_matches,
+                "validated_hypothesis_matches": validated_hypothesis_matches,
+                "signal_observations_created": signal_observations_created,
+                "recommendation_decisions_created": recommendation_decisions_created,
+                "active_model_version": active_model["version_code"] if active_model is not None else None,
+                "active_strategy_version": active_strategy.version_code if active_strategy is not None else None,
                 "entries_paused": int(risk_state.demo_entries_paused),
                 "entries_paused_changed": int(entries_paused_before != bool(risk_state.demo_entries_paused)),
                 "degradation_before": degradation_before,
                 "degradation_after": str(risk_state.degradation_status),
-                "available_cash_gbp": int((_as_decimal(ledger_state.available_cash_gbp) or Decimal("0")).quantize(Decimal("1"))),
+                "available_cash_gbp": int(
+                    (_as_decimal(ledger_state.available_cash_gbp) or Decimal("0")).quantize(Decimal("1"))
+                ),
+                "active_model_governance": governance_result,
+                "heuristic_only_mode": active_model is None and validated_baseline_policy is None,
+                "validated_baseline_mode": active_model is None and validated_baseline_policy is not None,
+                "validated_baseline_policy_name": (
+                    validated_baseline_policy.get("policy_name") if validated_baseline_policy is not None else None
+                ),
+                "candidate_promotion_allowed": promotion_support_available,
             }
+            score_run.notes_json = json.dumps(result, sort_keys=True)
+            sess.flush()
+            return result

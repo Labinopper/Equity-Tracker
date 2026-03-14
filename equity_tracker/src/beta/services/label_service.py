@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..context import BetaContext
-from ..db.models import BetaBenchmarkBar, BetaDailyBar, BetaInstrument, BetaLabelDefinition, BetaLabelValue
+from ..db.models import BetaBenchmarkBar, BetaDailyBar, BetaFeatureValue, BetaInstrument, BetaLabelDefinition, BetaLabelValue
+
+_MIN_LABEL_BACKLOG_BARS = 30
+_LABEL_DEFINITIONS_PER_DATE = 3
 
 
 def _d(value: str | None) -> Decimal | None:
@@ -75,13 +78,71 @@ class BetaLabelService:
         return mapping
 
     @staticmethod
-    def generate_daily_labels() -> dict[str, int]:
+    def _resolve_target_instruments(
+        sess: Session,
+        *,
+        instrument_ids: list[str] | None = None,
+        core_only: bool = False,
+    ) -> list[BetaInstrument]:
+        stmt = select(BetaInstrument)
+        if core_only:
+            stmt = stmt.where(BetaInstrument.core_security_id.is_not(None))
+        rows = list(sess.scalars(stmt).all())
+        if instrument_ids is None:
+            return rows
+        allowed = set(instrument_ids)
+        return [row for row in rows if row.id in allowed]
+
+    @staticmethod
+    def _label_backlog_instrument_ids(sess: Session, *, batch_size: int) -> list[str]:
+        instruments = list(sess.scalars(select(BetaInstrument).where(BetaInstrument.is_active.is_(True))).all())
+        candidates: list[tuple[int, float, int, str]] = []
+        for instrument in instruments:
+            bar_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaDailyBar).where(BetaDailyBar.instrument_id == instrument.id)
+                )
+                or 0
+            )
+            if bar_count < _MIN_LABEL_BACKLOG_BARS:
+                continue
+            feature_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaFeatureValue).where(BetaFeatureValue.instrument_id == instrument.id)
+                )
+                or 0
+            )
+            if feature_count <= 0:
+                continue
+            label_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaLabelValue).where(BetaLabelValue.instrument_id == instrument.id)
+                )
+                or 0
+            )
+            expected_label_count = max(0, bar_count - 5) * _LABEL_DEFINITIONS_PER_DATE
+            if label_count >= expected_label_count:
+                continue
+            priority = 0 if instrument.core_security_id else 1
+            coverage_ratio = (label_count / expected_label_count) if expected_label_count else 0.0
+            candidates.append((priority, coverage_ratio, -bar_count, instrument.id))
+        candidates.sort()
+        return [instrument_id for _priority, _coverage_ratio, _neg_bar_count, instrument_id in candidates[:batch_size]]
+
+    @staticmethod
+    def generate_daily_labels(*, instrument_ids: list[str] | None = None, core_only: bool = False) -> dict[str, int]:
         if not BetaContext.is_initialized():
             return {"labels_written": 0}
 
         with BetaContext.write_session() as sess:
             label_definition_ids = BetaLabelService.ensure_label_definitions(sess)
             instruments = list(sess.scalars(select(BetaInstrument)).all())
+            target_instruments = BetaLabelService._resolve_target_instruments(
+                sess,
+                instrument_ids=instrument_ids,
+                core_only=core_only,
+            )
+            target_ids = [row.id for row in target_instruments]
             raw_returns_by_market_date: dict[tuple[str, object], list[tuple[str, float]]] = defaultdict(list)
             raw_returns_by_sector_date: dict[tuple[str, str, object], list[tuple[str, float]]] = defaultdict(list)
             instrument_returns: dict[tuple[str, object], tuple[float, object]] = {}
@@ -123,7 +184,13 @@ class BetaLabelService:
                     raw_returns_by_sector_date[(market, sector_key, bar.bar_date)].append((instrument.id, raw_return))
 
             written = 0
-            for instrument in instruments:
+            existing_keys = {
+                (row.label_definition_id, row.instrument_id, row.decision_date): row
+                for row in sess.scalars(
+                    select(BetaLabelValue).where(BetaLabelValue.instrument_id.in_(target_ids if target_ids else [""]))
+                ).all()
+            } if target_ids else {}
+            for instrument in target_instruments:
                 market = str(instrument.market or "OTHER")
                 sector_key = str(instrument.sector_key or "GENERAL")
                 benchmark_key = str(instrument.benchmark_key or "")
@@ -170,28 +237,41 @@ class BetaLabelService:
                         ),
                     )
                     for label_definition_id, numeric_value, value_text in rows_to_write:
-                        existing = sess.scalar(
-                            select(BetaLabelValue).where(
-                                BetaLabelValue.label_definition_id == label_definition_id,
-                                BetaLabelValue.instrument_id == instrument.id,
-                                BetaLabelValue.decision_date == decision_date,
-                            )
-                        )
+                        key = (label_definition_id, instrument.id, decision_date)
+                        existing = existing_keys.get(key)
                         if existing is None:
-                            sess.add(
-                                BetaLabelValue(
-                                    label_definition_id=label_definition_id,
-                                    instrument_id=instrument.id,
-                                    decision_date=decision_date,
-                                    horizon_end_date=horizon_end_date,
-                                    value_numeric=numeric_value,
-                                    value_text=value_text,
-                                )
+                            existing = BetaLabelValue(
+                                label_definition_id=label_definition_id,
+                                instrument_id=instrument.id,
+                                decision_date=decision_date,
+                                horizon_end_date=horizon_end_date,
+                                value_numeric=numeric_value,
+                                value_text=value_text,
                             )
+                            sess.add(existing)
+                            existing_keys[key] = existing
                             written += 1
                         else:
                             existing.horizon_end_date = horizon_end_date
                             existing.value_numeric = numeric_value
                             existing.value_text = value_text
 
-            return {"labels_written": written}
+            return {
+                "labels_written": written,
+                "target_instruments": len(target_instruments),
+                "scope": "CORE_ONLY" if core_only else ("SELECTED" if instrument_ids is not None else "FULL"),
+            }
+
+    @staticmethod
+    def generate_core_tracked_labels() -> dict[str, int]:
+        return BetaLabelService.generate_daily_labels(core_only=True)
+
+    @staticmethod
+    def generate_label_backlog(*, batch_size: int = 3) -> dict[str, int]:
+        if not BetaContext.is_initialized():
+            return {"labels_written": 0, "selected_instruments": 0}
+        with BetaContext.write_session() as sess:
+            target_ids = BetaLabelService._label_backlog_instrument_ids(sess, batch_size=batch_size)
+        result = BetaLabelService.generate_daily_labels(instrument_ids=target_ids)
+        result["selected_instruments"] = len(target_ids)
+        return result

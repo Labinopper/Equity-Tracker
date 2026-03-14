@@ -113,15 +113,17 @@
   {% if detail.scores %}
   <div class="table-wrap">
     <table class="beta-table-compact">
-      <thead><tr><th>When</th><th>Direction</th><th>Confidence</th><th>Edge</th><th>Recommended</th></tr></thead>
+      <thead><tr><th>When</th><th>Direction</th><th>Pred 5D %</th><th>Confidence</th><th>Edge</th><th>Recommended</th><th>Note</th></tr></thead>
       <tbody>
         {% for row in detail.scores %}
         <tr>
           <td>{{ row.scored_at }}</td>
           <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{{ "%.2f"|format(row.predicted_return_5d or 0) }}</td>
           <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
           <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
           <td>{{ row.recommendation_flag }}</td>
+          <td>{{ row.rejection_reason or "-" }}</td>
         </tr>
         {% endfor %}
       </tbody>

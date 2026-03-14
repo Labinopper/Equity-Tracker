@@ -43,6 +43,7 @@ import os
 from pathlib import Path
 
 import uvicorn
+from src.process_lock import acquire_process_lock
 
 
 def _load_dotenv() -> None:
@@ -63,19 +64,28 @@ def _load_dotenv() -> None:
 
 def main() -> None:
     _load_dotenv()
+    lock = acquire_process_lock(Path(__file__).resolve().parent.parent / "data" / "run_api.lock")
+    if lock is None:
+        print("Equity Tracker is already running; refusing to start a duplicate web process.")
+        return
     # Import after .env load so startup sees the intended runtime config.
-    from src.api.app import app
+    try:
+        from src.api.app import app
 
-    config = uvicorn.Config(
-        app,
-        host="0.0.0.0",   # bind all interfaces — required for LAN access
-        port=8000,
-        workers=1,         # MUST remain 1 — see threading constraint above
-        reload=False,
-        log_level="info",
-    )
-    server = uvicorn.Server(config)
-    server.run()
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",   # bind all interfaces — required for LAN access
+            port=8000,
+            workers=1,         # MUST remain 1 — see threading constraint above
+            reload=False,
+            log_level="info",
+        )
+        server = uvicorn.Server(config)
+        server.run()
+    except KeyboardInterrupt:
+        print("Equity Tracker received an external interrupt and is shutting down.")
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":

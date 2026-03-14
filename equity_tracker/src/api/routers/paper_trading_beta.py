@@ -15,7 +15,7 @@ from ...beta.services.hypothesis_service import BetaHypothesisService
 from ...beta.services.label_service import BetaLabelService
 from ...beta.services.news_service import BetaNewsService
 from ...beta.services.corpus_service import BetaCorpusService
-from ...beta.runtime_manager import initialize_beta_runtime, reload_beta_runtime
+from ...beta.runtime_manager import beta_ui_is_enabled, initialize_beta_runtime, reload_beta_runtime
 from ...beta.services.observation_service import BetaObservationService
 from ...beta.services.overview_service import BetaOverviewService
 from ...beta.services.reference_service import BetaReferenceService
@@ -70,7 +70,7 @@ def _ensure_beta_ready() -> Path | None:
     core_db_path = _state.get_db_path()
     if core_db_path is None:
         return None
-    return initialize_beta_runtime(core_db_path, allow_supervisor=False)
+    return initialize_beta_runtime(core_db_path, allow_supervisor=True)
 
 
 def _load_beta_context() -> tuple[dict[str, object], BetaSettings | None]:
@@ -78,6 +78,14 @@ def _load_beta_context() -> tuple[dict[str, object], BetaSettings | None]:
     if beta_db_path is None:
         return BetaOverviewService.get_dashboard(), None
     return BetaOverviewService.get_dashboard(), BetaSettings.load(beta_db_path)
+
+
+def _beta_ui_available() -> bool:
+    return beta_ui_is_enabled(get_beta_db_path() or _ensure_beta_ready())
+
+
+def _beta_disabled_response() -> HTMLResponse:
+    return HTMLResponse("Beta is unavailable.", status_code=404, media_type=_HTML_UTF8_MEDIA_TYPE)
 
 
 def _badge_class(value: str | None) -> str:
@@ -95,6 +103,8 @@ def _badge_class(value: str | None) -> str:
 async def beta_overview(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     dashboard, settings = _load_beta_context()
     return _html_template_response(
         request,
@@ -112,6 +122,8 @@ async def beta_overview(request: Request) -> HTMLResponse:
 async def beta_opportunities(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     dashboard, settings = _load_beta_context()
     return _html_template_response(
         request,
@@ -129,6 +141,8 @@ async def beta_opportunities(request: Request) -> HTMLResponse:
 async def beta_hypotheses(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     dashboard, settings = _load_beta_context()
     return _html_template_response(
         request,
@@ -146,6 +160,8 @@ async def beta_hypotheses(request: Request) -> HTMLResponse:
 async def beta_trades(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     dashboard, settings = _load_beta_context()
     return _html_template_response(
         request,
@@ -163,6 +179,8 @@ async def beta_trades(request: Request) -> HTMLResponse:
 async def beta_replay(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     dashboard, settings = _load_beta_context()
     return _html_template_response(
         request,
@@ -181,6 +199,8 @@ async def beta_replay(request: Request) -> HTMLResponse:
 async def beta_hypothesis_detail(request: Request, hypothesis_id: str) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     _ensure_beta_ready()
     detail = BetaOverviewService.get_hypothesis_detail(hypothesis_id)
     if detail is None:
@@ -201,6 +221,8 @@ async def beta_hypothesis_detail(request: Request, hypothesis_id: str) -> HTMLRe
 async def beta_candidate_detail(request: Request, candidate_id: str) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     _ensure_beta_ready()
     detail = BetaOverviewService.get_candidate_detail(candidate_id)
     if detail is None:
@@ -221,6 +243,8 @@ async def beta_candidate_detail(request: Request, candidate_id: str) -> HTMLResp
 async def beta_trade_detail(request: Request, position_id: str) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     _ensure_beta_ready()
     detail = BetaOverviewService.get_trade_detail(position_id)
     if detail is None:
@@ -241,6 +265,8 @@ async def beta_trade_detail(request: Request, position_id: str) -> HTMLResponse:
 async def beta_health(request: Request) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
+    if not _beta_ui_available():
+        return _beta_disabled_response()
     dashboard, settings = _load_beta_context()
     return _html_template_response(
         request,
@@ -262,6 +288,8 @@ async def beta_control(
 ) -> RedirectResponse:
     if not AppContext.is_initialized():
         return RedirectResponse("/paper-trading-beta/health?msg=Database+locked", status_code=303)
+    if not _beta_ui_available():
+        return RedirectResponse("/", status_code=303)
 
     beta_db_path = _ensure_beta_ready()
     core_db_path = _state.get_db_path()

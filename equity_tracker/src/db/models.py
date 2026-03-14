@@ -947,6 +947,37 @@ class AuditLog(Base):
 
 
 # ---------------------------------------------------------------------------
+# app_diagnostics_log
+# ---------------------------------------------------------------------------
+
+class AppDiagnosticsLog(Base):
+    """
+    Append-only operational diagnostics for troubleshooting runtime issues.
+
+    This is distinct from business-data audit_log:
+      - captures background-task failures, startup problems, and unhandled app errors
+      - intended for monitoring and troubleshooting, not accounting/audit semantics
+    """
+
+    __tablename__ = "app_diagnostics_log"
+    __table_args__ = (
+        Index("ix_app_diagnostics_log_created_at", "created_at"),
+        Index("ix_app_diagnostics_log_severity_component", "severity", "component", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="ERROR")
+    component: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+
+# ---------------------------------------------------------------------------
 # security_catalog  (verified instrument catalogue — Phase S)
 # ---------------------------------------------------------------------------
 

@@ -10,7 +10,24 @@ from typing import Generator
 from sqlalchemy.orm import Session
 
 from ..app_context import AppContext
+from .context import BetaContext
+from .db.models import BetaSystemStatus
 from ..db.engine import DatabaseEngine
+
+
+def _configured_core_db_path() -> str:
+    configured = (
+        os.environ.get("EQUITY_BETA_CORE_DB_PATH", "").strip()
+        or os.environ.get("EQUITY_DB_PATH", "").strip()
+    )
+    if configured:
+        return configured
+    if BetaContext.is_initialized():
+        with BetaContext.read_session() as sess:
+            status = sess.get(BetaSystemStatus, 1)
+            if status is not None and status.core_db_path:
+                return str(status.core_db_path).strip()
+    return ""
 
 
 @contextmanager
@@ -26,7 +43,7 @@ def core_read_session() -> Generator[Session, None, None]:
             yield sess
         return
 
-    db_path_str = os.environ.get("EQUITY_DB_PATH", "").strip()
+    db_path_str = _configured_core_db_path()
     db_password = os.environ.get("EQUITY_DB_PASSWORD", "").strip()
     db_encrypted = os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
     if not db_path_str:

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}App Diagnostics{% endblock %}
+{% block content %}
+<section class="section-header">
+  <div>
+    <h1>App Diagnostics</h1>
+    <p class="muted">Operational errors and warnings captured in the core database for troubleshooting.</p>
+  </div>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Recent Events</h2>
+  </div>
+  {% if entries %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Severity</th>
+          <th>Component</th>
+          <th>Title</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in entries %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="badge {% if row.severity == 'ERROR' %}badge-delete{% elif row.severity == 'WARNING' %}badge-warning{% else %}badge-neutral{% endif %}">{{ row.severity }}</span></td>
+          <td>{{ row.component }}</td>
+          <td>{{ row.title }}</td>
+          <td>
+            <div>{{ row.message_text }}</div>
+            {% if row.context_json %}
+            <details style="margin-top:0.35rem;">
+              <summary class="muted">Context</summary>
+              <pre style="white-space:pre-wrap;">{{ row.context_json }}</pre>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No diagnostics recorded.</p>
+  {% endif %}
+</section>
+{% endblock %}

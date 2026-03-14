@@ -40,6 +40,7 @@ class BetaSettings:
     max_training_minutes_per_run: int
     retrain_min_new_observations: int
     max_memory_mb: int
+    max_memory_pct: int
     training_window_start_local: str
     training_window_end_local: str
     research_quiet_hours_only: bool
@@ -77,6 +78,7 @@ class BetaSettings:
         self.max_training_minutes_per_run = 30
         self.retrain_min_new_observations = 500
         self.max_memory_mb = 1024
+        self.max_memory_pct = 75
         self.training_window_start_local = "22:00"
         self.training_window_end_local = "06:00"
         self.research_quiet_hours_only = True
@@ -134,6 +136,7 @@ class BetaSettings:
             "max_training_minutes_per_run": self.max_training_minutes_per_run,
             "retrain_min_new_observations": self.retrain_min_new_observations,
             "max_memory_mb": self.max_memory_mb,
+            "max_memory_pct": self.max_memory_pct,
             "training_window_start_local": self.training_window_start_local,
             "training_window_end_local": self.training_window_end_local,
             "research_quiet_hours_only": self.research_quiet_hours_only,
@@ -187,6 +190,7 @@ class BetaSettings:
             1, _safe_int(data.get("retrain_min_new_observations"), self.retrain_min_new_observations)
         )
         self.max_memory_mb = max(128, _safe_int(data.get("max_memory_mb"), self.max_memory_mb))
+        self.max_memory_pct = min(95, max(50, _safe_int(data.get("max_memory_pct"), self.max_memory_pct)))
         self.training_window_start_local = str(
             data.get("training_window_start_local", self.training_window_start_local)
         )

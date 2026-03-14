@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
+from datetime import datetime, timezone
 
 from sqlalchemy import desc, func, select
 
@@ -27,6 +29,7 @@ from ..db.models import (
     BetaFilingSource,
     BetaHypothesis,
     BetaHypothesisEvent,
+    BetaInstrument,
     BetaIntradaySnapshot,
     BetaJobRun,
     BetaLedgerState,
@@ -49,10 +52,32 @@ from ..db.models import (
 from ..services.session_service import BetaMarketSessionService
 from ..settings import BetaSettings
 from ..state import get_beta_db_path
+from ..services.training_service import BetaTrainingService
 
 
 def _row_to_dict(row) -> dict:
     return {column.name: getattr(row, column.name) for column in row.__table__.columns}
+
+
+def _utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _process_is_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+def _seconds_since(moment) -> int | None:
+    if moment is None:
+        return None
+    delta = _utcnow() - moment
+    return max(0, int(delta.total_seconds()))
 
 
 class BetaOverviewService:
@@ -61,6 +86,45 @@ class BetaOverviewService:
     @staticmethod
     def is_available() -> bool:
         return BetaContext.is_initialized()
+
+    @staticmethod
+    def _latest_score_rows(sess, *, tracked_core_only: bool, limit: int = 8) -> list[dict]:
+        candidate_rows = list(
+            sess.scalars(select(BetaSignalCandidate).order_by(desc(BetaSignalCandidate.updated_at)).limit(200)).all()
+        )
+        candidate_by_symbol: dict[str, BetaSignalCandidate] = {}
+        for row in candidate_rows:
+            candidate_by_symbol.setdefault(str(row.symbol), row)
+
+        stmt = (
+            select(BetaScoreTape, BetaInstrument)
+            .join(BetaInstrument, BetaInstrument.id == BetaScoreTape.instrument_id)
+            .order_by(desc(BetaScoreTape.scored_at), desc(BetaScoreTape.id))
+        )
+        if tracked_core_only:
+            stmt = stmt.where(BetaInstrument.core_security_id.is_not(None))
+
+        latest_rows: list[dict] = []
+        seen_instruments: set[str] = set()
+        for score_row, instrument in sess.execute(stmt).all():
+            if score_row.instrument_id in seen_instruments:
+                continue
+            seen_instruments.add(str(score_row.instrument_id))
+            candidate = candidate_by_symbol.get(str(score_row.symbol))
+            latest_rows.append(
+                {
+                    **_row_to_dict(score_row),
+                    "candidate_id": candidate.id if candidate is not None else None,
+                    "candidate_status": candidate.status if candidate is not None else None,
+                    "candidate_updated_at": candidate.updated_at if candidate is not None else None,
+                    "core_security_id": instrument.core_security_id,
+                    "exchange": instrument.exchange,
+                    "market": instrument.market,
+                }
+            )
+            if len(latest_rows) >= limit:
+                break
+        return latest_rows
 
     @staticmethod
     def get_dashboard() -> dict[str, object]:
@@ -241,8 +305,34 @@ class BetaOverviewService:
                 ]
             runtime_flags = {
                 "training_window_open": BetaMarketSessionService.training_window_is_open(settings),
+                "tracked_equity_training_enabled": BetaTrainingService.has_tracked_core_equity(),
+                "training_allowed": (
+                    BetaMarketSessionService.training_window_is_open(settings)
+                    or BetaTrainingService.has_tracked_core_equity()
+                ),
                 "uk_market_open": BetaMarketSessionService.market_is_tradeable("LSE"),
                 "us_market_open": BetaMarketSessionService.market_is_tradeable("NASDAQ"),
+            }
+            recent_jobs = list(
+                sess.scalars(select(BetaJobRun).order_by(desc(BetaJobRun.started_at)).limit(40)).all()
+            )
+            latest_successful_job = next((row for row in recent_jobs if row.status == "SUCCESS"), None)
+            latest_failed_job = next((row for row in recent_jobs if row.status == "FAILED"), None)
+            latest_jobs_by_type: dict[str, dict] = {}
+            for row in recent_jobs:
+                if row.job_type not in latest_jobs_by_type:
+                    latest_jobs_by_type[row.job_type] = _row_to_dict(row)
+            supervisor_alive = _process_is_alive(status.supervisor_pid if status is not None else None)
+            supervisor_status = "running" if supervisor_alive else str(status.supervisor_status or "stopped") if status is not None else "stopped"
+            runtime_activity = {
+                "supervisor_alive": supervisor_alive,
+                "supervisor_status_display": supervisor_status,
+                "heartbeat_age_seconds": _seconds_since(status.last_heartbeat_at) if status is not None else None,
+                "last_successful_job": _row_to_dict(latest_successful_job) if latest_successful_job is not None else None,
+                "last_failed_job": _row_to_dict(latest_failed_job) if latest_failed_job is not None else None,
+                "latest_jobs_by_type": latest_jobs_by_type,
+                "latest_success_count": len([row for row in recent_jobs[:12] if row.status == "SUCCESS"]),
+                "latest_failure_count": len([row for row in recent_jobs[:12] if row.status == "FAILED"]),
             }
             hypothesis_rows = list(sess.scalars(select(BetaHypothesis)).all())
             hypothesis_rows.sort(
@@ -254,6 +344,7 @@ class BetaOverviewService:
                 "available": True,
                 "status": _row_to_dict(status) if status is not None else None,
                 "runtime_flags": runtime_flags,
+                "runtime_activity": runtime_activity,
                 "counts": counts,
                 "performance": performance,
                 "ledger": _row_to_dict(ledger) if ledger is not None else None,
@@ -291,6 +382,11 @@ class BetaOverviewService:
                         .limit(8)
                     )
                 ),
+                "tracked_core_signals": BetaOverviewService._latest_score_rows(
+                    sess,
+                    tracked_core_only=True,
+                    limit=8,
+                ),
                 "rejected_candidates": BetaOverviewService._query_rows(
                     sess.scalars(
                         select(BetaSignalCandidate)
@@ -306,9 +402,7 @@ class BetaOverviewService:
                         .limit(10)
                     )
                 ),
-                "jobs": BetaOverviewService._query_rows(
-                    sess.scalars(select(BetaJobRun).order_by(desc(BetaJobRun.started_at)).limit(10))
-                ),
+                "jobs": BetaOverviewService._query_rows(recent_jobs[:10]),
                 "recent_scores": BetaOverviewService._query_rows(
                     sess.scalars(select(BetaScoreTape).order_by(desc(BetaScoreTape.scored_at)).limit(12))
                 ),

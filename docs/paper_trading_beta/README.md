@@ -1,6 +1,6 @@
 # Paper Trading Beta Docs
 
-Last updated: `2026-03-13`
+Last updated: `2026-03-14`
 
 This folder contains the exploratory documentation for the segregated paper-trading beta. These documents are intentionally separate from the deterministic core-product source-of-truth docs.
 
@@ -14,6 +14,10 @@ This folder contains the exploratory documentation for the segregated paper-trad
   - Full engineering delivery plan covering package structure, migrations, runtime modes, kill switches, resource management, and phased implementation.
 - `docs/paper_trading_beta/PAPER_TRADING_BETA_DATABASE_SCHEMA.md`
   - SQLite-first database design for the research, scoring, governance, and demo-trade system.
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_REMEDIATION_STRATEGY_2026-03-14.md`
+  - Active remediation plan for making the beta measurable, assessable, and operationally credible from DB evidence.
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_HYPOTHESIS_ENGINE_EVOLUTION_2026-03-14.md`
+  - Architecture review and incremental migration plan for evolving the beta into a true hypothesis-learning research engine built on the newer predictive stack.
 
 ## Storage Boundary
 

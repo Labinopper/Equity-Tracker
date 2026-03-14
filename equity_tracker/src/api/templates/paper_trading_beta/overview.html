@@ -7,6 +7,7 @@
 {% set ledger = dashboard.ledger or {} %}
 {% set risk = dashboard.risk_control or {} %}
 {% set evaluation = dashboard.latest_evaluation_summary or {} %}
+{% set runtime_activity = dashboard.runtime_activity or {} %}
 {% set active_model = dashboard.active_model or {} %}
 {% set active_strategy = dashboard.active_strategy or {} %}
 {% set latest_dataset = dashboard.latest_dataset or {} %}
@@ -39,8 +40,12 @@
     <div class="position-card__section">
       <div class="position-card__label">Supervisor</div>
       <div class="position-card__value">
-        <span class="{{ badge_class(status.supervisor_status) }}">{{ status.supervisor_status or "stopped" }}</span>
+        <span class="{{ badge_class(runtime_activity.supervisor_status_display) }}">{{ runtime_activity.supervisor_status_display or status.supervisor_status or "stopped" }}</span>
       </div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">PID / Heartbeat</div>
+      <div class="position-card__value">{{ status.supervisor_pid or "-" }} / {{ runtime_activity.heartbeat_age_seconds if runtime_activity.heartbeat_age_seconds is not none else "-" }}s</div>
     </div>
   </article>
 
@@ -252,6 +257,44 @@
   </article>
 </section>
 
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Current Runtime Status</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Active Supervisor</div>
+      <div class="position-card__value">{{ "yes" if runtime_activity.supervisor_alive else "no" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Recent Success / Fail</div>
+      <div class="position-card__value">{{ runtime_activity.latest_success_count or 0 }} / {{ runtime_activity.latest_failure_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Last Success</div>
+      <div class="position-card__value">{{ runtime_activity.last_successful_job.job_name if runtime_activity.last_successful_job else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">What It Is Doing</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Observation</div>
+      <div class="position-card__value">{{ dashboard.runtime_activity.latest_jobs_by_type.observation.job_name if dashboard.runtime_activity.latest_jobs_by_type.observation is defined else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Scoring</div>
+      <div class="position-card__value">{{ dashboard.runtime_activity.latest_jobs_by_type.scoring.job_name if dashboard.runtime_activity.latest_jobs_by_type.scoring is defined else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Evidence / Learning</div>
+      <div class="position-card__value">
+        {{ dashboard.runtime_activity.latest_jobs_by_type.news.job_name if dashboard.runtime_activity.latest_jobs_by_type.news is defined else "-" }}
+        /
+        {{ dashboard.runtime_activity.latest_jobs_by_type.training.job_name if dashboard.runtime_activity.latest_jobs_by_type.training is defined else "-" }}
+      </div>
+    </div>
+  </article>
+</section>
+
 <section class="card card-spaced">
   <div class="card__header">
     <h2 class="card__title">Hypothesis Health</h2>
@@ -320,6 +363,56 @@
 
 <section class="card card-spaced">
   <div class="card__header">
+    <h2 class="card__title">Tracked Core Signals</h2>
+  </div>
+  {% if dashboard.tracked_core_signals %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Candidate</th>
+          <th>Direction</th>
+          <th>Pred 5D %</th>
+          <th>Confidence</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.tracked_core_signals %}
+        <tr>
+          <td>
+            <strong>
+              {% if row.candidate_id %}
+              <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.symbol }}</a>
+              {% else %}
+              {{ row.symbol }}
+              {% endif %}
+            </strong>
+          </td>
+          <td>
+            {% if row.candidate_status %}
+            <span class="{{ badge_class(row.candidate_status) }}">{{ row.candidate_status }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{{ "%.2f"|format(row.predicted_return_5d or 0) }}</td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ row.rejection_reason or "No explicit note captured." }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No tracked-core score output is visible yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
     <h2 class="card__title">Watched Opportunities</h2>
   </div>
   {% if dashboard.watched_candidates %}
@@ -360,6 +453,7 @@
   <div class="card__header">
     <h2 class="card__title">Recent Milestones</h2>
   </div>
+  <p class="muted">Historical notifications. Use the runtime cards above and Health &amp; Controls to judge current live state.</p>
   {% if dashboard.notifications %}
   <div class="table-wrap">
     <table class="beta-table-compact">

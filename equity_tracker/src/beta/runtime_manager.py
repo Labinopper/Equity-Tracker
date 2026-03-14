@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
+from ..process_lock import active_process_lock_pid
 from .context import BetaContext
-from .db.bootstrap import apply_beta_schema_migrations, archive_incompatible_beta_db, ensure_beta_schema
+from .db.bootstrap import apply_beta_schema_migrations, ensure_beta_schema
 from .db.engine import BetaDatabaseEngine
 from .paths import resolve_beta_db_path
 from .services.hypothesis_service import BetaHypothesisService
@@ -24,6 +26,7 @@ from .services.replay_service import BetaReplayService
 from .services.review_service import BetaReviewService
 from .services.runtime_service import BetaRuntimeService
 from .services.scoring_service import BetaScoringService
+from .services.hypothesis_definition_service import BetaHypothesisDefinitionService
 from .services.training_service import BetaTrainingService
 from .settings import BetaSettings
 from .state import (
@@ -41,11 +44,103 @@ def _equity_tracker_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _supervisor_lock_path() -> Path:
+    return _equity_tracker_root().parent / "data" / "beta_supervisor.lock"
+
+
 def _supervisor_env(core_db_path: Path, beta_db_path: Path) -> dict[str, str]:
     env = os.environ.copy()
+    env["EQUITY_DB_PATH"] = str(core_db_path)
     env["EQUITY_BETA_CORE_DB_PATH"] = str(core_db_path)
     env["EQUITY_BETA_DB_PATH"] = str(beta_db_path)
+    env["EQUITY_BETA_SUPERVISOR"] = "1"
+    env["EQUITY_DB_ENCRYPTED"] = os.environ.get("EQUITY_DB_ENCRYPTED", "true")
+    if "EQUITY_DB_PASSWORD" in os.environ:
+        env["EQUITY_DB_PASSWORD"] = os.environ["EQUITY_DB_PASSWORD"]
     return env
+
+
+def _bootstrap_beta_metadata(*, core_db_path: Path | None, beta_db_path: Path, settings: BetaSettings) -> None:
+    """Perform only lightweight local bootstrap work in the web process."""
+    BetaRuntimeService.sync_system_status(
+        core_db_path=core_db_path,
+        beta_db_path=beta_db_path,
+        settings=settings,
+    )
+    BetaRuntimeService.record_job_run(
+        job_name="beta_runtime_bootstrap",
+        job_type="runtime",
+        status="SUCCESS",
+        details={
+            "mode": settings.mode,
+            "enabled": settings.enabled,
+            "web_ui_enabled": settings.web_ui_enabled,
+            "background_jobs_enabled": settings.background_jobs_enabled,
+        },
+    )
+    hypothesis_result = BetaHypothesisService.ensure_default_hypotheses()
+    BetaRuntimeService.record_job_run(
+        job_name="beta_hypothesis_seed",
+        job_type="research_registry",
+        status="SUCCESS",
+        details=hypothesis_result,
+    )
+    if hypothesis_result.get("added"):
+        BetaRuntimeService.record_notification(
+            notification_type="hypothesis_registry",
+            severity="INFO",
+            title="Default hypothesis families seeded",
+            message_text=f"Added {hypothesis_result.get('added', 0)} research families.",
+        )
+    research_seed_result = BetaHypothesisDefinitionService.ensure_default_research_objects()
+    BetaRuntimeService.record_job_run(
+        job_name="beta_hypothesis_definition_seed",
+        job_type="research_registry",
+        status="SUCCESS",
+        details=research_seed_result,
+    )
+    if research_seed_result.get("families_added") or research_seed_result.get("definitions_added"):
+        BetaRuntimeService.record_notification(
+            notification_type="hypothesis_registry",
+            severity="INFO",
+            title="Research definitions seeded",
+            message_text=(
+                f"Added {research_seed_result.get('families_added', 0)} families and "
+                f"{research_seed_result.get('definitions_added', 0)} definitions."
+            ),
+        )
+    if settings.news_enabled:
+        news_source_result = BetaNewsService.ensure_default_sources()
+        BetaRuntimeService.record_job_run(
+            job_name="beta_news_source_seed",
+            job_type="news",
+            status="SUCCESS",
+            details=news_source_result,
+        )
+    if settings.filings_enabled:
+        filing_source_result = BetaFilingService.ensure_default_sources()
+        BetaRuntimeService.record_job_run(
+            job_name="beta_filing_source_seed",
+            job_type="filings",
+            status="SUCCESS",
+            details=filing_source_result,
+        )
+    BetaRuntimeService.ensure_daily_snapshot(settings)
+    replay_result = BetaReplayService.ensure_daily_dashboard_pack()
+    if replay_result.get("created"):
+        BetaRuntimeService.record_job_run(
+            job_name="beta_daily_replay_pack",
+            job_type="replay",
+            status="SUCCESS",
+            details=replay_result,
+        )
+
+
+def beta_ui_is_enabled(beta_db_path: Path | None) -> bool:
+    if beta_db_path is None:
+        return False
+    settings = BetaSettings.load(beta_db_path)
+    return bool(settings.enabled and settings.web_ui_enabled and settings.mode != "OFF")
 
 
 def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool = True) -> Path | None:
@@ -67,6 +162,7 @@ def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool
                 allow_supervisor
                 and core_db_path is not None
                 and settings.enabled
+                and settings.background_jobs_enabled
                 and settings.auto_start_supervisor
                 and settings.mode != "OFF"
             ):
@@ -79,17 +175,8 @@ def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool
         beta_db_path.parent.mkdir(parents=True, exist_ok=True)
         beta_db_preexisted = beta_db_path.exists()
         engine = BetaDatabaseEngine.open(beta_db_path)
-        schema_migrations: list[str] = []
-        archived_path = None
-        migration_error: str | None = None
         if beta_db_preexisted:
-            try:
-                schema_migrations = apply_beta_schema_migrations(engine)
-            except Exception as exc:
-                migration_error = str(exc)
-                engine.dispose()
-                archived_path = archive_incompatible_beta_db(beta_db_path)
-                engine = BetaDatabaseEngine.open(beta_db_path)
+            apply_beta_schema_migrations(engine)
         BetaContext.initialize(engine)
         ensure_beta_schema(engine, beta_db_path=beta_db_path)
         set_beta_db_path(beta_db_path)
@@ -101,292 +188,19 @@ def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool
             settings.demo_execution_enabled = False
             settings.save()
 
-        BetaRuntimeService.sync_system_status(
-            core_db_path=core_db_path,
-            beta_db_path=beta_db_path,
-            settings=settings,
-        )
-        BetaRuntimeService.record_job_run(
-            job_name="beta_runtime_bootstrap",
-            job_type="runtime",
-            status="SUCCESS",
-            details={
-                "allow_supervisor": allow_supervisor,
-                "mode": settings.mode,
-                "schema_migrations": schema_migrations,
-                "migration_error": migration_error,
-                "archived_path": str(archived_path) if archived_path is not None else None,
-            },
-        )
-        if schema_migrations:
-            BetaRuntimeService.record_notification(
-                notification_type="runtime",
-                severity="INFO",
-                title="Beta research DB migrated in place",
-                message_text=f"Applied {len(schema_migrations)} additive schema updates to the beta research DB.",
-            )
-        if archived_path is not None:
-            BetaRuntimeService.record_notification(
-                notification_type="runtime",
-                severity="WARNING",
-                title="Beta research DB was refreshed",
-                message_text=(
-                    "An older incompatible beta research DB was archived to "
-                    f"{archived_path.name} and a fresh schema was created."
-                ),
-            )
-        if core_db_path is not None:
-            seed_result = BetaReferenceService.sync_seed_universe()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_seed_universe_sync",
-                job_type="reference",
-                status="SUCCESS",
-                details=seed_result,
-            )
-            if (
-                seed_result.get("instruments_added")
-                or seed_result.get("memberships_added")
-                or seed_result.get("memberships_removed")
-            ):
-                BetaRuntimeService.record_notification(
-                    notification_type="reference_sync",
-                    severity="INFO",
-                    title="Beta learning universe refreshed",
-                    message_text=(
-                        "Added "
-                        f"{seed_result.get('instruments_added', 0)} instruments and "
-                        f"{seed_result.get('memberships_added', 0)} memberships, removed "
-                        f"{seed_result.get('memberships_removed', 0)} memberships, "
-                        f"targeting {seed_result.get('target_total', 0)} names."
-                    ),
-                )
-        hypothesis_result = BetaHypothesisService.ensure_default_hypotheses()
-        BetaRuntimeService.record_job_run(
-            job_name="beta_hypothesis_seed",
-            job_type="research_registry",
-            status="SUCCESS",
-            details=hypothesis_result,
-        )
-        if hypothesis_result.get("added"):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Default hypothesis families seeded",
-                message_text=f"Added {hypothesis_result.get('added', 0)} research families.",
-            )
-        if settings.news_enabled:
-            news_source_result = BetaNewsService.ensure_default_sources()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_news_source_seed",
-                job_type="news",
-                status="SUCCESS",
-                details=news_source_result,
-            )
-        if settings.filings_enabled:
-            filing_source_result = BetaFilingService.ensure_default_sources()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_filing_source_seed",
-                job_type="filings",
-                status="SUCCESS",
-                details=filing_source_result,
-            )
-        if allow_supervisor and settings.news_enabled:
-            news_result = BetaNewsService.ingest_active_sources()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_news_sync",
-                job_type="news",
-                status="SUCCESS",
-                details=news_result,
-            )
-        if allow_supervisor and settings.filings_enabled:
-            filing_result = BetaFilingService.ingest_active_sources()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_filing_sync",
-                job_type="filings",
-                status="SUCCESS",
-                details=filing_result,
-            )
-        if settings.observation_enabled:
-            observation_result = BetaObservationService.sync_daily_bars()
-            intraday_result = BetaObservationService.sync_intraday_snapshots()
-            corpus_result = (
-                BetaCorpusService.backfill_market_corpus(include_benchmarks=True)
-                if allow_supervisor
-                else {
-                    "catalog_updates": 0,
-                    "benchmarks_added": 0,
-                    "instrument_bars_added": 0,
-                    "instruments_backfilled": 0,
-                }
-            )
-            BetaRuntimeService.record_job_run(
-                job_name="beta_daily_observation_sync",
-                job_type="observation",
-                status="SUCCESS",
-                details={
-                    "daily": observation_result,
-                    "intraday": intraday_result,
-                    "corpus": corpus_result,
-                },
-            )
-            if corpus_result.get("instrument_bars_added") or corpus_result.get("benchmarks_added"):
-                BetaRuntimeService.record_notification(
-                    notification_type="corpus",
-                    severity="INFO",
-                    title="Beta corpus backfill progressed",
-                    message_text=(
-                        f"Added {corpus_result.get('instrument_bars_added', 0)} daily bars across "
-                        f"{corpus_result.get('instruments_backfilled', 0)} instruments and "
-                        f"{corpus_result.get('benchmarks_added', 0)} benchmark bars."
-                    ),
-                )
-            feature_result = BetaFeatureService.generate_daily_features()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_daily_feature_build",
-                job_type="feature_store",
-                status="SUCCESS",
-                details=feature_result,
-            )
-            label_result = BetaLabelService.generate_daily_labels()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_daily_label_build",
-                job_type="label_store",
-                status="SUCCESS",
-                details=label_result,
-            )
-        if allow_supervisor and settings.filings_enabled and (filing_result.get("events_stored") or filing_result.get("links_stored")):
-            BetaRuntimeService.record_notification(
-                notification_type="filings",
-                severity="INFO",
-                title="Official release sync completed",
-                message_text=(
-                    f"Stored {filing_result.get('events_stored', 0)} official events and "
-                    f"{filing_result.get('links_stored', 0)} linked symbols."
-                ),
-            )
-        if settings.shadow_scoring_enabled:
-            scoring_result = BetaScoringService.run_daily_shadow_cycle(settings)
-            BetaRuntimeService.record_job_run(
-                job_name="beta_daily_shadow_cycle",
-                job_type="scoring",
-                status="SUCCESS",
-                details=scoring_result,
-            )
-            if scoring_result.get("recommended") or scoring_result.get("positions_opened") or scoring_result.get("positions_closed"):
-                BetaRuntimeService.record_notification(
-                    notification_type="shadow_cycle",
-                    severity="INFO",
-                    title="Beta scoring cycle completed",
-                    message_text=(
-                        f"Recommended {scoring_result.get('recommended', 0)} signals, "
-                        f"opened {scoring_result.get('positions_opened', 0)} demo trades, "
-                        f"closed {scoring_result.get('positions_closed', 0)}."
-                    ),
-                )
-            if scoring_result.get("entries_paused_changed"):
-                paused = bool(scoring_result.get("entries_paused"))
-                BetaRuntimeService.record_notification(
-                    notification_type="risk_control",
-                    severity="WARNING" if paused else "SUCCESS",
-                    title="Demo entry gate changed",
-                    message_text=(
-                        "New demo entries were paused by degradation control."
-                        if paused
-                        else "New demo entries were resumed after recovery."
-                    ),
-                )
-            evaluation_result = BetaEvaluationService.run_live_evaluation()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_live_evaluation",
-                job_type="evaluation",
-                status="SUCCESS",
-                details=evaluation_result,
-            )
-            hypothesis_refresh = BetaHypothesisService.refresh_hypotheses()
-            BetaRuntimeService.record_job_run(
-                job_name="beta_hypothesis_refresh",
-                job_type="research_registry",
-                status="SUCCESS",
-                details=hypothesis_refresh,
-            )
-            if hypothesis_refresh.get("changed"):
-                BetaRuntimeService.record_notification(
-                    notification_type="hypothesis_registry",
-                    severity="INFO",
-                    title="Hypothesis registry changed",
-                    message_text=(
-                        f"Changed {hypothesis_refresh.get('changed', 0)} hypothesis states; "
-                        f"promoted {hypothesis_refresh.get('promoted', 0)}, suspended "
-                        f"{hypothesis_refresh.get('suspended', 0)}."
-                    ),
-                )
-                for change in hypothesis_refresh.get("changes_detail", [])[:6]:
-                    BetaRuntimeService.record_notification(
-                        notification_type="hypothesis_registry",
-                        severity="INFO",
-                        title=str(change.get("title") or "Hypothesis updated"),
-                        message_text=(
-                            f"{change.get('status_before')} -> {change.get('status_after')} "
-                            f"at evidence {change.get('evidence_score')}."
-                        ),
-                        target_table="beta_hypotheses",
-                        target_id=str(change.get("hypothesis_id") or ""),
-                    )
-            if settings.training_enabled:
-                training_result = BetaTrainingService.ensure_daily_training()
-                if training_result.get("performed"):
-                    BetaRuntimeService.record_job_run(
-                        job_name="beta_daily_training",
-                        job_type="training",
-                        status="SUCCESS" if training_result.get("trained") else "SKIPPED",
-                        details=training_result,
-                    )
-                    if training_result.get("trained"):
-                        BetaRuntimeService.record_notification(
-                            notification_type="training",
-                            severity="SUCCESS",
-                            title="Beta model training completed",
-                            message_text=(
-                                f"Stored model {training_result.get('version_code')} with validation sign accuracy "
-                                f"{training_result.get('validation_sign_accuracy_pct', 0)}%."
-                            ),
-                        )
-            review_result = BetaReviewService.ensure_daily_potential_gains_review()
-            if review_result.get("performed"):
-                BetaRuntimeService.record_job_run(
-                    job_name="beta_daily_potential_gains_review",
-                    job_type="review",
-                    status="SUCCESS",
-                    details=review_result,
-                )
-                BetaRuntimeService.record_notification(
-                    notification_type="review",
-                    severity="INFO",
-                    title="Daily beta review stored",
-                    message_text=(
-                        "Stored a daily potential-gains review with "
-                        f"{review_result.get('findings', 0)} findings."
-                    ),
-                )
-        BetaRuntimeService.ensure_daily_snapshot(settings)
-        replay_result = BetaReplayService.ensure_daily_dashboard_pack()
-        if replay_result.get("created"):
-            BetaRuntimeService.record_job_run(
-                job_name="beta_daily_replay_pack",
-                job_type="replay",
-                status="SUCCESS",
-                details=replay_result,
-            )
+        _bootstrap_beta_metadata(core_db_path=core_db_path, beta_db_path=beta_db_path, settings=settings)
 
         if (
             allow_supervisor
             and core_db_path is not None
             and settings.enabled
+            and settings.background_jobs_enabled
             and settings.auto_start_supervisor
             and settings.mode != "OFF"
         ):
             _start_supervisor(core_db_path, beta_db_path, settings)
-    except Exception:
+    except Exception as exc:
+        record_supervisor_error(str(exc))
         shutdown_beta_runtime()
         return None
 
@@ -398,9 +212,21 @@ def reload_beta_runtime(core_db_path: Path | None) -> Path | None:
     return initialize_beta_runtime(core_db_path)
 
 
-def shutdown_beta_runtime() -> None:
-    """Stop the supervisor and release the beta DB context."""
-    _stop_supervisor_process()
+def shutdown_beta_runtime(*, stop_supervisor: bool = True) -> None:
+    """Release the beta DB context and optionally stop the detached supervisor."""
+    current_beta_db_path = get_beta_db_path()
+    if stop_supervisor:
+        _stop_supervisor_process()
+        if current_beta_db_path is not None:
+            settings = BetaSettings.load(current_beta_db_path)
+            core_db_path_str = os.environ.get("EQUITY_DB_PATH", "").strip()
+            BetaRuntimeService.sync_system_status(
+                core_db_path=Path(core_db_path_str) if core_db_path_str else None,
+                beta_db_path=current_beta_db_path,
+                settings=settings,
+                supervisor_status="stopped",
+                supervisor_pid=None,
+            )
     set_beta_db_path(None)
     BetaContext.lock()
 
@@ -411,11 +237,33 @@ def _start_supervisor(core_db_path: Path, beta_db_path: Path, settings: BetaSett
     if _SUPERVISOR_PROCESS is not None and _SUPERVISOR_PROCESS.poll() is None:
         return
 
+    existing_pid = active_process_lock_pid(_supervisor_lock_path())
+    if existing_pid is not None:
+        record_supervisor_started(existing_pid)
+        BetaRuntimeService.sync_system_status(
+            core_db_path=core_db_path,
+            beta_db_path=beta_db_path,
+            settings=settings,
+            supervisor_status="running",
+            supervisor_pid=existing_pid,
+        )
+        return
+
     try:
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+            creationflags |= getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
         process = subprocess.Popen(
             [sys.executable, "-m", "src.beta.supervisor_process"],
             cwd=str(_equity_tracker_root()),
             env=_supervisor_env(core_db_path, beta_db_path),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=creationflags,
         )
     except Exception as exc:
         record_supervisor_error(str(exc))
@@ -431,6 +279,44 @@ def _start_supervisor(core_db_path: Path, beta_db_path: Path, settings: BetaSett
             title="Beta supervisor failed to start",
             message_text=str(exc),
         )
+        return
+
+    time.sleep(0.4)
+    existing_pid = active_process_lock_pid(_supervisor_lock_path())
+    if process.poll() is not None and existing_pid is None:
+        message = f"Supervisor exited immediately with code {process.returncode}."
+        record_supervisor_error(message)
+        BetaRuntimeService.sync_system_status(
+            core_db_path=core_db_path,
+            beta_db_path=beta_db_path,
+            settings=settings,
+            last_error=message,
+        )
+        BetaRuntimeService.record_notification(
+            notification_type="runtime",
+            severity="ERROR",
+            title="Beta supervisor failed to stay online",
+            message_text=message,
+        )
+        return
+
+    if existing_pid is not None:
+        _SUPERVISOR_PROCESS = process if process.poll() is None else None
+        record_supervisor_started(existing_pid)
+        BetaRuntimeService.sync_system_status(
+            core_db_path=core_db_path,
+            beta_db_path=beta_db_path,
+            settings=settings,
+            supervisor_status="running",
+            supervisor_pid=existing_pid,
+        )
+        if process.poll() is None and process.pid == existing_pid:
+            BetaRuntimeService.record_notification(
+                notification_type="runtime",
+                severity="SUCCESS",
+                title="Beta supervisor started",
+                message_text=f"Supervisor running with PID {existing_pid}.",
+            )
         return
 
     _SUPERVISOR_PROCESS = process
@@ -451,18 +337,33 @@ def _start_supervisor(core_db_path: Path, beta_db_path: Path, settings: BetaSett
 def _stop_supervisor_process() -> None:
     global _SUPERVISOR_PROCESS
 
-    process = _SUPERVISOR_PROCESS
-    if process is None:
-        record_supervisor_stopped()
-        return
+    def _terminate_pid(pid: int | None) -> None:
+        if pid is None:
+            return
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
 
-    if process.poll() is None:
+    process = _SUPERVISOR_PROCESS
+    target_pid = process.pid if process is not None else active_process_lock_pid(_supervisor_lock_path())
+    if process is not None and process.poll() is None:
         process.terminate()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+    if active_process_lock_pid(_supervisor_lock_path()) is not None:
+        _terminate_pid(active_process_lock_pid(_supervisor_lock_path()) or target_pid)
 
     _SUPERVISOR_PROCESS = None
     record_supervisor_stopped()

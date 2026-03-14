@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date as date_type, datetime, timezone
 from pathlib import Path
 
@@ -38,8 +39,15 @@ class BetaRuntimeService:
         beta_db_path: Path,
         settings: BetaSettings,
         last_error: str | None = None,
+        supervisor_status: str | None = None,
+        supervisor_pid: int | None = None,
     ) -> None:
         diagnostics = get_supervisor_diagnostics()
+        resolved_status = supervisor_status or str(diagnostics.get("supervisor_status") or "stopped")
+        resolved_pid = supervisor_pid if supervisor_pid is not None else diagnostics.get("supervisor_pid")
+        if os.environ.get("EQUITY_BETA_SUPERVISOR", "").strip() == "1":
+            resolved_status = supervisor_status or "running"
+            resolved_pid = supervisor_pid if supervisor_pid is not None else os.getpid()
         with BetaContext.write_session() as sess:
             row = sess.scalar(select(BetaSystemStatus).where(BetaSystemStatus.id == 1))
             if row is None:
@@ -55,8 +63,8 @@ class BetaRuntimeService:
             row.shadow_scoring_enabled = settings.shadow_scoring_enabled
             row.demo_execution_enabled = settings.demo_execution_enabled
             row.filings_enabled = settings.filings_enabled
-            row.supervisor_status = str(diagnostics.get("supervisor_status") or "stopped")
-            row.supervisor_pid = diagnostics.get("supervisor_pid")  # type: ignore[assignment]
+            row.supervisor_status = resolved_status
+            row.supervisor_pid = resolved_pid  # type: ignore[assignment]
             row.last_error = last_error or diagnostics.get("supervisor_last_error")  # type: ignore[assignment]
             row.last_heartbeat_at = _utcnow()
 

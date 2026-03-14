@@ -49,7 +49,14 @@ class BetaMarketSessionService:
         }
 
     @staticmethod
+    def core_markets_closed(*, now_utc: datetime | None = None) -> bool:
+        now = _coerce_utc(now_utc)
+        return not BetaMarketSessionService.market_is_tradeable("LSE", now_utc=now) and not BetaMarketSessionService.market_is_tradeable("NASDAQ", now_utc=now)
+
+    @staticmethod
     def training_window_is_open(settings: BetaSettings, *, now_utc: datetime | None = None) -> bool:
+        if BetaMarketSessionService.core_markets_closed(now_utc=now_utc):
+            return True
         if not settings.research_quiet_hours_only:
             return True
         now = _coerce_utc(now_utc)

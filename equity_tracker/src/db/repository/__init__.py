@@ -17,6 +17,7 @@ Usage:
 """
 
 from .audit import AuditRepository
+from .app_diagnostics import AppDiagnosticsRepository
 from .catalog import SecurityCatalogRepository
 from .dividends import DividendEntryRepository, DividendReferenceEventRepository
 from .disposals import DisposalRepository
@@ -30,6 +31,7 @@ from .transactions import TransactionRepository
 
 __all__ = [
     "AuditRepository",
+    "AppDiagnosticsRepository",
     "SecurityCatalogRepository",
     "DividendEntryRepository",
     "DividendReferenceEventRepository",

@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date as date_type
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from time import monotonic
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi.templating import Jinja2Templates
@@ -23,6 +24,8 @@ from ..services.alert_service import AlertService
 from ..services.calendar_service import CalendarService
 
 _BASE_DIR = Path(__file__).parent
+_GLOBAL_CONTEXT_TTL_SECONDS = 5.0
+_GLOBAL_CONTEXT_CACHE: dict[tuple[str | None, str | None], tuple[float, dict[str, object]]] = {}
 
 
 def _is_hide_values_enabled() -> bool:
@@ -65,6 +68,13 @@ def _with_as_of(href: str, as_of: str | None) -> str:
 
 def _global_template_context(_request) -> dict[str, bool | str]:
     selected_as_of = _parse_as_of(_request.query_params.get("as_of"))
+    db_path = _state.get_db_path()
+    cache_key = (str(db_path) if db_path is not None else None, selected_as_of)
+    cached = _GLOBAL_CONTEXT_CACHE.get(cache_key)
+    now = monotonic()
+    if cached is not None and (now - cached[0]) <= _GLOBAL_CONTEXT_TTL_SECONDS:
+        return dict(cached[1])
+
     alert_center = {
         "total": 0,
         "alerts": [],
@@ -73,11 +83,13 @@ def _global_template_context(_request) -> dict[str, bool | str]:
         "thresholds": {},
         "policies": {},
     }
-    db_path = _state.get_db_path()
     calendar_actionable_count = 0
+    beta_nav_enabled = False
+    hide_values = False
     if db_path is not None and AppContext.is_initialized():
         try:
             settings = AppSettings.load(db_path)
+            hide_values = bool(settings.hide_values)
             alert_center = AlertService.get_alert_center(
                 settings=settings,
                 db_path=db_path,
@@ -99,6 +111,10 @@ def _global_template_context(_request) -> dict[str, bool | str]:
                 comparison_date = date_type.fromisoformat(selected_as_of) if selected_as_of else date_type.today()
                 if event_date <= comparison_date:
                     calendar_actionable_count += 1
+            from ..beta.runtime_manager import beta_ui_is_enabled  # noqa: PLC0415
+            from ..beta.state import get_beta_db_path  # noqa: PLC0415
+
+            beta_nav_enabled = beta_ui_is_enabled(get_beta_db_path())
         except Exception:
             alert_center = {
                 "total": 0,
@@ -109,14 +125,19 @@ def _global_template_context(_request) -> dict[str, bool | str]:
                 "policies": {},
             }
             calendar_actionable_count = 0
-    return {
-        "hide_values": _is_hide_values_enabled(),
+            beta_nav_enabled = False
+            hide_values = False
+    result: dict[str, object] = {
+        "hide_values": hide_values,
         "logout_url": "/auth/logout",
         "alert_center": alert_center,
         "calendar_actionable_count": calendar_actionable_count,
+        "beta_nav_enabled": beta_nav_enabled,
         "selected_as_of": selected_as_of,
         "with_as_of": _with_as_of,
     }
+    _GLOBAL_CONTEXT_CACHE[cache_key] = (now, result)
+    return dict(result)
 
 
 templates = Jinja2Templates(

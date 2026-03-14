@@ -6,7 +6,7 @@ from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from statistics import pstdev
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..context import BetaContext
@@ -37,16 +37,52 @@ _FEATURES = (
         "Five-day close-to-close percent return in GBP terms.",
     ),
     (
+        "ret_10d_pct",
+        "v1",
+        "price_momentum",
+        "Ten-day close-to-close percent return in GBP terms.",
+    ),
+    (
+        "ret_20d_pct",
+        "v1",
+        "price_momentum",
+        "Twenty-day close-to-close percent return in GBP terms.",
+    ),
+    (
         "realized_vol_5d_pct",
         "v1",
         "volatility",
         "Population standard deviation of daily returns over the last five closes.",
     ),
     (
+        "realized_vol_20d_pct",
+        "v1",
+        "volatility",
+        "Population standard deviation of daily returns over the last twenty closes.",
+    ),
+    (
         "distance_from_5d_mean_pct",
         "v1",
         "mean_reversion",
         "Current close distance from the trailing five-day average close.",
+    ),
+    (
+        "distance_from_20d_mean_pct",
+        "v1",
+        "mean_reversion",
+        "Current close distance from the trailing twenty-day average close.",
+    ),
+    (
+        "drawdown_from_20d_high_pct",
+        "v1",
+        "mean_reversion",
+        "Current close distance below the trailing twenty-day high.",
+    ),
+    (
+        "rebound_from_20d_low_pct",
+        "v1",
+        "mean_reversion",
+        "Current close distance above the trailing twenty-day low.",
     ),
     (
         "market_ret_1d_pct",
@@ -139,6 +175,18 @@ _FEATURES = (
         "Count of linked news articles over the trailing three calendar days.",
     ),
     (
+        "news_sentiment_7d",
+        "v1",
+        "news_context",
+        "Average linked news sentiment score over the trailing seven calendar days.",
+    ),
+    (
+        "news_count_7d",
+        "v1",
+        "news_context",
+        "Count of linked news articles over the trailing seven calendar days.",
+    ),
+    (
         "official_sentiment_7d",
         "v1",
         "official_context",
@@ -150,7 +198,20 @@ _FEATURES = (
         "official_context",
         "Count of linked official releases over the trailing seven calendar days.",
     ),
+    (
+        "official_sentiment_14d",
+        "v1",
+        "official_context",
+        "Average linked official-release sentiment score over the trailing fourteen calendar days.",
+    ),
+    (
+        "official_count_14d",
+        "v1",
+        "official_context",
+        "Count of linked official releases over the trailing fourteen calendar days.",
+    ),
 )
+_MIN_FEATURE_BACKLOG_BARS = 30
 
 
 def _d(value: str | None) -> Decimal | None:
@@ -190,15 +251,66 @@ class BetaFeatureService:
         return mapping
 
     @staticmethod
-    def generate_daily_features() -> dict[str, int]:
+    def _resolve_target_instruments(
+        sess: Session,
+        *,
+        instrument_ids: list[str] | None = None,
+        core_only: bool = False,
+    ) -> list[BetaInstrument]:
+        stmt = select(BetaInstrument)
+        if core_only:
+            stmt = stmt.where(BetaInstrument.core_security_id.is_not(None))
+        rows = list(sess.scalars(stmt).all())
+        if instrument_ids is None:
+            return rows
+        allowed = set(instrument_ids)
+        return [row for row in rows if row.id in allowed]
+
+    @staticmethod
+    def _feature_backlog_instrument_ids(sess: Session, *, batch_size: int) -> list[str]:
+        instruments = list(sess.scalars(select(BetaInstrument).where(BetaInstrument.is_active.is_(True))).all())
+        expected_feature_count_per_bar = len(_FEATURES)
+        candidates: list[tuple[int, float, int, str]] = []
+        for instrument in instruments:
+            bar_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaDailyBar).where(BetaDailyBar.instrument_id == instrument.id)
+                )
+                or 0
+            )
+            if bar_count < _MIN_FEATURE_BACKLOG_BARS:
+                continue
+            feature_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaFeatureValue).where(BetaFeatureValue.instrument_id == instrument.id)
+                )
+                or 0
+            )
+            expected_feature_count = bar_count * expected_feature_count_per_bar
+            if feature_count >= expected_feature_count:
+                continue
+            priority = 0 if instrument.core_security_id else 1
+            coverage_ratio = (feature_count / expected_feature_count) if expected_feature_count else 0.0
+            candidates.append((priority, coverage_ratio, -bar_count, instrument.id))
+        candidates.sort()
+        return [instrument_id for _priority, _coverage_ratio, _neg_bar_count, instrument_id in candidates[:batch_size]]
+
+    @staticmethod
+    def generate_daily_features(*, instrument_ids: list[str] | None = None, core_only: bool = False) -> dict[str, int]:
         if not BetaContext.is_initialized():
             return {"features_written": 0}
 
         with BetaContext.write_session() as sess:
             feature_ids = BetaFeatureService.ensure_feature_definitions(sess)
             instruments = list(sess.scalars(select(BetaInstrument)).all())
+            target_instruments = BetaFeatureService._resolve_target_instruments(
+                sess,
+                instrument_ids=instrument_ids,
+                core_only=core_only,
+            )
             bars_by_instrument: dict[str, list[BetaDailyBar]] = {}
             closes_by_instrument: dict[str, list[Decimal | None]] = {}
+            target_ids = [row.id for row in target_instruments]
             market_ret_1d: dict[tuple[str, object], list[tuple[str, float]]] = defaultdict(list)
             market_ret_5d: dict[tuple[str, object], list[tuple[str, float]]] = defaultdict(list)
             sector_ret_1d: dict[tuple[str, str, object], list[tuple[str, float]]] = defaultdict(list)
@@ -260,7 +372,13 @@ class BetaFeatureService:
                         market_ret_5d[(market, bar.bar_date)].append((instrument.id, ret_5d))
                         sector_ret_5d[(market, sector_key, bar.bar_date)].append((instrument.id, ret_5d))
             written = 0
-            for instrument in instruments:
+            existing_keys = {
+                (row.feature_definition_id, row.instrument_id, row.feature_date): row
+                for row in sess.scalars(
+                    select(BetaFeatureValue).where(BetaFeatureValue.instrument_id.in_(target_ids if target_ids else [""]))
+                ).all()
+            } if target_ids else {}
+            for instrument in target_instruments:
                 bars = bars_by_instrument.get(instrument.id, [])
                 intraday_rows = list(
                     sess.scalars(
@@ -302,6 +420,10 @@ class BetaFeatureService:
                     if idx >= 5 and closes[idx - 5] and closes[idx - 5] > 0:
                         current_ret_5d = float(((close / closes[idx - 5]) - Decimal("1")) * Decimal("100"))
                         values["ret_5d_pct"] = current_ret_5d
+                    if idx >= 10 and closes[idx - 10] and closes[idx - 10] > 0:
+                        values["ret_10d_pct"] = float(((close / closes[idx - 10]) - Decimal("1")) * Decimal("100"))
+                    if idx >= 20 and closes[idx - 20] and closes[idx - 20] > 0:
+                        values["ret_20d_pct"] = float(((close / closes[idx - 20]) - Decimal("1")) * Decimal("100"))
                     if idx >= 4:
                         trailing = [closes[i] for i in range(idx - 4, idx + 1) if closes[i] is not None and closes[i] > 0]
                         if len(trailing) == 5:
@@ -313,6 +435,31 @@ class BetaFeatureService:
                             trailing_mean = sum(trailing) / Decimal(len(trailing))
                             if trailing_mean > 0:
                                 values["distance_from_5d_mean_pct"] = float(((close / trailing_mean) - Decimal("1")) * Decimal("100"))
+                    if idx >= 19:
+                        trailing_20 = [closes[i] for i in range(idx - 19, idx + 1) if closes[i] is not None and closes[i] > 0]
+                        if len(trailing_20) == 20:
+                            daily_returns_20 = [
+                                float(((trailing_20[i] / trailing_20[i - 1]) - Decimal("1")) * Decimal("100"))
+                                for i in range(1, len(trailing_20))
+                            ]
+                            values["realized_vol_20d_pct"] = (
+                                float(pstdev(daily_returns_20)) if len(daily_returns_20) >= 2 else 0.0
+                            )
+                            trailing_mean_20 = sum(trailing_20) / Decimal(len(trailing_20))
+                            if trailing_mean_20 > 0:
+                                values["distance_from_20d_mean_pct"] = float(
+                                    ((close / trailing_mean_20) - Decimal("1")) * Decimal("100")
+                                )
+                            trailing_high_20 = max(trailing_20)
+                            trailing_low_20 = min(trailing_20)
+                            if trailing_high_20 > 0:
+                                values["drawdown_from_20d_high_pct"] = float(
+                                    ((close / trailing_high_20) - Decimal("1")) * Decimal("100")
+                                )
+                            if trailing_low_20 > 0:
+                                values["rebound_from_20d_low_pct"] = float(
+                                    ((close / trailing_low_20) - Decimal("1")) * Decimal("100")
+                                )
                     market_1d_rows = market_ret_1d.get((market, bar.bar_date), [])
                     comparison_1d = [value for instrument_id, value in market_1d_rows if instrument_id != instrument.id]
                     if not comparison_1d:
@@ -386,6 +533,18 @@ class BetaFeatureService:
                         if recent_news
                         else 0.0
                     )
+                    news_window_start_7d = bar.bar_date.toordinal() - 6
+                    recent_news_7d = [
+                        row for row in news_rows
+                        if (row.published_at or row.created_at).date().toordinal() >= news_window_start_7d
+                        and (row.published_at or row.created_at).date() <= bar.bar_date
+                    ]
+                    values["news_count_7d"] = float(len(recent_news_7d))
+                    values["news_sentiment_7d"] = (
+                        float(sum(float(row.sentiment_score or 0.0) for row in recent_news_7d) / len(recent_news_7d))
+                        if recent_news_7d
+                        else 0.0
+                    )
 
                     filing_window_start = bar.bar_date.toordinal() - 6
                     recent_filings = [
@@ -399,25 +558,50 @@ class BetaFeatureService:
                         if recent_filings
                         else 0.0
                     )
+                    filing_window_start_14d = bar.bar_date.toordinal() - 13
+                    recent_filings_14d = [
+                        row for row in filing_rows
+                        if (row.published_at or row.created_at).date().toordinal() >= filing_window_start_14d
+                        and (row.published_at or row.created_at).date() <= bar.bar_date
+                    ]
+                    values["official_count_14d"] = float(len(recent_filings_14d))
+                    values["official_sentiment_14d"] = (
+                        float(sum(float(row.sentiment_score or 0.0) for row in recent_filings_14d) / len(recent_filings_14d))
+                        if recent_filings_14d
+                        else 0.0
+                    )
 
                     for feature_name, numeric_value in values.items():
-                        existing = sess.scalar(
-                            select(BetaFeatureValue).where(
-                                BetaFeatureValue.feature_definition_id == feature_ids[feature_name],
-                                BetaFeatureValue.instrument_id == instrument.id,
-                                BetaFeatureValue.feature_date == bar.bar_date,
-                            )
-                        )
+                        key = (feature_ids[feature_name], instrument.id, bar.bar_date)
+                        existing = existing_keys.get(key)
                         if existing is None:
-                            sess.add(
-                                BetaFeatureValue(
-                                    feature_definition_id=feature_ids[feature_name],
-                                    instrument_id=instrument.id,
-                                    feature_date=bar.bar_date,
-                                    value_numeric=numeric_value,
-                                )
+                            existing = BetaFeatureValue(
+                                feature_definition_id=feature_ids[feature_name],
+                                instrument_id=instrument.id,
+                                feature_date=bar.bar_date,
+                                value_numeric=numeric_value,
                             )
+                            sess.add(existing)
+                            existing_keys[key] = existing
                             written += 1
                         else:
                             existing.value_numeric = numeric_value
-            return {"features_written": written}
+            return {
+                "features_written": written,
+                "target_instruments": len(target_instruments),
+                "scope": "CORE_ONLY" if core_only else ("SELECTED" if instrument_ids is not None else "FULL"),
+            }
+
+    @staticmethod
+    def generate_core_tracked_features() -> dict[str, int]:
+        return BetaFeatureService.generate_daily_features(core_only=True)
+
+    @staticmethod
+    def generate_feature_backlog(*, batch_size: int = 3) -> dict[str, int]:
+        if not BetaContext.is_initialized():
+            return {"features_written": 0, "selected_instruments": 0}
+        with BetaContext.write_session() as sess:
+            target_ids = BetaFeatureService._feature_backlog_instrument_ids(sess, batch_size=batch_size)
+        result = BetaFeatureService.generate_daily_features(instrument_ids=target_ids)
+        result["selected_instruments"] = len(target_ids)
+        return result

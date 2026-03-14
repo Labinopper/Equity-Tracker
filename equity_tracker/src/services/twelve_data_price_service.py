@@ -196,7 +196,7 @@ def build_refresh_plan(
     if not all_candidates or minute_capacity_remaining <= 0:
         return []
     open_refresh_interval_seconds = max(
-        5,
+        60,
         math.ceil((60 * max(1, tracked_instrument_count)) / max(1, max_calls_per_minute)),
     )
     closed_refresh_interval_seconds = 10 * 60

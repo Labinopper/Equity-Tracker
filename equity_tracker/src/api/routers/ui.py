@@ -73,6 +73,7 @@ from ...services.broker_fee_service import BrokerFeeService
 from ...services.capital_stack_service import CapitalStackService
 from ...services.exposure_service import ExposureService
 from ...services.alert_lifecycle_service import AlertLifecycleService
+from ...services.app_diagnostics_service import AppDiagnosticsService
 from ...services.calendar_service import CalendarService
 from ...services.lot_explorer_service import LotExplorerService
 from ...services.portfolio_service import (
@@ -5196,6 +5197,22 @@ async def audit_log(
             "active_date_from": active_date_from,
             "active_date_to": active_date_to,
             "filter_error": filter_error,
+        },
+    )
+
+
+@router.get("/app-diagnostics", response_class=HTMLResponse, include_in_schema=False)
+async def app_diagnostics(request: Request) -> HTMLResponse:
+    if _is_locked():
+        return _locked_response(request)
+
+    entries = AppDiagnosticsService.recent(limit=100)
+    return templates.TemplateResponse(
+        request,
+        "app_diagnostics.html",
+        {
+            "request": request,
+            "entries": entries,
         },
     )
 

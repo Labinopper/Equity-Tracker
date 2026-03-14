@@ -5,6 +5,7 @@
 {% set ledger = dashboard.ledger or {} %}
 {% set risk = dashboard.risk_control or {} %}
 {% set runtime_flags = dashboard.runtime_flags or {} %}
+{% set runtime_activity = dashboard.runtime_activity or {} %}
 
 <section class="section-header">
   <div>
@@ -25,7 +26,11 @@
     </div>
     <div class="position-card__section">
       <div class="position-card__label">Supervisor</div>
-      <div class="position-card__value"><span class="{{ badge_class(status.supervisor_status) }}">{{ status.supervisor_status or "stopped" }}</span></div>
+      <div class="position-card__value"><span class="{{ badge_class(runtime_activity.supervisor_status_display) }}">{{ runtime_activity.supervisor_status_display or status.supervisor_status or "stopped" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">PID / Heartbeat</div>
+      <div class="position-card__value">{{ status.supervisor_pid or "-" }} / {{ runtime_activity.heartbeat_age_seconds if runtime_activity.heartbeat_age_seconds is not none else "-" }}s</div>
     </div>
   </article>
 
@@ -76,14 +81,57 @@
   <article class="card beta-stat-card">
     <div class="card__header"><h2 class="card__title">Windows</h2></div>
     <div class="position-card__section">
-      <div class="position-card__label">Training Window</div>
-      <div class="position-card__value"><span class="{{ badge_class('SUCCESS' if runtime_flags.training_window_open else 'WARNING') }}">{{ "open" if runtime_flags.training_window_open else "closed" }}</span></div>
+      <div class="position-card__label">Training Allowed</div>
+      <div class="position-card__value"><span class="{{ badge_class('SUCCESS' if runtime_flags.training_allowed else 'WARNING') }}">{{ "open" if runtime_flags.training_allowed else "closed" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Why</div>
+      <div class="position-card__value">
+        {% if runtime_flags.training_window_open %}
+        quiet-hours window
+        {% elif runtime_flags.tracked_equity_training_enabled %}
+        tracked equity held
+        {% else %}
+        market/session limits
+        {% endif %}
+      </div>
     </div>
     <div class="position-card__section">
       <div class="position-card__label">UK / US Market</div>
       <div class="position-card__value">{{ "open" if runtime_flags.uk_market_open else "closed" }} / {{ "open" if runtime_flags.us_market_open else "closed" }}</div>
     </div>
   </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Current Activity</h2></div>
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Lane</th>
+          <th>Latest Job</th>
+          <th>Status</th>
+          <th>Started</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lane in ["reference", "observation", "news", "filings", "scoring", "evaluation", "training", "review", "replay"] %}
+        {% set row = runtime_activity.latest_jobs_by_type[lane] if runtime_activity.latest_jobs_by_type is defined and lane in runtime_activity.latest_jobs_by_type else none %}
+        <tr>
+          <td>{{ lane }}</td>
+          <td>{{ row.job_name if row else "-" }}</td>
+          <td>{% if row %}<span class="{{ badge_class(row.status) }}">{{ row.status }}</span>{% else %}-{% endif %}</td>
+          <td>{{ row.started_at if row else "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">
+    If these rows keep refreshing with recent timestamps and success states, the beta is actively doing work.
+    The clearest signs are observation, scoring, evaluation, training, and replay updating over time.
+  </p>
 </section>
 
 <section class="card card-spaced">
