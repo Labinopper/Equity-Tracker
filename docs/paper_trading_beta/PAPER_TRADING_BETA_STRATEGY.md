@@ -1,6 +1,6 @@
 # Paper Trading Beta Strategy
 
-Last updated: `2026-03-13`
+Last updated: `2026-03-14`
 
 Status: exploratory strategy for a segregated beta feature. Not live. No broker execution. No real-money order routing.
 
@@ -188,24 +188,25 @@ The first beta should be narrower: long-only, paper-only, evidence-rich, and ope
 
 The cleanest starting point is:
 
-- one primary equity market to start, not multiple markets at once;
+- one primary live-paper market focus to start, with the UK prioritized first because it reduces practical FX drag in the initial demo lane;
 - one base currency ledger (`GBP`);
-- `50` highly liquid common stocks, with FX handled as a separate instrument class if enabled;
-- long-only paper positions;
+- an app-selected seed live-paper universe of roughly `50` highly liquid common stocks, ideally UK-heavy while still learning from both UK and US names;
+- long-only paper execution, while still learning from bullish, bearish, and market-risk signals;
 - minute-bar refresh during regular market hours, with strategies free to operate on minute, hourly, or daily decision horizons;
 - no pre-market or after-hours execution in phase 1;
+- overnight holds allowed by default when the strategy thesis remains valid;
 - no overnight leverage;
-- a small cap on concurrent paper positions.
+- no hard concurrent-position cap, with soft diversification and drawdown controls used instead.
 
 Reasoning:
 
-- single-market scope reduces timezone, fee, FX, and market-structure confusion;
+- UK-first live execution focus reduces timezone, fee, FX, and market-structure confusion while still allowing broader learning from US data;
 - high-liquidity names reduce fill-model distortion;
 - long-only avoids borrow and locate complexity;
 - FX should not be mixed casually into the same model as equities because the drivers, session behavior, and cost structure are different;
 - minute data should be treated as a capability for entry timing, volatility context, and diagnosis, not as a requirement that every strategy be intraday;
 - regular-hours only reduces data quality and spread edge cases;
-- a small universe makes audit and analysis manageable.
+- a seed universe keeps the first live lane auditable while still leaving room for automated expansion once the system proves its coverage and health.
 
 ### 6.1 Broad research corpus versus narrow live universe
 
@@ -223,8 +224,9 @@ Recommended `v1` learning-corpus target:
 
 Recommended `v1` live-paper target:
 
-- still one primary live market at first;
-- still roughly `50` actively scored and governable names in the live paper lane;
+- UK-first live-paper focus, with US names allowed in shadow scoring and demo execution whenever their data quality, FX context, and cost coverage are sufficient;
+- an initial app-selected live-paper seed of roughly `50` actively scored names, ideally UK-heavy rather than UK-only;
+- automatic expansion beyond the seed when the system judges that data coverage, research quality, and operational health are strong enough;
 - prospective minute/news capture focused on the active live universe and its benchmark/reference set, not on the entire research corpus.
 
 Rationale:
@@ -277,10 +279,10 @@ The universe should not be hand-tuned daily. It should be governed.
 Recommended method:
 
 1. define a documented screening rule;
-2. generate the candidate list;
+2. let the application generate the initial candidate list from those rules rather than relying on a hand-curated starter set;
 3. review for obvious data-quality failures;
-4. freeze the list for a fixed review window, such as monthly or quarterly;
-5. log every add/remove with the reason, effective date, and expected side effects.
+4. allow the application to expand, demote, or remove names automatically as it learns, but only through versioned rule changes and fully logged membership events;
+5. preserve a reproducible history of which rule version added, demoted, or removed each symbol and why.
 
 ### 7.5 Universe audit fields
 
@@ -326,9 +328,13 @@ Phase 1 research inputs should be limited to sources that can be stored and audi
 - sector-relative performance;
 - macro calendar and central-bank event context if FX is enabled;
 - corporate event calendar;
+- official company, exchange, and regulatory releases with reliable timestamps;
+- narrow, point-in-time fundamental snapshots for research-approved fields where as-reported timing can be retained defensibly;
 - timestamped news headlines and article metadata;
 - analyst/event transcripts only if timestamp fidelity is reliable;
 - optional manual annotations, but only as explicit tagged notes.
+
+Broad fundamental warehousing should not be treated as a `v1` dependency. The first implementation should prefer timely market, event, and release information over a large balance-sheet warehouse unless later research proves specific point-in-time fields materially improve out-of-sample results.
 
 ### 8.2 Research categories
 
@@ -351,7 +357,22 @@ Each input should map into one of these categories:
 - Every signal should be tagged as `research-only`, `backtest-approved`, or `live-paper-approved`.
 - Broad structured observation is beneficial for research; features should be removed only when they are clearly noisy, redundant, unusable, or operationally harmful.
 
-### 8.3.1 Observation versus promotion boundary
+### 8.3.1 High-value structured context before long-tail data
+
+The beta should prioritize research inputs that are both information-rich and operationally tractable.
+
+Priority order:
+
+- price, volume, benchmark, sector, and FX context;
+- corporate actions and scheduled events;
+- official releases, filings, and regulated announcements;
+- news metadata and text-derived event classifications;
+- narrow, point-in-time fundamental fields that can be stored with clear as-reported timing;
+- alternative or social data only later, only if rights, stability, and auditability are strong.
+
+The goal is not to collect every possible dataset. The goal is to avoid missing the classes of information most likely to matter for forecast quality while refusing low-quality feeds that add noise, cost, or legal ambiguity.
+
+### 8.3.2 Observation versus promotion boundary
 
 The system should continue observing broadly across:
 
@@ -420,10 +441,12 @@ Recommended order:
 2. define the broader historical research corpus separately from the narrower active live-paper universe;
 3. backfill daily bars for the full approved research corpus and all benchmark/reference instruments;
 4. backfill corporate actions and event history aligned to that daily history;
-5. start prospective minute-bar capture for the active live-paper universe and benchmark/reference instruments;
-6. backfill a recent window of minute bars where vendor limits and cost make it practical;
-7. start prospective news ingestion immediately once symbol mapping and retention rules are ready;
-8. backfill historical news metadata and text only where rights, cost, and timestamp quality are acceptable.
+5. start prospective capture of official releases and filing metadata for supported markets and sources;
+6. add narrow point-in-time fundamental snapshots only for fields the approved feature definitions actually use;
+7. start prospective minute-bar capture for the active live-paper universe and benchmark/reference instruments;
+8. backfill a recent window of minute bars where vendor limits and cost make it practical;
+9. start prospective news ingestion immediately once symbol mapping and retention rules are ready;
+10. backfill historical news metadata and text only where rights, cost, and timestamp quality are acceptable.
 
 This means the right answer is usually:
 
@@ -439,6 +462,7 @@ For `v1`, that means:
 - broad prospective news observation should default to low-cost or free feeds such as RSS and official publisher feeds where legally and operationally acceptable;
 - paid provider endpoints should be reserved for targeted enrichment rather than full-universe continuous polling;
 - price and FX freshness should take priority over optional news enrichment when they share the same provider budget.
+- official releases and filing metadata should be treated as high-priority structured context, because missing them creates avoidable blind spots in catalyst research even when compute is constrained.
 
 ### 8.7 History depth requirements
 
@@ -447,6 +471,8 @@ Recommended history depth for `v1`:
 - equities, benchmarks, and sector references in the broader US+UK research corpus: ideally `10` years of daily history, with `5` years as a practical minimum where a full decade is not available or data quality is weaker;
 - FX pairs used for conversion and attribution: ideally `10` years of daily history for required conversion series such as `GBP/USD`, with `5` years as a practical minimum if the full retained market corpus cannot yet be aligned cleanly;
 - minute bars: begin prospective collection from day one, with an ideal historical backfill of `6` to `12` months and a practical minimum of `60` to `90` trading days if minute data is used mainly for entry timing and diagnostics;
+- official release and filing metadata: ideally `3` to `5` years where rights and source availability permit, with prospective capture prioritized over deep backfill;
+- point-in-time fundamental snapshots: retain the full available as-reported history for the specific fields actually used, but do not block `v1` on a giant fundamentals warehouse;
 - news metadata/headlines: ideally `12` to `36` months of historical coverage if licensing permits, but prospective collection is more important than deep backfill if historical rights are poor;
 - corporate actions and event history: cover the full period of retained daily bars so label construction and adjusted-price logic stay coherent.
 
@@ -468,6 +494,8 @@ The system should obtain at least the following structured data:
 - FX series for non-GBP instruments and any explicit FX beta universe;
 - corporate actions: splits, symbol changes, mergers where relevant, and dividend events where they affect adjusted history or event labeling;
 - event calendar data: earnings dates, dividend dates, macro events if used, and any scheduled catalyst calendar the strategy relies on;
+- official release and filing references, timestamps, and extracted structured event fields for approved sources;
+- point-in-time fundamental snapshots for any fields that become research-approved, such as shares outstanding, market cap context, or selected statement-derived fields;
 - exchange-calendar and market-session metadata sufficient to classify whether a bar or article arrived during market hours, after-hours, or on a market holiday.
 
 Where possible, the beta should reuse the project's existing price and FX infrastructure first rather than standing up a parallel market-data path before the research need is proven.
@@ -824,6 +852,8 @@ Recommended initial families:
 - trend continuation with pullback recovery;
 - catalyst plus confirmation.
 
+Neither family should have default priority in the research loop. Both should be allowed to compete in parallel until prospective evidence separates them.
+
 These are strong starting points because they are easier to:
 
 - diagnose;
@@ -863,14 +893,14 @@ The recommendation is only half the story. The beta must define how paper trades
 
 Recommended default constraints:
 
-- max capital per position;
-- max risk per trade;
-- max sector exposure;
-- max simultaneous open positions;
-- max new recommendations per hour;
-- optional cooling-off period after repeated losses in one name or sector.
+- soft max capital per position;
+- soft max risk per trade;
+- soft max sector exposure;
+- dynamic throttling of new recommendations when portfolio crowding, drawdown, or data stress increases;
+- optional cooling-off period after repeated losses in one name or sector;
+- portfolio-level ability to move partially or fully to cash when credible risk-off conditions appear.
 
-Good starting behavior is fixed-fraction sizing with a hard cap, not aggressive sizing optimization.
+Good starting behavior is confidence- and expected-edge-weighted sizing with diversification controls, not naive equal-weighting or unconstrained concentration.
 
 ### 10.3 Entry assumptions
 
@@ -903,6 +933,7 @@ Recommended exit reasons:
 - stop hit;
 - time expiry;
 - strategy reversal;
+- risk-off regime exit;
 - stale data safety exit;
 - market close flattening;
 - manual beta override;
@@ -949,7 +980,7 @@ Recommended phase 1:
 
 - regular-hours only;
 - no pre-market / after-hours fills;
-- overnight holds are allowed for swing-style strategies when explicitly modeled;
+- overnight holds are allowed by default for strategies that remain valid outside the entry session;
 - forced flat by session close should apply only to strategies that are intentionally intraday.
 
 ## 12. Auditability Requirements
@@ -1210,6 +1241,9 @@ Recommended rules:
 - show confidence intervals or uncertainty bands around key metrics such as excess return, hit rate, and calibration;
 - compare results against baselines across multiple out-of-sample windows, not one favorable slice;
 - avoid promoting or retiring strategies based on very small samples or short-lived performance bursts;
+- record how many materially distinct trials, parameter sweeps, and feature-set variants were attempted before a candidate was selected;
+- require selection-bias-aware diagnostics such as Deflated Sharpe Ratio for promotion candidates and Probability of Backtest Overfitting where broad model-search activity occurred;
+- use stronger multiple-testing controls such as Reality Check or SPA-style review when strategy families are mined across large numbers of related variants;
 - define degradation and retirement criteria in advance so weak strategies can be paused without ad hoc justification.
 
 The goal is to prevent noise from being mistaken for learning.
@@ -1287,6 +1321,19 @@ Explicitly prevent:
 - repeatedly reusing the same holdout slice until it becomes an implicit training set;
 - silent reclassification of poor outcomes.
 
+### 14.2.1 Required research-validation controls
+
+The beta should not treat statistical validation as optional polish.
+
+Required controls:
+
+- use purged and, where appropriate, embargoed time-series cross-validation when label horizons overlap and naive folds would leak future information;
+- maintain at least one untouched late-stage holdout window that is not repeatedly used during normal feature or threshold tuning;
+- persist trial counts, search families, and major parameter grids so later evaluation can distinguish genuine edge from heavy data mining;
+- compute and store selection-bias-aware diagnostics for promotion candidates, including Deflated Sharpe Ratio and related trial-aware metrics where applicable;
+- run stronger multiple-testing review for broad model-search or parameter-mining exercises before promotion decisions are made;
+- treat any candidate that cannot be validated with these controls as research-incomplete, not promotion-ready.
+
 ### 14.3 Promotion criteria
 
 A strategy version should only be promoted into live paper mode if it:
@@ -1330,6 +1377,7 @@ A practical operating workflow should look like this.
 - define the experimental boundary;
 - define UI labels and disclaimers;
 - define the approved universe rule;
+- define the UK-first live-paper focus and the broader US+UK learning corpus;
 - define the canonical `v1` learning target;
 - define the benchmark set used for excess-return evaluation;
 - define the cost model version;
@@ -1339,6 +1387,7 @@ A practical operating workflow should look like this.
 
 - build symbol universe store;
 - define the broader US+UK historical research corpus separately from the narrower live-paper universe;
+- start with an app-selected seed live-paper universe of roughly `50` liquid names and let later expansion be system-driven and auditable rather than manual by default;
 - backfill ideally `10` years of daily history for the research corpus and its benchmark/reference/FX set, with `5` years as the practical minimum where a full decade is not yet available;
 - build minute-bar ingestion;
 - start prospective minute and news collection for the active live-paper universe as early as possible once symbol mapping is stable;
@@ -1363,13 +1412,14 @@ A practical operating workflow should look like this.
 - test baselines;
 - run walk-forward backtests;
 - evaluate prediction quality separately from trade-rule quality and allocation effects;
-- choose one or two initial strategies;
-- determine which operating horizon is most defensible for each promoted strategy;
-- promote only explicit, versioned hypotheses from the learning playground into the demo-trade lane;
+- let both initial candidate strategy families compete in research without forcing a default winner too early;
+- determine which operating horizon is most defensible for each candidate strategy;
+- promote only explicit, versioned, and auditable hypotheses from the learning playground into the demo-trade lane, whether the promotion decision is system-driven or manually triggered;
 - define recommendation explanation templates.
 
 ### 15.4 Phase 3: shadow live scoring
 
+- start shadow scoring automatically once observation, freshness checks, and minimum evidence plumbing are healthy;
 - score the full eligible universe live without creating paper positions;
 - log all accepted and rejected candidates;
 - persist ranked predictions even when nothing is traded;
@@ -1379,11 +1429,14 @@ A practical operating workflow should look like this.
 
 ### 15.5 Phase 4: paper execution beta
 
-- turn on paper fills;
+- keep paper execution capability present from the start of the beta runtime, but block new demo entries until candidate signals, hypothesis state, and validation gates are ready;
+- turn on paper fills automatically once those gates are satisfied;
 - start with `GBP 10,000` ledger;
-- enforce conservative sizing and exposure caps;
+- allow sizing to follow model confidence and expected edge while still applying soft exposure and drawdown controls;
 - compare executed paper outcomes with the broader score tape so allocation effects are visible;
 - ensure demo-trade records are immutable once created, apart from append-only lifecycle updates;
+- allow the system to auto-pause new entries when prospective live performance degrades materially, while continuing observation, shadow scoring, and learning;
+- allow the system to auto-resume entries when recovery conditions are met;
 - review recommendations daily and weekly;
 - freeze strategy versions during each evaluation window.
 
@@ -1420,18 +1473,35 @@ Less safe labels:
 
 Recommended surfaces:
 
+- beta overview / paper portfolio page;
 - learning playground / hypothesis lab;
 - universe monitor;
+- watched opportunities page;
 - live signal queue;
 - active paper positions;
 - immutable demo-trade ledger;
 - closed recommendation ledger;
 - recommendation replay / evidence panel;
+- health, jobs, and runtime-mode page;
 - performance diagnostics dashboard;
 - research registry;
 - model/version admin page.
 
 The learning playground should remain broader than the immutable demo-trade lane. That asymmetry is intentional.
+
+The default beta UI should favor high-signal summary over raw detail.
+
+Recommended default view:
+
+- one overview page that behaves like a `paper portfolio` rather than a research notebook;
+- one compact summary strip that combines current actionable state with live learning/progress metrics;
+- top-level summary of active paper positions, recent closed paper trades, and current watched opportunities or signal candidates;
+- visible counts for signals identified, promoted, rejected, dismissed, and currently watched so progress is obvious even before many trades exist;
+- visible trend indicators showing whether learning quality, confidence ordering, or live prospective performance is improving or deteriorating;
+- in-app milestone notifications for important automatic actions such as hypothesis promotion, demo-trade open/close, risk-off activation, and auto-pause or auto-resume events;
+- drill-down links into replay and evidence views only when needed;
+- avoid making the default landing page a wall of model internals, raw feature values, or article-level diagnostics.
+- keep the overview materially shorter and simpler than the main Portfolio page, because the beta's purpose is monitoring and review rather than full holdings administration.
 
 ### 16.3 Mandatory warnings
 
@@ -1628,28 +1698,30 @@ These choices would make the beta less credible:
 
 The most defensible first release is:
 
-- one active live market at launch, backed by a broader US+UK historical research corpus;
-- roughly `50` liquid live-paper stocks in the active universe;
+- UK-first live-paper focus at launch, backed by a broader US+UK historical research corpus and with US names allowed in shadow or demo lanes whenever coverage is strong enough;
+- an app-selected seed active universe of roughly `50` liquid names, ideally UK-heavy rather than UK-only;
+- automatic active-universe expansion once the system judges data coverage, research health, and operational stability to be good enough;
 - a broader governed US+UK daily research corpus, ideally in the rough range of `1,000` to `2,000` liquid common equities after filtering;
-- optional major-FX paper testing only if its fee and spread schedule is implemented and replayable;
-- long-only;
+- optional major-FX paper testing only if its fee and spread schedule is implemented, replayable, and shown to be beneficial;
+- long-only paper execution with explicit bearish/risk-off signal tracking and the ability to move to cash automatically;
 - regular-hours entry and exit handling, with multi-day holdings allowed for swing-style strategies;
 - ideally `10` years of daily history for the research corpus, with `5` years as the practical minimum where a full decade is not yet available;
 - prospective minute and news capture from the moment the active live-paper universe is frozen;
-- minute-bar updates;
+- minute-bar updates with a default scoring cadence of roughly every `5` minutes unless a strategy version justifies something faster or slower;
 - hourly and daily strategy support from the same audited data foundation;
 - RSS or official-feed news ingestion as the primary broad observation path, with Twelve Data used only for narrow, budget-aware enrichment if enabled;
 - one canonical `v1` learning target: `5-trading-day excess return versus market and sector benchmarks after estimated costs`;
 - `GBP 10,000` paper capital;
-- max `5` to `10` concurrent positions;
-- one or two simple interpretable promoted strategy families plus one baseline;
-- initial promoted families: trend continuation with pullback recovery, and catalyst plus confirmation;
+- no hard concurrent-position cap, but soft capital, concentration, and drawdown controls;
+- both trend continuation with pullback recovery and catalyst plus confirmation treated as parallel initial candidate families plus at least one baseline;
 - one learning playground for marker discovery and one immutable demo-trade lane for forward hypothesis testing;
 - versioned feature store, label store, and training-dataset builder;
 - full-universe score tape at each decision point;
 - confidence markers on every scored decision;
+- automatic shadow start once observation health is proven, and automatic demo entry once candidate and validation gates are satisfied;
 - explicit separation of prediction, trade-rule, and allocation evaluation;
 - full evidence package and replay;
+- in-app notifications, daily dashboard snapshots, and live progress metrics so the beta visibly shows what it is learning;
 - daily and weekly review analytics.
 
 This is intentionally conservative. The first job is not to maximize paper return. The first job is to prove that the system can generate, explain, and evaluate recommendations honestly.

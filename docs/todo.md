@@ -1,17 +1,19 @@
 # Next-Step TODO (Objective-Aligned)
 
-Last updated: `2026-03-11`
+Last updated: `2026-03-14`
 
 Scope guardrails:
-- Deterministic modelling only.
-- No market prediction features.
-- No buy/sell advice language.
+- Deterministic modelling only for core product surfaces.
+- No market prediction features on core deterministic pages.
+- No buy/sell advice language on core deterministic pages.
+- Experimental exception: the segregated paper-trading beta workstream is tracked separately under `docs/paper_trading_beta/` and must remain isolated from the deterministic core.
 - Every change must improve at least one of: clarity, risk visibility, retained-wealth realism, hidden drag visibility.
 
 Execution mode (`2026-03-07`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
-- Current prioritization source: none. The tracked workflow and product-expansion candidates are now complete.
+- Deterministic-core prioritization source: closed. The tracked workflow and product-expansion candidates are now complete.
+- Experimental predictive beta prioritization source: foundation workstream approved for phased implementation planning.
 
 ## Current Status
 
@@ -21,6 +23,7 @@ Execution mode (`2026-03-07`):
 - `2026-03-07` pension page is live: append-only contribution ledger, deterministic projection scenarios, retirement-target lens, and tracked-wealth context.
 - `2026-03-07` shared foundation upgrades are live: `as_of` mode, Risk/Calendar provenance badges, reconcile drift trace links, and persisted alert lifecycle.
 - Strategic hardening items `T84`-`T89` are complete and under regression coverage.
+- `2026-03-14` exploratory paper-trading beta planning docs are now in place, including strategy, runtime architecture, technical implementation plan, and split-database schema.
 - Detailed delivery history and the pre-tidy backlog snapshot now live in `docs/todo_archive.md`.
 
 ## Execution Status (Source of Truth)
@@ -40,8 +43,67 @@ Execution mode (`2026-03-07`):
 
 ## Next Prioritization Order
 
-- No tracked backlog items remain from the current strategic plan.
-- New work should be logged only after explicit reprioritization.
+- No tracked backlog items remain for the deterministic core strategic plan.
+- The current prioritized next work is the segregated experimental predictive beta workstream (`T91`-`T106`).
+
+## Experimental Predictive Beta Workstream
+
+This workstream is a controlled exception to the deterministic-core scope guardrails.
+
+Boundary rules:
+
+- it remains paper-only and segregated from the deterministic core product;
+- it must use separate storage/runtime boundaries;
+- it must be disableable without affecting normal site operation;
+- it must persist evidence, potential signals, and AI-audit artifacts for later verification;
+- it must not weaken or relabel the deterministic pages as predictive surfaces.
+
+Current status:
+
+- planning complete enough to move into implementation sequencing;
+- technical implementation not yet started;
+- not live;
+- not available to normal users.
+
+### Beta Implementation Backlog
+
+| Task | Scope | Status | Notes |
+|---|---|---|---|
+| `T91` | Adopt beta carve-out into core docs and governance language. | Complete | Core docs now explicitly treat the beta as a segregated experimental domain. |
+| `T92` | Beta runtime settings, operating modes, and kill switches. | Planned | Must support `OFF`, `OBSERVE_ONLY`, `SHADOW_ONLY`, `DEMO_NO_LEARN`, and `FULL_INTERNAL_BETA`. |
+| `T93` | Separate `beta_research.db`, `BetaContext`, and beta-only migration path. | Planned | Must not block deterministic site startup if unavailable. |
+| `T94` | Separate beta supervisor/background runtime with non-blocking startup. | Planned | Heavy research/training must stay out of the main FastAPI process. |
+| `T95` | Beta reference domain: instruments, exchanges, calendars, sectors, benchmark mappings, research corpus, and live-paper universe governance. | Planned | Must separate broad research corpus from narrow active live universe. |
+| `T96` | US+UK daily research corpus ingestion plus benchmark and FX context. | Planned | Target broad multi-year daily learning corpus before minute-heavy work. |
+| `T97` | Corporate actions and event-calendar ingestion aligned to retained history. | Planned | Required for label integrity and replay. |
+| `T98` | News ingestion pipeline using RSS/official feeds first, with budget-aware paid enrichment only where justified. | Planned | Must preserve timestamps, linkage, deduplication, and explainable classifications. |
+| `T98A` | Verify actual runtime behavior of Twelve Data high-credit filing/fundamental endpoints under the current `55` credits/minute quota. | Planned | Test whether `100`-credit endpoints return data, hard-fail, or expose any useful headers/partial behavior; record the exact response and use it to finalize the filing/fundamental source policy. |
+| `T99` | Feature store, feature lineage, and incremental/batch feature builders. | Planned | Reusable versioned features, not model-embedded-only logic. |
+| `T100` | Label store and canonical target materialization. | Planned | Must persist explicit outcomes and benchmark-relative returns. |
+| `T101` | Dataset manifests, hypothesis registry, experiment registry, model registry, and strategy registry. | Planned | Freeze research datasets and prevent undocumented drift. |
+| `T102` | Shadow scoring pipeline and full-universe score tape. | Planned | Must score all eligible live-universe symbols prospectively. |
+| `T103` | Potential-signal candidate tracking and AI-audit evidence packs. | Planned | Required so later reviews can independently verify opportunity claims. |
+| `T104` | Recommendation gating, allocation layer, immutable demo-trade lane, and paper ledger. | Planned | Paper-only; no broker execution path. |
+| `T105` | Evaluation summaries, calibration, attribution, replay bundles, backup, and archive automation. | Planned | Includes strategy summaries, regime scorecards, and replay support. |
+| `T106` | Beta admin controls, health/status views, pause/disable controls, and restricted access surfaces. | Planned | Internal-only beta controls; must not interfere with normal site routes. |
+
+### Immediate Beta Priority Slice
+
+Recommended first build sequence:
+
+1. `T92`
+2. `T93`
+3. `T94`
+4. `T95`
+5. `T96`
+
+### Beta Foundation Exit Criteria
+
+- the deterministic site starts and operates normally with the beta fully disabled;
+- beta startup or migration failure does not block the core site;
+- beta storage is separate from the portfolio database;
+- observation, learning, shadow scoring, and demo execution can be disabled independently where required;
+- no beta page or control is exposed outside the intended internal-test boundary.
 
 ## Page Review Track
 

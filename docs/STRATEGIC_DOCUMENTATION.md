@@ -1,10 +1,12 @@
 # Strategic Question Table
 
-Last updated: `2026-03-07`
+Last updated: `2026-03-14`
 
-Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance and expansion updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, pension tracking/projection, weekly review workflow, notification digest, allocation planner, and hosted internal-network deployment); no tracked post-closure expansion items remain pending.
+Execution mode: refinement and hardening closure remains complete (`T58`-`T79` shipped). `2026-03-07` maintenance and expansion updates are now live (lot-first dividends input, deployable cash FX conversion to GBP-equivalent, Portfolio UI simplification, pension tracking/projection, weekly review workflow, notification digest, allocation planner, and hosted internal-network deployment); no tracked deterministic-core expansion items remain pending. A separate experimental predictive paper-trading beta workstream is now tracked under `docs/paper_trading_beta/` and must remain isolated from the deterministic core.
 
 Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = not addressed.
+
+This table covers deterministic core pages only. The segregated experimental predictive beta domain is defined separately below and is not part of the current deterministic page matrix.
 
 ## Post-Closure Updates (`2026-03-07`)
 
@@ -244,6 +246,78 @@ Legend: `Y` = directly addressed, `P` = partially/implicitly addressed, `N` = no
 1. Maintain reconciliation delta-tolerance fixtures across representative portfolio states as formulas evolve.
 2. Maintain the same regression discipline on shipped shared-foundation features (`as_of`, provenance badges, drift explainers) as those contracts evolve.
 3. Keep improving trace destinations so filtered audit/reconcile workflows stay high-context even as new record types are added.
+
+# Experimental Predictive Paper-Trading Beta Domain
+
+This domain is an explicit exception to the deterministic-core product boundary. It is a separate experimental research system, not a silent extension of the current product semantics.
+
+## Domain Status
+
+- planned implementation workstream;
+- not live;
+- paper-only;
+- internal-only;
+- separately documented under `docs/paper_trading_beta/`.
+
+## Domain Purpose
+
+The beta exists to:
+
+- observe a broad historical and prospective research dataset;
+- discover, test, and govern candidate predictive signals;
+- run shadow scoring and immutable demo-trade forward testing;
+- evaluate whether signals or strategy families show repeatable edge after realistic friction;
+- preserve enough evidence that later human or AI review can independently verify signal claims, potential gains, and failure causes.
+
+## Hard Boundary Rules
+
+- no broker execution;
+- no auto-trading;
+- no live-buy/sell instruction path from a beta output;
+- no blending of beta recommendation language into the deterministic core pages;
+- separate storage, runtime, and migration path from the deterministic core;
+- explicit feature flags, runtime modes, and kill switches;
+- ability to disable learning entirely while the core site continues to operate normally.
+
+## Planned Beta Surface Family
+
+The future beta surface family may include:
+
+- `Paper Trading Beta` or `Signal Lab` landing surface;
+- learning playground / hypothesis lab;
+- live signal queue and shadow-scoring monitor;
+- immutable demo-trade ledger;
+- recommendation replay / evidence panel;
+- beta model/version and health admin pages.
+
+These are future beta-only surfaces and are not part of the current deterministic page set documented in the table above.
+
+## Strategic Role
+
+The deterministic core remains responsible for:
+
+- retained-wealth clarity;
+- tax and liquidity modelling;
+- risk visibility;
+- deterministic scenario planning;
+- auditability of user-entered financial data.
+
+The beta domain is responsible for:
+
+- predictive research;
+- prospective paper testing;
+- signal discovery and ranking;
+- governed strategy promotion/suspension;
+- evidence-backed AI and human review of potential opportunities.
+
+This is a domain separation, not a replacement of the deterministic product definition.
+
+## Beta Documentation Set
+
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_STRATEGY.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_RUNTIME_ARCHITECTURE.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_TECHNICAL_IMPLEMENTATION_PLAN.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_DATABASE_SCHEMA.md`
 
 Backlog mirror and delivered-post-closure state: logged in `docs/todo.md`.
 

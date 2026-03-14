@@ -1,6 +1,6 @@
 # Paper Trading Beta Database Schema
 
-Last updated: `2026-03-13`
+Last updated: `2026-03-14`
 
 Status: proposed SQLite-first schema for the exploratory paper-trading beta. This is a research and demo-trading schema, not a live-execution schema.
 
@@ -190,6 +190,26 @@ The recommended bar design is shared bar tables rather than separate benchmark/s
 - Important indexes: unique `(provider, provider_event_key)`, `(instrument_id, event_at)`, `(event_type, event_at)`
 - Append-only vs mutable: append-only
 
+#### `beta_filing_events`
+
+- Purpose: official company, exchange, and regulatory release references with point-in-time publication metadata.
+- Key columns: `id`, `instrument_id`, `source_name`, `source_document_id`, `document_type`, `title`, `canonical_url`, `published_at`, `first_seen_at`, `source_timestamp`, `ingested_at`, `raw_payload_json`, `content_hash`
+- Primary key: `id`
+- Important foreign keys: `instrument_id -> beta_instruments.id`
+- Important indexes: unique `(source_name, source_document_id)`, `(instrument_id, published_at)`, `(first_seen_at)`
+- Append-only vs mutable: append-only
+- Versioning notes: `first_seen_at` is the replay field for what was actually known by the system
+
+#### `beta_fundamental_snapshots`
+
+- Purpose: narrow, point-in-time fundamental facts for approved fields where as-reported timing matters.
+- Key columns: `id`, `instrument_id`, `field_name`, `snapshot_at`, `effective_period_end`, `as_reported_at`, `value_numeric`, `value_text`, `unit_text`, `source_name`, `source_document_id`, `is_restated`, `ingested_at`
+- Primary key: `id`
+- Important foreign keys: `instrument_id -> beta_instruments.id`
+- Important indexes: unique `(instrument_id, field_name, snapshot_at, source_name)`, `(instrument_id, snapshot_at)`, `(field_name, snapshot_at)`
+- Append-only vs mutable: append-only
+- Versioning notes: prefer `as_reported_at` over later restated values for research-time truth
+
 ### 2.3 News Ingestion Domain
 
 #### `beta_news_sources`
@@ -294,7 +314,7 @@ Suggested enums:
 
 Suggested enums:
 
-- `source_domain`: `PRICE`, `NEWS`, `FX`, `EVENT`, `REGIME`, `PORTFOLIO_CONTEXT`
+- `source_domain`: `PRICE`, `NEWS`, `FX`, `EVENT`, `FILING`, `FUNDAMENTAL`, `REGIME`, `PORTFOLIO_CONTEXT`
 - `usage_status`: `RESEARCH_ONLY`, `BACKTEST_APPROVED`, `LIVE_PAPER_APPROVED`
 
 #### `beta_feature_sets`
@@ -402,6 +422,29 @@ Suggested enum:
 - Important indexes: `(hypothesis_id, started_at)`, `(dataset_version_id)`
 - Append-only vs mutable: append-only
 
+#### `beta_validation_runs`
+
+- Purpose: formal validation batches that record how a candidate was tested against leakage, multiple-testing, and promotion standards.
+- Key columns: `id`, `experiment_run_id`, `strategy_version_id`, `validation_type`, `started_at`, `completed_at`, `status`, `scope_json`, `notes`
+- Primary key: `id`
+- Important foreign keys: `experiment_run_id -> beta_experiment_runs.id`, `strategy_version_id -> beta_strategy_versions.id`
+- Important indexes: `(experiment_run_id, validation_type)`, `(strategy_version_id, completed_at)`
+- Append-only vs mutable: append-only
+
+Suggested enums:
+
+- `validation_type`: `WALK_FORWARD`, `PURGED_CV`, `EMBARGOED_CV`, `MULTIPLE_TESTING_REVIEW`, `PROMOTION_REVIEW`
+- `status`: `REQUESTED`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`
+
+#### `beta_validation_metrics`
+
+- Purpose: metric-level outputs for validation runs, including trial-aware and selection-bias-aware diagnostics.
+- Key columns: `id`, `validation_run_id`, `metric_name`, `metric_value`, `metric_text`, `metric_json`, `created_at`
+- Primary key: `id`
+- Important foreign keys: `validation_run_id -> beta_validation_runs.id`
+- Important indexes: `(validation_run_id, metric_name)`
+- Append-only vs mutable: append-only
+
 #### `beta_model_versions`
 
 - Purpose: trained model registry with artifacts and confidence schema info.
@@ -418,12 +461,12 @@ Suggested enum:
 - Primary key: `id`
 - Important foreign keys: `hypothesis_id -> beta_hypotheses.id`, `model_version_id -> beta_model_versions.id`, `feature_set_id -> beta_feature_sets.id`, `label_definition_id -> beta_label_definitions.id`, `cost_model_version_id -> beta_cost_model_versions.id`, `benchmark_set_id -> beta_benchmark_sets.id`, `execution_assumption_version_id -> beta_execution_assumption_versions.id`
 - Important indexes: unique `(strategy_name, version_code)`, `(status, effective_from)`
-- Append-only vs mutable: immutable after activation; status changes should be governed by events
+- Append-only vs mutable: immutable after activation; status changes should be driven by append-only activation or governance events
 
 #### `beta_promotion_decisions`
 
-- Purpose: explicit governance of movement from learning playground to demo-trade lane.
-- Key columns: `id`, `hypothesis_id`, `strategy_version_id`, `decision`, `decision_at`, `reviewer_id`, `reason_text`, `evidence_ref_json`
+- Purpose: explicit record of movement from learning playground to demo-trade lane, whether the decision was system-driven or manually triggered.
+- Key columns: `id`, `hypothesis_id`, `strategy_version_id`, `decision`, `decision_at`, `actor_type`, `actor_id`, `reason_text`, `evidence_ref_json`
 - Primary key: `id`
 - Important foreign keys: `hypothesis_id -> beta_hypotheses.id`, `strategy_version_id -> beta_strategy_versions.id`
 - Important indexes: `(hypothesis_id, decision_at)`, `(strategy_version_id, decision)`
@@ -667,8 +710,8 @@ Suggested enums:
 
 #### `beta_strategy_approval_events`
 
-- Purpose: explicit strategy approvals, suspensions, retirements, and review sign-offs.
-- Key columns: `id`, `strategy_version_id`, `approval_type`, `approved_by`, `approved_at`, `notes`
+- Purpose: explicit activation, suspension, retirement, and review events for strategy versions.
+- Key columns: `id`, `strategy_version_id`, `approval_type`, `actor_type`, `actor_id`, `approved_at`, `notes`
 - Primary key: `id`
 - Important foreign keys: `strategy_version_id -> beta_strategy_versions.id`
 - Important indexes: `(strategy_version_id, approved_at)`
@@ -698,6 +741,14 @@ Suggested enums:
 - Important indexes: `(user_id, created_at)`, `(target_table, target_id)`
 - Append-only vs mutable: append-only
 
+#### `beta_ui_notifications`
+
+- Purpose: in-app milestone and warning notifications for the beta UI, including automatic actions the user should see without scanning the full event log.
+- Key columns: `id`, `notification_type`, `severity`, `title`, `message_text`, `target_table`, `target_id`, `created_at`, `is_read`, `expires_at`
+- Primary key: `id`
+- Important indexes: `(created_at)`, `(is_read, created_at)`, `(notification_type, severity)`
+- Append-only vs mutable: append-only notification record with a mutable read flag if the UI needs acknowledgement
+
 ### 2.12 Evaluation and Learning-Output Domain
 
 These are materialized result tables, not primary raw facts.
@@ -714,7 +765,7 @@ These are materialized result tables, not primary raw facts.
 #### `beta_strategy_evaluation_summaries`
 
 - Purpose: top-level strategy summary metrics for an evaluation run.
-- Key columns: `id`, `evaluation_run_id`, `trades_count`, `paper_return`, `benchmark_relative_return`, `max_drawdown`, `profit_factor`, `expectancy`, `calibration_score`
+- Key columns: `id`, `evaluation_run_id`, `trades_count`, `paper_return`, `benchmark_relative_return`, `max_drawdown`, `profit_factor`, `expectancy`, `calibration_score`, `deflated_sharpe_ratio`, `trial_count_estimate`
 - Primary key: `id`
 - Important foreign keys: `evaluation_run_id -> beta_evaluation_runs.id`
 - Important indexes: unique `(evaluation_run_id)`
@@ -773,6 +824,14 @@ These are materialized result tables, not primary raw facts.
 - Important foreign keys: `evaluation_run_id -> beta_evaluation_runs.id`
 - Important indexes: `(evaluation_run_id, cluster_type)`
 - Append-only vs mutable: append-only summary table
+
+#### `beta_ui_summary_snapshots`
+
+- Purpose: daily or event-driven snapshots of the beta dashboard state so later reviews can compare what the UI showed at the time against current understanding.
+- Key columns: `id`, `snapshot_at`, `snapshot_type`, `beta_mode`, `active_positions_count`, `closed_trades_recent_count`, `watched_opportunities_count`, `identified_candidates_count`, `promoted_candidates_count`, `dismissed_candidates_count`, `shadow_enabled`, `demo_enabled`, `learning_enabled`, `health_status`, `summary_json`
+- Primary key: `id`
+- Important indexes: `(snapshot_at)`, `(snapshot_type, snapshot_at)`
+- Append-only vs mutable: append-only snapshot table
 
 ## 3. Recommended Primary Keys / Foreign Keys / Indexes
 
@@ -904,6 +963,7 @@ Recommended first implementation subset:
   - `beta_intraday_bars`
   - `beta_corporate_action_events`
   - `beta_event_calendar_events`
+  - `beta_filing_events`
 - news:
   - `beta_news_sources`
   - `beta_news_ingestion_runs`
@@ -923,6 +983,8 @@ Recommended first implementation subset:
   - `beta_dataset_rows`
   - `beta_hypotheses`
   - `beta_experiment_runs`
+  - `beta_validation_runs`
+  - `beta_validation_metrics`
   - `beta_model_versions`
   - `beta_strategy_versions`
   - `beta_promotion_decisions`
@@ -949,6 +1011,9 @@ Recommended first implementation subset:
   - `beta_evaluation_runs`
   - `beta_strategy_evaluation_summaries`
   - `beta_calibration_bucket_summaries`
+- UI support:
+  - `beta_ui_notifications`
+  - `beta_ui_summary_snapshots`
 - audit:
   - `beta_ai_review_runs`
   - `beta_ai_review_findings`
@@ -959,6 +1024,7 @@ Recommended first implementation subset:
 Later expansions can add:
 
 - richer feature and label lineage
+- broader point-in-time fundamental coverage beyond the narrow approved-field subset
 - more materialized evaluation/report tables
 - fuller replay-pack references stored in `beta_artifacts/`
 - optional FX promotion from context-only to tradeable research universe without redesigning the schema

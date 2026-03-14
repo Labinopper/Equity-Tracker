@@ -1,6 +1,6 @@
 # Paper Trading Beta Technical Implementation Plan
 
-Last updated: `2026-03-13`
+Last updated: `2026-03-14`
 
 Status: implementation-planning document for the exploratory paper-trading beta. This document converts the strategy, runtime architecture, and schema into an engineering delivery plan.
 
@@ -92,7 +92,7 @@ Recommended runtime split:
 
 - `web app process`
   - existing site
-  - optional read-only beta status views later
+  - beta UI surfaces and lightweight read models when the beta is enabled
   - no heavy training or research loops
 - `beta supervisor process`
   - separate Python process
@@ -134,12 +134,13 @@ The beta should support these explicit modes:
 - `FULL_INTERNAL_BETA`
   - full observation, scoring, evaluation, controlled retraining, and demo-trade lane
 
-Recommended `v1` path:
+Recommended `v1` default:
 
-1. `OBSERVE_ONLY`
-2. `SHADOW_ONLY`
-3. `DEMO_NO_LEARN`
-4. later `FULL_INTERNAL_BETA`
+- run in `FULL_INTERNAL_BETA` once the beta is enabled;
+- start observation immediately;
+- auto-enable shadow scoring once observation health, freshness, and minimum evidence plumbing are sound;
+- keep demo execution capability present from the start, but block new demo entries until the relevant candidate, confidence, and validation gates are satisfied;
+- keep `OBSERVE_ONLY`, `SHADOW_ONLY`, and `DEMO_NO_LEARN` available as fallback or degradation modes when the site or data environment requires them.
 
 ### 5.2 Required kill switches
 
@@ -157,12 +158,24 @@ Recommended settings:
 - `beta_paid_news_enrichment_enabled`
 - `beta_gpu_enabled`
 - `beta_training_enabled`
+- `beta_validation_enabled`
+- `beta_incremental_learning_enabled`
 - `beta_background_jobs_enabled`
 - `beta_max_cpu_workers`
+- `beta_max_concurrent_heavy_jobs`
 - `beta_max_training_minutes_per_run`
+- `beta_retrain_min_new_observations`
 - `beta_max_memory_mb`
 - `beta_training_window_start_local`
 - `beta_training_window_end_local`
+- `beta_research_quiet_hours_only`
+- `beta_auto_shadow_enable`
+- `beta_auto_demo_enable_when_ready`
+- `beta_shadow_default_cadence_minutes`
+- `beta_auto_pause_entries_on_degradation`
+- `beta_auto_resume_entries_on_recovery`
+- `beta_market_hours_credit_buffer`
+- `beta_market_hours_live_data_priority_enabled`
 - `beta_pause_on_startup`
 
 ### 5.3 Disable-learning behavior
@@ -174,6 +187,7 @@ If `beta_learning_enabled = false`:
 - stop dataset rebuilds except manually requested ones;
 - stop heavy evaluation refreshes;
 - preserve existing facts already collected;
+- preserve the last approved shadow-scoring and demo-trade configurations if those lanes remain separately enabled;
 - optionally keep shadow scoring or demo execution running only if explicitly allowed by separate toggles.
 
 If `beta_enabled = false`:
@@ -198,6 +212,7 @@ These are the things that should run continuously where relevant:
 - prospective minute market capture during supported market sessions;
 - prospective FX refresh;
 - prospective news/feed polling;
+- prospective official-release and filing polling for supported sources;
 - append-only event and audit writes;
 - shadow scoring on declared strategy cadence for the active live universe;
 - position monitoring for open demo trades.
@@ -234,6 +249,19 @@ Recommended `v1` policy:
 
 The system should always be learning in the broad sense by collecting new evidence, but it should not always be retraining or mining patterns.
 
+### 6.4 Recommended ongoing-learning policy
+
+The practical answer for a local machine that may run all day is:
+
+- continuous evidence capture;
+- continuous candidate detection and score-tape accumulation where enabled;
+- incremental feature and label finalization on bounded windows;
+- challenger-model retraining only when enough new evidence has accumulated or drift rules fire;
+- promotion-grade validation on schedule or on demand, not after every small data update;
+- last-approved model remains the active scorer until a challenger clears validation and activation thresholds, at which point the replacement may be automatic if the configured gates allow it.
+
+This allows learning to be ongoing in the operational sense without turning the machine into a permanent brute-force research loop.
+
 ## 7. Resource Management and System Safety
 
 ### 7.1 Default compute policy
@@ -255,6 +283,7 @@ Recommended `v1` defaults:
 Recommended guardrails:
 
 - `beta_max_cpu_workers = 1` by default
+- `beta_max_concurrent_heavy_jobs = 1` by default
 - limit BLAS/OpenMP thread pools in the beta worker process:
   - `OMP_NUM_THREADS=1`
   - `OPENBLAS_NUM_THREADS=1`
@@ -264,7 +293,17 @@ Recommended guardrails:
 - schedule heavy research jobs overnight or user-configured quiet windows
 - do not run backtests, training, and full evaluation summaries simultaneously
 
-### 7.3 GPU policy
+### 7.3 Provider and market-hours budget guardrails
+
+Recommended `v1` policy:
+
+- reserve a hard safety buffer of `5` provider credits per minute during market hours;
+- give first priority to price and FX refresh for the existing core portfolio and any active beta positions;
+- allow research polling, backfills, filings, and enrichment to consume only the remaining budget;
+- let backfills and heavier syncs run during market hours only when they can yield immediately to live-data needs;
+- prefer historical backfill, validation, and heavier enrichment in off-session or quiet hours.
+
+### 7.4 GPU policy
 
 Recommended `v1` policy:
 
@@ -283,7 +322,7 @@ GPU should only be introduced later if:
 - the worker has clear GPU budgeting and isolation;
 - GPU failure does not affect observation or demo trading.
 
-### 7.4 Memory and I/O guardrails
+### 7.5 Memory and I/O guardrails
 
 Recommended rules:
 
@@ -335,10 +374,14 @@ Suggested modules:
 - `reference_service.py`
 - `market_data_service.py`
 - `news_ingestion_service.py`
+- `filings_ingestion_service.py`
+- `fundamental_snapshot_service.py`
 - `signal_candidate_service.py`
 - `feature_store_service.py`
 - `label_store_service.py`
 - `dataset_service.py`
+- `validation_service.py`
+- `learning_scheduler_service.py`
 - `hypothesis_service.py`
 - `model_registry_service.py`
 - `strategy_registry_service.py`
@@ -457,6 +500,8 @@ Build:
 - US+UK daily-bar backfill pipeline
 - benchmark/sector/FX history backfill
 - corporate-action and event history support
+- official release and filing capture for approved sources
+- narrow point-in-time fundamental snapshots for approved fields only
 
 Leverage:
 
@@ -467,6 +512,7 @@ Deliverables:
 
 - broad multi-market daily learning corpus
 - reproducible retained-history baseline
+- structured catalyst context that improves foresight without requiring a giant alternative-data stack
 
 ### 10.4 Workstream D: Prospective observation
 
@@ -474,6 +520,7 @@ Build:
 
 - minute-bar collector for the active live universe
 - news collectors
+- official release and filing collectors
 - source throttling
 - ingestion run tracking
 - observation health checks
@@ -508,6 +555,7 @@ Build:
 - dataset rows and split assignment
 - hypothesis registry
 - experiment registry
+- statistical validation runs and metrics
 - model registry
 - strategy registry
 - promotion decisions
@@ -516,6 +564,7 @@ Deliverables:
 
 - frozen datasets
 - no notebook-only research
+- explicit trial-aware validation records for promotion reviews
 - clear promotion chain from hypothesis to model to strategy
 
 ### 10.7 Workstream G: Shadow scoring
@@ -582,6 +631,7 @@ Build:
 - regime scorecards
 - rejection analytics
 - hypothesis leaderboard snapshots
+- promotion-grade validation summaries including purged-fold results and trial-aware diagnostics
 - replay bundles
 - AI-audit input packs for strategy, signal, and potential-gain reviews
 
@@ -594,16 +644,184 @@ Deliverables:
 
 Build:
 
+- beta overview page modeled after the current Portfolio page structure
 - beta health/status surface
 - beta mode controls
-- read-only job status
+- beta watched-opportunities page
+- beta paper-trades page
+- beta replay/evidence page
+- interactive job status and runtime controls
+- paper-trade summaries for active and recently closed demo positions
+- watched-opportunity summaries for current signal candidates and promoted ideas under observation
+- in-app milestone notifications
+- daily dashboard summary snapshots
+- drill-down links to replay and evidence views
 - ability to pause learning
+- ability to pause shadow scoring
+- ability to pause demo trading
+- ability to trigger safe refresh or repair runs
 - ability to pause all beta work
 
 Important rule:
 
 - beta controls should be isolated from the main portfolio workflows;
 - if absent, the rest of the site still works normally.
+
+### 10.11.1 Recommended beta overview surface
+
+The beta should have one primary read surface that is easy to scan and intentionally familiar.
+
+Recommended route shape:
+
+- `/paper-trading-beta`
+  - internal-only overview page
+
+Recommended design direction:
+
+- mirror the current Portfolio page at a layout level, not at a behavioral or data-coupling level;
+- reuse the same broad page grammar where useful: page title, state pill, refresh status, top-level actions, summary sections, and live-refresh shell;
+- do not reuse portfolio-specific logic, holdings templates, or deterministic guardrail wiring in a way that couples the beta to the core page.
+
+The beta overview page should answer, at a glance:
+
+- what paper trades are currently open;
+- what paper trades recently closed and how they performed;
+- what opportunities the system is currently watching or has identified as potential signals;
+- what the beta mode and health state are;
+- whether learning, shadow scoring, and demo execution are currently enabled;
+- whether learning quality or live prospective performance is improving or deteriorating;
+- what important automatic actions recently occurred.
+
+The page should be intentionally lighter than the main Portfolio page.
+
+Design rule:
+
+- use Portfolio as a familiarity guide, not a complexity target;
+- show fewer sections;
+- show fewer controls;
+- show only the highest-signal columns by default;
+- cap each list to a small number of rows with a `view more` path instead of making the landing page endlessly long.
+
+Recommended sections:
+
+- summary strip
+  - beta mode
+  - observation freshness
+  - shadow-scoring freshness
+  - count of identified signal candidates
+  - count of promoted or auto-promoted candidates
+  - count of rejected or dismissed candidates
+  - count of active paper positions
+  - count of watched opportunities
+- active paper positions
+  - symbol
+  - strategy family
+  - entry date/time
+  - entry price
+  - current mark
+  - unrealized P/L
+  - target / stop summary
+  - confidence band at entry
+- recent closed paper trades
+  - symbol
+  - open date
+  - close date
+  - net result after estimated costs
+  - exit reason
+  - replay link
+- watched opportunities
+  - symbol
+  - signal family or candidate name
+  - detected time
+  - expected direction
+  - expected horizon
+  - confidence
+  - status such as `detected`, `under review`, `promoted`, or `dismissed`
+  - optional quick rationale
+- recent audit notes and milestone notifications
+  - timestamp
+  - action type
+  - affected symbol, candidate, or strategy
+  - short rationale
+- system state
+  - current strategy versions in shadow/demo use
+  - last successful collectors/build jobs
+  - warnings when data freshness or enrichment has degraded
+
+Recommended default limits:
+
+- active paper positions: show all if the count is small, otherwise cap at roughly `5` to `10`
+- recent closed paper trades: latest `5`
+- watched opportunities: top `5` to `10` by priority, confidence, or recency
+- recent audit notes: latest `5`
+- system warnings: only active issues, not full operational history
+
+### 10.11.2 UI detail philosophy
+
+The default beta UI should not force the user to inspect granular internals just to understand what the system is doing.
+
+Recommended behavior:
+
+- show concise summaries by default;
+- expose evidence, replay, score breakdowns, and raw artifacts behind secondary links or drawers;
+- keep article-level diagnostics, feature details, and validation metrics available, but not the first thing the user sees.
+- avoid multi-screen scrolling on the default landing page;
+- prefer one compact overview plus drill-down pages over one giant dashboard.
+
+This matches the goal you stated:
+
+- see paper trades;
+- see what the system is looking for;
+- keep the overview readable.
+
+### 10.11.3 Implementation rule for reusing the Portfolio page
+
+Use the current Portfolio surface as a reference implementation, not as a shared dependency.
+
+Recommended approach:
+
+- create separate beta templates such as:
+  - `equity_tracker/src/api/templates/paper_trading_beta/overview.html`
+  - `equity_tracker/src/api/templates/partials/paper_trading_beta_overview_root.html`
+- copy only presentation patterns that help with usability:
+  - title/action row
+  - live refresh shell
+  - section cards
+  - summary pills
+  - filter/sort controls where useful
+- keep all beta-specific JS, routes, and partial-refresh endpoints separate from `/portfolio` endpoints;
+- do not import portfolio-only assumptions such as holdings-specific filters, tax state, or deterministic guardrail dismissal flows.
+
+This preserves familiarity without creating coupling that could interfere with the normal site.
+
+### 10.11.4 Recommended read-model inputs for the beta overview
+
+The overview page should read from stable beta summary queries or materialized views, not from heavy raw-table aggregation on every page load.
+
+Recommended backing queries or read models:
+
+- active positions summary
+  - `beta_demo_positions`
+  - latest `beta_demo_position_events`
+  - `beta_trade_cost_breakdowns`
+- recent closed paper trades summary
+  - `beta_demo_positions`
+  - `beta_return_attributions`
+  - `beta_recommendations`
+- watched opportunities summary
+  - `beta_signal_candidates`
+  - optional latest `beta_score_tape` references
+- notifications and audit summary
+  - `beta_ui_notifications`
+  - latest `beta_event_log` projections where needed
+- daily dashboard snapshot summary
+  - `beta_ui_summary_snapshots`
+- mode and health summary
+  - runtime settings
+  - job-status snapshots
+  - freshness monitors
+
+If needed, add beta-specific summary tables or cached read models later rather than making the page scan the entire score tape or candidate history on demand.
 
 ## 11. Scheduling Plan
 
@@ -614,8 +832,10 @@ Run continuously where relevant:
 - minute market collector during supported sessions
 - FX refresh
 - feed polling
+- official release and filing polling
 - open-position monitoring
-- shadow scoring for active strategies on declared cadence
+- shadow scoring for active strategies on declared cadence, with `5` minutes as the default unless a strategy version overrides it
+- opportunistic historical sync or backfill work only when live data, the site, and the market-hours credit buffer remain protected
 
 ### 11.2 Nightly tasks
 
@@ -624,6 +844,7 @@ Run at low-load times:
 - feature backfills
 - label finalization
 - evaluation summaries
+- challenger validation runs
 - backups
 - recent-repair jobs
 
@@ -633,6 +854,7 @@ Run less frequently:
 
 - large retraining jobs
 - large walk-forward jobs
+- broad multiple-testing and promotion-grade validation sweeps
 - broad hypothesis refreshes
 - leaderboard rebuilds
 - archive compaction
@@ -643,11 +865,14 @@ Suggested starting schedule:
 
 - minute collection: every minute in-session
 - RSS/official news polling: every `5` to `15` minutes
+- official release and filing polling: every `15` to `60` minutes
 - paid enrichment: event-driven or hourly at most
 - feature incremental builds: per scoring cycle
+- default shadow scoring cadence: every `5` minutes
 - label finalization: nightly
 - evaluation summaries: nightly and weekly
-- retraining: weekly or manual
+- challenger retraining: weekly, on drift trigger, or manual
+- promotion-grade validation: weekly, before activation review, or manual
 - broad pattern mining: weekly or manual
 
 ## 12. Technical Answer to “Should Learning Be 24/7?”
@@ -660,6 +885,13 @@ The correct answer is:
 - `continuous full retraining`: no
 
 The system should be constantly collecting evidence, not constantly consuming all available compute.
+
+The practical live-learning model should be:
+
+- the active scorer is stable and approved;
+- challengers train slowly in the background on bounded schedules;
+- validation is stricter than training;
+- validated replacements may activate automatically once configured thresholds are met, with the activation logged and surfaced in the beta UI.
 
 `v1` should treat the machine as a shared environment:
 
@@ -703,6 +935,7 @@ Deliver:
 - daily corpus ingestion
 - benchmark/sector/FX context
 - corporate actions and event history
+- automatic first-run historical backfill kickoff
 
 Exit criteria:
 

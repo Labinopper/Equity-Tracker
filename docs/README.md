@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: `2026-03-13`
+Last updated: `2026-03-14`
 
 ## Source of Truth Files
 
@@ -76,3 +76,9 @@ Last updated: `2026-03-13`
 - Added a deterministic allocation planner with user-defined candidate universe management and before/after concentration, FX, wrapper, and friction deltas.
 - Added a dated implementation review addendum capturing alignment findings, priority fixes, and the next delivery roadmap.
 - Split the TODO docs into a compact working backlog (`docs/todo.md`) and a historical archive (`docs/todo_archive.md`).
+
+## Beta Adoption Sync (`2026-03-14`)
+
+- The experimental predictive paper-trading beta is now explicitly tracked as a segregated workstream in `docs/todo.md`.
+- `docs/STRATEGIC_DOCUMENTATION.md` now defines the beta as a separate strategic domain rather than treating it as an implied extension of the deterministic core.
+- The beta planning set now includes strategy, runtime architecture, technical implementation plan, and split-database schema docs under `docs/paper_trading_beta/`.

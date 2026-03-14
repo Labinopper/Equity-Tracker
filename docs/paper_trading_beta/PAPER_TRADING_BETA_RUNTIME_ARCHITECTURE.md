@@ -1,6 +1,6 @@
 # Paper Trading Beta Runtime Architecture
 
-Last updated: `2026-03-13`
+Last updated: `2026-03-14`
 
 Status: proposed operational architecture for the exploratory paper-trading beta. This document translates the strategy and schema into a practical runtime plan.
 
@@ -60,8 +60,9 @@ It is large enough to produce:
 
 Recommended `v1` target:
 
-- one primary live market at first;
-- roughly `50` liquid names actively scored in shadow mode and demo trading;
+- UK-first live-paper focus at first, with US names allowed in shadow or demo lanes once their data, FX context, and cost coverage are good enough;
+- an app-selected seed of roughly `50` liquid names actively scored in shadow mode and demo trading;
+- automatic expansion beyond the seed once the system judges that data coverage, research health, and operational stability are good enough;
 - minute-bar and live news capture focused on that active universe and its required benchmark/reference instruments.
 
 This is the main prospective testing asset.
@@ -128,7 +129,21 @@ Coverage rule:
 
 - corporate-action and event coverage should span the full retained daily-bar period for any instrument in the research corpus.
 
-### 4.5 News and text-derived context
+### 4.5 Official releases, filings, and narrow fundamental context
+
+Required:
+
+- prospective capture of official company, exchange, and regulatory releases for supported sources;
+- stable references to filing or release documents and their publication timestamps;
+- extracted structured event fields for approved release types;
+- point-in-time snapshots for a narrow set of research-approved fundamental fields where as-reported timing can be retained.
+
+Design rule:
+
+- official releases and filing metadata should be treated as higher-value structured context than broad, noisy alternative data;
+- narrow fundamental context is useful, but the beta should not try to become a giant fundamentals warehouse in `v1`.
+
+### 4.6 News and text-derived context
 
 Required:
 
@@ -141,7 +156,7 @@ Recommended historical depth:
 - ideally `12` to `36` months of metadata/headlines if rights permit;
 - prospective coverage matters more than decade-scale text backfill in `v1`.
 
-### 4.6 FX context
+### 4.7 FX context
 
 Required:
 
@@ -168,11 +183,11 @@ Jobs:
   - cadence: daily or on demand
   - outputs: updated reference rows, new instrument candidates, changed mappings
 - `research_corpus_review_job`
-  - cadence: monthly or quarterly
-  - outputs: governed adds/removes for the broader US+UK corpus
+  - cadence: scheduled review plus event-driven updates when rule versions change materially
+  - outputs: versioned adds/removes for the broader US+UK corpus
 - `live_universe_review_job`
-  - cadence: monthly or more conservatively
-  - outputs: governed adds/removes for the narrow live-paper universe
+  - cadence: daily or event-driven, with expansion and demotion triggered by coverage, health, and research-state rules
+  - outputs: versioned adds/removes for the narrow live-paper universe
 
 Design rule:
 
@@ -193,12 +208,18 @@ Jobs:
   - cadence: one-off plus periodic reconciliation
 - `event_calendar_backfill_job`
   - cadence: one-off plus rolling updates
+- `official_release_backfill_job`
+  - cadence: one-off where sources permit, then rolling updates
+- `fundamental_snapshot_backfill_job`
+  - cadence: optional narrow backfill for approved fields only
 
 Primary outputs:
 
 - raw daily bars
 - corporate actions
 - event calendar records
+- official release and filing records
+- narrow point-in-time fundamental snapshots
 
 ### 5.3 Prospective observation lane
 
@@ -217,6 +238,9 @@ Jobs:
 - `news_collector_official`
   - cadence: every `15` to `60` minutes depending on source
   - scope: regulator/company/official feeds where useful
+- `filings_collector_official`
+  - cadence: every `15` to `60` minutes depending on source and market hours
+  - scope: supported regulator, exchange, and company announcement sources
 - `news_enrichment_paid`
   - cadence: low-frequency or event-triggered only
   - scope: active live-paper names, promoted hypotheses, or active demo positions
@@ -244,12 +268,16 @@ Jobs:
 - `label_finalize_job`
   - cadence: nightly
   - scope: any decision timestamps whose forward horizon has completed
+- `research_validation_job`
+  - cadence: on demand, nightly for current challengers, or before promotion review
+  - scope: purged-fold checks, holdout checks, trial-aware diagnostics, and promotion-grade validation outputs
 
 Design rules:
 
 - features are stored, not left embedded in model code;
 - labels are materialized, not recomputed ad hoc inside experiments;
 - label timing rules must prevent future leakage.
+- statistical validation should be treated as a first-class output, not as notebook commentary.
 
 ### 5.5 Research and experiment lane
 
@@ -268,13 +296,17 @@ Jobs:
 - `walk_forward_eval_job`
   - cadence: on demand or scheduled overnight
   - output: experiment results, baseline comparisons, confidence analysis
-- `promotion_review_job`
-  - cadence: manual review supported by prepared outputs
-  - output: promote, reject, suspend, or retain-in-research decision
+- `statistical_validation_job`
+  - cadence: on demand or scheduled overnight for challengers
+  - output: purged/embargoed CV results where relevant, trial-aware diagnostics, and promotion-ready validation summaries
+- `activation_gate_job`
+  - cadence: after validation runs complete or when challenger drift rules fire
+  - output: auto-promote, reject, suspend, or retain-in-research decision with a logged reason chain
 
 Design rule:
 
 - research should run against frozen dataset versions, not mutable rolling joins.
+- challenger training may be ongoing, but only active validated strategy versions should feed shadow or demo lanes.
 
 ### 5.6 Shadow scoring and demo-trade execution lane
 
@@ -285,7 +317,7 @@ Purpose:
 Jobs:
 
 - `shadow_score_job`
-  - cadence: per strategy horizon, often once per minute for minute-aware setups or less frequently for hourly/daily strategies
+  - cadence: per strategy horizon, with roughly every `5` minutes as the default live cadence unless a strategy version justifies something faster or slower
   - output: score run plus full-universe score tape
 - `recommendation_gate_job`
   - cadence: immediately after a score run
@@ -338,19 +370,21 @@ Design rules:
 Recommended `v1` cadence:
 
 - reference sync: daily
-- research-corpus review: monthly or quarterly
-- live-universe review: monthly
+- research-corpus review: scheduled plus event-driven when rule versions change materially
+- live-universe review: daily or event-driven
 - daily history backfill: initial bulk plus repair runs
 - minute market collector: every minute during session
 - RSS news collector: every `5` to `15` minutes
 - official-feed collector: every `15` to `60` minutes
+- official filings/releases collector: every `15` to `60` minutes
 - paid enrichment: low-frequency only, budget permitting
 - incremental feature build: per scoring cycle
 - batch feature rebuild: nightly or on demand
 - label finalization: nightly
 - dataset build: on demand
 - research training and walk-forward evaluation: on demand or overnight
-- shadow scoring: per strategy cadence
+- promotion-grade statistical validation: nightly for active challengers or on demand
+- shadow scoring: per strategy cadence, with roughly every `5` minutes as the default
 - paper execution checks: event-driven plus minute monitoring
 - evaluation summaries: nightly and weekly
 - beta backup: nightly
@@ -361,7 +395,7 @@ Degrade in this order:
 
 1. freeze paid news enrichment;
 2. continue RSS and official-feed ingestion;
-3. preserve minute market and FX refresh for the active live universe;
+3. preserve the market-hours credit buffer and live price/FX refresh for the core portfolio plus active beta positions;
 4. continue writing score tape and audit events even if recommendations are frozen;
 5. freeze new entries if price freshness, ledger integrity, or model/version loading fails.
 
