@@ -184,6 +184,39 @@ class CashLedgerService:
         _save_payload(_ledger_path(db_path), payload)
 
     @staticmethod
+    def delete_entries_by_metadata(
+        db_path: Path | None,
+        *,
+        metadata_key: str,
+        metadata_value: str,
+    ) -> int:
+        if db_path is None:
+            return 0
+
+        key = str(metadata_key or "").strip()
+        value = str(metadata_value or "").strip()
+        if not key or not value:
+            return 0
+
+        entries = CashLedgerService.load_entries(db_path)
+        kept_entries: list[dict] = []
+        deleted = 0
+        for entry in entries:
+            metadata = entry.get("metadata")
+            if not isinstance(metadata, dict):
+                kept_entries.append(entry)
+                continue
+            candidate = str(metadata.get(key) or "").strip()
+            if candidate == value:
+                deleted += 1
+                continue
+            kept_entries.append(entry)
+
+        if deleted:
+            CashLedgerService.save_entries(db_path, kept_entries)
+        return deleted
+
+    @staticmethod
     def record_entry(
         *,
         db_path: Path | None,

@@ -132,6 +132,40 @@ def test_api_history_security_includes_dividend_adjusted_gain_fields(client):
     assert stats["capital_at_risk_after_dividends_gbp"] == "50.00"
 
 
+def test_api_history_uses_actual_net_dividends_when_withholding_is_recorded(client):
+    security_id = _add_security(client, ticker="HISTWHT")
+    _add_lot(client, security_id=security_id)
+
+    yesterday = date.today() - timedelta(days=1)
+    today = date.today()
+    _upsert_daily_price(security_id, price_date=yesterday, close_gbp="12.00")
+    _upsert_daily_price(security_id, price_date=today, close_gbp="12.00")
+
+    entry = client.post(
+        "/api/dividends/entries",
+        json={
+            "security_id": security_id,
+            "dividend_date": today.isoformat(),
+            "amount_original_ccy": "2.50",
+            "original_currency": "GBP",
+            "tax_withheld_original_ccy": "0.37",
+            "tax_treatment": "TAXABLE",
+            "source": "test",
+        },
+    )
+    assert entry.status_code == 201, entry.text
+
+    payload = client.get("/api/history/portfolio").json()
+    latest = payload["total_series"][-1]
+    assert latest["cumulative_net_dividends_gbp"] == "2.13"
+    assert latest["sellable_gain_plus_net_dividends_gbp"] == "22.13"
+
+    stats = payload["summary_stats"]
+    assert stats["estimated_net_dividends_gbp"] == "2.13"
+    assert stats["gain_if_sold_plus_net_dividends_gbp"] == "22.13"
+    assert stats["capital_at_risk_after_dividends_gbp"] == "97.87"
+
+
 def test_history_ui_pages_show_dividend_adjusted_toggle_and_labels(client):
     security_id = _add_security(client, ticker="HUITOG")
     _add_lot(client, security_id=security_id)

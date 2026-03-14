@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Lot Explorer - Equity Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div class="page-title__heading">
+    <h1>Lot Explorer</h1>
+  </div>
+  <div class="page-actions">
+    <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
+    <a href="/reconcile#trace-contributing-lots" class="btn btn-secondary btn-sm">Reconcile</a>
+    <a href="/audit" class="btn btn-secondary btn-sm">Audit</a>
+  </div>
+</div>
+
+<p class="muted">Forensic lot-level inspection across holdings, wrappers, sellability states, transfer chains, and disposal history. Use this page to inspect the rows that feed Portfolio, Capital Stack, Tax Plan, and Reconcile.</p>
+
+<div class="stats stats-band">
+  <div class="stat">
+    <span class="stat__label">Visible Lots</span>
+    <span class="stat__value">{{ payload.summary.visible_rows }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Sellable Open Lots</span>
+    <span class="stat__value">{{ payload.summary.sellable_lots }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Locked / At Risk</span>
+    <span class="stat__value">{{ payload.summary.locked_or_at_risk_lots }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Exhausted Lots</span>
+    <span class="stat__value">{{ payload.summary.exhausted_lots }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Rows With Transfers</span>
+    <span class="stat__value">{{ payload.summary.rows_with_transfers }}</span>
+  </div>
+  <div class="stat">
+    <span class="stat__label">Rows With Disposals</span>
+    <span class="stat__value">{{ payload.summary.rows_with_disposals }}</span>
+  </div>
+</div>
+
+<details class="card net-panel" open>
+  <summary>Filters</summary>
+  <form method="get" action="/lot-explorer" class="filter-bar">
+    <label for="lot-explorer-security" class="filter-label">Security</label>
+    <select id="lot-explorer-security" name="security_id">
+      <option value="">All</option>
+      {% for option in payload.filter_options.securities %}
+      <option value="{{ option.id }}" {{ 'selected' if payload.filters.security_id == option.id else '' }}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="lot-explorer-scheme" class="filter-label">Scheme</label>
+    <select id="lot-explorer-scheme" name="scheme">
+      <option value="">All</option>
+      {% for option in payload.filter_options.schemes %}
+      <option value="{{ option }}" {{ 'selected' if payload.filters.scheme == option else '' }}>{{ option }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="lot-explorer-sellability" class="filter-label">State</label>
+    <select id="lot-explorer-sellability" name="sellability">
+      <option value="">All</option>
+      {% for option in payload.filter_options.sellability %}
+      <option value="{{ option }}" {{ 'selected' if payload.filters.sellability == option else '' }}>{{ option }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="lot-explorer-wrapper" class="filter-label">Wrapper</label>
+    <select id="lot-explorer-wrapper" name="wrapper">
+      <option value="">All</option>
+      {% for option in payload.filter_options.wrapper %}
+      <option value="{{ option }}" {{ 'selected' if payload.filters.wrapper == option else '' }}>{{ option }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="filter-label" for="lot-explorer-exhausted">
+      <input id="lot-explorer-exhausted" type="checkbox" name="include_exhausted" value="true" {{ 'checked' if payload.filters.include_exhausted else '' }}>
+      Include exhausted
+    </label>
+
+    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+    <a href="/lot-explorer" class="btn btn-secondary btn-sm">Reset</a>
+  </form>
+</details>
+
+<details class="card net-panel" open>
+  <summary>Lot Forensics</summary>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Security / Lot</th>
+          <th>State</th>
+          <th>Acquired</th>
+          <th class="num">Qty</th>
+          <th class="num">Current Basis</th>
+          <th class="num">Market / Net If Sold</th>
+          <th>History</th>
+          <th>Trace</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if payload.rows %}
+          {% for row in payload.rows %}
+          <tr>
+            <td>
+              <strong>{{ row.ticker }}</strong>
+              <div class="muted">{{ row.scheme_type }} · {{ row.wrapper_bucket }}</div>
+              <div><code>{{ row.lot_id }}</code></div>
+              {% if row.structural_state != 'STANDARD' %}
+              <div class="muted">{{ row.structural_state.replace('_', ' ') }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <strong>{{ row.sellability_status }}</strong>
+              {% if row.sellability_unlock_date %}<div class="muted">Unlocks {{ row.sellability_unlock_date }}</div>{% endif %}
+              {% if row.forfeiture_days_remaining is not none %}<div class="muted">Forfeiture {{ row.forfeiture_days_remaining }}d</div>{% endif %}
+              {% if row.fifo_rank_current %}<div class="muted">Current order #{{ row.fifo_rank_current }}</div>{% endif %}
+            </td>
+            <td>
+              {{ row.acquisition_date }}
+              <div class="muted">Tax year {{ row.tax_year }}</div>
+              <div class="muted">{{ row.original_currency }}{% if row.fx_rate_source %} · FX {{ row.fx_rate_source }}{% endif %}</div>
+            </td>
+            <td class="num">
+              {{ row.quantity_remaining }} / {{ row.quantity }}
+              {% if row.quantity_disposed != '0' %}
+              <div class="muted">Disposed {{ row.quantity_disposed }}</div>
+              {% endif %}
+            </td>
+            <td class="num">
+              <div>&pound;{{ row.current_cost_basis_gbp|money }}</div>
+              <div class="muted">True &pound;{{ row.current_true_cost_gbp|money }}</div>
+              {% if row.unrealised_gain_economic_gbp is not none %}
+              <div class="muted">Gain &pound;{{ row.unrealised_gain_economic_gbp|money }}</div>
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if row.market_value_gbp is not none %}<div>&pound;{{ row.market_value_gbp|money }}</div>{% else %}<div class="muted">Unavailable</div>{% endif %}
+              {% if row.net_if_sold_gbp is not none %}
+              <div class="muted">Net &pound;{{ row.net_if_sold_gbp|money }}</div>
+              {% endif %}
+              {% if row.employment_tax_gbp is not none and row.employment_tax_gbp != '0.00' %}
+              <div class="muted">Emp tax &pound;{{ row.employment_tax_gbp|money }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.transfer_event_count or row.disposal_event_count %}
+              {% if row.transfer_event_count %}<div>{{ row.transfer_event_count }} transfer event(s)</div>{% endif %}
+              {% if row.disposal_event_count %}<div>{{ row.disposal_event_count }} disposal allocation(s)</div>{% endif %}
+              {% if row.last_transfer_date %}<div class="muted">Last transfer {{ row.last_transfer_date }}</div>{% endif %}
+              {% if row.last_disposal_date %}<div class="muted">Last disposal {{ row.last_disposal_date }}</div>{% endif %}
+              {% else %}
+              <span class="muted">No transfer/disposal history</span>
+              {% endif %}
+              {% for note in row.notes %}
+              <div class="muted">{{ note }}</div>
+              {% endfor %}
+            </td>
+            <td>
+              <a href="{{ row.audit_href }}">Audit</a>
+              <div><a href="{{ row.history_href }}">History</a></div>
+              <div><a href="{{ row.reconcile_href }}">Reconcile</a></div>
+              <div><a href="{{ row.add_dividend_href }}">Add Dividend</a></div>
+              <div><a href="{{ row.edit_href }}">Edit</a></div>
+              <div><a href="{{ row.transfer_href }}">Transfer</a></div>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="8" class="muted">No lots match the current filters.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+{% if payload.notes %}
+<details class="card net-panel">
+  <summary>Page Notes</summary>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for note in payload.notes %}
+        <tr><td>{{ note }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+{% endblock %}

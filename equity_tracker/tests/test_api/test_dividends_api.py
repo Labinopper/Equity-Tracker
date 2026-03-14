@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 from src.api import _state
+from src.app_context import AppContext
+from src.db.repository import DividendReferenceEventRepository
 from src.services.cash_ledger_service import CashLedgerService
 from src.settings import AppSettings
 
@@ -57,6 +59,9 @@ def test_api_dividends_summary_empty_and_ui_renders(client):
     assert page.status_code == 200
     assert "Dividends" in page.text
     assert "Add Dividend" in page.text
+    assert "Optional Lot Scope And Traceability" in page.text
+    assert "Ex-Date" in page.text
+    assert "Lot Explorer" in page.text
     assert "Tax-Year Dividend Summary" in page.text
 
 
@@ -155,6 +160,37 @@ def test_dividends_ui_add_form_submission(client):
     db_path = _state.get_db_path()
     balances = CashLedgerService.balances(db_path)
     assert balances["BROKER"]["GBP"] == Decimal("75.25")
+
+
+def test_dividends_ui_add_form_supports_usd_with_optional_gbp_and_fx(client):
+    sec_id = _add_security(client, "DIVUSD")
+
+    submit = client.post(
+        "/dividends/add",
+        data={
+            "security_id": sec_id,
+            "dividend_date": "2026-02-19",
+            "original_currency": "USD",
+            "amount_original_ccy": "100.00",
+            "amount_gbp": "79.00",
+            "fx_rate_to_gbp": "0.7900",
+            "tax_treatment": "TAXABLE",
+            "source": "manual",
+            "notes": "usd submit",
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+
+    page = client.get("/dividends")
+    assert page.status_code == 200
+    assert "DIVUSD" in page.text
+    assert "USD" in page.text
+    assert "0.790000" in page.text
+
+    db_path = _state.get_db_path()
+    balances = CashLedgerService.balances(db_path)
+    assert balances["BROKER"]["USD"] == Decimal("100.00")
 
 
 def test_dividends_reminder_form_updates_and_clears_security_date(client):
@@ -262,6 +298,50 @@ def test_dividends_ui_ib_style_fields_feed_cash_stats(client):
     assert balances["BROKER"]["GBP"] == Decimal("2.86")
 
 
+def test_dividends_manual_entry_with_ex_date_ticks_expected_reference_row(client):
+    sec_id = _add_security(client, "DIVMATCH")
+    _add_lot(client, security_id=sec_id, scheme_type="BROKERAGE", quantity="2")
+
+    with AppContext.write_session() as sess:
+        DividendReferenceEventRepository(sess).upsert(
+            security_id=sec_id,
+            ex_dividend_date=date(2026, 2, 10),
+            payment_date=date(2026, 3, 13),
+            amount_original_ccy=Decimal("1.68"),
+            original_currency="GBP",
+            source="test_reference",
+            provider_event_key=f"test_reference:{sec_id}:2026-02-10",
+        )
+
+    submit = client.post(
+        "/dividends/add",
+        data={
+            "security_id": sec_id,
+            "lot_ids": [],
+            "dividend_date": "2026-03-13",
+            "ex_date": "2026-02-10",
+            "original_currency": "GBP",
+            "amount_original_ccy": "3.36",
+            "tax_treatment": "TAXABLE",
+            "source": "manual",
+            "cash_container": "BROKER",
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+
+    summary = client.get("/api/dividends/summary")
+    assert summary.status_code == 200
+    payload = summary.json()
+    assert not any(row["ticker"] == "DIVMATCH" for row in payload["reference_events"])
+    assert payload["reference_summary"]["recorded_count"] == 1
+    assert payload["reference_summary"]["awaiting_count"] == 0
+
+    page = client.get("/dividends")
+    assert page.status_code == 200
+    assert "DIVMATCH" not in page.text
+
+
 def test_dividends_ui_add_allows_cash_container_override(client):
     sec_id = _add_security(client, "DIVISA")
 
@@ -314,6 +394,88 @@ def test_dividends_ui_add_allows_lot_first_submission(client):
     db_path = _state.get_db_path()
     balances = CashLedgerService.balances(db_path)
     assert balances["BROKER"]["GBP"] == Decimal("12.34")
+
+
+def test_dividends_page_prefills_from_lot_query_context(client):
+    sec_id = _add_security(client, "DIVPREFILL")
+    lot_one = _add_lot(client, security_id=sec_id, scheme_type="BROKERAGE", quantity="1.25")
+    lot_two = _add_lot(client, security_id=sec_id, scheme_type="BROKERAGE", quantity="2.75")
+
+    page = client.get(f"/dividends?lot_ids={lot_one}&lot_ids={lot_two}")
+    assert page.status_code == 200
+    assert lot_one in page.text
+    assert lot_two in page.text
+    assert "Selected lots" in page.text
+    assert "Resolved group" in page.text
+    assert "4.00 sh" in page.text
+
+
+def test_dividends_page_can_prefill_add_form_from_expected_dividend_row(client):
+    sec_id = _add_security(client, "DIVEXPECT")
+    lot_one = _add_lot(client, security_id=sec_id, scheme_type="BROKERAGE", quantity="1")
+    lot_two = _add_lot(client, security_id=sec_id, scheme_type="BROKERAGE", quantity="2")
+
+    with AppContext.write_session() as sess:
+        DividendReferenceEventRepository(sess).upsert(
+            security_id=sec_id,
+            ex_dividend_date=date(2026, 3, 1),
+            payment_date=date(2026, 3, 15),
+            amount_original_ccy=Decimal("1.50"),
+            original_currency="GBP",
+            source="test_reference",
+            provider_event_key=f"test_reference:{sec_id}:2026-03-01",
+        )
+
+    page = client.get(
+        "/dividends?"
+        f"prefill_security_id={sec_id}&"
+        "prefill_dividend_date=2026-03-15&"
+        "prefill_original_currency=GBP&"
+        "prefill_amount_original_ccy=4.50&"
+        "prefill_ex_date=2026-03-01&"
+        "prefill_holding_scope=BROKERAGE&"
+        "prefill_quantity=3"
+    )
+    assert page.status_code == 200
+    assert "Prefilled from an expected dividend row" in page.text
+    assert 'value="2026-03-15"' in page.text
+    assert 'value="4.50"' in page.text
+    assert 'value="2026-03-01"' in page.text
+    assert "Selected lots" in page.text
+    assert "3 sh" in page.text
+    assert lot_one in page.text
+    assert lot_two in page.text
+
+    listing = client.get("/dividends")
+    assert listing.status_code == 200
+    assert "Add Dividend" in listing.text
+    assert "Auto-selects eligible" in listing.text
+
+
+def test_dividends_lot_prefill_does_not_override_user_selected_currency(client):
+    sec_id = _add_security(client, "DIVCURR")
+    lot_id = _add_lot(client, security_id=sec_id, scheme_type="BROKERAGE", quantity="1")
+
+    submit = client.post(
+        "/dividends/add",
+        data={
+            "security_id": sec_id,
+            "lot_ids": [lot_id],
+            "dividend_date": "2026-03-13",
+            "original_currency": "GBP",
+            "amount_original_ccy": "2.50",
+            "tax_treatment": "TAXABLE",
+            "source": "manual",
+            "cash_container": "BROKER",
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+
+    summary = client.get("/api/dividends/summary")
+    assert summary.status_code == 200
+    row = next(r for r in summary.json()["entries"] if r["ticker"] == "DIVCURR")
+    assert row["original_currency"] == "GBP"
 
 
 def test_dividends_backfill_cash_posts_missing_entries_once(client):

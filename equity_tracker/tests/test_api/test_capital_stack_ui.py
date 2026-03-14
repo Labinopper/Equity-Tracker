@@ -170,6 +170,49 @@ def test_dividend_adjusted_capital_at_risk_uses_separate_metric(client, db_engin
     assert "Dividend-Adjusted Capital at Risk" in home.text
 
 
+def test_capital_stack_uses_actual_net_dividends_when_withholding_recorded(client, db_engine):
+    _, db_path = db_engine
+    settings = AppSettings.defaults_for(db_path)
+    settings.default_gross_income = Decimal("0")
+    settings.default_pension_sacrifice = Decimal("0")
+    settings.default_other_income = Decimal("0")
+    settings.default_student_loan_plan = None
+    settings.save()
+
+    sec_id = _add_security(client, "CSTACKWHT")
+    _add_lot(
+        client,
+        security_id=sec_id,
+        scheme_type="BROKERAGE",
+        acquisition_date=(date.today() - timedelta(days=30)).isoformat(),
+        quantity="10",
+        price="100.00",
+    )
+
+    DividendService.add_dividend_entry(
+        security_id=sec_id,
+        dividend_date=date.today(),
+        amount_original_ccy=Decimal("2.50"),
+        original_currency="GBP",
+        tax_withheld_original_ccy=Decimal("0.37"),
+        tax_treatment="TAXABLE",
+        source="test",
+    )
+
+    summary = PortfolioService.get_portfolio_summary(
+        settings=settings,
+        use_live_true_cost=False,
+    )
+    stack = CapitalStackService.get_snapshot(
+        settings=settings,
+        db_path=_state.get_db_path(),
+        summary=summary,
+    )
+
+    assert Decimal(str(stack["estimated_net_dividends_gbp"])) == Decimal("2.13")
+    assert Decimal(str(stack["dividend_adjusted_capital_at_risk_gbp"])) == Decimal("997.87")
+
+
 def test_capital_stack_combined_deployable_includes_gbp_cash(client, db_engine):
     _, db_path = db_engine
     settings = AppSettings.defaults_for(db_path)

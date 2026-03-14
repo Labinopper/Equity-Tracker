@@ -208,6 +208,8 @@ async def insights_page(request: Request) -> HTMLResponse:
         max_items=6,
     )
     data_quality = StrategicService.get_data_quality(settings=settings)
+    digest_summary = digest.get("summary") or {}
+    trace_links = digest.get("trace_links") or {}
 
     links = [
         {
@@ -307,6 +309,41 @@ async def insights_page(request: Request) -> HTMLResponse:
             "action_label": "Open Candidate Universe",
         },
     ]
+    pathway_cards = [
+        {
+            "label": "Deployable Capital",
+            "desc": "Validate what can actually be moved now, then inspect deduction layers and lot evidence.",
+            "href": "/capital-stack",
+            "action_label": "Open Capital Stack",
+            "meta": (
+                f"{digest_summary.get('threshold_breach_count', 0)} threshold pressure item(s)"
+                if digest_summary.get("threshold_breach_count", 0)
+                else "Use when deciding what is really deployable today"
+            ),
+        },
+        {
+            "label": "Execution Path",
+            "desc": "Move from single-sale preview into staged execution planning without leaving the deterministic workflow.",
+            "href": "/simulate",
+            "action_label": "Open Simulate Disposal",
+            "meta": (
+                f"{digest_summary.get('upcoming_event_count', 0)} timing item(s) inside the digest horizon"
+                if digest_summary.get("upcoming_event_count", 0)
+                else "Use when execution planning is next"
+            ),
+        },
+        {
+            "label": "Trust And Corrections",
+            "desc": "Resolve stale inputs and reconciliation gaps before acting on approximate outputs.",
+            "href": trace_links.get("data_quality", "/data-quality"),
+            "action_label": "Open Data Quality",
+            "meta": (
+                f"{digest_summary.get('stale_data_count', 0)} stale-input item(s)"
+                if digest_summary.get("stale_data_count", 0)
+                else "Use to confirm the evidence behind page-level numbers"
+            ),
+        },
+    ]
 
     return templates.TemplateResponse(
         request,
@@ -314,6 +351,7 @@ async def insights_page(request: Request) -> HTMLResponse:
         {
             "request": request,
             "links": links,
+            "pathway_cards": pathway_cards,
             "digest": digest,
             "data_quality": data_quality,
             "model_scope": {

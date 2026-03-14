@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from src.api import _state
 from src.app_context import AppContext
 from src.db.models import Lot
 from src.db.repository import LotRepository, LotTransferEventRepository
+from src.services.cash_ledger_service import CashLedgerService
 from src.services.dividend_service import DividendService
 from src.services.dividend_service import _eligible_quantities_by_holding_bucket_on_ex_date
 from src.services.portfolio_service import PortfolioService
@@ -178,6 +180,69 @@ def test_net_dividend_timeline_returns_cumulative_portfolio_and_security_maps(ap
     assert timeline["cumulative_net_dividends_by_security"][sec_a.id] == {
         "2026-01-01": "30.00"
     }
+
+
+def test_dividend_summary_and_timeline_use_actual_net_cash_when_withholding_logged(app_context):
+    sec = _add_security("DIVWHT")
+
+    DividendService.add_dividend_entry(
+        security_id=sec.id,
+        dividend_date=date(2026, 2, 10),
+        amount_original_ccy=Decimal("2.50"),
+        original_currency="GBP",
+        tax_withheld_original_ccy=Decimal("0.37"),
+        tax_treatment="TAXABLE",
+        source="manual",
+    )
+
+    payload = DividendService.get_summary(as_of=date(2026, 2, 24))
+    summary = payload["summary"]
+    assert summary["actual_gross_dividends_gbp"] == "2.50"
+    assert summary["actual_withholding_tax_gbp"] == "0.37"
+    assert summary["actual_net_paid_gbp"] == "2.13"
+    assert summary["estimated_tax_gbp"] == "0.00"
+    assert summary["estimated_net_dividends_gbp"] == "2.13"
+
+    allocation_row = payload["allocation"]["rows"][0]
+    assert allocation_row["cash_base_dividends_gbp"] == "2.13"
+    assert allocation_row["allocated_net_dividends_gbp"] == "2.13"
+
+    timeline = DividendService.get_net_dividends_timeline(as_of=date(2026, 2, 24))
+    assert timeline["total_net_dividends_gbp"] == "2.13"
+    assert timeline["net_dividends_by_security_gbp"][sec.id] == "2.13"
+
+
+def test_delete_dividend_entry_removes_linked_cash_ledger_rows(app_context, tmp_path):
+    prior_db_path = _state.get_db_path()
+    ledger_db_path = tmp_path / "dividend-delete.db"
+    _state.set_db_path(ledger_db_path)
+    try:
+        sec = _add_security("DIVDEL")
+        created = DividendService.add_dividend_entry(
+            security_id=sec.id,
+            dividend_date=date(2026, 2, 10),
+            amount_gbp=Decimal("12.34"),
+            tax_treatment="TAXABLE",
+        )
+
+        CashLedgerService.record_entry(
+            db_path=ledger_db_path,
+            entry_date=date(2026, 2, 10),
+            container="BROKER",
+            currency="GBP",
+            amount=Decimal("12.34"),
+            entry_type="DIVIDEND_PAYOUT",
+            source="manual",
+            metadata={"dividend_entry_id": created["id"]},
+        )
+
+        assert CashLedgerService.balances(ledger_db_path)["BROKER"]["GBP"] == Decimal("12.34")
+
+        deleted = DividendService.delete_dividend_entry(created["id"])
+        assert deleted is True
+        assert CashLedgerService.balances(ledger_db_path)["BROKER"]["GBP"] == Decimal("0.00")
+    finally:
+        _state.set_db_path(prior_db_path)
 
 
 def test_ex_dividend_eligibility_uses_transfer_events_without_double_counting_legacy_backfill(app_context):

@@ -4,6 +4,7 @@
 {% block content %}
 {% set digest_summary = digest.summary or {} %}
 {% set dq_summary = data_quality.summary or {} %}
+{% set primary_item = digest.entries[0] if digest.entries else none %}
 <div class="page-title">
   <div class="page-title__heading">
     <h1>Insights</h1>
@@ -15,11 +16,11 @@
 </div>
 
 <h2 class="stats-band-title title-help">
-  Strategic Summary
+  Attention Now
   <button class="info-button" type="button" aria-label="Insights info">&#9432;</button>
   <div class="tooltip">
     <div class="tooltip-content">
-      Prioritized summary of actionable pressure across thresholds, stale inputs, and upcoming timing items. Use this page to decide where to go next, not as a directory of every strategic surface.
+      Prioritized summary of actionable pressure across thresholds, stale inputs, and upcoming timing items. Use this page to decide where to go next, then drill into the supporting surface.
     </div>
   </div>
 </h2>
@@ -73,7 +74,16 @@
 </div>
 
 <details class="card net-panel" open>
-  <summary>Attention Now</summary>
+  <summary>Priority Actions</summary>
+  {% if primary_item %}
+  <div class="alert alert-warning" style="margin: 0.9rem 0;">
+    <strong>Primary next step:</strong>
+    <a href="{{ primary_item.href }}">{{ primary_item.title }}</a>
+    {% if primary_item.message %}
+    <div>{{ primary_item.message }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
   <div class="table-wrap">
     <table>
       <thead>
@@ -116,6 +126,32 @@
   </div>
 </details>
 
+<details class="card net-panel" open>
+  <summary>Decision Pathways</summary>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Pathway</th>
+          <th>Purpose</th>
+          <th>Current Signal</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pathway_cards %}
+        <tr>
+          <td>{{ item.label }}</td>
+          <td>{{ item.desc }}</td>
+          <td>{{ item.meta }}</td>
+          <td><a href="{{ item.href }}">{{ item.action_label }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
 <details class="card net-panel">
   <summary>Input Pressure</summary>
   <div class="table-wrap">
@@ -151,7 +187,7 @@
 </details>
 
 <details class="card net-panel">
-  <summary>Strategic Pages</summary>
+  <summary>Support Surfaces</summary>
   <div class="table-wrap">
     <table>
       <thead>

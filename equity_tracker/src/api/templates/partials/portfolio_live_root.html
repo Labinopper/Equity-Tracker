@@ -15,6 +15,14 @@
     <strong>{{ calendar_actionable_today_label }}</strong>
     <span class="muted">Open Calendar</span>
   </a>
+  <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="valuation-pill valuation-pill--ok">
+    <strong>Open Capital Stack</strong>
+    <span class="muted">Deployable bridge</span>
+  </a>
+  <a href="{{ with_as_of('/simulate', selected_as_of) }}" class="valuation-pill">
+    <strong>Open Simulate</strong>
+    <span class="muted">Single-sale preview</span>
+  </a>
   {% for title in calendar_actionable_today_preview %}
   <span class="valuation-pill valuation-pill--warning">
     <strong>{{ title }}</strong>
@@ -33,6 +41,7 @@
       </div>
     </div>
     <div class="stat__value">&pound;{{ portfolio_deployable_capital_gbp | money }}</div>
+    <span class="stat-caption"><a href="{{ with_as_of('/capital-stack', selected_as_of) }}">Open deployable bridge</a></span>
   </div>
   <div class="stat stat--gain">
     <div class="stat__label title-help">
@@ -46,6 +55,7 @@
     </div>
     {% if portfolio_est_net_liquidity is not none %}
     <div class="stat__value gain">&pound;{{ portfolio_est_net_liquidity | money }}</div>
+    <span class="stat-caption"><a href="{{ with_as_of('/simulate', selected_as_of) }}">Preview a disposal</a></span>
     {% else %}
     <div class="stat__value muted">-</div>
     <span class="stat-caption">Sellable proceeds are incomplete for one or more lots.</span>
@@ -64,7 +74,7 @@
     {% if portfolio_sellable_employment_tax is not none %}
     <div class="stat__value warning-text">&pound;{{ portfolio_sellable_employment_tax | money }}</div>
     {% if portfolio_sellable_tax_drag_pct is not none %}
-    <span class="stat-caption">{{ "%.2f"|format(portfolio_sellable_tax_drag_pct) }}% drag.</span>
+    <span class="stat-caption">{{ "%.2f"|format(portfolio_sellable_tax_drag_pct) }}% drag. <a href="{{ with_as_of('/tax-plan', selected_as_of) }}">Open Tax Plan</a></span>
     {% endif %}
     {% else %}
     <div class="stat__value muted">-</div>
@@ -83,6 +93,7 @@
     </div>
     {% if portfolio_net_gain_if_sold is not none %}
     <div class="stat__value {% if portfolio_net_gain_if_sold > 0 %}gain{% elif portfolio_net_gain_if_sold < 0 %}loss{% endif %}">{% if portfolio_net_gain_if_sold < 0 %}-{% endif %}&pound;{{ portfolio_net_gain_if_sold | abs | money }}</div>
+    <span class="stat-caption"><a href="{{ with_as_of('/tax-plan', selected_as_of) }}">See tax-year timing</a></span>
     {% else %}
     <div class="stat__value muted">-</div>
     <span class="stat-caption">Sellable true-cost comparison is incomplete.</span>
@@ -100,12 +111,39 @@
     </div>
     {% if portfolio_employer_ticker %}
     <div class="stat__value">{{ "%.2f"|format(portfolio_employer_share_of_deployable_pct) }}%</div>
+    <span class="stat-caption"><a href="{{ with_as_of('/risk', selected_as_of) }}">Open Risk</a></span>
     {% else %}
     <div class="stat__value muted">Unconfigured</div>
     <span class="stat-caption"><a href="/settings">Set employer ticker</a> to track employer concentration.</span>
     {% endif %}
   </div>
 </div>
+
+<details class="card net-panel" open id="portfolio-decision-drill-through">
+  <summary>Decision Drill-Through</summary>
+  <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+    <a href="{{ with_as_of('/capital-stack', selected_as_of) }}" class="valuation-pill valuation-pill--ok">
+      <strong>Deployable Capital</strong>
+      <span class="muted">Deductions, fees, and tax drag</span>
+    </a>
+    <a href="{{ with_as_of('/simulate', selected_as_of) }}" class="valuation-pill">
+      <strong>Est. Net Liquidity</strong>
+      <span class="muted">Single-sale preview and lot allocation</span>
+    </a>
+    <a href="{{ with_as_of('/tax-plan', selected_as_of) }}" class="valuation-pill">
+      <strong>Employment Tax / Gain Timing</strong>
+      <span class="muted">Tax-year timing and payroll drag</span>
+    </a>
+    <a href="{{ with_as_of('/risk', selected_as_of) }}" class="valuation-pill">
+      <strong>Employer Dependence</strong>
+      <span class="muted">Concentration and fragility surface</span>
+    </a>
+    <a href="{{ with_as_of('/reconcile#trace-contributing-lots', selected_as_of) }}" class="valuation-pill">
+      <strong>Trace Contributing Lots</strong>
+      <span class="muted">Audit the evidence behind top-line numbers</span>
+    </a>
+  </div>
+</details>
 
 <h2 class="stats-band-title title-help">
   Portfolio Structure

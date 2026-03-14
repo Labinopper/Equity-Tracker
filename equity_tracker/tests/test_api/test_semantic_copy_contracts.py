@@ -144,3 +144,16 @@ def test_glossary_anchors_and_decision_page_links_remain_stable(client):
         assert resp.status_code == 200, path
         for required_link in required_links:
             assert required_link in resp.text, f"{path} missing glossary link {required_link}"
+
+
+def test_portfolio_page_keeps_decision_drill_through_contract(client):
+    _seed_priced_position(client, ticker="T86PORTDRILL")
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    text = resp.text
+
+    assert "Decision Drill-Through" in text
+    assert "Open deployable bridge" in text
+    assert "Preview a disposal" in text
+    assert "See tax-year timing" in text

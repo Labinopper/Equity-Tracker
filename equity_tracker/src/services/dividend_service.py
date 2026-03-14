@@ -379,6 +379,24 @@ def _eligible_quantities_by_holding_bucket_on_ex_date(
     security_id: str,
     ex_dividend_date: date,
 ) -> dict[str, Decimal]:
+    eligible_lots = _eligible_lots_by_holding_bucket_on_ex_date(
+        security_id=security_id,
+        ex_dividend_date=ex_dividend_date,
+    )
+    return {
+        bucket: _q_money(
+            sum((row["eligible_quantity"] for row in lot_rows), Decimal("0"))
+        )
+        for bucket, lot_rows in eligible_lots.items()
+        if lot_rows
+    }
+
+
+def _eligible_lots_by_holding_bucket_on_ex_date(
+    *,
+    security_id: str,
+    ex_dividend_date: date,
+) -> dict[str, list[dict[str, Any]]]:
     _ensure_transfer_event_backfill_for_security(security_id)
 
     with AppContext.read_session() as sess:
@@ -416,7 +434,7 @@ def _eligible_quantities_by_holding_bucket_on_ex_date(
             if event.destination_lot_id:
                 transfer_events_by_destination_lot.setdefault(event.destination_lot_id, []).append(event)
 
-    eligible_by_bucket: dict[str, Decimal] = {}
+    eligible_by_bucket: dict[str, list[dict[str, Any]]] = {}
     for lot in lots:
         if lot.acquisition_date >= ex_dividend_date:
             continue
@@ -459,13 +477,17 @@ def _eligible_quantities_by_holding_bucket_on_ex_date(
                     bucket = event.destination_scheme
                 else:
                     break
-        eligible_by_bucket[bucket] = eligible_by_bucket.get(bucket, Decimal("0")) + reconstructed_qty
+        bucket_rows = eligible_by_bucket.setdefault(bucket, [])
+        bucket_rows.append(
+            {
+                "lot_id": str(lot.id),
+                "eligible_quantity": _q_money(reconstructed_qty),
+                "acquisition_date": lot.acquisition_date,
+                "scheme_type": _holding_bucket_for_lot(lot),
+            }
+        )
 
-    return {
-        bucket: qty
-        for bucket, qty in eligible_by_bucket.items()
-        if qty > Decimal("0")
-    }
+    return eligible_by_bucket
 
 
 def _build_actual_dividend_match_index(entry_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -600,6 +622,10 @@ def _build_reference_dividend_rows(
                 ],
                 expected_total_original=expected_total_original,
             )
+            if matched_entry is not None:
+                recorded_count += 1
+                continue
+
             estimated_gbp, estimated_gbp_source = _estimate_reference_dividend_gbp(
                 original_currency=event.original_currency,
                 amount_original=expected_total_original,
@@ -609,10 +635,7 @@ def _build_reference_dividend_rows(
                 total_expected_gbp += estimated_gbp
                 total_expected_gbp_known += 1
 
-            if matched_entry is not None:
-                status = "Recorded"
-                recorded_count += 1
-            elif event.ex_dividend_date > as_of_date:
+            if event.ex_dividend_date > as_of_date:
                 status = "Upcoming ex-date"
                 upcoming_count += 1
             else:
@@ -636,8 +659,6 @@ def _build_reference_dividend_rows(
                     "expected_total_gbp_source": estimated_gbp_source,
                     "status": status,
                     "source": event.source,
-                    "matched_entry_id": matched_entry.get("id") if matched_entry else None,
-                    "matched_dividend_date": matched_entry.get("dividend_date") if matched_entry else None,
                 }
             )
 
@@ -923,9 +944,42 @@ class DividendService:
         )
 
     @staticmethod
+    def eligible_lot_ids_for_holding_scope(
+        *,
+        security_id: str,
+        ex_dividend_date: date,
+        holding_scope: str,
+    ) -> list[str]:
+        normalized_scope = (holding_scope or "").strip().upper()
+        if not normalized_scope:
+            return []
+        eligible_by_bucket = _eligible_lots_by_holding_bucket_on_ex_date(
+            security_id=security_id,
+            ex_dividend_date=ex_dividend_date,
+        )
+        rows = eligible_by_bucket.get(normalized_scope, [])
+        rows_sorted = sorted(
+            rows,
+            key=lambda row: (row["acquisition_date"], row["lot_id"]),
+        )
+        return [str(row["lot_id"]) for row in rows_sorted]
+
+    @staticmethod
     def delete_dividend_entry(entry_id: str) -> bool:
+        from ..api import _state  # noqa: PLC0415
+        from .cash_ledger_service import CashLedgerService  # noqa: PLC0415
+
         with AppContext.write_session() as sess:
-            return DividendEntryRepository(sess).delete(entry_id)
+            deleted = DividendEntryRepository(sess).delete(entry_id)
+        if not deleted:
+            return False
+
+        CashLedgerService.delete_entries_by_metadata(
+            _state.get_db_path(),
+            metadata_key="dividend_entry_id",
+            metadata_value=entry_id,
+        )
+        return True
 
     @staticmethod
     def get_summary(
@@ -1153,6 +1207,7 @@ class DividendService:
         actual_withholding_tax = Decimal("0")
         actual_fees = Decimal("0")
         actual_net_paid = Decimal("0")
+        all_time_cash_base_total = Decimal("0")
         actual_rows_with_ib_detail = 0
         actual_rows_with_withholding = 0
 
@@ -1207,8 +1262,10 @@ class DividendService:
             net_gbp = cash_components["net_gbp"]
             tax_withheld_gbp = cash_components["tax_withheld_gbp"]
             fee_gbp = cash_components["fee_gbp"]
+            cash_base_gbp = net_gbp
 
             all_time_total += amount
+            all_time_cash_base_total += cash_base_gbp
             if is_taxable:
                 all_time_taxable += amount
             else:
@@ -1262,6 +1319,7 @@ class DividendService:
                     "ticker": ticker,
                     "entry_count": 0,
                     "total_dividends_gbp": Decimal("0"),
+                    "cash_base_dividends_gbp": Decimal("0"),
                     "taxable_dividends_gbp": Decimal("0"),
                     "isa_exempt_dividends_gbp": Decimal("0"),
                 },
@@ -1269,6 +1327,9 @@ class DividendService:
             security_bucket["entry_count"] = int(security_bucket["entry_count"]) + 1
             security_bucket["total_dividends_gbp"] = (
                 Decimal(security_bucket["total_dividends_gbp"]) + amount
+            )
+            security_bucket["cash_base_dividends_gbp"] = (
+                Decimal(security_bucket["cash_base_dividends_gbp"]) + cash_base_gbp
             )
             if is_taxable:
                 security_bucket["taxable_dividends_gbp"] = (
@@ -1387,7 +1448,8 @@ class DividendService:
             )
 
         estimated_tax_total = _q_money(estimated_tax_total)
-        estimated_net_total = _q_money(all_time_total - estimated_tax_total)
+        all_time_cash_base_total = _q_money(all_time_cash_base_total)
+        estimated_net_total = _q_money(all_time_cash_base_total - estimated_tax_total)
         tax_drag_pct = (
             _q_pct((estimated_tax_total / all_time_taxable) * Decimal("100"))
             if all_time_taxable > Decimal("0")
@@ -1424,10 +1486,11 @@ class DividendService:
             reverse=True,
         ):
             total_dividends = _q_money(Decimal(raw_row["total_dividends_gbp"]))
+            cash_base_dividends = _q_money(Decimal(raw_row["cash_base_dividends_gbp"]))
             taxable_dividends = _q_money(Decimal(raw_row["taxable_dividends_gbp"]))
             isa_dividends = _q_money(Decimal(raw_row["isa_exempt_dividends_gbp"]))
             allocated_tax = _q_money(estimated_tax_by_security.get(security_id, Decimal("0")))
-            allocated_net = _q_money(total_dividends - allocated_tax)
+            allocated_net = _q_money(cash_base_dividends - allocated_tax)
             active_true_cost = _q_money(active_true_cost_by_security.get(security_id, Decimal("0")))
             capital_at_risk_after_dividends = _q_money(
                 max(Decimal("0"), active_true_cost - allocated_net)
@@ -1439,6 +1502,7 @@ class DividendService:
                     "ticker": str(raw_row["ticker"]),
                     "entry_count": int(raw_row["entry_count"]),
                     "total_dividends_gbp": _money_str(total_dividends),
+                    "cash_base_dividends_gbp": _money_str(cash_base_dividends),
                     "taxable_dividends_gbp": _money_str(taxable_dividends),
                     "isa_exempt_dividends_gbp": _money_str(isa_dividends),
                     "allocated_estimated_tax_gbp": _money_str(allocated_tax),
@@ -1589,6 +1653,26 @@ class DividendService:
             if amount is None:
                 continue
             amount = _q_money(amount)
+            amount_original = _to_decimal(entry.amount_original_ccy)
+            if amount_original is None:
+                amount_original = amount
+            amount_original = _q_money(amount_original)
+            original_currency = _normalize_currency(entry.original_currency)
+            fx_rate_to_gbp = _to_decimal(entry.fx_rate_to_gbp)
+            if fx_rate_to_gbp is None:
+                if original_currency == _GBP:
+                    fx_rate_to_gbp = Decimal("1.000000")
+                elif amount_original > Decimal("0"):
+                    fx_rate_to_gbp = _q_fx(amount / amount_original)
+            if fx_rate_to_gbp is not None:
+                fx_rate_to_gbp = _q_fx(fx_rate_to_gbp)
+            ib_meta, _ = _extract_ibkr_meta(entry.notes)
+            cash_components = _resolve_cash_components(
+                amount_gbp=amount,
+                amount_original=amount_original,
+                fx_rate_to_gbp=fx_rate_to_gbp,
+                ib_meta=ib_meta,
+            )
             treatment = (entry.tax_treatment or "TAXABLE").strip().upper()
             if treatment not in _VALID_TREATMENTS:
                 treatment = "TAXABLE"
@@ -1600,9 +1684,10 @@ class DividendService:
                 "dividend_date": entry.dividend_date,
                 "tax_year": tax_year,
                 "amount_gbp": amount,
+                "cash_base_gbp": cash_components["net_gbp"],
                 "is_taxable": is_taxable,
                 "allocated_tax_gbp": Decimal("0.00"),
-                "net_dividend_gbp": amount,
+                "net_dividend_gbp": cash_components["net_gbp"],
             }
             rows.append(row)
             if is_taxable:
@@ -1649,7 +1734,7 @@ class DividendService:
                 )
 
         for row in rows:
-            row["net_dividend_gbp"] = _q_money(row["amount_gbp"] - row["allocated_tax_gbp"])
+            row["net_dividend_gbp"] = _q_money(row["cash_base_gbp"] - row["allocated_tax_gbp"])
 
         return rows
 

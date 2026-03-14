@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Literal
 from urllib.parse import quote_plus
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -160,6 +160,20 @@ def _lot_group_for_schemes(scheme_types: set[str]) -> str:
     return "ALL"
 
 
+def _lot_group_from_holding_scope(raw_value: str | None) -> str | None:
+    normalized = (raw_value or "").strip().upper()
+    if not normalized:
+        return None
+    return f"SCHEME:{normalized}"
+
+
+def _tax_treatment_from_holding_scope(raw_value: str | None) -> str | None:
+    normalized = (raw_value or "").strip().upper()
+    if not normalized:
+        return None
+    return "ISA_EXEMPT" if normalized == "ISA" else "TAXABLE"
+
+
 def _resolve_selected_lot_context(lot_ids: list[str]) -> dict[str, object] | None:
     normalized_lot_ids = _normalize_lot_ids(lot_ids)
     if not normalized_lot_ids:
@@ -228,17 +242,27 @@ def _render_dividends_page(
     msg: str | None = None,
 ) -> HTMLResponse:
     payload = DividendService.get_summary(settings=settings)
+    selected_lot_context = None
+    normalized_prev = dict(prev) if prev else None
+    if normalized_prev and normalized_prev.get("lot_ids"):
+        try:
+            selected_lot_context = _resolve_selected_lot_context(
+                list(normalized_prev.get("lot_ids") or [])
+            )
+        except (KeyError, ValueError):
+            selected_lot_context = None
     context = {
         "request": request,
         "dividends": payload,
         "tax_treatments": _VALID_TREATMENTS,
         "cash_containers": _VALID_CASH_CONTAINERS,
+        "selected_lot_context": selected_lot_context,
         "flash": msg,
     }
     if error:
         context["error"] = error
-    if prev:
-        context["prev"] = prev
+    if normalized_prev:
+        context["prev"] = normalized_prev
     return templates.TemplateResponse(
         request,
         "dividends.html",
@@ -332,11 +356,84 @@ async def api_dividend_entry_create(
 
 
 @router.get("/dividends", response_class=HTMLResponse, include_in_schema=False)
-async def dividends_page(request: Request, msg: str | None = None) -> HTMLResponse:
+async def dividends_page(
+    request: Request,
+    msg: str | None = None,
+    lot_ids: list[str] = Query([]),
+    prefill_security_id: str = "",
+    prefill_dividend_date: str = "",
+    prefill_original_currency: str = "",
+    prefill_amount_original_ccy: str = "",
+    prefill_ex_date: str = "",
+    prefill_holding_scope: str = "",
+    prefill_quantity: str = "",
+) -> HTMLResponse:
     if not AppContext.is_initialized():
         return _locked_response(request)
     settings = _load_settings()
-    return _render_dividends_page(request, settings=settings, msg=msg)
+    prev = None
+    normalized_lot_ids = _normalize_lot_ids(lot_ids)
+    if normalized_lot_ids:
+        try:
+            selected_lot_context = _resolve_selected_lot_context(normalized_lot_ids)
+        except (KeyError, ValueError) as exc:
+            return _render_dividends_page(
+                request,
+                settings=settings,
+                error=_exc_message(exc),
+                msg=msg,
+            )
+        if selected_lot_context is not None:
+            prev = {
+                "lot_ids": normalized_lot_ids,
+                "security_id": str(selected_lot_context["security_id"]),
+                "original_currency": str(selected_lot_context["currency"]),
+                "lot_group": str(selected_lot_context["lot_group"]),
+                "tax_treatment": str(selected_lot_context["default_tax_treatment"]),
+                "quantity": str(selected_lot_context["total_quantity"]),
+            }
+    elif any(
+        (
+            prefill_security_id.strip(),
+            prefill_dividend_date.strip(),
+            prefill_original_currency.strip(),
+            prefill_amount_original_ccy.strip(),
+            prefill_ex_date.strip(),
+            prefill_holding_scope.strip(),
+            prefill_quantity.strip(),
+        )
+    ):
+        resolved_prefill_lot_ids: list[str] = []
+        parsed_prefill_ex_date = _parse_date_optional(
+            prefill_ex_date,
+            "prefill_ex_date",
+        )
+        if prefill_security_id.strip() and parsed_prefill_ex_date and prefill_holding_scope.strip():
+            try:
+                resolved_prefill_lot_ids = DividendService.eligible_lot_ids_for_holding_scope(
+                    security_id=prefill_security_id.strip(),
+                    ex_dividend_date=parsed_prefill_ex_date,
+                    holding_scope=prefill_holding_scope.strip(),
+                )
+            except (KeyError, ValueError):
+                resolved_prefill_lot_ids = []
+        prefill_group = _lot_group_from_holding_scope(prefill_holding_scope)
+        prev = {
+            "lot_ids": resolved_prefill_lot_ids,
+            "security_id": prefill_security_id.strip(),
+            "dividend_date": prefill_dividend_date.strip(),
+            "original_currency": prefill_original_currency.strip().upper() or "GBP",
+            "amount_original_ccy": prefill_amount_original_ccy.strip(),
+            "gross_amount_original_ccy": prefill_amount_original_ccy.strip(),
+            "ex_date": prefill_ex_date.strip(),
+            "lot_group": prefill_group or "ALL",
+            "tax_treatment": _tax_treatment_from_holding_scope(prefill_holding_scope) or "TAXABLE",
+            "quantity": prefill_quantity.strip(),
+            "source": "manual",
+            "prefill_mode": "expected_dividend",
+            "prefill_holding_scope": prefill_holding_scope.strip().upper(),
+        }
+    return _render_dividends_page(request, settings=settings, msg=msg, prev=prev)
 
 
 @router.post("/dividends/reminder", response_class=HTMLResponse, include_in_schema=False)
@@ -705,12 +802,10 @@ async def dividends_add_submit(
             )
         if selected_lot_context is not None:
             security_id = str(selected_lot_context["security_id"])
-            original_currency = str(selected_lot_context["currency"])
             lot_group = str(selected_lot_context["lot_group"])
             if not (quantity or "").strip():
                 quantity = str(selected_lot_context["total_quantity"])
             prev["security_id"] = security_id
-            prev["original_currency"] = original_currency
             prev["lot_group"] = lot_group
             prev["quantity"] = quantity
 

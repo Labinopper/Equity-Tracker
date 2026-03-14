@@ -41,35 +41,88 @@
 </div>
 
 <div class="stats stats-band">
+  {% set queue = namespace(needs_approval=0, due=0, executed=0, pending=0) %}
+  {% for plan in plans %}
+    {% if not plan.is_approved %}
+      {% set queue.needs_approval = queue.needs_approval + 1 %}
+    {% endif %}
+    {% for tranche in plan.tranches %}
+      {% if tranche.effective_status == 'DUE' %}
+        {% set queue.due = queue.due + 1 %}
+      {% elif tranche.effective_status == 'EXECUTED' %}
+        {% set queue.executed = queue.executed + 1 %}
+      {% elif tranche.effective_status == 'PLANNED' %}
+        {% set queue.pending = queue.pending + 1 %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
   <div class="stat">
     <div class="stat__label">
-      <span class="stat__label-main">Existing Plans</span>
+      <span class="stat__label-main">Plans Requiring Approval</span>
       <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
     </div>
-    <div class="stat__value">{{ plans|length }}</div>
+    <div class="stat__value">{{ queue.needs_approval }}</div>
   </div>
   <div class="stat">
     <div class="stat__label">
-      <span class="stat__label-main">Approved Plans</span>
+      <span class="stat__label-main">Due Tranches</span>
       <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
     </div>
-    <div class="stat__value">{{ plans|selectattr('is_approved')|list|length }}</div>
+    <div class="stat__value">{{ queue.due }}</div>
   </div>
   <div class="stat">
     <div class="stat__label">
-      <span class="stat__label-main">Draft Plans</span>
+      <span class="stat__label-main">Planned Tranches</span>
       <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
     </div>
-    <div class="stat__value">{{ plans|rejectattr('is_approved')|list|length }}</div>
+    <div class="stat__value">{{ queue.pending }}</div>
   </div>
   <div class="stat">
     <div class="stat__label">
-      <span class="stat__label-main">Sellable Securities</span>
-      <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+      <span class="stat__label-main">Executed Tranches</span>
+      <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
     </div>
-    <div class="stat__value">{{ securities|length }}</div>
+    <div class="stat__value">{{ queue.executed }}</div>
   </div>
 </div>
+
+<details class="card net-panel" open>
+  <summary>Plan Queue</summary>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Approval</th>
+          <th>Execution</th>
+          <th class="num">Pending Qty</th>
+          <th>Reconciliation</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if plans %}
+          {% for plan in plans %}
+          {% set adherence = plan.adherence_panel %}
+          {% set reconcile = plan.reconciliation_panel %}
+          <tr>
+            <td>{{ plan.ticker }} | {{ plan.method_label }}</td>
+            <td>{% if plan.is_approved %}Approved{% else %}Needs approval{% endif %}</td>
+            <td>{{ adherence.adherence_status | replace('_', ' ') | title if adherence else 'Planned' }}</td>
+            <td class="num">{{ adherence.pending_quantity if adherence else plan.total_quantity }}</td>
+            <td>{{ reconcile.status | replace('_', ' ') | title if reconcile else 'Unreconciled' }}</td>
+            <td><a href="#plan-{{ plan.plan_id }}">Open plan</a></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="muted">No sell plans yet.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</details>
 
 <details class="card net-panel" open>
   <summary>Create Plan</summary>
@@ -235,25 +288,76 @@
           </form>
         </div>
       </div>
-      <p class="muted">
-        Plan ID <code>{{ plan.plan_id }}</code> |
-        Total Qty {{ plan.total_quantity }} |
-        Tranches {{ plan.tranche_count }} |
-        Cadence {{ plan.cadence_days }} day(s) |
-        <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}">Open in Calendar</a> |
-        {% if plan.is_approved %}
-        <a href="/sell-plan/export?plan_id={{ plan.plan_id }}">Export IBKR CSV</a>
-        {% else %}
-        <span>Export IBKR CSV (approve first)</span>
-        {% endif %}
-      </p>
       {% set constraints = plan.constraints or {} %}
       {% set method_config = plan.method_config or {} %}
       {% set profile = plan.execution_profile or {} %}
+      {% set adherence = plan.adherence_panel %}
+      {% set reconcile = plan.reconciliation_panel %}
       {% set fee_label = constraints.fee_per_tranche_gbp or '0.00' %}
       {% if fee_label == '0.00' and plan.impact_fee_per_tranche_gbp and plan.impact_fee_per_tranche_gbp != '0.00' %}
       {% set fee_label = plan.impact_fee_per_tranche_gbp ~ ' (estimated)' %}
       {% endif %}
+      <div class="valuation-basis-strip__items" style="margin: 0.6rem 0 0.9rem;">
+        <span class="valuation-pill">
+          <strong>Plan ID</strong>
+          <span class="muted"><code>{{ plan.plan_id }}</code></span>
+        </span>
+        <span class="valuation-pill">
+          <strong>Total Qty</strong>
+          <span class="muted">{{ plan.total_quantity }}</span>
+        </span>
+        <span class="valuation-pill">
+          <strong>Tranches</strong>
+          <span class="muted">{{ plan.tranche_count }}</span>
+        </span>
+        <span class="valuation-pill">
+          <strong>Cadence</strong>
+          <span class="muted">{{ plan.cadence_days }} day(s)</span>
+        </span>
+        <a href="/calendar?sell_plan_id={{ plan.plan_id }}&sell_method={{ plan.method }}" class="valuation-pill">
+          <strong>Open in Calendar</strong>
+        </a>
+        {% if plan.is_approved %}
+        <a href="/sell-plan/export?plan_id={{ plan.plan_id }}" class="valuation-pill valuation-pill--ok">
+          <strong>Export IBKR CSV</strong>
+        </a>
+        {% else %}
+        <span class="valuation-pill valuation-pill--warning">
+          <strong>Export blocked</strong>
+          <span class="muted">Approve first</span>
+        </span>
+        {% endif %}
+      </div>
+      <div class="stats stats-band" style="margin-bottom: 0.9rem;">
+        <div class="stat">
+          <div class="stat__label">
+            <span class="stat__label-main">Approval State</span>
+            <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+          </div>
+          <div class="stat__value">{% if plan.is_approved %}Approved{% else %}Needs approval{% endif %}</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">
+            <span class="stat__label-main">Pending Quantity</span>
+            <span class="stat__meta-line"><span class="metric-tag metric-tag--actionable">Actionable</span></span>
+          </div>
+          <div class="stat__value">{{ adherence.pending_quantity if adherence else plan.total_quantity }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">
+            <span class="stat__label-main">Reconciliation</span>
+            <span class="stat__meta-line"><span class="metric-tag metric-tag--realised">Realised</span></span>
+          </div>
+          <div class="stat__value">{{ reconcile.status | replace('_', ' ') | title if reconcile else 'Unreconciled' }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">
+            <span class="stat__label-main">Fee / Tranche</span>
+            <span class="stat__meta-line"><span class="metric-tag metric-tag--hypothetical">Hypothetical</span></span>
+          </div>
+          <div class="stat__value">&pound;{{ fee_label }}</div>
+        </div>
+      </div>
       <p class="muted">
         Constraints: Min spacing {{ constraints.min_spacing_days or '-' }} day(s),
         Max daily qty {{ constraints.max_daily_quantity or '-' }},
@@ -278,7 +382,6 @@
         (Concentration trigger {{ profile.concentration_trigger_pct or '-' }}%,
         Limit guardrail {{ profile.limit_guardrail_discount_pct or '-' }}%).
       </p>
-      {% set adherence = plan.adherence_panel %}
       {% if adherence %}
       <div class="table-wrap">
         <table>
@@ -328,7 +431,6 @@
         </table>
       </div>
       {% endif %}
-      {% set reconcile = plan.reconciliation_panel %}
       {% if reconcile %}
       <div class="table-wrap">
         <table>

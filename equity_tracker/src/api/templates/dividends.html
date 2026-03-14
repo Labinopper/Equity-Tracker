@@ -9,6 +9,7 @@
   <div class="page-actions">
     <a href="/" class="btn btn-secondary btn-sm">Portfolio</a>
     <a href="/calendar" class="btn btn-secondary btn-sm">Calendar</a>
+    <a href="/lot-explorer" class="btn btn-secondary btn-sm">Lot Explorer</a>
   </div>
 </div>
 
@@ -95,6 +96,259 @@
   <span class="form-hint">Backend recovery endpoints remain available for controlled migration work if needed later.</span>
 </details>
 
+<details class="card net-panel" open>
+  <summary>Add Dividend</summary>
+  <form method="post" action="/dividends/add" style="margin-top:0.9rem;">
+    <div class="valuation-basis-strip__items" style="margin: 0 0 0.9rem;">
+      <span class="valuation-pill valuation-pill--ok">
+        <strong>Simple manual entry</strong>
+        <span class="muted">GBP or USD</span>
+      </span>
+      <span class="valuation-pill">
+        <strong>Required first</strong>
+        <span class="muted">security, pay date, currency, amount</span>
+      </span>
+      <span class="valuation-pill">
+        <strong>Optional support</strong>
+        <span class="muted">GBP equivalent, FX, source, notes</span>
+      </span>
+      <span class="valuation-pill">
+        <strong>Optional lot trace</strong>
+        <span class="muted">anchor to live lots</span>
+      </span>
+    </div>
+    <div class="alert alert-info" style="margin: 0 0 0.9rem;">
+      Record the dividend in the currency it was paid in. Add GBP equivalent and FX only if your statement already shows them or you want to lock the conversion basis.
+    </div>
+    {% if prev and prev.prefill_mode == 'expected_dividend' %}
+    <div class="alert alert-info" style="margin: 0 0 0.9rem;">
+      Prefilled from an expected dividend row. Confirm the actual pay date, gross amount, withholding, and notes before saving the entry.
+    </div>
+    {% endif %}
+    <div class="card" style="margin-bottom: 0.9rem;">
+      <div class="card__header">
+        <h3 class="card__title">Core Entry</h3>
+      </div>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="add_dividend_security_id">Security *</label>
+        <select id="add_dividend_security_id" name="security_id" required>
+          <option value="">Select security</option>
+          {% for security in dividends.security_options %}
+          <option
+            value="{{ security.id }}"
+            {{ 'selected' if prev and prev.security_id == security.id }}
+          >
+            {{ security.ticker }} - {{ security.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_date">Pay Date *</label>
+        <input
+          id="add_dividend_date"
+          type="date"
+          name="dividend_date"
+          value="{{ prev.dividend_date if prev else dividends.as_of_date }}"
+          required
+        >
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_currency">Currency *</label>
+        <select id="add_dividend_currency" name="original_currency" required>
+          {% set selected_currency = (prev.original_currency if prev and prev.original_currency else 'GBP') %}
+          <option value="GBP" {{ 'selected' if selected_currency == 'GBP' }}>GBP</option>
+          <option value="USD" {{ 'selected' if selected_currency == 'USD' }}>USD</option>
+        </select>
+        <span id="add_dividend_currency_hint" class="form-hint">
+          Enter the dividend in its original currency. GBP equivalent and FX are optional support fields.
+        </span>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_amount_original">Gross Amount in Selected Currency *</label>
+        <input
+          id="add_dividend_amount_original"
+          type="text"
+          name="amount_original_ccy"
+          inputmode="decimal"
+          value="{{ prev.amount_original_ccy if prev else '' }}"
+          placeholder="e.g. 75.25"
+        >
+        <span class="form-hint">Enter the gross dividend amount before withholding tax. Net cash is derived from gross less withholding/fees when those fields are provided.</span>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_cash_container">Cash Container</label>
+        <select id="add_dividend_cash_container" name="cash_container">
+          {% for container in cash_containers %}
+          <option value="{{ container }}" {{ 'selected' if prev and prev.cash_container == container else '' }}>{{ container }}</option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">Where the dividend cash should be posted after the entry is saved.</span>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_tax_treatment">Treatment</label>
+        <select id="add_dividend_tax_treatment" name="tax_treatment">
+          {% for treatment in tax_treatments %}
+          <option value="{{ treatment }}" {{ 'selected' if prev and prev.tax_treatment == treatment else '' }}>{{ treatment }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 0.9rem;">
+      <div class="card__header">
+        <h3 class="card__title">Optional Lot Scope And Traceability</h3>
+      </div>
+      <div class="alert alert-info" style="margin: 0 0 0.9rem;">
+        Leave this blank for a security-level dividend. Select one or more active lots if you want the entry anchored to specific holdings and traceable from Lot Explorer.
+      </div>
+      <div class="form-grid">
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label for="add_dividend_lot_ids">Linked Lots</label>
+          <select id="add_dividend_lot_ids" name="lot_ids" multiple size="6">
+            {% set selected_lot_ids = prev.lot_ids if prev and prev.lot_ids else [] %}
+            {% for lot in dividends.active_lot_options %}
+            <option
+              value="{{ lot.id }}"
+              data-security-id="{{ lot.security_id }}"
+              data-currency="{{ lot.currency }}"
+              data-scheme="{{ lot.scheme_type }}"
+              data-quantity="{{ lot.quantity_remaining }}"
+              {{ 'selected' if lot.id in selected_lot_ids else '' }}
+            >
+              {{ lot.label }}
+            </option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Hold Ctrl/Cmd to select multiple lots. Use Lot Explorer when you want to start from a forensic lot view.</span>
+        </div>
+        {% if selected_lot_context %}
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <div class="valuation-basis-strip__items" style="margin: 0;">
+            <span class="valuation-pill valuation-pill--ok">
+              <strong>Selected lots</strong>
+              <span class="muted">{{ selected_lot_context.ticker }} · {{ selected_lot_context.total_quantity }} sh</span>
+            </span>
+            <span class="valuation-pill">
+              <strong>Resolved group</strong>
+              <span class="muted">{{ selected_lot_context.lot_group }}</span>
+            </span>
+            <span class="valuation-pill">
+              <strong>Default treatment</strong>
+              <span class="muted">{{ selected_lot_context.default_tax_treatment }}</span>
+            </span>
+          </div>
+        </div>
+        {% endif %}
+        <div class="form-field">
+          <label for="add_dividend_lot_group">Lot Group</label>
+          <select id="add_dividend_lot_group" name="lot_group">
+            {% for option in dividends.lot_group_options %}
+            <option value="{{ option.id }}" {{ 'selected' if prev and prev.lot_group == option.id else '' }}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Used when recording at group/security level. Lot-linked submissions override this automatically.</span>
+        </div>
+        <div class="form-field">
+          <label for="add_dividend_quantity">Linked Quantity</label>
+          <input
+            id="add_dividend_quantity"
+            type="text"
+            name="quantity"
+            inputmode="decimal"
+            value="{{ prev.quantity if prev else '' }}"
+            placeholder="Optional"
+          >
+          <span class="form-hint">Optional reference quantity. Auto-filled from selected lots when you submit with lot links.</span>
+        </div>
+      </div>
+      <div class="valuation-basis-strip__items" style="margin-top: 0.9rem;">
+        <a href="/lot-explorer" class="valuation-pill">
+          <strong>Open Lot Explorer</strong>
+        </a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 0.9rem;">
+      <div class="card__header">
+        <h3 class="card__title">Optional Conversion And Audit Detail</h3>
+      </div>
+      <div class="form-grid">
+      <div class="form-field">
+        <label for="add_dividend_amount_gbp">GBP Equivalent</label>
+        <input
+          id="add_dividend_amount_gbp"
+          type="text"
+          name="amount_gbp"
+          inputmode="decimal"
+          value="{{ prev.amount_gbp if prev else '' }}"
+          placeholder="Optional"
+        >
+        <span class="form-hint">Optional. Useful if your statement already shows the GBP value.</span>
+      </div>
+      <div class="form-field" id="add_dividend_fx_wrap">
+        <label for="add_dividend_fx_rate">FX Rate to GBP</label>
+        <input
+          id="add_dividend_fx_rate"
+          type="text"
+          name="fx_rate_to_gbp"
+          inputmode="decimal"
+          value="{{ prev.fx_rate_to_gbp if prev else '' }}"
+          placeholder="Optional"
+        >
+        <span id="add_dividend_fx_hint" class="form-hint">Optional for USD. Leave blank to use the GBP amount or auto-resolve FX where available.</span>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_tax_withheld">Withholding Tax</label>
+        <input
+          id="add_dividend_tax_withheld"
+          type="text"
+          name="tax_withheld_original_ccy"
+          inputmode="decimal"
+          value="{{ prev.tax_withheld_original_ccy if prev else '' }}"
+          placeholder="Optional"
+        >
+        <span class="form-hint">Optional. Enter withheld tax in the same currency as the dividend amount.</span>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_ex_date">Ex-Date</label>
+        <input
+          id="add_dividend_ex_date"
+          type="date"
+          name="ex_date"
+          value="{{ prev.ex_date if prev else '' }}"
+        >
+        <span class="form-hint">Use this when you want the entry to reconcile against an expected dividend row. Matching prefers the same ex-date.</span>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_source">Source</label>
+        <input
+          id="add_dividend_source"
+          type="text"
+          name="source"
+          value="{{ prev.source if prev and prev.source else 'manual' }}"
+        >
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_notes">Notes</label>
+        <input
+          id="add_dividend_notes"
+          type="text"
+          name="notes"
+          value="{{ prev.notes if prev else '' }}"
+          placeholder="Optional note"
+        >
+      </div>
+    </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Add Dividend</button>
+    </div>
+  </form>
+</details>
+
 <div class="card">
   <div class="card__header">
     <h2 class="card__title">Expected Dividends</h2>
@@ -105,7 +359,7 @@
   {% else %}
   <div class="dividends-stats-grid">
     <div class="stat">
-      <span class="stat__label">Reference Events</span>
+      <span class="stat__label">Visible Reference Events</span>
       <span class="stat__value">{{ dividends.reference_summary.row_count or 0 }}</span>
       <span class="stat-caption">{{ dividends.reference_summary.recorded_count or 0 }} already confirmed.</span>
     </div>
@@ -139,7 +393,7 @@
           <th class="num">Expected Gross</th>
           <th class="num">GBP Est.</th>
           <th>Status</th>
-          <th>Confirm</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
@@ -166,71 +420,19 @@
             </td>
             <td>{{ row.status }}</td>
             <td>
-              {% if row.matched_entry_id %}
-              <div>{{ row.matched_dividend_date }}</div>
-              {% else %}
-              <form method="post" action="/dividends/confirm-reference" class="inline-form">
-                <input type="hidden" name="security_id" value="{{ row.security_id }}">
-                <input type="hidden" name="ex_dividend_date" value="{{ row.ex_dividend_date }}">
-                <input type="hidden" name="original_currency" value="{{ row.original_currency }}">
-                <label class="sr-only" for="confirm_dividend_date_{{ loop.index }}">Pay date</label>
-                <input
-                  id="confirm_dividend_date_{{ loop.index }}"
-                  type="date"
-                  name="dividend_date"
-                  value="{{ row.payment_date or dividends.as_of_date }}"
-                  required
-                >
-                <label class="sr-only" for="confirm_holding_scope_{{ loop.index }}">Holding</label>
-                <input type="hidden" name="holding_scope" value="{{ row.holding_scope }}">
-                <span class="muted">{{ row.holding_scope_label }}</span>
-                <label class="sr-only" for="confirm_mode_{{ loop.index }}">Receipt type</label>
-                <select id="confirm_mode_{{ loop.index }}" name="confirmation_mode" required>
-                  <option value="cash">Cash</option>
-                  <option value="stock">Stock</option>
-                </select>
-                <label class="sr-only" for="confirm_amount_{{ loop.index }}">Gross value</label>
-                <input
-                  id="confirm_amount_{{ loop.index }}"
-                  type="text"
-                  name="amount_original_ccy"
-                  inputmode="decimal"
-                  value="{{ row.expected_total_original_ccy }}"
-                  placeholder="Gross value"
-                  required
-                >
-                <label class="sr-only" for="confirm_stock_qty_{{ loop.index }}">Stock quantity</label>
-                <input
-                  id="confirm_stock_qty_{{ loop.index }}"
-                  type="text"
-                  name="stock_quantity_received"
-                  inputmode="decimal"
-                  placeholder="Stock qty if reinvested"
-                >
-                <label class="sr-only" for="confirm_tax_{{ loop.index }}">Tax withheld</label>
-                <input
-                  id="confirm_tax_{{ loop.index }}"
-                  type="text"
-                  name="tax_withheld_original_ccy"
-                  inputmode="decimal"
-                  placeholder="Withheld tax"
-                >
-                <label class="sr-only" for="confirm_notes_{{ loop.index }}">Notes</label>
-                <input
-                  id="confirm_notes_{{ loop.index }}"
-                  type="text"
-                  name="notes"
-                  placeholder="Optional note"
-                >
-                <button type="submit" class="btn btn-secondary btn-sm">Confirm</button>
-              </form>
-            {% endif %}
+              <a
+                class="btn btn-secondary btn-sm"
+                href="/dividends?prefill_security_id={{ row.security_id }}&prefill_dividend_date={{ row.payment_date or dividends.as_of_date }}&prefill_original_currency={{ row.original_currency }}&prefill_amount_original_ccy={{ row.expected_total_original_ccy }}&prefill_ex_date={{ row.ex_dividend_date }}&prefill_holding_scope={{ row.holding_scope }}&prefill_quantity={{ row.expected_quantity }}"
+              >
+                Add Dividend
+              </a>
+              <div class="muted" style="margin-top:0.35rem;">Auto-selects eligible {{ row.holding_scope_label }} lots.</div>
             </td>
           </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="9" class="muted">No reference dividend events available yet.</td>
+            <td colspan="9" class="muted">No unmatched reference dividend events available.</td>
           </tr>
         {% endif %}
       </tbody>
@@ -444,7 +646,14 @@
             <td>{{ row.tax_year }}</td>
             <td>{{ row.ticker }}</td>
             <td>{{ row.lot_group or '-' }}</td>
-            <td>{% if row.has_lot_links %}{{ row.lot_link_count }} lot(s){% else %}-{% endif %}</td>
+            <td>
+              {% if row.has_lot_links %}
+              {{ row.lot_link_count }} lot(s)
+              <div><a href="/lot-explorer">Lot Explorer</a></div>
+              {% else %}
+              -
+              {% endif %}
+            </td>
             <td>{{ row.tax_treatment }}</td>
             <td class="num">{{ row.gross_amount_original_ccy|money }}</td>
             <td class="num">{{ row.tax_withheld_original_ccy|money }}</td>
@@ -505,16 +714,84 @@
 (function () {
   var reminderSecuritySelect = document.getElementById("reminder_security_id");
   var reminderDateInput = document.getElementById("reminder_dividend_reminder_date");
-  if (!reminderSecuritySelect || !reminderDateInput) return;
+  var dividendCurrencySelect = document.getElementById("add_dividend_currency");
+  var dividendSecuritySelect = document.getElementById("add_dividend_security_id");
+  var dividendLotSelect = document.getElementById("add_dividend_lot_ids");
+  var dividendGroupSelect = document.getElementById("add_dividend_lot_group");
+  var dividendQuantityInput = document.getElementById("add_dividend_quantity");
+  var currencyHint = document.getElementById("add_dividend_currency_hint");
+  var fxWrap = document.getElementById("add_dividend_fx_wrap");
+  var fxHint = document.getElementById("add_dividend_fx_hint");
 
   function syncReminderDate() {
     var selectedOption = reminderSecuritySelect.options[reminderSecuritySelect.selectedIndex];
     reminderDateInput.value = selectedOption ? (selectedOption.dataset.reminderDate || "") : "";
   }
 
-  reminderSecuritySelect.addEventListener("change", syncReminderDate);
-  if (!reminderDateInput.value) {
-    syncReminderDate();
+  function syncDividendCurrencyState() {
+    if (!dividendCurrencySelect) return;
+    var currency = dividendCurrencySelect.value || "GBP";
+    if (currencyHint) {
+      currencyHint.textContent = currency === "USD"
+        ? "Enter the dividend in USD. GBP equivalent and FX are both optional."
+        : "Enter the dividend in GBP. GBP equivalent and FX are optional support fields.";
+    }
+    if (fxWrap) {
+      fxWrap.style.display = currency === "USD" ? "" : "none";
+    }
+    if (fxHint) {
+      fxHint.textContent = currency === "USD"
+        ? "Optional for USD. Leave blank to use the GBP amount or auto-resolve FX where available."
+        : "Not required for GBP dividends.";
+    }
+  }
+
+  function syncDividendLotContext() {
+    if (!dividendLotSelect) return;
+    var selected = Array.prototype.filter.call(dividendLotSelect.options, function (option) {
+      return option.selected;
+    });
+    if (!selected.length) {
+      return;
+    }
+    var securityId = selected[0].dataset.securityId || "";
+    if (dividendSecuritySelect && securityId) {
+      dividendSecuritySelect.value = securityId;
+    }
+    if (dividendGroupSelect) {
+      var nonIsa = selected.some(function (option) { return (option.dataset.scheme || "").toUpperCase() !== "ISA"; });
+      var allIsa = selected.every(function (option) { return (option.dataset.scheme || "").toUpperCase() === "ISA"; });
+      if (allIsa) {
+        dividendGroupSelect.value = "ISA_ONLY";
+      } else if (nonIsa) {
+        dividendGroupSelect.value = "TAXABLE_ONLY";
+      }
+    }
+    if (dividendQuantityInput) {
+      var total = selected.reduce(function (sum, option) {
+        var qty = parseFloat(option.dataset.quantity || "0");
+        return sum + (isNaN(qty) ? 0 : qty);
+      }, 0);
+      if (total > 0) {
+        dividendQuantityInput.value = total.toString();
+      }
+    }
+  }
+
+  if (reminderSecuritySelect && reminderDateInput) {
+    reminderSecuritySelect.addEventListener("change", syncReminderDate);
+    if (!reminderDateInput.value) {
+      syncReminderDate();
+    }
+  }
+
+  if (dividendCurrencySelect) {
+    dividendCurrencySelect.addEventListener("change", syncDividendCurrencyState);
+    syncDividendCurrencyState();
+  }
+  if (dividendLotSelect) {
+    dividendLotSelect.addEventListener("change", syncDividendLotContext);
+    syncDividendLotContext();
   }
 })();
 </script>

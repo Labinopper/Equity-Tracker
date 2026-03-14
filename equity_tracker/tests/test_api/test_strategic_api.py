@@ -111,7 +111,7 @@ def test_strategic_api_endpoints_semantic_matrix(client, path, required_keys):
 @pytest.mark.parametrize(
     ("path", "marker", "semantic_markers"),
     [
-        ("/insights", "Insights", ("Strategic Pages", "Quick Action", "Trend Context")),
+        ("/insights", "Insights", ("Priority Actions", "Decision Pathways", "Support Surfaces")),
         ("/capital-efficiency", "Capital Efficiency", ("Drag Components", "Fee Realization Context", 'href="/fee-drag"')),
         ("/employment-exit", "Employment Exit", ("Scenario Inputs", "Per-Security Exit View", 'href="/scenario-lab"')),
         ("/isa-efficiency", "ISA Efficiency", ("Headroom", "Tax-Year Context", 'href="/cash"')),

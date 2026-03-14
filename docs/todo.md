@@ -9,10 +9,11 @@ Scope guardrails:
 - Experimental exception: the segregated paper-trading beta workstream is tracked separately under `docs/paper_trading_beta/` and must remain isolated from the deterministic core.
 - Every change must improve at least one of: clarity, risk visibility, retained-wealth realism, hidden drag visibility.
 
-Execution mode (`2026-03-07`):
+Execution mode (`2026-03-11`):
 - Refinement and hardening closure remains complete.
 - Active implementation scope: closed (`T58`-`T79` complete).
 - Deterministic-core prioritization source: closed. The tracked workflow and product-expansion candidates are now complete.
+- Historical deterministic-core prioritization reference: `docs/EXECUTION_BACKLOG_2026-03-11.md`.
 - Experimental predictive beta prioritization source: foundation workstream approved for phased implementation planning.
 
 ## Current Status
@@ -44,6 +45,7 @@ Execution mode (`2026-03-07`):
 ## Next Prioritization Order
 
 - No tracked backlog items remain for the deterministic core strategic plan.
+- Historical deterministic-core prioritization reference: `docs/EXECUTION_BACKLOG_2026-03-11.md`.
 - The current prioritized next work is the segregated experimental predictive beta workstream (`T91`-`T106`).
 
 ## Experimental Predictive Beta Workstream

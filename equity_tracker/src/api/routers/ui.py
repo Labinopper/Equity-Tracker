@@ -74,6 +74,7 @@ from ...services.capital_stack_service import CapitalStackService
 from ...services.exposure_service import ExposureService
 from ...services.alert_lifecycle_service import AlertLifecycleService
 from ...services.calendar_service import CalendarService
+from ...services.lot_explorer_service import LotExplorerService
 from ...services.portfolio_service import (
     LotSummary,
     PortfolioService,
@@ -5008,6 +5009,43 @@ async def economic_gain_report(
             "active_year_index": nav["active_year_index"],
             "previous_tax_year": nav["previous_tax_year"],
             "next_tax_year": nav["next_tax_year"],
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Lot Explorer - GET /lot-explorer
+# ---------------------------------------------------------------------------
+
+@router.get("/lot-explorer", response_class=HTMLResponse, include_in_schema=False)
+async def lot_explorer_page(
+    request: Request,
+    security_id: str = "",
+    scheme: str = "",
+    sellability: str = "",
+    wrapper: str = "",
+    include_exhausted: bool = False,
+) -> HTMLResponse:
+    if _is_locked():
+        return _locked_response(request)
+
+    db_path = _state.get_db_path()
+    settings = AppSettings.load(db_path) if db_path else None
+    payload = LotExplorerService.get_payload(
+        settings=settings,
+        security_id=security_id or None,
+        scheme=scheme or None,
+        sellability=sellability or None,
+        wrapper=wrapper or None,
+        include_exhausted=include_exhausted,
+    )
+    return templates.TemplateResponse(
+        request,
+        "lot_explorer.html",
+        {
+            "request": request,
+            "payload": payload,
+            "settings": settings,
         },
     )
 

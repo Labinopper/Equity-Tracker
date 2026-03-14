@@ -65,6 +65,8 @@ def test_api_tax_plan_summary_and_ui_render_on_empty_db(client):
     page = client.get("/tax-plan")
     assert page.status_code == 200
     assert "Tax Plan" in page.text
+    assert "Timing Decision" in page.text
+    assert "Realised Tax-Year Position" in page.text
     assert "Per-Lot Projection" in page.text
 
 
@@ -128,6 +130,7 @@ def test_api_tax_plan_compensation_query_params_and_ui_sections(client):
     page = client.get("/tax-plan", params=params)
     assert page.status_code == 200
     assert "Compensation What-If (IT / NI / SL + CGT)" in page.text
+    assert "What-If Signals" in page.text
     assert "Sell Timing Comparison (Wait vs Sell This Year)" in page.text
     assert "Sale Gain Assumption" in page.text
     assert "Sell next tax year + increase pension first" in page.text

@@ -31,6 +31,7 @@ from ..core.lot_engine.fifo import (
     ForfeitureWarning,
     LotForFIFO,
     SIPTaxEstimate,
+    allocate_fifo,
 )
 from ..core.lot_engine.uk_matching import allocate_uk_share_matching
 from ..core.tax_engine import (

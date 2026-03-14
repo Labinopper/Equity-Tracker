@@ -77,6 +77,7 @@ def test_sell_plan_page_renders(client):
     assert resp.status_code == 200
     assert "Sell Plan" in resp.text
     assert "Create Plan" in resp.text
+    assert "Plan Queue" in resp.text
 
 
 def test_sell_plan_create_persists_and_links_to_calendar(client):
@@ -258,6 +259,8 @@ def test_sell_plan_shows_impact_preview_when_reference_price_set(client):
 
     page = client.get(f"/sell-plan?plan_id={plan_id}")
     assert page.status_code == 200
+    assert "Approval State" in page.text
+    assert "Pending Quantity" in page.text
     assert "Impact totals (planned model)" in page.text
     assert "Planned vs Committed Reconciliation" in page.text
     assert "Variance (Committed - Planned)" in page.text

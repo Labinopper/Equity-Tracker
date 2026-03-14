@@ -8,6 +8,9 @@ Last updated: `2026-03-14`
 - `docs/todo.md`
 - `docs/todo_archive.md`
 - `docs/IMPLEMENTATION_REVIEW_2026-03-07.md`
+- `docs/PAGE_AND_WORKFLOW_STRATEGY_2026-03-11.md`
+- `docs/PAGE_EXPANSION_AND_INTEGRATION_STRATEGY_2026-03-11.md`
+- `docs/EXECUTION_BACKLOG_2026-03-11.md`
 
 ## Exploratory Beta Reference Docs
 
@@ -25,6 +28,9 @@ Last updated: `2026-03-14`
 | `docs/todo.md` | Compact current backlog and deferred prioritization source of truth. |
 | `docs/todo_archive.md` | Archived task-history snapshot, delivered scope tables, and pre-tidy detailed backlog reference. |
 | `docs/IMPLEMENTATION_REVIEW_2026-03-07.md` | Dated implementation review against the strategic docs; current-state assessment; priority refinements; aligned roadmap and next actions. |
+| `docs/PAGE_AND_WORKFLOW_STRATEGY_2026-03-11.md` | Fresh page-by-page and workflow-by-workflow strategy tying the documented product purpose to the live route/template surface and prioritised refinement plan. |
+| `docs/PAGE_EXPANSION_AND_INTEGRATION_STRATEGY_2026-03-11.md` | Expansion strategy separating genuinely new page opportunities from enhancements that should remain inside existing pages and workflows. |
+| `docs/EXECUTION_BACKLOG_2026-03-11.md` | Active execution layer translating the strategic and expansion docs into the current implementation priority order, delivery waves, and new-page rules. |
 
 ## Exploratory Beta Ownership
 
