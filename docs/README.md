@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: `2026-03-07`
+Last updated: `2026-03-13`
 
 ## Source of Truth Files
 
@@ -8,6 +8,14 @@ Last updated: `2026-03-07`
 - `docs/todo.md`
 - `docs/todo_archive.md`
 - `docs/IMPLEMENTATION_REVIEW_2026-03-07.md`
+
+## Exploratory Beta Reference Docs
+
+- `docs/paper_trading_beta/README.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_STRATEGY.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_RUNTIME_ARCHITECTURE.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_TECHNICAL_IMPLEMENTATION_PLAN.md`
+- `docs/paper_trading_beta/PAPER_TRADING_BETA_DATABASE_SCHEMA.md`
 
 ## What Each File Owns
 
@@ -17,6 +25,16 @@ Last updated: `2026-03-07`
 | `docs/todo.md` | Compact current backlog and deferred prioritization source of truth. |
 | `docs/todo_archive.md` | Archived task-history snapshot, delivered scope tables, and pre-tidy detailed backlog reference. |
 | `docs/IMPLEMENTATION_REVIEW_2026-03-07.md` | Dated implementation review against the strategic docs; current-state assessment; priority refinements; aligned roadmap and next actions. |
+
+## Exploratory Beta Ownership
+
+| File | Ownership |
+|---|---|
+| `docs/paper_trading_beta/README.md` | Index for the exploratory predictive paper-trading beta docs and storage-boundary summary. |
+| `docs/paper_trading_beta/PAPER_TRADING_BETA_STRATEGY.md` | Exploratory beta strategy, learning architecture, research workflow, governance, and first-release boundary. |
+| `docs/paper_trading_beta/PAPER_TRADING_BETA_RUNTIME_ARCHITECTURE.md` | Runtime design for jobs, cadence, corpus scope, storage boundaries, and operational degradation rules. |
+| `docs/paper_trading_beta/PAPER_TRADING_BETA_TECHNICAL_IMPLEMENTATION_PLAN.md` | Full engineering plan for beta package structure, migration path, operating modes, kill switches, workstreams, and delivery phases. |
+| `docs/paper_trading_beta/PAPER_TRADING_BETA_DATABASE_SCHEMA.md` | SQLite-first split-database schema for the beta research, scoring, governance, and immutable demo-trade system. |
 
 ## Current Stage Snapshot
 
