@@ -60,6 +60,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError
 
 from ..app_context import AppContext
+from ..beta.runtime_manager import initialize_beta_runtime, shutdown_beta_runtime
 from ..db.engine import DatabaseEngine
 from ..db.migration_manager import ensure_migrated
 from . import _state
@@ -75,6 +76,7 @@ from .routers import (
     catalog,
     dividends,
     history,
+    paper_trading_beta,
     portfolio,
     prices,
     reports,
@@ -379,6 +381,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
         _state.set_db_path(db_path)
         logger.info("Database auto-initialized from env vars: %s", Path(db_path_str).name)
         _ensure_security_catalog_available(force_refresh=True)
+        initialize_beta_runtime(db_path)
     else:
         logger.info(
             "EQUITY_DB_PATH / EQUITY_DB_PASSWORD not set (or startup failed). "
@@ -409,6 +412,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     with suppress(asyncio.CancelledError):
         await stream_task
 
+    shutdown_beta_runtime()
     _state.set_db_path(None)
     AppContext.lock()
     logger.info("Database connection closed on shutdown.")
@@ -520,6 +524,7 @@ app.include_router(calendar.router)
 app.include_router(catalog.router)
 app.include_router(dividends.router)
 app.include_router(history.router)
+app.include_router(paper_trading_beta.router)
 app.include_router(portfolio.router)
 app.include_router(prices.router)
 app.include_router(reports.router)

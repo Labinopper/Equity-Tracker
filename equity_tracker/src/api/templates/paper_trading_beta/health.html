@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Beta Health & Controls{% endblock %}
+{% block content %}
+{% set status = dashboard.status or {} %}
+{% set ledger = dashboard.ledger or {} %}
+{% set risk = dashboard.risk_control or {} %}
+{% set runtime_flags = dashboard.runtime_flags or {} %}
+
+<section class="section-header">
+  <div>
+    <h1>Health &amp; Controls</h1>
+    <p class="muted beta-page-note">
+      Operational state, recent jobs, and the manual controls that can slow or stop the beta
+      without affecting the main site.
+    </p>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Runtime</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Mode</div>
+      <div class="position-card__value">{{ status.runtime_mode or (beta_settings.mode if beta_settings else "Unavailable") }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Supervisor</div>
+      <div class="position-card__value"><span class="{{ badge_class(status.supervisor_status) }}">{{ status.supervisor_status or "stopped" }}</span></div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Feature Switches</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Observation</div>
+      <div class="position-card__value">{{ status.observation_enabled }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Learning / Shadow / Demo</div>
+      <div class="position-card__value">{{ status.learning_enabled }} / {{ status.shadow_scoring_enabled }} / {{ status.demo_execution_enabled }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">News / Filings</div>
+      <div class="position-card__value">{{ status.news_enabled if status.news_enabled is defined else (beta_settings.news_enabled if beta_settings else False) }} / {{ status.filings_enabled if status.filings_enabled is defined else (beta_settings.filings_enabled if beta_settings else False) }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Paper Capital</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Available</div>
+      <div class="position-card__value">GBP {{ ledger.available_cash_gbp or "0.00" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Deployed</div>
+      <div class="position-card__value">GBP {{ ledger.deployed_capital_gbp or "0.00" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Degradation Guard</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Entries Paused</div>
+      <div class="position-card__value"><span class="{{ badge_class('warning' if risk.demo_entries_paused else 'success') }}">{{ "yes" if risk.demo_entries_paused else "no" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Status</div>
+      <div class="position-card__value"><span class="{{ badge_class(risk.degradation_status) }}">{{ risk.degradation_status or "NORMAL" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Reason</div>
+      <div class="position-card__value">{{ risk.pause_reason or "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Windows</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Training Window</div>
+      <div class="position-card__value"><span class="{{ badge_class('SUCCESS' if runtime_flags.training_window_open else 'WARNING') }}">{{ "open" if runtime_flags.training_window_open else "closed" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">UK / US Market</div>
+      <div class="position-card__value">{{ "open" if runtime_flags.uk_market_open else "closed" }} / {{ "open" if runtime_flags.us_market_open else "closed" }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Manual Controls</h2></div>
+  <div class="beta-toolbar">
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="pause_learning"><button class="btn btn-secondary btn-sm" type="submit">Pause Learning</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="resume_learning"><button class="btn btn-secondary btn-sm" type="submit">Resume Learning</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="pause_shadow"><button class="btn btn-secondary btn-sm" type="submit">Pause Shadow</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="resume_shadow"><button class="btn btn-secondary btn-sm" type="submit">Resume Shadow</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="pause_demo"><button class="btn btn-secondary btn-sm" type="submit">Pause Demo</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="resume_demo"><button class="btn btn-secondary btn-sm" type="submit">Resume Demo</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="pause_all"><button class="btn btn-danger btn-sm" type="submit">Pause All</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="resume_all"><button class="btn btn-primary btn-sm" type="submit">Resume All</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_cycle"><button class="btn btn-secondary btn-sm" type="submit">Run Cycle Now</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_backfill"><button class="btn btn-secondary btn-sm" type="submit">Run Corpus Backfill</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_evaluation"><button class="btn btn-secondary btn-sm" type="submit">Run Evaluation</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_hypothesis_refresh"><button class="btn btn-secondary btn-sm" type="submit">Refresh Hypotheses</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_training"><button class="btn btn-secondary btn-sm" type="submit">Run Training</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_news_sync"><button class="btn btn-secondary btn-sm" type="submit">Run News Sync</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_filing_sync"><button class="btn btn-secondary btn-sm" type="submit">Run Filing Sync</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="run_review"><button class="btn btn-secondary btn-sm" type="submit">Run Review</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="build_replay_pack"><button class="btn btn-secondary btn-sm" type="submit">Build Replay Pack</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="reload_runtime"><button class="btn btn-secondary btn-sm" type="submit">Reload Runtime</button></form>
+    <form method="post" action="/paper-trading-beta/control"><input type="hidden" name="action" value="snapshot_now"><button class="btn btn-secondary btn-sm" type="submit">Snapshot Now</button></form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Recent Jobs</h2></div>
+  {% if dashboard.jobs %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Job</th>
+          <th>Type</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.jobs %}
+        <tr>
+          <td>{{ row.started_at }}</td>
+          <td>{{ row.job_name }}</td>
+          <td>{{ row.job_type }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No beta jobs have been recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

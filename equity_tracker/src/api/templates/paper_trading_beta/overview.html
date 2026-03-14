@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block title %}Paper Trading Beta{% endblock %}
+{% block content %}
+{% set counts = dashboard.counts or {} %}
+{% set status = dashboard.status or {} %}
+{% set performance = dashboard.performance or {} %}
+{% set ledger = dashboard.ledger or {} %}
+{% set risk = dashboard.risk_control or {} %}
+{% set evaluation = dashboard.latest_evaluation_summary or {} %}
+{% set active_model = dashboard.active_model or {} %}
+{% set active_strategy = dashboard.active_strategy or {} %}
+{% set latest_dataset = dashboard.latest_dataset or {} %}
+{% set latest_experiment = dashboard.latest_experiment or {} %}
+{% set latest_validation = dashboard.latest_validation or {} %}
+
+<section class="section-header">
+  <div>
+    <h1>Paper Trading Beta</h1>
+    <p class="muted beta-page-note">
+      Summary-first view of what the learning system is doing now, what it has found,
+      and whether the runtime is healthy.
+    </p>
+  </div>
+  <div class="beta-toolbar">
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/opportunities">Watched Opportunities</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/hypotheses">Hypotheses</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/trades">Paper Trades</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/health">Health &amp; Controls</a>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Runtime</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Mode</div>
+      <div class="position-card__value">{{ status.runtime_mode or (beta_settings.mode if beta_settings else "Unavailable") }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Supervisor</div>
+      <div class="position-card__value">
+        <span class="{{ badge_class(status.supervisor_status) }}">{{ status.supervisor_status or "stopped" }}</span>
+      </div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Learning Progress</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Hypotheses</div>
+      <div class="position-card__value">{{ counts.hypotheses_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Promoted</div>
+      <div class="position-card__value">{{ counts.hypotheses_promoted or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Suspended</div>
+      <div class="position-card__value">{{ counts.hypotheses_suspended or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Candidates</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Watching</div>
+      <div class="position-card__value">{{ counts.candidates_watching or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Rejected / Dismissed</div>
+      <div class="position-card__value">{{ counts.candidates_rejected or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Demo Trades</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Open</div>
+      <div class="position-card__value">{{ counts.positions_open or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Closed</div>
+      <div class="position-card__value">{{ counts.positions_closed or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Score Tape</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Scores Logged</div>
+      <div class="position-card__value">{{ counts.scores_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Recommended</div>
+      <div class="position-card__value">{{ counts.scores_recommended or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Intraday Capture</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Snapshots Logged</div>
+      <div class="position-card__value">{{ counts.intraday_snapshots_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Latest Tick</div>
+      <div class="position-card__value">{{ dashboard.recent_intraday_snapshots[0].observed_at if dashboard.recent_intraday_snapshots else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Active Model</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Version</div>
+      <div class="position-card__value">{{ active_model.version_code or "heuristic-only" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Validation Sign Accuracy</div>
+      <div class="position-card__value">{{ active_model.validation_sign_accuracy_pct if active_model.validation_sign_accuracy_pct is not none else "-" }}{% if active_model.validation_sign_accuracy_pct is not none %}%{% endif %}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Active Strategy</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Version</div>
+      <div class="position-card__value">{{ active_strategy.version_code or "unassigned" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Entry Gates</div>
+      <div class="position-card__value">
+        C {{ active_strategy.min_confidence_score if active_strategy.min_confidence_score is not none else "-" }}
+        / E {{ active_strategy.min_expected_edge_score if active_strategy.min_expected_edge_score is not none else "-" }}
+      </div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Research Manifests</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Datasets / Experiments / Validations</div>
+      <div class="position-card__value">{{ counts.datasets_total or 0 }} / {{ counts.experiments_total or 0 }} / {{ counts.validation_runs_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Latest Dataset</div>
+      <div class="position-card__value">{{ latest_dataset.version_code or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Latest Validation</div>
+      <div class="position-card__value">{{ latest_validation.validation_method or "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">News Evidence</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Articles / Links</div>
+      <div class="position-card__value">{{ counts.news_articles_total or 0 }} / {{ counts.news_links_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Sources</div>
+      <div class="position-card__value">{{ counts.news_sources_total or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Official Releases</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Events / Links</div>
+      <div class="position-card__value">{{ counts.filing_events_total or 0 }} / {{ counts.filing_links_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Sources</div>
+      <div class="position-card__value">{{ counts.filing_sources_total or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Benchmarks</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Rows Stored</div>
+      <div class="position-card__value">{{ counts.benchmark_rows_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Universe</div>
+      <div class="position-card__value">{{ counts.universe_active or 0 }} names</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Learning Trend</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Win Rate</div>
+      <div class="position-card__value">{{ performance.win_rate_pct or 0 }}%</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg P/L %</div>
+      <div class="position-card__value">{{ performance.avg_pnl_pct or 0 }}%</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Trend</div>
+      <div class="position-card__value"><span class="{{ badge_class(performance.trend) }}">{{ performance.trend or "stable" }}</span></div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Validation Snapshot</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Labeled Scores</div>
+      <div class="position-card__value">{{ evaluation.labeled_scores or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Recommendation Rate</div>
+      <div class="position-card__value">{{ evaluation.recommendation_rate_pct or 0 }}%</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Trend</div>
+      <div class="position-card__value"><span class="{{ badge_class(evaluation.trend_label) }}">{{ evaluation.trend_label or "STABLE" }}</span></div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Paper Capital</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Available</div>
+      <div class="position-card__value">GBP {{ ledger.available_cash_gbp or "0.00" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Deployed</div>
+      <div class="position-card__value">GBP {{ ledger.deployed_capital_gbp or "0.00" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Equity</div>
+      <div class="position-card__value">GBP {{ ledger.total_equity_gbp or "0.00" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Risk Control</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Entries</div>
+      <div class="position-card__value"><span class="{{ badge_class('warning' if risk.demo_entries_paused else 'success') }}">{{ "paused" if risk.demo_entries_paused else "open" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Recent Win Rate</div>
+      <div class="position-card__value">{{ risk.recent_win_rate_pct or 0 }}%</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Recent Avg P/L</div>
+      <div class="position-card__value">{{ risk.recent_avg_pnl_pct or 0 }}%</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Hypothesis Health</h2>
+  </div>
+  {% if dashboard.hypotheses %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Status</th>
+          <th>Evidence</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.hypotheses[:4] %}
+        <tr>
+          <td><a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.title }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.evidence_score or "-" }}</td>
+          <td>{{ row.notes or "Awaiting linked candidates and trades." }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Hypothesis health will appear once the registry has been refreshed.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Confidence Buckets</h2>
+  </div>
+  {% if dashboard.confidence_buckets %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Bucket</th>
+          <th>Observations</th>
+          <th>Recommended</th>
+          <th>Avg Future Return</th>
+          <th>Alignment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.confidence_buckets %}
+        <tr>
+          <td><span class="{{ badge_class(row.bucket_label) }}">{{ row.bucket_label }}</span></td>
+          <td>{{ row.observation_count }}</td>
+          <td>{{ row.recommendation_count }}</td>
+          <td>{{ row.avg_future_return_pct if row.avg_future_return_pct is not none else "-" }}</td>
+          <td>{{ row.alignment_rate_pct if row.alignment_rate_pct is not none else "-" }}{% if row.alignment_rate_pct is not none %}%{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Confidence calibration will appear once the beta has enough labeled score history.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Watched Opportunities</h2>
+  </div>
+  {% if dashboard.watched_candidates %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Direction</th>
+          <th>Confidence</th>
+          <th>Edge</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.watched_candidates %}
+        <tr>
+          <td><strong><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.direction }}</td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.updated_at or row.discovered_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No watched opportunities yet. The beta is still building its candidate set.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header">
+    <h2 class="card__title">Recent Milestones</h2>
+  </div>
+  {% if dashboard.notifications %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Severity</th>
+          <th>Title</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.notifications[:6] %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="{{ badge_class(row.severity) }}">{{ row.severity }}</span></td>
+          <td>{{ row.title }}</td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No milestones recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

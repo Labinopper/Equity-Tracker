@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Beta Opportunities{% endblock %}
+{% block content %}
+<section class="section-header">
+  <div>
+    <h1>Watched Opportunities</h1>
+    <p class="muted beta-page-note">
+      High-signal candidates the system is following, plus patterns it has filtered out.
+    </p>
+  </div>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Hypothesis Families</h2></div>
+  {% if dashboard.hypotheses %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Status</th>
+          <th>Evidence</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.hypotheses %}
+        <tr>
+          <td><a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.title }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.evidence_score or "-" }}</td>
+          <td>{{ row.notes or "Awaiting evidence." }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No hypothesis rows available yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Current Candidates</h2></div>
+  {% if dashboard.watched_candidates %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Direction</th>
+          <th>Confidence</th>
+          <th>Edge</th>
+          <th>Evidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.watched_candidates %}
+        <tr>
+          <td><strong><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.direction }}</td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.evidence_summary or "Awaiting richer evidence." }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No current candidates yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Rejected / Dismissed</h2></div>
+  {% if dashboard.rejected_candidates %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Reason</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.rejected_candidates %}
+        <tr>
+          <td><strong><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.rejection_reason or "No rejection note captured yet." }}</td>
+          <td>{{ row.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Nothing has been rejected yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Official Releases</h2></div>
+  {% if dashboard.recent_filing_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Published</th>
+          <th>Category</th>
+          <th>Sentiment</th>
+          <th>Title</th>
+          <th>Matched Symbols</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_filing_events[:8] %}
+        <tr>
+          <td>{{ row.published_at or row.created_at }}</td>
+          <td>{{ row.event_category }}</td>
+          <td><span class="{{ badge_class(row.sentiment_label) }}">{{ row.sentiment_label }}</span></td>
+          <td>{{ row.title }}</td>
+          <td>{{ row.matched_symbols_json or "[]" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No official releases or filing events linked yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Linked News</h2></div>
+  {% if dashboard.recent_news_articles %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Published</th>
+          <th>Sentiment</th>
+          <th>Title</th>
+          <th>Matched Symbols</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_news_articles[:8] %}
+        <tr>
+          <td>{{ row.published_at or row.created_at }}</td>
+          <td><span class="{{ badge_class(row.sentiment_label) }}">{{ row.sentiment_label }}</span></td>
+          <td>{{ row.title }}</td>
+          <td>{{ row.matched_symbols_json or "[]" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No linked news evidence yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

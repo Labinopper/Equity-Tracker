@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Beta Paper Trades{% endblock %}
+{% block content %}
+{% set ledger = dashboard.ledger or {} %}
+<section class="section-header">
+  <div>
+    <h1>Paper Trades</h1>
+    <p class="muted beta-page-note">
+      Active and closed demo positions only. This page stays compact by default.
+    </p>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Available Cash</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">GBP</div>
+      <div class="position-card__value">{{ ledger.available_cash_gbp or "0.00" }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Deployed Capital</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">GBP</div>
+      <div class="position-card__value">{{ ledger.deployed_capital_gbp or "0.00" }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Total Equity</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">GBP</div>
+      <div class="position-card__value">{{ ledger.total_equity_gbp or "0.00" }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Active Demo Positions</h2></div>
+  {% if dashboard.active_positions %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Status</th>
+          <th>Confidence</th>
+          <th>Edge</th>
+          <th>Size (GBP)</th>
+          <th>Opened</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.active_positions %}
+        <tr>
+          <td><strong><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.size_gbp }}</td>
+          <td>{{ row.opened_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No active demo positions yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Recent Closed Positions</h2></div>
+  {% if dashboard.closed_positions %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Status</th>
+          <th>P/L GBP</th>
+          <th>P/L %</th>
+          <th>Exit Reason</th>
+          <th>Closed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.closed_positions %}
+        <tr>
+          <td><strong><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.pnl_gbp or "-" }}</td>
+          <td>{{ row.pnl_pct or "-" }}</td>
+          <td>{{ row.exit_reason or "-" }}</td>
+          <td>{{ row.closed_at or row.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No closed demo positions yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

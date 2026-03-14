@@ -27,11 +27,11 @@ from sqlalchemy.orm import Session
 
 from ..app_context import AppContext
 from ..core.lot_engine.fifo import (
+    allocate_fifo,
     FIFOResult,
     ForfeitureWarning,
     LotForFIFO,
     SIPTaxEstimate,
-    allocate_fifo,
 )
 from ..core.lot_engine.uk_matching import allocate_uk_share_matching
 from ..core.tax_engine import (

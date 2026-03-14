@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Beta Hypothesis Detail{% endblock %}
+{% block content %}
+{% if not detail %}
+<section class="section-header">
+  <div>
+    <h1>Hypothesis Not Found</h1>
+    <p class="muted beta-page-note">The requested hypothesis could not be found in the beta registry.</p>
+  </div>
+</section>
+{% else %}
+{% set hypothesis = detail.hypothesis %}
+<section class="section-header">
+  <div>
+    <h1>{{ hypothesis.title }}</h1>
+    <p class="muted beta-page-note">
+      Family-level audit view showing status, evidence, linked candidates, linked demo trades,
+      and registry events.
+    </p>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Status</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Current</div>
+      <div class="position-card__value"><span class="{{ badge_class(hypothesis.status) }}">{{ hypothesis.status }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Auto Promoted</div>
+      <div class="position-card__value">{{ "yes" if hypothesis.auto_promoted else "no" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Evidence</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Score</div>
+      <div class="position-card__value">{{ hypothesis.evidence_score or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Updated</div>
+      <div class="position-card__value">{{ hypothesis.updated_at }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Linked Objects</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Candidates</div>
+      <div class="position-card__value">{{ detail.candidates|length }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Positions</div>
+      <div class="position-card__value">{{ detail.positions|length }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Current Summary</h2></div>
+  <p>{{ hypothesis.notes or "No summary has been recorded yet." }}</p>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Registry Events</h2></div>
+  {% if detail.events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in detail.events %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td>{{ row.event_type }}</td>
+          <td>
+            {% if row.status_after %}
+            <span class="{{ badge_class(row.status_after) }}">{{ row.status_after }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No events recorded yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Linked Candidates</h2></div>
+  {% if detail.candidates %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Status</th>
+          <th>Direction</th>
+          <th>Confidence</th>
+          <th>Edge</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in detail.candidates %}
+        <tr>
+          <td><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.direction }}</td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No linked candidates yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Linked Demo Trades</h2></div>
+  {% if detail.positions %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Status</th>
+          <th>Confidence</th>
+          <th>Expected Edge</th>
+          <th>P/L GBP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in detail.positions %}
+        <tr>
+          <td><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.pnl_gbp or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No linked demo trades yet.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

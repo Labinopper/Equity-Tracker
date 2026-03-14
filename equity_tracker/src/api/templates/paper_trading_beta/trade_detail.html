@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Beta Trade Detail{% endblock %}
+{% block content %}
+{% if not detail %}
+<section class="section-header">
+  <div>
+    <h1>Trade Not Found</h1>
+    <p class="muted beta-page-note">The requested demo trade is not available.</p>
+  </div>
+</section>
+{% else %}
+{% set position = detail.position %}
+{% set hypothesis = detail.hypothesis %}
+<section class="section-header">
+  <div>
+    <h1>{{ position.symbol }} Demo Trade</h1>
+    <p class="muted beta-page-note">Replayable view of the demo trade lifecycle.</p>
+  </div>
+  <div class="beta-toolbar">
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/trades">Back to Trades</a>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Position</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Status</div>
+      <div class="position-card__value"><span class="{{ badge_class(position.status) }}">{{ position.status }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Side</div>
+      <div class="position-card__value">{{ position.side }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Sizing</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Size GBP</div>
+      <div class="position-card__value">{{ position.size_gbp }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Units / Entry</div>
+      <div class="position-card__value">{{ position.units or "-" }} / {{ position.entry_price or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Confidence / Edge</div>
+      <div class="position-card__value">{{ "%.2f"|format(position.confidence_score or 0) }} / {{ "%.2f"|format(position.expected_edge_score or 0) }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">P&amp;L</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">GBP</div>
+      <div class="position-card__value">{{ position.pnl_gbp or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">%</div>
+      <div class="position-card__value">{{ position.pnl_pct or "-" }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Hypothesis</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Family</div>
+      <div class="position-card__value">
+        {% if hypothesis %}
+        <a href="/paper-trading-beta/hypothesis/{{ hypothesis.id }}">{{ hypothesis.title }}</a>
+        {% else %}
+        -
+        {% endif %}
+      </div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Status</div>
+      <div class="position-card__value">
+        {% if hypothesis %}
+        <span class="{{ badge_class(hypothesis.status) }}">{{ hypothesis.status }}</span>
+        {% else %}
+        -
+        {% endif %}
+      </div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Lifecycle Events</h2></div>
+  {% if detail.position_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead><tr><th>When</th><th>Event</th><th>Note</th><th>Payload</th></tr></thead>
+      <tbody>
+        {% for row in detail.position_events %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="{{ badge_class(row.event_type) }}">{{ row.event_type }}</span></td>
+          <td>{{ row.message_text }}</td>
+          <td><code>{{ row.payload_json or "-" }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No trade events recorded.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Ledger Impact</h2></div>
+  {% if detail.ledger_entries %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead><tr><th>When</th><th>Type</th><th>Amount GBP</th><th>Balance After</th><th>Note</th></tr></thead>
+      <tbody>
+        {% for row in detail.ledger_entries %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td>{{ row.entry_type }}</td>
+          <td>{{ row.amount_gbp }}</td>
+          <td>{{ row.balance_after_gbp }}</td>
+          <td>{{ row.note or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No ledger entries stored for this trade.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Score History</h2></div>
+  {% if detail.scores %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead><tr><th>When</th><th>Direction</th><th>Confidence</th><th>Edge</th><th>Recommended</th></tr></thead>
+      <tbody>
+        {% for row in detail.scores %}
+        <tr>
+          <td>{{ row.scored_at }}</td>
+          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.recommendation_flag }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No score history available.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Related Official Releases</h2></div>
+  {% if detail.filing_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead><tr><th>Published</th><th>Category</th><th>Sentiment</th><th>Title</th></tr></thead>
+      <tbody>
+        {% for row in detail.filing_events %}
+        <tr>
+          <td>{{ row.event.published_at or row.event.created_at }}</td>
+          <td>{{ row.event.event_category }}</td>
+          <td><span class="{{ badge_class(row.event.sentiment_label) }}">{{ row.event.sentiment_label }}</span></td>
+          <td>{{ row.event.title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No linked official releases or filings for this trade yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Related News</h2></div>
+  {% if detail.news_articles %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead><tr><th>Published</th><th>Sentiment</th><th>Title</th></tr></thead>
+      <tbody>
+        {% for row in detail.news_articles %}
+        <tr>
+          <td>{{ row.article.published_at or row.article.created_at }}</td>
+          <td><span class="{{ badge_class(row.article.sentiment_label) }}">{{ row.article.sentiment_label }}</span></td>
+          <td>{{ row.article.title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No linked news for this trade yet.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

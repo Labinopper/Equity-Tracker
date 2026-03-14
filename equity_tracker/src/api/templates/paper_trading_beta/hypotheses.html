@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Beta Hypotheses{% endblock %}
+{% block content %}
+<section class="section-header">
+  <div>
+    <h1>Hypothesis Families</h1>
+    <p class="muted beta-page-note">
+      The governed pattern families the beta is learning from, including whether each family is
+      being promoted, suspended, or kept in research.
+    </p>
+  </div>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Current Family State</h2></div>
+  {% if dashboard.hypotheses %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Status</th>
+          <th>Evidence</th>
+          <th>Summary</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.hypotheses %}
+        <tr>
+          <td><strong><a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.title }}</a></strong></td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.evidence_score or "-" }}</td>
+          <td>{{ row.notes or "Awaiting evidence." }}</td>
+          <td>{{ row.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No hypothesis data is available yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Recent Hypothesis Events</h2></div>
+  {% if dashboard.hypothesis_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Type</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.hypothesis_events %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="{{ badge_class(row.status_after or row.event_type) }}">{{ row.event_type }}</span></td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No hypothesis events have been recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

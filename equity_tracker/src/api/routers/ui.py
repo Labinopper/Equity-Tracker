@@ -3110,6 +3110,20 @@ def _build_portfolio_page_context(
         "calendar_actionable_today_label": calendar_actionable_today["label"],
         "calendar_actionable_today_preview": calendar_actionable_today["preview"],
         "portfolio_upcoming_timing": portfolio_upcoming_timing,
+        "model_scope": {
+            "inputs": [
+                "Current market values for all active lots",
+                "Sellable-lot employment tax estimate model",
+            ],
+            "assumptions": [
+                "Employment tax is estimated on sellable lots only",
+                "Locked and forfeiture-restricted capital is excluded from actionable metrics",
+            ],
+            "exclusions": [
+                "No forward pricing assumptions",
+                "No live execution or recommendation logic",
+            ],
+        },
         "income_profile_configured": not _tax_inputs_incomplete(settings),
         "employer_ticker_configured": bool(getattr(settings, "employer_ticker", "").strip()) if settings else False,
         "guardrail_dismiss_max_days": _GUARDRAIL_DISMISS_MAX_DAYS,

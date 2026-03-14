@@ -25,6 +25,7 @@ Design notes
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -34,6 +35,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ...app_context import AppContext
+from ...beta.runtime_manager import initialize_beta_runtime, shutdown_beta_runtime
 from ...db.engine import DatabaseEngine
 from ...services.validation_report_service import ValidationReportService
 from .. import _state
@@ -151,10 +153,17 @@ async def unlock(request: Request, req: UnlockRequest) -> AdminActionResponse:  
 
     AppContext.initialize(engine)
     _state.set_db_path(path)
+    os.environ["EQUITY_DB_PATH"] = str(path)
+    os.environ["EQUITY_DB_ENCRYPTED"] = "true" if req.encrypted else "false"
+    if req.encrypted:
+        os.environ["EQUITY_DB_PASSWORD"] = req.password
+    else:
+        os.environ.pop("EQUITY_DB_PASSWORD", None)
 
     # Seed the instrument catalogue on first unlock if the table is empty.
     from ..app import _seed_catalog_if_empty
     _seed_catalog_if_empty()
+    initialize_beta_runtime(path)
 
     return AdminActionResponse(
         status="unlocked",
@@ -176,6 +185,10 @@ async def lock() -> AdminActionResponse:
     After this call, all protected endpoints return HTTP 503 until
     ``/admin/unlock`` is called again.
     """
+    os.environ.pop("EQUITY_DB_PATH", None)
+    os.environ.pop("EQUITY_DB_PASSWORD", None)
+    os.environ.pop("EQUITY_DB_ENCRYPTED", None)
+    shutdown_beta_runtime()
     _state.set_db_path(None)
     AppContext.lock()
     return AdminActionResponse(

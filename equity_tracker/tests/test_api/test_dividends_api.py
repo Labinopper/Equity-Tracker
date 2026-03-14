@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from src.api import _state
@@ -339,7 +340,8 @@ def test_dividends_manual_entry_with_ex_date_ticks_expected_reference_row(client
 
     page = client.get("/dividends")
     assert page.status_code == 200
-    assert "DIVMATCH" not in page.text
+    assert "No unmatched reference dividend events available." in page.text
+    assert "1 already confirmed." in page.text
 
 
 def test_dividends_ui_add_allows_cash_container_override(client):

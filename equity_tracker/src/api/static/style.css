@@ -2505,6 +2505,43 @@ tr:hover td.loss {
   text-align: right;
 }
 
+.beta-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.beta-stat-card .position-card__section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.beta-page-note {
+  margin-top: 0.35rem;
+  max-width: 760px;
+}
+
+.beta-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.beta-toolbar form {
+  margin: 0;
+}
+
+.beta-table-compact th,
+.beta-table-compact td {
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
 .note-small-top {
   font-size: 0.8rem;
   margin-top: 0.5rem;

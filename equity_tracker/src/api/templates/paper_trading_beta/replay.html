@@ -1,0 +1,633 @@
+{% extends "base.html" %}
+{% block title %}Beta Replay & Evidence{% endblock %}
+{% block content %}
+{% set counts = dashboard.counts or {} %}
+<section class="section-header">
+  <div>
+    <h1>Replay &amp; Evidence</h1>
+    <p class="muted beta-page-note">
+      Evidence-facing summary of what the beta knew, when it knew it, and what changed.
+    </p>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Feature Rows</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.feature_rows_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Label Rows</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.label_rows_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Intraday Snapshots</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.intraday_snapshots_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Evaluations</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.evaluation_runs_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Validations</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.validation_runs_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">AI Reviews</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.review_runs_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Models</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored / Active</div>
+      <div class="position-card__value">{{ counts.models_total or 0 }} / {{ counts.models_active or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Replay Packs</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ replay_packs|length }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">News</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Articles / Links</div>
+      <div class="position-card__value">{{ counts.news_articles_total or 0 }} / {{ counts.news_links_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Official Releases</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Events / Links</div>
+      <div class="position-card__value">{{ counts.filing_events_total or 0 }} / {{ counts.filing_links_total or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Benchmark Rows</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Stored</div>
+      <div class="position-card__value">{{ counts.benchmark_rows_total or 0 }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Replay Packs</h2></div>
+  {% if replay_packs %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Modified</th>
+          <th>Name</th>
+          <th>Size</th>
+          <th>Path</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in replay_packs %}
+        <tr>
+          <td>{{ row.modified_at }}</td>
+          <td>{{ row.name }}</td>
+          <td>{{ row.size_bytes }}</td>
+          <td><code>{{ row.path }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No replay packs have been written yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Latest Validation</h2></div>
+  {% if dashboard.latest_validation %}
+  {% set validation = dashboard.latest_validation %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Windows</th>
+          <th>Avg MAE</th>
+          <th>Avg Sign Accuracy</th>
+          <th>Avg Return</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{ validation.validation_method }}</td>
+          <td>{{ validation.window_count }}</td>
+          <td>{{ validation.avg_validation_mae if validation.avg_validation_mae is not none else "-" }}</td>
+          <td>{{ validation.avg_validation_sign_accuracy_pct if validation.avg_validation_sign_accuracy_pct is not none else "-" }}{% if validation.avg_validation_sign_accuracy_pct is not none %}%{% endif %}</td>
+          <td>{{ validation.avg_validation_return_pct if validation.avg_validation_return_pct is not none else "-" }}{% if validation.avg_validation_return_pct is not none %}%{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No validation run has been stored yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Benchmark Rows</h2></div>
+  {% if dashboard.recent_benchmark_rows %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Key</th>
+          <th>Symbol</th>
+          <th>GBP</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_benchmark_rows %}
+        <tr>
+          <td>{{ row.bar_date }}</td>
+          <td>{{ row.benchmark_key }}</td>
+          <td>{{ row.symbol }}</td>
+          <td>{{ row.close_price_gbp }}</td>
+          <td>{{ row.source }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No benchmark rows stored yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Intraday Snapshots</h2></div>
+  {% if dashboard.recent_intraday_snapshots %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Observed</th>
+          <th>Instrument Id</th>
+          <th>Price Date</th>
+          <th>GBP</th>
+          <th>Direction</th>
+          <th>% Change</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_intraday_snapshots %}
+        <tr>
+          <td>{{ row.observed_at }}</td>
+          <td>{{ row.instrument_id }}</td>
+          <td>{{ row.price_date }}</td>
+          <td>{{ row.price_gbp }}</td>
+          <td>{{ row.direction or "-" }}</td>
+          <td>{{ row.percent_change or "-" }}</td>
+          <td>{{ row.source or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No intraday snapshots yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent News Articles</h2></div>
+  {% if dashboard.recent_news_articles %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Published</th>
+          <th>Sentiment</th>
+          <th>Relevance</th>
+          <th>Title</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_news_articles %}
+        <tr>
+          <td>{{ row.published_at or row.created_at }}</td>
+          <td><span class="{{ badge_class(row.sentiment_label) }}">{{ row.sentiment_label }}</span></td>
+          <td>{{ "%.2f"|format(row.relevance_score or 0) }}</td>
+          <td>{{ row.title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No news articles stored yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Official Releases</h2></div>
+  {% if dashboard.recent_filing_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Published</th>
+          <th>Category</th>
+          <th>Sentiment</th>
+          <th>Importance</th>
+          <th>Title</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_filing_events %}
+        <tr>
+          <td>{{ row.published_at or row.created_at }}</td>
+          <td>{{ row.event_category }}</td>
+          <td><span class="{{ badge_class(row.sentiment_label) }}">{{ row.sentiment_label }}</span></td>
+          <td>{{ "%.2f"|format(row.importance_score or 0) }}</td>
+          <td>{{ row.title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No official release or filing events stored yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Latest Evaluation</h2></div>
+  {% if dashboard.latest_evaluation_summary %}
+  {% set evaluation = dashboard.latest_evaluation_summary %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Total Scores</th>
+          <th>Recommended</th>
+          <th>Labeled</th>
+          <th>Conversion</th>
+          <th>Win Rate</th>
+          <th>Avg Closed P/L</th>
+          <th>Trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{ evaluation.total_scores }}</td>
+          <td>{{ evaluation.recommended_scores }}</td>
+          <td>{{ evaluation.labeled_scores }}</td>
+          <td>{{ evaluation.conversion_rate_pct }}%</td>
+          <td>{{ evaluation.win_rate_pct }}%</td>
+          <td>{{ evaluation.avg_closed_pnl_pct }}%</td>
+          <td><span class="{{ badge_class(evaluation.trend_label) }}">{{ evaluation.trend_label }}</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No evaluation summary has been stored yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Score Tape</h2></div>
+  {% if dashboard.recent_scores %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Symbol</th>
+          <th>Direction</th>
+          <th>Confidence</th>
+          <th>Edge</th>
+          <th>Recommended</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_scores %}
+        <tr>
+          <td>{{ row.scored_at }}</td>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
+          <td>{{ row.recommendation_flag }}</td>
+          <td>{{ row.rejection_reason or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No score tape captured yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Candidate Events</h2></div>
+  {% if dashboard.candidate_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Event</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.candidate_events %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="{{ badge_class(row.event_type) }}">{{ row.event_type }}</span></td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No candidate events yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Demo Position Events</h2></div>
+  {% if dashboard.position_events %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Event</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.position_events %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="{{ badge_class(row.event_type) }}">{{ row.event_type }}</span></td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No demo-position events yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Feature Rows</h2></div>
+  {% if dashboard.recent_feature_rows %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Feature Date</th>
+          <th>Definition Id</th>
+          <th>Instrument Id</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_feature_rows %}
+        <tr>
+          <td>{{ row.feature_date }}</td>
+          <td>{{ row.feature_definition_id }}</td>
+          <td>{{ row.instrument_id }}</td>
+          <td>{{ row.value_numeric if row.value_numeric is not none else row.value_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No feature rows yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Label Rows</h2></div>
+  {% if dashboard.recent_label_rows %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Decision Date</th>
+          <th>Horizon End</th>
+          <th>Instrument Id</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_label_rows %}
+        <tr>
+          <td>{{ row.decision_date }}</td>
+          <td>{{ row.horizon_end_date }}</td>
+          <td>{{ row.instrument_id }}</td>
+          <td>{{ row.value_numeric if row.value_numeric is not none else row.value_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No label rows yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Stored Review Findings</h2></div>
+  {% if dashboard.review_findings %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Type</th>
+          <th>Symbol</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.review_findings %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td>{{ row.finding_type }}</td>
+          <td>{{ row.subject_symbol or "-" }}</td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No stored review findings yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Recent Review Runs</h2></div>
+  {% if dashboard.review_runs %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.review_runs %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td>{{ row.review_type }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.summary_text or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No review runs yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Latest Confidence Buckets</h2></div>
+  {% if dashboard.confidence_buckets %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Bucket</th>
+          <th>Observations</th>
+          <th>Recommended</th>
+          <th>Avg Edge</th>
+          <th>Avg Future Return</th>
+          <th>Alignment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.confidence_buckets %}
+        <tr>
+          <td>{{ row.bucket_label }}</td>
+          <td>{{ row.observation_count }}</td>
+          <td>{{ row.recommendation_count }}</td>
+          <td>{{ "%.2f"|format(row.avg_expected_edge_score or 0) }}</td>
+          <td>{{ row.avg_future_return_pct if row.avg_future_return_pct is not none else "-" }}</td>
+          <td>{{ row.alignment_rate_pct if row.alignment_rate_pct is not none else "-" }}{% if row.alignment_rate_pct is not none %}%{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No confidence-bucket summaries yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Latest Direction Summary</h2></div>
+  {% if dashboard.direction_summaries %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Direction</th>
+          <th>Observations</th>
+          <th>Recommended</th>
+          <th>Avg Edge</th>
+          <th>Avg Future Return</th>
+          <th>Alignment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.direction_summaries %}
+        <tr>
+          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{{ row.observation_count }}</td>
+          <td>{{ row.recommendation_count }}</td>
+          <td>{{ "%.2f"|format(row.avg_expected_edge_score or 0) }}</td>
+          <td>{{ row.avg_future_return_pct if row.avg_future_return_pct is not none else "-" }}</td>
+          <td>{{ row.alignment_rate_pct if row.alignment_rate_pct is not none else "-" }}{% if row.alignment_rate_pct is not none %}%{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No direction summaries yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Daily Dashboard Snapshots</h2></div>
+  {% if dashboard.snapshots %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Mode</th>
+          <th>Observation</th>
+          <th>Learning</th>
+          <th>Shadow</th>
+          <th>Demo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.snapshots %}
+        <tr>
+          <td>{{ row.snapshot_date }}</td>
+          <td>{{ row.summary.runtime_mode }}</td>
+          <td>{{ row.summary.observation_enabled }}</td>
+          <td>{{ row.summary.learning_enabled }}</td>
+          <td>{{ row.summary.shadow_scoring_enabled }}</td>
+          <td>{{ row.summary.demo_execution_enabled }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No daily snapshots yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
