@@ -801,7 +801,9 @@ class BetaTrainingService:
                 }
 
             feature_ids = [row.id for row in feature_defs]
-            label_instrument_ids = list({lv.instrument_id for lv in labels})
+            label_pairs = {(lv.instrument_id, lv.decision_date) for lv in labels}
+            label_instrument_ids = list({p[0] for p in label_pairs})
+            label_dates = list({p[1] for p in label_pairs})
             feature_map: dict[tuple[str, str, object], float] = {}
             for iid, fid, fdate, val in sess.execute(
                 select(
@@ -813,6 +815,7 @@ class BetaTrainingService:
                     BetaFeatureValue.feature_definition_id.in_(feature_ids),
                     BetaFeatureValue.value_numeric.is_not(None),
                     BetaFeatureValue.instrument_id.in_(label_instrument_ids),
+                    BetaFeatureValue.feature_date.in_(label_dates),
                 )
             ).yield_per(5000):
                 feature_map[(iid, fid, fdate)] = float(val)
