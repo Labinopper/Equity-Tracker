@@ -1,0 +1,171 @@
+[
+  {
+    "template_code": "EXHAUSTION_REVERSAL_BULL_TEMPLATE",
+    "family_code": "EXHAUSTION_REVERSAL",
+    "hypothesis_family": "exhaustion_reversal",
+    "template_name": "Bullish short-term exhaustion reversal",
+    "expected_direction": "BULLISH",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["ret_1d_pct", "ret_5d_pct", "distance_from_20d_mean_pct"],
+    "condition_slots": [
+      {"feature": "ret_1d_pct", "op": "lt", "thresholds": [-2.5, -3.0, -4.0]},
+      {"feature": "ret_5d_pct", "op": "lt", "thresholds": [-4.0, -5.0, -6.0]},
+      {"feature": "distance_from_20d_mean_pct", "op": "lt", "thresholds": [-4.0, -6.0, -8.0]}
+    ],
+    "regime_gate_codes": ["none", "weak_market_regime", "high_vol_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 40
+  },
+  {
+    "template_code": "VOLATILITY_REGIME_BREAKDOWN_TEMPLATE",
+    "family_code": "VOLATILITY_REGIME",
+    "hypothesis_family": "volatility_regime",
+    "template_name": "Volatility expansion breakdown",
+    "expected_direction": "RISK_OFF",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["realized_vol_5d_pct", "ret_5d_pct", "drawdown_from_20d_high_pct"],
+    "condition_slots": [
+      {"feature": "realized_vol_5d_pct", "op": "gt", "thresholds": [2.0, 2.5, 3.0]},
+      {"feature": "ret_5d_pct", "op": "lt", "thresholds": [-2.0, -3.0, -4.0]},
+      {"feature": "drawdown_from_20d_high_pct", "op": "lt", "thresholds": [-6.0, -8.0, -10.0]}
+    ],
+    "regime_gate_codes": ["none", "weak_market_regime", "high_vol_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 40
+  },
+  {
+    "template_code": "RELATIVE_STRENGTH_LEADER_TEMPLATE",
+    "family_code": "RELATIVE_STRENGTH",
+    "hypothesis_family": "relative_strength",
+    "template_name": "Relative strength leadership",
+    "expected_direction": "BULLISH",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["sector_excess_5d_pct", "market_excess_5d_pct", "ret_20d_pct"],
+    "condition_slots": [
+      {"feature": "sector_excess_5d_pct", "op": "gt", "thresholds": [0.5, 1.0, 1.5]},
+      {"feature": "market_excess_5d_pct", "op": "gt", "thresholds": [0.5, 1.0, 1.5]},
+      {"feature": "ret_20d_pct", "op": "gt", "thresholds": [4.0, 6.0, 8.0]}
+    ],
+    "regime_gate_codes": ["none", "strong_market_regime", "strong_sector_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 40
+  },
+  {
+    "template_code": "RELATIVE_WEAKNESS_LAGGARD_TEMPLATE",
+    "family_code": "RELATIVE_STRENGTH",
+    "hypothesis_family": "relative_strength",
+    "template_name": "Relative weakness laggard",
+    "expected_direction": "RISK_OFF",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["sector_excess_5d_pct", "market_excess_5d_pct", "ret_20d_pct"],
+    "condition_slots": [
+      {"feature": "sector_excess_5d_pct", "op": "lt", "thresholds": [-0.5, -1.0, -1.5]},
+      {"feature": "market_excess_5d_pct", "op": "lt", "thresholds": [-0.5, -1.0, -1.5]},
+      {"feature": "ret_20d_pct", "op": "lt", "thresholds": [-4.0, -6.0, -8.0]}
+    ],
+    "regime_gate_codes": ["none", "weak_market_regime", "weak_sector_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 40
+  },
+  {
+    "template_code": "PANIC_REVERSAL_TEMPLATE",
+    "family_code": "PANIC_REVERSAL",
+    "hypothesis_family": "panic_reversal",
+    "template_name": "Panic low reversal",
+    "expected_direction": "BULLISH",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["drawdown_from_20d_high_pct", "ret_1d_pct", "rebound_from_20d_low_pct"],
+    "condition_slots": [
+      {"feature": "drawdown_from_20d_high_pct", "op": "lt", "thresholds": [-10.0, -12.0, -15.0]},
+      {"feature": "ret_1d_pct", "op": "gt", "thresholds": [0.5, 1.0, 2.0]},
+      {"feature": "rebound_from_20d_low_pct", "op": "gt", "thresholds": [1.0, 2.0, 3.0]}
+    ],
+    "regime_gate_codes": ["none", "weak_market_regime", "high_vol_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 35
+  },
+  {
+    "template_code": "PANIC_TREND_TEMPLATE",
+    "family_code": "PANIC_TREND",
+    "hypothesis_family": "panic_trend",
+    "template_name": "Panic continuation",
+    "expected_direction": "RISK_OFF",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["ret_1d_pct", "realized_vol_5d_pct"],
+    "condition_slots": [
+      {"feature": "ret_1d_pct", "op": "lt", "thresholds": [-3.0, -4.0, -5.0]},
+      {"feature": "realized_vol_5d_pct", "op": "gt", "thresholds": [2.5, 3.0, 3.5]}
+    ],
+    "regime_gate_codes": ["none", "weak_market_regime", "high_vol_regime"],
+    "max_variants": 12,
+    "max_condition_count": 2,
+    "min_support": 35
+  },
+  {
+    "template_code": "DIVERGENCE_BULL_TEMPLATE",
+    "family_code": "DIVERGENCE",
+    "hypothesis_family": "divergence",
+    "template_name": "Bullish market divergence",
+    "expected_direction": "BULLISH",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["market_ret_5d_pct", "ret_5d_pct", "market_excess_5d_pct"],
+    "condition_slots": [
+      {"feature": "market_ret_5d_pct", "op": "lt", "thresholds": [-0.5, -1.0, -1.5]},
+      {"feature": "ret_5d_pct", "op": "gt", "thresholds": [1.0, 1.5, 2.0]},
+      {"feature": "market_excess_5d_pct", "op": "gt", "thresholds": [1.0, 1.5, 2.0]}
+    ],
+    "regime_gate_codes": ["none", "weak_market_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 40
+  },
+  {
+    "template_code": "TREND_STABILITY_TEMPLATE",
+    "family_code": "TREND_STABILITY",
+    "hypothesis_family": "trend_stability",
+    "template_name": "Orderly trend stability",
+    "expected_direction": "BULLISH",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["ret_20d_pct", "realized_vol_20d_pct", "distance_from_20d_mean_pct"],
+    "condition_slots": [
+      {"feature": "ret_20d_pct", "op": "gt", "thresholds": [6.0, 8.0, 10.0]},
+      {"feature": "realized_vol_20d_pct", "op": "lt", "thresholds": [6.0, 8.0, 10.0]},
+      {"feature": "distance_from_20d_mean_pct", "op": "gt", "thresholds": [0.5, 1.0, 2.0]}
+    ],
+    "regime_gate_codes": ["none", "strong_market_regime", "low_vol_regime"],
+    "max_variants": 18,
+    "max_condition_count": 3,
+    "min_support": 40
+  },
+  {
+    "template_code": "TREND_FAILURE_TEMPLATE",
+    "family_code": "TREND_FAILURE",
+    "hypothesis_family": "trend_failure",
+    "template_name": "Trend failure warning",
+    "expected_direction": "RISK_OFF",
+    "target_metric": "fwd_5d_excess_return_pct",
+    "holding_period_days": 5,
+    "required_features": ["ret_20d_pct", "ret_1d_pct"],
+    "condition_slots": [
+      {"feature": "ret_20d_pct", "op": "gt", "thresholds": [6.0, 8.0, 10.0]},
+      {"feature": "ret_1d_pct", "op": "lt", "thresholds": [-2.0, -3.0, -4.0]}
+    ],
+    "regime_gate_codes": ["none", "strong_market_regime", "high_vol_regime"],
+    "max_variants": 12,
+    "max_condition_count": 2,
+    "min_support": 35
+  }
+]

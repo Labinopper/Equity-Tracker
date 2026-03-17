@@ -90,10 +90,32 @@ def _beta_disabled_response() -> HTMLResponse:
 
 def _badge_class(value: str | None) -> str:
     raw = str(value or "").upper()
-    if raw in {"OPEN", "PROMOTED", "SUCCESS", "ACTIVE", "IMPROVING", "BULLISH"}:
+    if raw in {
+        "OPEN",
+        "PROMOTED",
+        "SUCCESS",
+        "ACTIVE",
+        "IMPROVING",
+        "BULLISH",
+        "HOLD_THROUGH_NOISE",
+        "AVOID_SELLING_INTO_PANIC",
+    }:
         return "badge badge-insert"
-    if raw in {"WARNING", "RISK_OFF_EXIT", "DISMISSED", "REJECTED", "RISK_OFF", "BEARISH", "DECLINING", "SUSPENDED"}:
+    if raw in {
+        "WARNING",
+        "RISK_OFF_EXIT",
+        "DISMISSED",
+        "REJECTED",
+        "RISK_OFF",
+        "BEARISH",
+        "DECLINING",
+        "SUSPENDED",
+        "TRIM_ON_STRENGTH",
+        "SELL_INTO_REBOUND",
+    }:
         return "badge badge-warning"
+    if raw in {"WAIT_FOR_CLOSE_CONFIRMATION", "NO_ACTION"}:
+        return "badge badge-neutral"
     if raw in {"ERROR", "FAILED", "CANCELLED"}:
         return "badge badge-delete"
     return "badge badge-neutral"

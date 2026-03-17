@@ -1,0 +1,102 @@
+[
+  {
+    "hypothesis_code": "GAP_AND_FADE_V1",
+    "name": "Gap and fade",
+    "signal_type": "TRIM_ON_STRENGTH",
+    "entry_conditions": {
+      "all": [
+        {"feature": "gap_from_prev_close_pct", "op": "gt", "value": 2.0},
+        {"feature": "return_since_open_pct", "op": "lt", "value": 2.0}
+      ]
+    },
+    "metadata": {
+      "relative_checks": [
+        {
+          "left_feature": "return_since_open_pct",
+          "op": "lt_feature",
+          "right_feature": "gap_from_prev_close_pct"
+        }
+      ],
+      "event_codes": ["EVENT_OPEN_GAP"],
+      "base_confidence": 0.58
+    },
+    "rationale": "Early strength is being sold into and upside extension is fading.",
+    "source_type": "MANUAL"
+  },
+  {
+    "hypothesis_code": "GAP_DOWN_RECOVERY_V1",
+    "name": "Gap down recovery",
+    "signal_type": "AVOID_SELLING_INTO_PANIC",
+    "entry_conditions": {
+      "all": [
+        {"feature": "gap_from_prev_close_pct", "op": "lt", "value": -2.0},
+        {"feature": "return_since_open_pct", "op": "gt", "value": -1.0}
+      ]
+    },
+    "metadata": {
+      "relative_checks": [
+        {
+          "left_feature": "return_since_open_pct",
+          "op": "gt_offset_feature",
+          "right_feature": "gap_from_prev_close_pct",
+          "offset": 1.0
+        }
+      ],
+      "event_codes": ["EVENT_OPEN_GAP", "EVENT_REVERSAL_SPIKE"],
+      "base_confidence": 0.6
+    },
+    "rationale": "A downside gap is being repaired and panic selling may be the wrong exit timing.",
+    "source_type": "MANUAL"
+  },
+  {
+    "hypothesis_code": "FAILED_REBOUND_V1",
+    "name": "Failed rebound",
+    "signal_type": "SELL_INTO_REBOUND",
+    "entry_conditions": {
+      "all": [
+        {"feature": "reversal_from_low_30m_pct", "op": "gt", "value": 3.0},
+        {"feature": "distance_from_session_high_pct", "op": "gt", "value": 2.0}
+      ]
+    },
+    "metadata": {
+      "event_codes": ["EVENT_REVERSAL_SPIKE", "EVENT_NEW_SESSION_HIGH"],
+      "base_confidence": 0.57
+    },
+    "rationale": "A rebound has already happened but the tape is fading from session highs.",
+    "source_type": "MANUAL"
+  },
+  {
+    "hypothesis_code": "TREND_CONTINUATION_INTRADAY_V1",
+    "name": "Intraday trend continuation",
+    "signal_type": "HOLD_THROUGH_NOISE",
+    "entry_conditions": {
+      "all": [
+        {"feature": "return_since_open_pct", "op": "gt", "value": 1.5},
+        {"feature": "distance_from_session_low_pct", "op": "lt", "value": 1.0}
+      ]
+    },
+    "metadata": {
+      "event_codes": ["EVENT_NEW_SESSION_HIGH"],
+      "base_confidence": 0.56
+    },
+    "rationale": "The session is trending and shallow dips are still holding above session support.",
+    "source_type": "MANUAL"
+  },
+  {
+    "hypothesis_code": "VOLATILITY_COMPRESSION_INTRADAY_V1",
+    "name": "Intraday compression confirmation",
+    "signal_type": "WAIT_FOR_CLOSE_CONFIRMATION",
+    "entry_conditions": {
+      "all": [
+        {"feature": "intraday_range_pct", "op": "lt", "value": 0.8},
+        {"feature": "return_since_open_pct", "op": "gt", "value": 0.5}
+      ]
+    },
+    "metadata": {
+      "event_codes": ["EVENT_VOLATILITY_EXPANSION"],
+      "base_confidence": 0.5
+    },
+    "rationale": "The move is positive but compressed enough that close confirmation matters more than intraday reaction.",
+    "source_type": "MANUAL"
+  }
+]

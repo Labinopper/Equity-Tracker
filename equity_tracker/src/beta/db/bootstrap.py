@@ -18,7 +18,7 @@ from .models import (
     BetaSystemStatus,
 )
 
-_SCHEMA_VERSION = "v5"
+_SCHEMA_VERSION = "v7"
 
 
 def _missing_beta_columns(engine: BetaDatabaseEngine) -> list[tuple[str, object]]:

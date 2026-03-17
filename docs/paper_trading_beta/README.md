@@ -1,6 +1,6 @@
 # Paper Trading Beta Docs
 
-Last updated: `2026-03-14`
+Last updated: `2026-03-15`
 
 This folder contains the exploratory documentation for the segregated paper-trading beta. These documents are intentionally separate from the deterministic core-product source-of-truth docs.
 
@@ -18,6 +18,10 @@ This folder contains the exploratory documentation for the segregated paper-trad
   - Active remediation plan for making the beta measurable, assessable, and operationally credible from DB evidence.
 - `docs/paper_trading_beta/PAPER_TRADING_BETA_HYPOTHESIS_ENGINE_EVOLUTION_2026-03-14.md`
   - Architecture review and incremental migration plan for evolving the beta into a true hypothesis-learning research engine built on the newer predictive stack.
+- `docs/paper_trading_beta/HYPOTHESIS_DISCOVERY_IMPLEMENTATION_NOTES_2026-03-15.md`
+  - Concrete implementation notes for the bounded template-discovery layer, staged pruning, runtime tradeoffs, and future intraday extension.
+- `docs/paper_trading_beta/INTRADAY_EXECUTION_LAYER_IMPLEMENTATION_NOTES_2026-03-15.md`
+  - Concrete implementation notes for the new position-aware intraday execution layer, minute aggregation, and execution-only signal path.
 
 ## Storage Boundary
 

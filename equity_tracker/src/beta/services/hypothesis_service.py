@@ -194,7 +194,8 @@ class BetaHypothesisService:
                 candidate_count = len(family_definitions)
                 promoted_count = len([row for row in definition_beliefs if row.status == "VALIDATED"])
                 promising_count = len([row for row in definition_beliefs if row.status == "PROMISING"])
-                degraded_count = len([row for row in definition_beliefs if row.status in {"DEGRADED", "REJECTED"}])
+                screened_count = len([row for row in definition_beliefs if row.status in {"DISCOVERED", "SCREENED_IN", "CANDIDATE"}])
+                degraded_count = len([row for row in definition_beliefs if row.status in {"DEGRADED", "REJECTED", "RETIRED"}])
                 avg_confidence = (
                     sum(float(row.confidence_score or 0.0) for row in definition_beliefs) / len(definition_beliefs)
                     if definition_beliefs
@@ -225,10 +226,10 @@ class BetaHypothesisService:
                     next_status = "PROMOTED"
                 elif family is not None and family.status != "ACTIVE":
                     next_status = "SUSPENDED"
-                elif degraded_count and not promising_count:
+                elif degraded_count and not promising_count and screened_count <= 0:
                     next_status = "SUSPENDED"
                 evidence_summary = (
-                    f"{candidate_count} definitions, {promoted_count} validated, "
+                    f"{candidate_count} definitions, {screened_count} screened/candidate, {promoted_count} validated, "
                     f"{promising_count} promising, {degraded_count} degraded/rejected, "
                     f"avg belief {avg_confidence:.2f}, avg OOS strength {avg_edge:.2f}."
                 )

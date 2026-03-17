@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 
-_ALLOWED_COMPARE_OPS = {"<", "<=", ">", ">=", "==", "!=", "between"}
+_OP_ALIASES = {
+    ">": "gt",
+    ">=": "gte",
+    "<": "lt",
+    "<=": "lte",
+    "==": "eq",
+    "!=": "neq",
+    "gt": "gt",
+    "gte": "gte",
+    "lt": "lt",
+    "lte": "lte",
+    "eq": "eq",
+    "neq": "neq",
+    "between": "between",
+}
+_LEAF_OPS = set(_OP_ALIASES.values())
 
 
 @dataclass(frozen=True)
@@ -24,50 +40,24 @@ def _normalize_numeric(value) -> float | None:
 
 
 class BetaHypothesisNormalizer:
-    """Normalize JSON-like condition payloads into a compact condition AST."""
+    """Normalize and evaluate explicit hypothesis conditions."""
 
     @staticmethod
     def normalize_conditions(raw) -> dict[str, object]:
-        if not raw:
+        return BetaHypothesisNormalizer._normalize_rule_tree(raw, allow_empty=False)
+
+    @staticmethod
+    def normalize_regime_filters(raw) -> dict[str, object]:
+        if raw in (None, {}, []):
             return {}
-        if not isinstance(raw, dict):
-            raise ValueError("Hypothesis conditions must be a dictionary.")
+        if isinstance(raw, list):
+            return {"all": [BetaHypothesisNormalizer._normalize_rule_tree(item, allow_empty=False) for item in raw]}
+        return BetaHypothesisNormalizer._normalize_rule_tree(raw, allow_empty=False)
 
-        if "all" in raw:
-            children = raw.get("all") or []
-            if not isinstance(children, list):
-                raise ValueError("'all' conditions must be a list.")
-            return {"all": [BetaHypothesisNormalizer.normalize_conditions(child) for child in children]}
-        if "any" in raw:
-            children = raw.get("any") or []
-            if not isinstance(children, list):
-                raise ValueError("'any' conditions must be a list.")
-            return {"any": [BetaHypothesisNormalizer.normalize_conditions(child) for child in children]}
-        if "not" in raw:
-            return {"not": BetaHypothesisNormalizer.normalize_conditions(raw.get("not"))}
-
-        field_name = str(raw.get("feature") or raw.get("field") or "").strip()
-        op = str(raw.get("op") or "").strip()
-        if not field_name:
-            raise ValueError("Leaf conditions must define 'feature' or 'field'.")
-        if op not in _ALLOWED_COMPARE_OPS:
-            raise ValueError(f"Unsupported hypothesis operator: {op}")
-
-        normalized: dict[str, object] = {"feature": field_name, "op": op}
-        if op == "between":
-            min_value = _normalize_numeric(raw.get("min"))
-            max_value = _normalize_numeric(raw.get("max"))
-            if min_value is None or max_value is None:
-                raise ValueError("'between' conditions require numeric 'min' and 'max'.")
-            normalized["min"] = min_value
-            normalized["max"] = max_value
-            return normalized
-
-        value = _normalize_numeric(raw.get("value"))
-        if value is None:
-            raise ValueError("Leaf conditions require a numeric 'value'.")
-        normalized["value"] = value
-        return normalized
+    @staticmethod
+    def canonical_json(raw) -> str:
+        normalized = BetaHypothesisNormalizer._normalize_rule_tree(raw, allow_empty=True)
+        return json.dumps(normalized, sort_keys=True)
 
     @staticmethod
     def extract_feature_names(conditions: dict[str, object]) -> set[str]:
@@ -88,6 +78,18 @@ class BetaHypothesisNormalizer:
         return {str(conditions.get("feature") or conditions.get("field") or "")}
 
     @staticmethod
+    def leaf_count(conditions: dict[str, object]) -> int:
+        if not conditions:
+            return 0
+        if "all" in conditions:
+            return sum(BetaHypothesisNormalizer.leaf_count(child) for child in conditions.get("all", []))
+        if "any" in conditions:
+            return sum(BetaHypothesisNormalizer.leaf_count(child) for child in conditions.get("any", []))
+        if "not" in conditions:
+            return BetaHypothesisNormalizer.leaf_count(conditions.get("not") or {})
+        return 1
+
+    @staticmethod
     def evaluate(conditions: dict[str, object], values: dict[str, float | None]) -> HypothesisMatchResult:
         if not conditions:
             return HypothesisMatchResult(matched=False, matched_terms=[])
@@ -95,14 +97,60 @@ class BetaHypothesisNormalizer:
         return HypothesisMatchResult(matched=matched, matched_terms=terms)
 
     @staticmethod
+    def _normalize_rule_tree(raw, *, allow_empty: bool) -> dict[str, object]:
+        if raw in (None, "", [], {}):
+            return {} if allow_empty else BetaHypothesisNormalizer._raise_invalid("Rule tree cannot be empty.")
+        if not isinstance(raw, dict):
+            raise ValueError("Hypothesis rules must be a dictionary.")
+
+        if "all" in raw:
+            children = raw.get("all") or []
+            if not isinstance(children, list) or not children:
+                raise ValueError("'all' conditions must be a non-empty list.")
+            return {"all": [BetaHypothesisNormalizer._normalize_rule_tree(child, allow_empty=False) for child in children]}
+        if "any" in raw:
+            children = raw.get("any") or []
+            if not isinstance(children, list) or not children:
+                raise ValueError("'any' conditions must be a non-empty list.")
+            return {"any": [BetaHypothesisNormalizer._normalize_rule_tree(child, allow_empty=False) for child in children]}
+        if "not" in raw:
+            return {"not": BetaHypothesisNormalizer._normalize_rule_tree(raw.get("not"), allow_empty=False)}
+
+        field_name = str(raw.get("feature") or raw.get("field") or "").strip()
+        raw_op = str(raw.get("op") or "").strip().lower()
+        op = _OP_ALIASES.get(raw_op)
+        if not field_name:
+            raise ValueError("Leaf conditions must define 'feature' or 'field'.")
+        if op not in _LEAF_OPS:
+            raise ValueError(f"Unsupported hypothesis operator: {raw.get('op')}")
+
+        normalized: dict[str, object] = {"feature": field_name, "op": op}
+        if op == "between":
+            min_value = _normalize_numeric(raw.get("min"))
+            max_value = _normalize_numeric(raw.get("max"))
+            if min_value is None or max_value is None:
+                raise ValueError("'between' conditions require numeric 'min' and 'max'.")
+            if min_value > max_value:
+                min_value, max_value = max_value, min_value
+            normalized["min"] = min_value
+            normalized["max"] = max_value
+            return normalized
+
+        value = _normalize_numeric(raw.get("value"))
+        if value is None:
+            raise ValueError("Leaf conditions require a numeric 'value'.")
+        normalized["value"] = value
+        return normalized
+
+    @staticmethod
     def _evaluate_inner(conditions: dict[str, object], values: dict[str, float | None]) -> tuple[bool, list[dict[str, object]]]:
         if "all" in conditions:
             matched_terms: list[dict[str, object]] = []
             for child in conditions.get("all", []):
                 child_match, child_terms = BetaHypothesisNormalizer._evaluate_inner(child, values)
-                if not child_match:
-                    return False, matched_terms + child_terms
                 matched_terms.extend(child_terms)
+                if not child_match:
+                    return False, matched_terms
             return True, matched_terms
         if "any" in conditions:
             all_terms: list[dict[str, object]] = []
@@ -139,19 +187,23 @@ class BetaHypothesisNormalizer:
 
         expected_value = float(conditions.get("value"))
         matched = False
-        if op == ">":
+        if op == "gt":
             matched = actual_value > expected_value
-        elif op == ">=":
+        elif op == "gte":
             matched = actual_value >= expected_value
-        elif op == "<":
+        elif op == "lt":
             matched = actual_value < expected_value
-        elif op == "<=":
+        elif op == "lte":
             matched = actual_value <= expected_value
-        elif op == "==":
+        elif op == "eq":
             matched = actual_value == expected_value
-        elif op == "!=":
+        elif op == "neq":
             matched = actual_value != expected_value
 
         term_result["value"] = expected_value
         term_result["matched"] = matched
         return matched, [term_result]
+
+    @staticmethod
+    def _raise_invalid(message: str) -> dict[str, object]:
+        raise ValueError(message)

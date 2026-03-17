@@ -13,6 +13,8 @@ from ..db.models import (
     BetaEvaluationRun,
     BetaFeatureValue,
     BetaHypothesisBeliefState,
+    BetaHypothesisDiscoveryCandidate,
+    BetaHypothesisDiscoveryRun,
     BetaHypothesisDefinition,
     BetaHypothesisTestRun,
     BetaHypothesis,
@@ -145,6 +147,7 @@ class BetaPipelineAssessmentService:
                 "beta_tracked_core_shadow_cycle",
                 "beta_live_evaluation",
                 "beta_hypothesis_backtests",
+                "beta_hypothesis_discovery",
                 "beta_hypothesis_belief_refresh",
                 "beta_hypothesis_refresh",
                 "beta_daily_training",
@@ -269,6 +272,17 @@ class BetaPipelineAssessmentService:
                 )
                 or 0
             )
+            hypothesis_discovery_runs = int(
+                sess.scalar(select(func.count()).select_from(BetaHypothesisDiscoveryRun)) or 0
+            )
+            screened_discovery_candidates = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaHypothesisDiscoveryCandidate).where(
+                        BetaHypothesisDiscoveryCandidate.status.in_(("SCREENED_IN", "PROMOTED"))
+                    )
+                )
+                or 0
+            )
             signal_observations_last_24h = int(
                 sess.scalar(
                     select(func.count()).select_from(BetaSignalObservation).where(
@@ -316,6 +330,7 @@ class BetaPipelineAssessmentService:
                 or latest_jobs.get("beta_daily_label_build")
             )
             latest_hypothesis_backtest_job = latest_jobs["beta_hypothesis_backtests"]
+            latest_discovery_job = latest_jobs["beta_hypothesis_discovery"]
             latest_belief_job = latest_jobs["beta_hypothesis_belief_refresh"]
             latest_hypothesis_job = latest_jobs["beta_hypothesis_refresh"]
             latest_training_details = _job_details(latest_training_job)
@@ -429,6 +444,12 @@ class BetaPipelineAssessmentService:
                     and latest_hypothesis_test.created_at >= (now - timedelta(hours=2))
                 )
             )
+            discovery_recent = bool(
+                latest_discovery_job is not None
+                and latest_discovery_job.status == "SUCCESS"
+                and latest_discovery_job.completed_at is not None
+                and latest_discovery_job.completed_at >= (now - timedelta(hours=2))
+            )
             beliefs_recent = bool(
                 (
                     latest_belief_job is not None
@@ -477,6 +498,8 @@ class BetaPipelineAssessmentService:
                 "hypothesis_definition_count": hypothesis_definition_count,
                 "validated_hypothesis_count": validated_hypothesis_count,
                 "promising_hypothesis_count": promising_hypothesis_count,
+                "hypothesis_discovery_runs": hypothesis_discovery_runs,
+                "screened_discovery_candidates": screened_discovery_candidates,
                 "signal_observations_last_24h": signal_observations_last_24h,
                 "recommendation_decisions_last_24h": recommendation_decisions_last_24h,
                 "recommended_decisions_last_24h": recommended_decisions_last_24h,
@@ -498,6 +521,7 @@ class BetaPipelineAssessmentService:
                 "training_recent": training_recent,
                 "evaluation_recent": evaluation_recent,
                 "hypothesis_recent": hypothesis_recent,
+                "discovery_recent": discovery_recent,
                 "backtests_recent": backtests_recent,
                 "beliefs_recent": beliefs_recent,
                 "latest_hypothesis_test_at": _dt_to_iso(latest_hypothesis_test.created_at if latest_hypothesis_test is not None else None),

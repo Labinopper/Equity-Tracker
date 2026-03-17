@@ -90,6 +90,22 @@
   </article>
 
   <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Held Execution</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Held Positions</div>
+      <div class="position-card__value">{{ counts.held_positions_open or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Signals Logged</div>
+      <div class="position-card__value">{{ counts.execution_signals_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">State Alerts</div>
+      <div class="position-card__value">{{ counts.execution_notifications_total or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
     <div class="card__header"><h2 class="card__title">Score Tape</h2></div>
     <div class="position-card__section">
       <div class="position-card__label">Scores Logged</div>
@@ -408,6 +424,121 @@
   </div>
   {% else %}
   <p class="muted">No tracked-core score output is visible yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Held Position Execution</h2>
+  </div>
+  {% if dashboard.held_position_states %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Source</th>
+          <th>Units</th>
+          <th>Thesis 5D %</th>
+          <th>Unrealized %</th>
+          <th>Execution Quality</th>
+          <th>Last Signal</th>
+          <th>When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.held_position_states %}
+        <tr>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.position_source }}</td>
+          <td>{{ row.units or "-" }}</td>
+          <td>{{ row.thesis_expected_return_pct if row.thesis_expected_return_pct is not none else "-" }}</td>
+          <td>{{ row.unrealized_return_pct if row.unrealized_return_pct is not none else "-" }}</td>
+          <td>{{ row.execution_quality_score if row.execution_quality_score is not none else "-" }}</td>
+          <td>
+            {% if row.last_execution_signal_type %}
+            <span class="{{ badge_class(row.last_execution_signal_type) }}">{{ row.last_execution_signal_type }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>{{ row.last_execution_signal_at or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No held-position execution state is being tracked yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Recent Execution Guidance</h2>
+  </div>
+  {% if dashboard.recent_execution_signals %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Symbol</th>
+          <th>Signal</th>
+          <th>Confidence</th>
+          <th>Trigger</th>
+          <th>Rationale</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.recent_execution_signals[:8] %}
+        <tr>
+          <td>{{ row.signal_time }}</td>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td><span class="{{ badge_class(row.signal_type) }}">{{ row.signal_type }}</span></td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ row.event_trigger_code or "-" }}</td>
+          <td>{{ row.rationale_text or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Execution guidance rows will appear once held positions are evaluated during a live market session.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header">
+    <h2 class="card__title">Execution State Alerts</h2>
+  </div>
+  <p class="muted">This is the meaningful state-change layer on top of the raw execution log.</p>
+  {% if dashboard.execution_notifications %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Severity</th>
+          <th>Title</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.execution_notifications[:8] %}
+        <tr>
+          <td>{{ row.created_at }}</td>
+          <td><span class="{{ badge_class(row.severity) }}">{{ row.severity }}</span></td>
+          <td>{{ row.title }}</td>
+          <td>{{ row.message_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No execution state-change alerts have fired yet.</p>
   {% endif %}
 </section>
 

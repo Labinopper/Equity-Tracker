@@ -41,6 +41,37 @@ class BetaSettings:
     retrain_min_new_observations: int
     max_memory_mb: int
     max_memory_pct: int
+    hypothesis_discovery_enabled: bool
+    hypothesis_discovery_history_years: int
+    hypothesis_discovery_universe_cap: int
+    hypothesis_discovery_template_limit: int
+    hypothesis_discovery_variant_cap: int
+    hypothesis_discovery_max_promotions_per_run: int
+    hypothesis_discovery_min_support: int
+    hypothesis_discovery_max_condition_count: int
+    intraday_execution_enabled: bool
+    intraday_event_trigger_enabled: bool
+    intraday_held_symbol_cadence_minutes: int
+    intraday_active_thesis_cadence_minutes: int
+    intraday_watchlist_general_cap: int
+    intraday_learning_symbol_budget: int
+    intraday_history_lookback_minutes: int
+    intraday_priority_held_weight_pct: int
+    intraday_priority_active_thesis_weight_pct: int
+    intraday_priority_general_weight_pct: int
+    intraday_volatility_expansion_threshold_pct: float
+    intraday_gap_event_threshold_pct: float
+    intraday_large_move_event_threshold_pct: float
+    intraday_reversal_event_threshold_pct: float
+    intraday_bar_fetch_enabled: bool
+    intraday_bar_fetch_live_credits_budget: int
+    intraday_bar_fetch_eod_credits_budget: int
+    intraday_bar_backfill_enabled: bool
+    intraday_bar_backfill_target_days: int
+    intraday_bar_backfill_credits_budget: int
+    instrument_statistics_enabled: bool
+    instrument_statistics_refresh_days: int
+    instrument_statistics_credits_budget: int
     training_window_start_local: str
     training_window_end_local: str
     research_quiet_hours_only: bool
@@ -79,6 +110,37 @@ class BetaSettings:
         self.retrain_min_new_observations = 500
         self.max_memory_mb = 1024
         self.max_memory_pct = 75
+        self.hypothesis_discovery_enabled = True
+        self.hypothesis_discovery_history_years = 5
+        self.hypothesis_discovery_universe_cap = 250
+        self.hypothesis_discovery_template_limit = 8
+        self.hypothesis_discovery_variant_cap = 24
+        self.hypothesis_discovery_max_promotions_per_run = 6
+        self.hypothesis_discovery_min_support = 40
+        self.hypothesis_discovery_max_condition_count = 4
+        self.intraday_execution_enabled = True
+        self.intraday_event_trigger_enabled = True
+        self.intraday_held_symbol_cadence_minutes = 3
+        self.intraday_active_thesis_cadence_minutes = 10
+        self.intraday_watchlist_general_cap = 12
+        self.intraday_learning_symbol_budget = 48
+        self.intraday_history_lookback_minutes = 240
+        self.intraday_priority_held_weight_pct = 60
+        self.intraday_priority_active_thesis_weight_pct = 30
+        self.intraday_priority_general_weight_pct = 10
+        self.intraday_volatility_expansion_threshold_pct = 1.8
+        self.intraday_gap_event_threshold_pct = 2.0
+        self.intraday_large_move_event_threshold_pct = 2.5
+        self.intraday_reversal_event_threshold_pct = 3.0
+        self.intraday_bar_fetch_enabled = True
+        self.intraday_bar_fetch_live_credits_budget = 30
+        self.intraday_bar_fetch_eod_credits_budget = 20
+        self.intraday_bar_backfill_enabled = True
+        self.intraday_bar_backfill_target_days = 30
+        self.intraday_bar_backfill_credits_budget = 30
+        self.instrument_statistics_enabled = True
+        self.instrument_statistics_refresh_days = 7
+        self.instrument_statistics_credits_budget = 10
         self.training_window_start_local = "22:00"
         self.training_window_end_local = "06:00"
         self.research_quiet_hours_only = True
@@ -137,6 +199,37 @@ class BetaSettings:
             "retrain_min_new_observations": self.retrain_min_new_observations,
             "max_memory_mb": self.max_memory_mb,
             "max_memory_pct": self.max_memory_pct,
+            "hypothesis_discovery_enabled": self.hypothesis_discovery_enabled,
+            "hypothesis_discovery_history_years": self.hypothesis_discovery_history_years,
+            "hypothesis_discovery_universe_cap": self.hypothesis_discovery_universe_cap,
+            "hypothesis_discovery_template_limit": self.hypothesis_discovery_template_limit,
+            "hypothesis_discovery_variant_cap": self.hypothesis_discovery_variant_cap,
+            "hypothesis_discovery_max_promotions_per_run": self.hypothesis_discovery_max_promotions_per_run,
+            "hypothesis_discovery_min_support": self.hypothesis_discovery_min_support,
+            "hypothesis_discovery_max_condition_count": self.hypothesis_discovery_max_condition_count,
+            "intraday_execution_enabled": self.intraday_execution_enabled,
+            "intraday_event_trigger_enabled": self.intraday_event_trigger_enabled,
+            "intraday_held_symbol_cadence_minutes": self.intraday_held_symbol_cadence_minutes,
+            "intraday_active_thesis_cadence_minutes": self.intraday_active_thesis_cadence_minutes,
+            "intraday_watchlist_general_cap": self.intraday_watchlist_general_cap,
+            "intraday_learning_symbol_budget": self.intraday_learning_symbol_budget,
+            "intraday_history_lookback_minutes": self.intraday_history_lookback_minutes,
+            "intraday_priority_held_weight_pct": self.intraday_priority_held_weight_pct,
+            "intraday_priority_active_thesis_weight_pct": self.intraday_priority_active_thesis_weight_pct,
+            "intraday_priority_general_weight_pct": self.intraday_priority_general_weight_pct,
+            "intraday_volatility_expansion_threshold_pct": self.intraday_volatility_expansion_threshold_pct,
+            "intraday_gap_event_threshold_pct": self.intraday_gap_event_threshold_pct,
+            "intraday_large_move_event_threshold_pct": self.intraday_large_move_event_threshold_pct,
+            "intraday_reversal_event_threshold_pct": self.intraday_reversal_event_threshold_pct,
+            "intraday_bar_fetch_enabled": self.intraday_bar_fetch_enabled,
+            "intraday_bar_fetch_live_credits_budget": self.intraday_bar_fetch_live_credits_budget,
+            "intraday_bar_fetch_eod_credits_budget": self.intraday_bar_fetch_eod_credits_budget,
+            "intraday_bar_backfill_enabled": self.intraday_bar_backfill_enabled,
+            "intraday_bar_backfill_target_days": self.intraday_bar_backfill_target_days,
+            "intraday_bar_backfill_credits_budget": self.intraday_bar_backfill_credits_budget,
+            "instrument_statistics_enabled": self.instrument_statistics_enabled,
+            "instrument_statistics_refresh_days": self.instrument_statistics_refresh_days,
+            "instrument_statistics_credits_budget": self.instrument_statistics_credits_budget,
             "training_window_start_local": self.training_window_start_local,
             "training_window_end_local": self.training_window_end_local,
             "research_quiet_hours_only": self.research_quiet_hours_only,
@@ -191,6 +284,184 @@ class BetaSettings:
         )
         self.max_memory_mb = max(128, _safe_int(data.get("max_memory_mb"), self.max_memory_mb))
         self.max_memory_pct = min(95, max(50, _safe_int(data.get("max_memory_pct"), self.max_memory_pct)))
+        self.hypothesis_discovery_enabled = bool(
+            data.get("hypothesis_discovery_enabled", self.hypothesis_discovery_enabled)
+        )
+        self.hypothesis_discovery_history_years = max(
+            1,
+            _safe_int(
+                data.get("hypothesis_discovery_history_years"),
+                self.hypothesis_discovery_history_years,
+            ),
+        )
+        self.hypothesis_discovery_universe_cap = max(
+            25,
+            _safe_int(
+                data.get("hypothesis_discovery_universe_cap"),
+                self.hypothesis_discovery_universe_cap,
+            ),
+        )
+        self.hypothesis_discovery_template_limit = max(
+            1,
+            _safe_int(
+                data.get("hypothesis_discovery_template_limit"),
+                self.hypothesis_discovery_template_limit,
+            ),
+        )
+        self.hypothesis_discovery_variant_cap = max(
+            4,
+            _safe_int(
+                data.get("hypothesis_discovery_variant_cap"),
+                self.hypothesis_discovery_variant_cap,
+            ),
+        )
+        self.hypothesis_discovery_max_promotions_per_run = max(
+            1,
+            _safe_int(
+                data.get("hypothesis_discovery_max_promotions_per_run"),
+                self.hypothesis_discovery_max_promotions_per_run,
+            ),
+        )
+        self.hypothesis_discovery_min_support = max(
+            10,
+            _safe_int(
+                data.get("hypothesis_discovery_min_support"),
+                self.hypothesis_discovery_min_support,
+            ),
+        )
+        self.hypothesis_discovery_max_condition_count = max(
+            1,
+            _safe_int(
+                data.get("hypothesis_discovery_max_condition_count"),
+                self.hypothesis_discovery_max_condition_count,
+            ),
+        )
+        self.intraday_execution_enabled = bool(
+            data.get("intraday_execution_enabled", self.intraday_execution_enabled)
+        )
+        self.intraday_event_trigger_enabled = bool(
+            data.get("intraday_event_trigger_enabled", self.intraday_event_trigger_enabled)
+        )
+        self.intraday_held_symbol_cadence_minutes = max(
+            1,
+            _safe_int(
+                data.get("intraday_held_symbol_cadence_minutes"),
+                self.intraday_held_symbol_cadence_minutes,
+            ),
+        )
+        self.intraday_active_thesis_cadence_minutes = max(
+            self.intraday_held_symbol_cadence_minutes,
+            _safe_int(
+                data.get("intraday_active_thesis_cadence_minutes"),
+                self.intraday_active_thesis_cadence_minutes,
+            ),
+        )
+        self.intraday_watchlist_general_cap = max(
+            0,
+            _safe_int(
+                data.get("intraday_watchlist_general_cap"),
+                self.intraday_watchlist_general_cap,
+            ),
+        )
+        self.intraday_learning_symbol_budget = max(
+            3,
+            _safe_int(
+                data.get("intraday_learning_symbol_budget"),
+                self.intraday_learning_symbol_budget,
+            ),
+        )
+        self.intraday_history_lookback_minutes = max(
+            30,
+            _safe_int(
+                data.get("intraday_history_lookback_minutes"),
+                self.intraday_history_lookback_minutes,
+            ),
+        )
+        self.intraday_priority_held_weight_pct = max(
+            0,
+            _safe_int(
+                data.get("intraday_priority_held_weight_pct"),
+                self.intraday_priority_held_weight_pct,
+            ),
+        )
+        self.intraday_priority_active_thesis_weight_pct = max(
+            0,
+            _safe_int(
+                data.get("intraday_priority_active_thesis_weight_pct"),
+                self.intraday_priority_active_thesis_weight_pct,
+            ),
+        )
+        self.intraday_priority_general_weight_pct = max(
+            0,
+            _safe_int(
+                data.get("intraday_priority_general_weight_pct"),
+                self.intraday_priority_general_weight_pct,
+            ),
+        )
+        total_priority_weight = (
+            self.intraday_priority_held_weight_pct
+            + self.intraday_priority_active_thesis_weight_pct
+            + self.intraday_priority_general_weight_pct
+        )
+        if total_priority_weight <= 0:
+            self.intraday_priority_held_weight_pct = 60
+            self.intraday_priority_active_thesis_weight_pct = 30
+            self.intraday_priority_general_weight_pct = 10
+        self.intraday_volatility_expansion_threshold_pct = max(
+            0.5,
+            _safe_float(
+                data.get("intraday_volatility_expansion_threshold_pct"),
+                self.intraday_volatility_expansion_threshold_pct,
+            ),
+        )
+        self.intraday_gap_event_threshold_pct = max(
+            0.5,
+            _safe_float(
+                data.get("intraday_gap_event_threshold_pct"),
+                self.intraday_gap_event_threshold_pct,
+            ),
+        )
+        self.intraday_large_move_event_threshold_pct = max(
+            0.5,
+            _safe_float(
+                data.get("intraday_large_move_event_threshold_pct"),
+                self.intraday_large_move_event_threshold_pct,
+            ),
+        )
+        self.intraday_reversal_event_threshold_pct = max(
+            0.5,
+            _safe_float(
+                data.get("intraday_reversal_event_threshold_pct"),
+                self.intraday_reversal_event_threshold_pct,
+            ),
+        )
+        self.intraday_bar_fetch_enabled = bool(
+            data.get("intraday_bar_fetch_enabled", self.intraday_bar_fetch_enabled)
+        )
+        self.intraday_bar_fetch_live_credits_budget = max(
+            1, _safe_int(data.get("intraday_bar_fetch_live_credits_budget"), self.intraday_bar_fetch_live_credits_budget)
+        )
+        self.intraday_bar_fetch_eod_credits_budget = max(
+            1, _safe_int(data.get("intraday_bar_fetch_eod_credits_budget"), self.intraday_bar_fetch_eod_credits_budget)
+        )
+        self.intraday_bar_backfill_enabled = bool(
+            data.get("intraday_bar_backfill_enabled", self.intraday_bar_backfill_enabled)
+        )
+        self.intraday_bar_backfill_target_days = max(
+            1, _safe_int(data.get("intraday_bar_backfill_target_days"), self.intraday_bar_backfill_target_days)
+        )
+        self.intraday_bar_backfill_credits_budget = max(
+            1, _safe_int(data.get("intraday_bar_backfill_credits_budget"), self.intraday_bar_backfill_credits_budget)
+        )
+        self.instrument_statistics_enabled = bool(
+            data.get("instrument_statistics_enabled", self.instrument_statistics_enabled)
+        )
+        self.instrument_statistics_refresh_days = max(
+            1, _safe_int(data.get("instrument_statistics_refresh_days"), self.instrument_statistics_refresh_days)
+        )
+        self.instrument_statistics_credits_budget = max(
+            1, _safe_int(data.get("instrument_statistics_credits_budget"), self.instrument_statistics_credits_budget)
+        )
         self.training_window_start_local = str(
             data.get("training_window_start_local", self.training_window_start_local)
         )
@@ -244,5 +515,12 @@ def _safe_mode(value: object) -> str:
 def _safe_int(value: object, fallback: int) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _safe_float(value: object, fallback: float) -> float:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return fallback

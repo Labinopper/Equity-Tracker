@@ -23,6 +23,8 @@ from ..db.models import (
     BetaEvaluationRun,
     BetaEvaluationSummary,
     BetaExperimentRun,
+    BetaExecutionLabelValue,
+    BetaExecutionSignal,
     BetaFeatureValue,
     BetaFilingEvent,
     BetaFilingEventLink,
@@ -38,6 +40,7 @@ from ..db.models import (
     BetaNewsArticle,
     BetaNewsArticleLink,
     BetaNewsSource,
+    BetaPositionState,
     BetaRiskControlState,
     BetaScoreTape,
     BetaSignalCandidateEvent,
@@ -176,8 +179,20 @@ class BetaOverviewService:
                     select(func.count()).select_from(BetaDemoPosition).where(BetaDemoPosition.status == "OPEN")
                 )
                 or 0,
+                "held_positions_open": sess.scalar(
+                    select(func.count()).select_from(BetaPositionState).where(BetaPositionState.position_status == "OPEN")
+                )
+                or 0,
                 "positions_closed": sess.scalar(
                     select(func.count()).select_from(BetaDemoPosition).where(BetaDemoPosition.status != "OPEN")
+                )
+                or 0,
+                "execution_signals_total": sess.scalar(select(func.count()).select_from(BetaExecutionSignal)) or 0,
+                "execution_labels_total": sess.scalar(select(func.count()).select_from(BetaExecutionLabelValue)) or 0,
+                "execution_notifications_total": sess.scalar(
+                    select(func.count())
+                    .select_from(BetaUiNotification)
+                    .where(BetaUiNotification.notification_type == "execution_signal_state_change")
                 )
                 or 0,
                 "notifications_recent": sess.scalar(select(func.count()).select_from(BetaUiNotification)) or 0,
@@ -367,6 +382,14 @@ class BetaOverviewService:
                         .limit(8)
                     )
                 ),
+                "held_position_states": BetaOverviewService._query_rows(
+                    sess.scalars(
+                        select(BetaPositionState)
+                        .where(BetaPositionState.position_status == "OPEN")
+                        .order_by(desc(BetaPositionState.updated_at))
+                        .limit(8)
+                    )
+                ),
                 "closed_positions": BetaOverviewService._query_rows(
                     closed_positions[:8]
                 ),
@@ -402,7 +425,29 @@ class BetaOverviewService:
                         .limit(10)
                     )
                 ),
+                "execution_notifications": BetaOverviewService._query_rows(
+                    sess.scalars(
+                        select(BetaUiNotification)
+                        .where(BetaUiNotification.notification_type == "execution_signal_state_change")
+                        .order_by(desc(BetaUiNotification.created_at))
+                        .limit(10)
+                    )
+                ),
                 "jobs": BetaOverviewService._query_rows(recent_jobs[:10]),
+                "recent_execution_signals": BetaOverviewService._query_rows(
+                    sess.scalars(
+                        select(BetaExecutionSignal)
+                        .order_by(desc(BetaExecutionSignal.signal_time), desc(BetaExecutionSignal.created_at))
+                        .limit(12)
+                    )
+                ),
+                "recent_execution_labels": BetaOverviewService._query_rows(
+                    sess.scalars(
+                        select(BetaExecutionLabelValue)
+                        .order_by(desc(BetaExecutionLabelValue.updated_at))
+                        .limit(12)
+                    )
+                ),
                 "recent_scores": BetaOverviewService._query_rows(
                     sess.scalars(select(BetaScoreTape).order_by(desc(BetaScoreTape.scored_at)).limit(12))
                 ),

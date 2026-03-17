@@ -1,0 +1,59 @@
+[
+  {
+    "event_code": "EVENT_OPEN_GAP",
+    "name": "Open gap event",
+    "conditions": {
+      "any": [
+        {"feature": "gap_from_prev_close_pct", "op": "gt", "value": 2.0},
+        {"feature": "gap_from_prev_close_pct", "op": "lt", "value": -2.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_LARGE_INTRADAY_MOVE",
+    "name": "Large intraday move",
+    "conditions": {
+      "any": [
+        {"feature": "return_last_15m_pct", "op": "gt", "value": 2.5},
+        {"feature": "return_last_15m_pct", "op": "lt", "value": -2.5}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_NEW_SESSION_HIGH",
+    "name": "New session high",
+    "conditions": {
+      "all": [
+        {"feature": "distance_from_session_high_pct", "op": "lte", "value": 0.1}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_NEW_SESSION_LOW",
+    "name": "New session low",
+    "conditions": {
+      "all": [
+        {"feature": "distance_from_session_low_pct", "op": "lte", "value": 0.1}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_REVERSAL_SPIKE",
+    "name": "Reversal spike",
+    "conditions": {
+      "any": [
+        {"feature": "reversal_from_low_15m_pct", "op": "gt", "value": 3.0},
+        {"feature": "reversal_from_high_15m_pct", "op": "gt", "value": 3.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_VOLATILITY_EXPANSION",
+    "name": "Volatility expansion",
+    "conditions": {
+      "all": [
+        {"feature": "rolling_intraday_vol_15m_pct", "op": "gt", "value": 1.8}
+      ]
+    }
+  }
+]

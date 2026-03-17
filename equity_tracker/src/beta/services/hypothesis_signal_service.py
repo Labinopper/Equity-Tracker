@@ -28,7 +28,18 @@ class BetaHypothesisSignalService:
         definitions = list(
             sess.scalars(
                 select(BetaHypothesisDefinition).where(
-                    BetaHypothesisDefinition.status.in_(("CANDIDATE", "PROMISING", "VALIDATED", "DEGRADED", "REJECTED"))
+                    BetaHypothesisDefinition.status.in_(
+                        (
+                            "DISCOVERED",
+                            "SCREENED_IN",
+                            "CANDIDATE",
+                            "PROMISING",
+                            "VALIDATED",
+                            "DEGRADED",
+                            "REJECTED",
+                            "RETIRED",
+                        )
+                    )
                 )
             ).all()
         )
@@ -51,6 +62,11 @@ class BetaHypothesisSignalService:
                 for feature_name in BetaHypothesisNormalizer.extract_feature_names(
                     BetaHypothesisNormalizer.normalize_conditions(
                         json.loads(definition.entry_conditions_json or "{}")
+                    )
+                )
+                | BetaHypothesisNormalizer.extract_feature_names(
+                    BetaHypothesisNormalizer.normalize_regime_filters(
+                        json.loads(definition.regime_filters_json or "{}")
                     )
                 )
             }
@@ -101,6 +117,16 @@ class BetaHypothesisSignalService:
             conditions = BetaHypothesisNormalizer.normalize_conditions(
                 json.loads(definition.entry_conditions_json or "{}")
             )
+            regime_filters = BetaHypothesisNormalizer.normalize_regime_filters(
+                json.loads(definition.regime_filters_json or "{}")
+            )
+            regime_result = (
+                BetaHypothesisNormalizer.evaluate(regime_filters, feature_snapshot)
+                if regime_filters
+                else None
+            )
+            if regime_result is not None and not regime_result.matched:
+                continue
             match_result = BetaHypothesisNormalizer.evaluate(conditions, feature_snapshot)
             if not match_result.matched:
                 continue
@@ -128,6 +154,8 @@ class BetaHypothesisSignalService:
                         "score_direction": direction,
                         "belief_status": belief_status,
                         "family_code": family.family_code if family is not None else None,
+                        "regime_filters": regime_filters,
+                        "regime_terms": regime_result.matched_terms if regime_result is not None else [],
                     },
                     sort_keys=True,
                 ),
@@ -268,8 +296,10 @@ class BetaHypothesisSignalService:
     ) -> tuple[str, str, str, str | None]:
         if belief_status == "DEGRADED":
             return "BLOCKED", "hypothesis_degraded", "Matched hypothesis is degraded and cannot drive a recommendation.", None
-        if belief_status == "REJECTED":
+        if belief_status in {"REJECTED", "RETIRED"}:
             return "REJECTED", "hypothesis_rejected", "Matched hypothesis has been rejected by accumulated evidence.", None
+        if belief_status in {"DISCOVERED", "SCREENED_IN"}:
+            return "DISMISSED", "belief_insufficient", "Matched setup is newly discovered and lacks enough belief evidence.", None
         if belief_status == "PROMISING":
             return "BLOCKED", "hypothesis_not_validated", "Matched hypothesis is promising but not yet validated.", None
         if belief_status != "VALIDATED":

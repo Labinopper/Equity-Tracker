@@ -107,12 +107,15 @@ class BetaObservationService:
         }
 
     @staticmethod
-    def sync_intraday_snapshots() -> dict[str, int]:
+    def sync_intraday_snapshots(*, instrument_ids: set[str] | None = None) -> dict[str, int]:
         if not BetaContext.is_initialized():
             return {"snapshots_added": 0, "instruments_considered": 0}
 
         with BetaContext.write_session() as beta_sess, core_read_session() as core_sess:
-            beta_instruments = list(beta_sess.scalars(select(BetaInstrument)).all())
+            beta_query = select(BetaInstrument)
+            if instrument_ids:
+                beta_query = beta_query.where(BetaInstrument.id.in_(sorted(instrument_ids)))
+            beta_instruments = list(beta_sess.scalars(beta_query).all())
             core_securities = list(core_sess.scalars(select(Security)).all())
             core_by_id = {row.id: row for row in core_securities}
             core_by_symbol_exchange = {

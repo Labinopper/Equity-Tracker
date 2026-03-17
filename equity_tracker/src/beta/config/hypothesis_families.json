@@ -1,0 +1,214 @@
+[
+  {
+    "family_code": "TREND_PULLBACK_RECOVERY",
+    "family_name": "Trend pullback recovery",
+    "description": "Continuation-style setups after controlled pullbacks and recoveries.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {
+      "threshold_variants": true,
+      "regime_segmentation": true,
+      "holding_period_variants": [5]
+    },
+    "generation_budget": {"max_variants_per_run": 16}
+  },
+  {
+    "family_code": "CATALYST_CONFIRMATION",
+    "family_name": "Catalyst confirmation",
+    "description": "Event-led setups requiring price confirmation after news or filings.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {
+      "threshold_variants": true,
+      "sentiment_variants": true,
+      "holding_period_variants": [5]
+    },
+    "generation_budget": {"max_variants_per_run": 12}
+  },
+  {
+    "family_code": "MEAN_REVERSION",
+    "family_name": "Mean reversion",
+    "description": "Oversold or overextended structures with reversal potential.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {
+      "threshold_variants": true,
+      "volatility_filters": true,
+      "holding_period_variants": [5]
+    },
+    "generation_budget": {"max_variants_per_run": 18}
+  },
+  {
+    "family_code": "EXHAUSTION_REVERSAL",
+    "family_name": "Exhaustion reversal",
+    "description": "Sharp short-term overextensions that may mean revert within one week.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 20}
+  },
+  {
+    "family_code": "VOLATILITY_COMPRESSION",
+    "family_name": "Volatility compression",
+    "description": "Low-volatility consolidation or drift setups ahead of directional moves.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 12}
+  },
+  {
+    "family_code": "VOLATILITY_REGIME",
+    "family_name": "Volatility regime",
+    "description": "Volatility expansion or contraction patterns tied to breakdown or continuation behavior.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 16}
+  },
+  {
+    "family_code": "RELATIVE_STRENGTH",
+    "family_name": "Relative strength",
+    "description": "Cross-sectional leadership and laggard patterns versus sector and market.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 16}
+  },
+  {
+    "family_code": "PANIC_REVERSAL",
+    "family_name": "Panic reversal",
+    "description": "Deep-damage setups where the first bounce can extend.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 12}
+  },
+  {
+    "family_code": "FAILED_REVERSAL",
+    "family_name": "Failed reversal",
+    "description": "Damaged names that fail to stabilize and continue lower.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 12}
+  },
+  {
+    "family_code": "DIVERGENCE",
+    "family_name": "Divergence",
+    "description": "Stocks diverging meaningfully from a weak or strong market backdrop.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 16}
+  },
+  {
+    "family_code": "VOLATILITY_MEAN_REVERSION",
+    "family_name": "Volatility mean reversion",
+    "description": "Low-volatility drifts that often mean revert over the next week.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 10}
+  },
+  {
+    "family_code": "VOLATILITY_EXHAUSTION",
+    "family_name": "Volatility exhaustion",
+    "description": "Large positive moves during elevated volatility that often fade.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 10}
+  },
+  {
+    "family_code": "TREND_STABILITY",
+    "family_name": "Trend stability",
+    "description": "Orderly low-volatility trends that may persist.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 14}
+  },
+  {
+    "family_code": "TREND_FAILURE",
+    "family_name": "Trend failure",
+    "description": "Sharp breaks in previously strong trends.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 14}
+  },
+  {
+    "family_code": "OVEREXTENSION",
+    "family_name": "Overextension normalization",
+    "description": "Extended trends far from mean that often cool off.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 10}
+  },
+  {
+    "family_code": "DEEP_MEAN_REVERSION",
+    "family_name": "Deep mean reversion",
+    "description": "Deep selloffs with calmer volatility where selling pressure may normalize.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 10}
+  },
+  {
+    "family_code": "PANIC_TREND",
+    "family_name": "Panic trend",
+    "description": "Heavy down days with volatility expansion that often continue.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 10}
+  },
+  {
+    "family_code": "ACCUMULATION",
+    "family_name": "Accumulation",
+    "description": "Quiet controlled appreciation before broader recognition.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true},
+    "generation_budget": {"max_variants_per_run": 10}
+  },
+  {
+    "family_code": "SECTOR_MOMENTUM",
+    "family_name": "Sector momentum",
+    "description": "Stocks participating in a strong sector move that may keep outperforming.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 12}
+  },
+  {
+    "family_code": "SECTOR_ROTATION",
+    "family_name": "Sector rotation weakness",
+    "description": "Names caught in weak sector rotations that may remain pressured.",
+    "generator_type": "TEMPLATE_MUTATION",
+    "default_target_metric": "fwd_5d_excess_return_pct",
+    "default_holding_period_days": 5,
+    "mutation_policy": {"threshold_variants": true, "regime_segmentation": true},
+    "generation_budget": {"max_variants_per_run": 12}
+  }
+]

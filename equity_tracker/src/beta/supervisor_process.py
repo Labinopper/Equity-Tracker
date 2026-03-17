@@ -17,10 +17,16 @@ from .context import BetaContext
 from .db.bootstrap import ensure_beta_schema
 from .db.engine import BetaDatabaseEngine
 from .services.evaluation_service import BetaEvaluationService
+from .services.execution_outcome_service import BetaExecutionOutcomeService
+from .services.execution_signal_service import BetaExecutionSignalService
+from .services.intraday_bar_fetch_service import BetaIntradayBarFetchService
+from .services.intraday_priority_service import BetaIntradayPriorityService
+from .services.instrument_statistics_service import BetaInstrumentStatisticsService
 from .services.filing_service import BetaFilingService
 from .services.feature_service import BetaFeatureService
 from .services.hypothesis_backtest_service import BetaHypothesisBacktestService
 from .services.hypothesis_belief_service import BetaHypothesisBeliefService
+from .services.hypothesis_discovery_service import BetaHypothesisDiscoveryService
 from .services.hypothesis_definition_service import BetaHypothesisDefinitionService
 from .services.label_service import BetaLabelService
 from .services.news_service import BetaNewsService
@@ -33,6 +39,7 @@ from .services.hypothesis_service import BetaHypothesisService
 from .services.review_service import BetaReviewService
 from .services.runtime_service import BetaRuntimeService
 from .services.scoring_service import BetaScoringService
+from .services.session_service import BetaMarketSessionService
 from .services.training_service import BetaTrainingService
 from .settings import BetaSettings
 
@@ -42,6 +49,11 @@ _FEATURE_BACKLOG_BATCH_SIZE = 4
 _LABEL_BACKLOG_BATCH_SIZE = 4
 _LAST_MEMORY_GUARD_AT: datetime | None = None
 _MEMORY_GUARD_NOTIFICATION_INTERVAL = timedelta(minutes=5)
+_MARKET_OPEN_REFERENCE_DEFER = timedelta(minutes=30)
+_MARKET_OPEN_OBSERVATION_DEFER = timedelta(minutes=5)
+_MARKET_OPEN_FULL_SCORING_DEFER = timedelta(minutes=15)
+_MARKET_OPEN_RESEARCH_DEFER = timedelta(hours=1)
+_MARKET_OPEN_CORE_SCORING_CADENCE_MINUTES = 5
 
 
 def _supervisor_lock_path() -> Path:
@@ -207,9 +219,13 @@ def _run_supervisor_cycle(
     next_news_sync_at: datetime,
     next_filing_sync_at: datetime,
     next_observation_at: datetime,
+    next_intraday_execution_at: datetime,
     next_hypothesis_research_at: datetime,
     next_core_scoring_at: datetime,
     next_scoring_at: datetime,
+    next_eod_bar_fetch_at: datetime,
+    next_statistics_refresh_at: datetime,
+    next_bar_backfill_at: datetime,
 ) -> dict[str, datetime]:
     if not settings.enabled or settings.mode == "OFF" or not settings.background_jobs_enabled:
         return {
@@ -217,9 +233,13 @@ def _run_supervisor_cycle(
             "next_news_sync_at": next_news_sync_at,
             "next_filing_sync_at": next_filing_sync_at,
             "next_observation_at": next_observation_at,
+            "next_intraday_execution_at": next_intraday_execution_at,
             "next_hypothesis_research_at": next_hypothesis_research_at,
             "next_core_scoring_at": next_core_scoring_at,
             "next_scoring_at": next_scoring_at,
+            "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
+            "next_statistics_refresh_at": next_statistics_refresh_at,
+            "next_bar_backfill_at": next_bar_backfill_at,
         }
 
     if _maybe_pause_for_memory(settings=settings, phase="pre_cycle"):
@@ -233,12 +253,18 @@ def _run_supervisor_cycle(
             "next_news_sync_at": next_news_sync_at,
             "next_filing_sync_at": next_filing_sync_at,
             "next_observation_at": next_observation_at,
+            "next_intraday_execution_at": next_intraday_execution_at,
             "next_hypothesis_research_at": next_hypothesis_research_at,
             "next_core_scoring_at": next_core_scoring_at,
             "next_scoring_at": next_scoring_at,
+            "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
+            "next_statistics_refresh_at": next_statistics_refresh_at,
+            "next_bar_backfill_at": next_bar_backfill_at,
         }
 
-    if settings.observation_enabled and now >= next_reference_sync_at:
+    market_open_light_mode = BetaMarketSessionService.live_market_priority_window(settings, now_utc=now)
+
+    if settings.observation_enabled and now >= next_reference_sync_at and not market_open_light_mode:
         reference_result = _run_job(
             job_name="beta_learning_universe_sync",
             job_type="reference",
@@ -258,6 +284,8 @@ def _run_supervisor_cycle(
                 ),
             )
         next_reference_sync_at = now + timedelta(hours=6)
+    elif settings.observation_enabled and now >= next_reference_sync_at and market_open_light_mode:
+        next_reference_sync_at = now + _MARKET_OPEN_REFERENCE_DEFER
 
     if settings.news_enabled and now >= next_news_sync_at:
         news_result = _run_job(
@@ -295,7 +323,62 @@ def _run_supervisor_cycle(
             )
         next_filing_sync_at = now + timedelta(hours=2)
 
-    if settings.observation_enabled and now >= next_observation_at:
+    if settings.intraday_execution_enabled and now >= next_intraday_execution_at:
+        _run_job(
+            job_name="beta_intraday_execution_prepare",
+            job_type="intraday_execution",
+            op=lambda: BetaExecutionSignalService.prepare_execution_context(settings, now_utc=now),
+        )
+        _run_job(
+            job_name="beta_intraday_execution_signals",
+            job_type="intraday_execution",
+            op=lambda: BetaExecutionSignalService.evaluate_execution_signals(settings, now_utc=now),
+        )
+        _run_job(
+            job_name="beta_execution_outcomes",
+            job_type="intraday_execution",
+            op=BetaExecutionOutcomeService.update_execution_outcomes,
+        )
+        next_intraday_execution_at = now + timedelta(minutes=1)
+
+    # EOD bar fetch for GENERAL tier — runs once after market close, not during market hours
+    if settings.intraday_bar_fetch_enabled and now >= next_eod_bar_fetch_at and not market_open_light_mode:
+        _run_job(
+            job_name="beta_eod_bar_fetch",
+            job_type="intraday_execution",
+            op=lambda: BetaIntradayBarFetchService.fetch_eod_bars(
+                priority_items=list(BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)["items"]),
+                credits_budget=settings.intraday_bar_fetch_eod_credits_budget,
+            ),
+        )
+        next_eod_bar_fetch_at = now + timedelta(hours=24)
+
+    # Historical bar backfill — daily cadence, outside market hours; catches new HELD/ACTIVE_THESIS instruments
+    if settings.intraday_bar_fetch_enabled and settings.intraday_bar_backfill_enabled and now >= next_bar_backfill_at and not market_open_light_mode:
+        _run_job(
+            job_name="beta_intraday_bar_backfill",
+            job_type="intraday_execution",
+            op=lambda: BetaIntradayBarFetchService.backfill_historical_bars(
+                priority_items=list(BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)["items"]),
+                target_days=settings.intraday_bar_backfill_target_days,
+                credits_budget=settings.intraday_bar_backfill_credits_budget,
+            ),
+        )
+        next_bar_backfill_at = now + timedelta(hours=24)
+
+    # Statistics refresh — weekly cadence, only outside market hours to save credits
+    if settings.instrument_statistics_enabled and now >= next_statistics_refresh_at and not market_open_light_mode:
+        _run_job(
+            job_name="beta_instrument_statistics_refresh",
+            job_type="reference",
+            op=lambda: BetaInstrumentStatisticsService.refresh_stale_statistics(
+                max_staleness_days=settings.instrument_statistics_refresh_days,
+                credits_budget=settings.instrument_statistics_credits_budget,
+            ),
+        )
+        next_statistics_refresh_at = now + timedelta(hours=24)
+
+    if settings.observation_enabled and now >= next_observation_at and not market_open_light_mode:
         observation_result = _run_job(
             job_name="beta_daily_observation_sync",
             job_type="observation",
@@ -352,6 +435,8 @@ def _run_supervisor_cycle(
             ),
         )
         next_observation_at = now + timedelta(minutes=1)
+    elif settings.observation_enabled and now >= next_observation_at and market_open_light_mode:
+        next_observation_at = now + _MARKET_OPEN_OBSERVATION_DEFER
 
     if _maybe_pause_for_memory(settings=settings, phase="post_observation"):
         BetaRuntimeService.ensure_daily_snapshot(settings)
@@ -364,72 +449,13 @@ def _run_supervisor_cycle(
             "next_news_sync_at": next_news_sync_at,
             "next_filing_sync_at": next_filing_sync_at,
             "next_observation_at": next_observation_at,
+            "next_intraday_execution_at": next_intraday_execution_at,
             "next_hypothesis_research_at": next_hypothesis_research_at,
             "next_core_scoring_at": next_core_scoring_at,
             "next_scoring_at": next_scoring_at,
-        }
-
-    if settings.learning_enabled and now >= next_hypothesis_research_at:
-        _run_job(
-            job_name="beta_hypothesis_definition_seed",
-            job_type="research_registry",
-            op=BetaHypothesisDefinitionService.ensure_default_research_objects,
-        )
-        backtest_result = _run_job(
-            job_name="beta_hypothesis_backtests",
-            job_type="research_registry",
-            op=BetaHypothesisBacktestService.refresh_backtests,
-        )
-        belief_result = _run_job(
-            job_name="beta_hypothesis_belief_refresh",
-            job_type="research_registry",
-            op=BetaHypothesisBeliefService.refresh_belief_states,
-        )
-        hypothesis_refresh = _run_job(
-            job_name="beta_hypothesis_refresh",
-            job_type="research_registry",
-            op=BetaHypothesisService.refresh_hypotheses,
-        )
-        if hypothesis_refresh is not None and hypothesis_refresh.get("changed"):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Hypothesis registry changed",
-                message_text=(
-                    f"Changed {hypothesis_refresh.get('changed', 0)} family states; "
-                    f"promoted {hypothesis_refresh.get('promoted', 0)}, suspended "
-                    f"{hypothesis_refresh.get('suspended', 0)}."
-                ),
-            )
-        if belief_result is not None and (
-            belief_result.get("validated_definitions") or belief_result.get("promising_definitions")
-        ):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Hypothesis beliefs refreshed",
-                message_text=(
-                    f"Validated {belief_result.get('validated_definitions', 0)} definitions; "
-                    f"promising {belief_result.get('promising_definitions', 0)}. "
-                    f"Backtests written {backtest_result.get('test_runs_written', 0) if backtest_result is not None else 0}."
-                ),
-            )
-        next_hypothesis_research_at = now + timedelta(hours=1)
-
-    if _maybe_pause_for_memory(settings=settings, phase="post_research"):
-        BetaRuntimeService.ensure_daily_snapshot(settings)
-        BetaPipelineAssessmentService.record_snapshot(
-            snapshot_type="SUPERVISOR_CYCLE",
-            trigger_job_name="beta_memory_guard",
-        )
-        return {
-            "next_reference_sync_at": next_reference_sync_at,
-            "next_news_sync_at": next_news_sync_at,
-            "next_filing_sync_at": next_filing_sync_at,
-            "next_observation_at": next_observation_at,
-            "next_hypothesis_research_at": next_hypothesis_research_at,
-            "next_core_scoring_at": next_core_scoring_at,
-            "next_scoring_at": next_scoring_at,
+            "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
+            "next_statistics_refresh_at": next_statistics_refresh_at,
+            "next_bar_backfill_at": next_bar_backfill_at,
         }
 
     if settings.shadow_scoring_enabled and now >= next_core_scoring_at:
@@ -438,9 +464,15 @@ def _run_supervisor_cycle(
             job_type="scoring",
             op=lambda: BetaScoringService.run_daily_shadow_cycle(settings, core_only=True),
         )
-        next_core_scoring_at = now + timedelta(minutes=1)
+        next_core_scoring_at = now + timedelta(
+            minutes=(
+                max(_MARKET_OPEN_CORE_SCORING_CADENCE_MINUTES, settings.shadow_default_cadence_minutes)
+                if market_open_light_mode
+                else 1
+            )
+        )
 
-    if settings.shadow_scoring_enabled and now >= next_scoring_at:
+    if settings.shadow_scoring_enabled and now >= next_scoring_at and not market_open_light_mode:
         scoring_result = _run_job(
             job_name="beta_daily_shadow_cycle",
             job_type="scoring",
@@ -508,12 +540,89 @@ def _run_supervisor_cycle(
                 ),
             )
         next_scoring_at = now + timedelta(minutes=max(1, settings.shadow_default_cadence_minutes))
+    elif settings.shadow_scoring_enabled and now >= next_scoring_at and market_open_light_mode:
+        next_scoring_at = now + _MARKET_OPEN_FULL_SCORING_DEFER
 
-    _run_job(
-        job_name="beta_daily_replay_pack",
-        job_type="replay",
-        op=BetaReplayService.ensure_daily_dashboard_pack,
-    )
+    if settings.learning_enabled and now >= next_hypothesis_research_at and not market_open_light_mode:
+        _run_job(
+            job_name="beta_hypothesis_definition_seed",
+            job_type="research_registry",
+            op=BetaHypothesisDefinitionService.ensure_default_research_objects,
+        )
+        _run_job(
+            job_name="beta_hypothesis_discovery",
+            job_type="research_registry",
+            op=lambda: BetaHypothesisDiscoveryService.run_discovery(settings),
+        )
+        backtest_result = _run_job(
+            job_name="beta_hypothesis_backtests",
+            job_type="research_registry",
+            op=BetaHypothesisBacktestService.refresh_backtests,
+        )
+        belief_result = _run_job(
+            job_name="beta_hypothesis_belief_refresh",
+            job_type="research_registry",
+            op=BetaHypothesisBeliefService.refresh_belief_states,
+        )
+        hypothesis_refresh = _run_job(
+            job_name="beta_hypothesis_refresh",
+            job_type="research_registry",
+            op=BetaHypothesisService.refresh_hypotheses,
+        )
+        if hypothesis_refresh is not None and hypothesis_refresh.get("changed"):
+            BetaRuntimeService.record_notification(
+                notification_type="hypothesis_registry",
+                severity="INFO",
+                title="Hypothesis registry changed",
+                message_text=(
+                    f"Changed {hypothesis_refresh.get('changed', 0)} family states; "
+                    f"promoted {hypothesis_refresh.get('promoted', 0)}, suspended "
+                    f"{hypothesis_refresh.get('suspended', 0)}."
+                ),
+            )
+        if belief_result is not None and (
+            belief_result.get("validated_definitions") or belief_result.get("promising_definitions")
+        ):
+            BetaRuntimeService.record_notification(
+                notification_type="hypothesis_registry",
+                severity="INFO",
+                title="Hypothesis beliefs refreshed",
+                message_text=(
+                    f"Validated {belief_result.get('validated_definitions', 0)} definitions; "
+                    f"promising {belief_result.get('promising_definitions', 0)}. "
+                    f"Backtests written {backtest_result.get('test_runs_written', 0) if backtest_result is not None else 0}."
+                ),
+            )
+        next_hypothesis_research_at = now + timedelta(hours=1)
+    elif settings.learning_enabled and now >= next_hypothesis_research_at and market_open_light_mode:
+        next_hypothesis_research_at = now + _MARKET_OPEN_RESEARCH_DEFER
+
+    if _maybe_pause_for_memory(settings=settings, phase="post_research"):
+        BetaRuntimeService.ensure_daily_snapshot(settings)
+        BetaPipelineAssessmentService.record_snapshot(
+            snapshot_type="SUPERVISOR_CYCLE",
+            trigger_job_name="beta_memory_guard",
+        )
+        return {
+            "next_reference_sync_at": next_reference_sync_at,
+            "next_news_sync_at": next_news_sync_at,
+            "next_filing_sync_at": next_filing_sync_at,
+            "next_observation_at": next_observation_at,
+            "next_intraday_execution_at": next_intraday_execution_at,
+            "next_hypothesis_research_at": next_hypothesis_research_at,
+            "next_core_scoring_at": next_core_scoring_at,
+            "next_scoring_at": next_scoring_at,
+            "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
+            "next_statistics_refresh_at": next_statistics_refresh_at,
+            "next_bar_backfill_at": next_bar_backfill_at,
+        }
+
+    if not market_open_light_mode:
+        _run_job(
+            job_name="beta_daily_replay_pack",
+            job_type="replay",
+            op=BetaReplayService.ensure_daily_dashboard_pack,
+        )
     BetaRuntimeService.ensure_daily_snapshot(settings)
     BetaPipelineAssessmentService.record_snapshot(
         snapshot_type="SUPERVISOR_CYCLE",
@@ -525,9 +634,13 @@ def _run_supervisor_cycle(
         "next_news_sync_at": next_news_sync_at,
         "next_filing_sync_at": next_filing_sync_at,
         "next_observation_at": next_observation_at,
+        "next_intraday_execution_at": next_intraday_execution_at,
         "next_hypothesis_research_at": next_hypothesis_research_at,
         "next_core_scoring_at": next_core_scoring_at,
         "next_scoring_at": next_scoring_at,
+        "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
+        "next_statistics_refresh_at": next_statistics_refresh_at,
+        "next_bar_backfill_at": next_bar_backfill_at,
     }
 
 
@@ -570,9 +683,13 @@ def main() -> int:
         next_news_sync_at = datetime.now(timezone.utc)
         next_filing_sync_at = datetime.now(timezone.utc)
         next_observation_at = datetime.now(timezone.utc)
+        next_intraday_execution_at = datetime.now(timezone.utc)
         next_hypothesis_research_at = datetime.now(timezone.utc)
         next_core_scoring_at = datetime.now(timezone.utc)
         next_scoring_at = datetime.now(timezone.utc)
+        next_eod_bar_fetch_at = datetime.now(timezone.utc)
+        next_statistics_refresh_at = datetime.now(timezone.utc)
+        next_bar_backfill_at = datetime.now(timezone.utc)
         while not _STOP_EVENT.wait(15):
             settings = BetaSettings.load(beta_db_path)
             BetaRuntimeService.sync_system_status(
@@ -592,17 +709,25 @@ def main() -> int:
                 next_news_sync_at=next_news_sync_at,
                 next_filing_sync_at=next_filing_sync_at,
                 next_observation_at=next_observation_at,
+                next_intraday_execution_at=next_intraday_execution_at,
                 next_hypothesis_research_at=next_hypothesis_research_at,
                 next_core_scoring_at=next_core_scoring_at,
                 next_scoring_at=next_scoring_at,
+                next_eod_bar_fetch_at=next_eod_bar_fetch_at,
+                next_statistics_refresh_at=next_statistics_refresh_at,
+                next_bar_backfill_at=next_bar_backfill_at,
             )
             next_reference_sync_at = next_times["next_reference_sync_at"]
             next_news_sync_at = next_times["next_news_sync_at"]
             next_filing_sync_at = next_times["next_filing_sync_at"]
             next_observation_at = next_times["next_observation_at"]
+            next_intraday_execution_at = next_times["next_intraday_execution_at"]
             next_hypothesis_research_at = next_times["next_hypothesis_research_at"]
             next_core_scoring_at = next_times["next_core_scoring_at"]
             next_scoring_at = next_times["next_scoring_at"]
+            next_eod_bar_fetch_at = next_times["next_eod_bar_fetch_at"]
+            next_statistics_refresh_at = next_times["next_statistics_refresh_at"]
+            next_bar_backfill_at = next_times["next_bar_backfill_at"]
     finally:
         try:
             if "settings" in locals() and "beta_db_path" in locals() and "core_db_path" in locals():

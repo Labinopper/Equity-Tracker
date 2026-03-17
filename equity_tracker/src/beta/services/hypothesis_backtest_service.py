@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from statistics import median
+from statistics import median, pstdev
 
 from sqlalchemy import desc, select
 
@@ -27,6 +27,15 @@ from .hypothesis_normalizer import BetaHypothesisNormalizer
 class BetaHypothesisBacktestService:
     """Backtest explicit hypothesis definitions against the stored feature/label history."""
 
+    _ACTIVE_STATUSES = (
+        "DISCOVERED",
+        "SCREENED_IN",
+        "CANDIDATE",
+        "PROMISING",
+        "VALIDATED",
+        "DEGRADED",
+        "REJECTED",
+    )
     _MIN_SAMPLE_SIZE = 25
     _TRANSACTION_COST_MULTIPLIER = 2.0
 
@@ -47,9 +56,7 @@ class BetaHypothesisBacktestService:
             definitions = list(
                 sess.scalars(
                     select(BetaHypothesisDefinition).where(
-                        BetaHypothesisDefinition.status.in_(
-                            ("CANDIDATE", "PROMISING", "VALIDATED", "DEGRADED")
-                        )
+                        BetaHypothesisDefinition.status.in_(BetaHypothesisBacktestService._ACTIVE_STATUSES)
                     )
                 ).all()
             )
@@ -60,9 +67,16 @@ class BetaHypothesisBacktestService:
                 {
                     feature_name
                     for definition in definitions
-                    for feature_name in BetaHypothesisNormalizer.extract_feature_names(
-                        BetaHypothesisNormalizer.normalize_conditions(
-                            json.loads(definition.entry_conditions_json or "{}")
+                    for feature_name in (
+                        BetaHypothesisNormalizer.extract_feature_names(
+                            BetaHypothesisNormalizer.normalize_conditions(
+                                json.loads(definition.entry_conditions_json or "{}")
+                            )
+                        )
+                        | BetaHypothesisNormalizer.extract_feature_names(
+                            BetaHypothesisNormalizer.normalize_regime_filters(
+                                json.loads(definition.regime_filters_json or "{}")
+                            )
                         )
                     )
                 }
@@ -129,14 +143,19 @@ class BetaHypothesisBacktestService:
                 conditions = BetaHypothesisNormalizer.normalize_conditions(
                     json.loads(definition.entry_conditions_json or "{}")
                 )
+                regime_filters = BetaHypothesisNormalizer.normalize_regime_filters(
+                    json.loads(definition.regime_filters_json or "{}")
+                )
                 universe = BetaHypothesisBacktestService._json_object(definition.universe_json)
                 target_metric = str(definition.target_metric or "fwd_5d_excess_return_pct")
                 label_values = labels_by_metric.get(target_metric, {})
-                feature_names_for_definition = sorted(BetaHypothesisNormalizer.extract_feature_names(conditions))
-                feature_subset = set(feature_names_for_definition)
+                feature_subset = set(
+                    BetaHypothesisNormalizer.extract_feature_names(conditions)
+                    | BetaHypothesisNormalizer.extract_feature_names(regime_filters)
+                )
 
                 matched_samples: list[tuple[str, object, float]] = []
-                eligible_samples: list[float] = []
+                eligible_samples: list[tuple[str, object, float]] = []
                 for (instrument_id, decision_date), snapshot in feature_snapshots.items():
                     instrument = instruments.get(instrument_id)
                     if instrument is None:
@@ -148,15 +167,16 @@ class BetaHypothesisBacktestService:
                     label_value = label_values.get((instrument_id, decision_date))
                     if label_value is None:
                         continue
-                    eligible_samples.append(label_value)
-                    match_result = BetaHypothesisNormalizer.evaluate(conditions, snapshot)
-                    if match_result.matched:
+                    if regime_filters and not BetaHypothesisNormalizer.evaluate(regime_filters, snapshot).matched:
+                        continue
+                    eligible_samples.append((instrument_id, decision_date, label_value))
+                    if BetaHypothesisNormalizer.evaluate(conditions, snapshot).matched:
                         matched_samples.append((instrument_id, decision_date, label_value))
 
                 summary = BetaHypothesisBacktestService._summarize_samples(
                     matched_samples=matched_samples,
-                    eligible_values=eligible_samples,
-                    expected_direction=definition.expected_direction,
+                    eligible_samples=eligible_samples,
+                    expected_direction=str(definition.expected_direction or "BULLISH"),
                     settings=settings,
                 )
 
@@ -168,17 +188,24 @@ class BetaHypothesisBacktestService:
                     test_start_date=summary["test_start_date"],
                     test_end_date=summary["test_end_date"],
                     sample_size=summary["sample_size"],
+                    support_count=summary["support_count"],
                     matched_instruments=summary["matched_instruments"],
+                    average_target_return_pct=summary["average_target_return_pct"],
+                    average_excess_return_pct=summary["average_excess_return_pct"],
+                    median_excess_return_pct=summary["median_excess_return_pct"],
                     average_return_pct=summary["average_return_pct"],
                     median_return_pct=summary["median_return_pct"],
                     win_rate_pct=summary["win_rate_pct"],
+                    outcome_volatility_pct=summary["outcome_volatility_pct"],
                     max_drawdown_pct=summary["max_drawdown_pct"],
                     baseline_return_pct=summary["baseline_return_pct"],
+                    baseline_edge_pct=summary["baseline_edge_pct"],
                     baseline_sign_accuracy_pct=summary["baseline_sign_accuracy_pct"],
                     transaction_cost_bps=summary["transaction_cost_bps"],
                     transaction_cost_adjusted_return_pct=summary["transaction_cost_adjusted_return_pct"],
                     walk_forward_score=summary["walk_forward_score"],
                     out_of_sample_score=summary["out_of_sample_score"],
+                    stability_score=summary["stability_score"],
                     regime_slice_json=json.dumps(summary["regime_slice"], sort_keys=True),
                     notes_json=json.dumps(summary["notes"], sort_keys=True),
                 )
@@ -212,10 +239,25 @@ class BetaHypothesisBacktestService:
         return True
 
     @staticmethod
+    def summarize_candidate_samples(
+        *,
+        matched_samples: list[tuple[str, object, float]],
+        eligible_samples: list[tuple[str, object, float]],
+        expected_direction: str,
+        settings: BetaSettings,
+    ) -> dict[str, object]:
+        return BetaHypothesisBacktestService._summarize_samples(
+            matched_samples=matched_samples,
+            eligible_samples=eligible_samples,
+            expected_direction=expected_direction,
+            settings=settings,
+        )
+
+    @staticmethod
     def _summarize_samples(
         *,
         matched_samples: list[tuple[str, object, float]],
-        eligible_values: list[float],
+        eligible_samples: list[tuple[str, object, float]],
         expected_direction: str,
         settings: BetaSettings,
     ) -> dict[str, object]:
@@ -228,16 +270,21 @@ class BetaHypothesisBacktestService:
             for value in raw_sample_values
         ]
         sample_dates = [decision_date for _instrument_id, decision_date, _value in matched_samples]
-        sample_size = len(sample_values)
+        support_count = len(sample_values)
         matched_instruments = len({instrument_id for instrument_id, _decision_date, _value in matched_samples})
+
+        raw_eligible_values = [value for _instrument_id, _decision_date, value in eligible_samples]
         aligned_eligible_values = [
             BetaHypothesisBacktestService._align_return(
                 expected_direction=expected_direction,
                 raw_return_pct=value,
             )
-            for value in eligible_values
+            for value in raw_eligible_values
         ]
-        baseline_return_pct = round(sum(aligned_eligible_values) / len(aligned_eligible_values), 4) if aligned_eligible_values else 0.0
+        baseline_return_pct = round(
+            sum(aligned_eligible_values) / len(aligned_eligible_values),
+            4,
+        ) if aligned_eligible_values else 0.0
         baseline_sign_accuracy_pct = round(
             (len([value for value in aligned_eligible_values if value > 0]) / len(aligned_eligible_values)) * 100.0,
             2,
@@ -245,52 +292,73 @@ class BetaHypothesisBacktestService:
         win_rate_pct = round(
             (len([value for value in sample_values if value > 0]) / len(sample_values)) * 100.0,
             2,
-        ) if sample_values else 0.0
+        ) if sample_values else None
 
-        average_return_pct = round(sum(sample_values) / len(sample_values), 4) if sample_values else None
-        median_return_pct = round(float(median(sample_values)), 4) if sample_values else None
-        transaction_cost_bps = float(max(settings.uk_equity_friction_bps, settings.us_equity_friction_bps) * BetaHypothesisBacktestService._TRANSACTION_COST_MULTIPLIER)
+        average_target_return_pct = round(sum(raw_sample_values) / len(raw_sample_values), 4) if raw_sample_values else None
+        average_excess_return_pct = round(sum(sample_values) / len(sample_values), 4) if sample_values else None
+        median_excess_return_pct = round(float(median(sample_values)), 4) if sample_values else None
+        average_return_pct = average_excess_return_pct
+        median_return_pct = median_excess_return_pct
+        outcome_volatility_pct = round(pstdev(sample_values), 4) if len(sample_values) > 1 else (0.0 if sample_values else None)
+        transaction_cost_bps = float(
+            max(settings.uk_equity_friction_bps, settings.us_equity_friction_bps)
+            * BetaHypothesisBacktestService._TRANSACTION_COST_MULTIPLIER
+        )
         transaction_cost_adjusted_return_pct = (
-            round((average_return_pct or 0.0) - (transaction_cost_bps / 100.0), 4)
-            if average_return_pct is not None
+            round((average_excess_return_pct or 0.0) - (transaction_cost_bps / 100.0), 4)
+            if average_excess_return_pct is not None
+            else None
+        )
+        baseline_edge_pct = (
+            round((transaction_cost_adjusted_return_pct or 0.0) - baseline_return_pct, 4)
+            if transaction_cost_adjusted_return_pct is not None
             else None
         )
         max_drawdown_pct = BetaHypothesisBacktestService._max_drawdown(sample_values)
-        walk_forward_score, out_of_sample_score, walk_windows = BetaHypothesisBacktestService._walk_forward_scores(
-            matched_samples,
-            expected_direction=expected_direction,
-            baseline_return_pct=baseline_return_pct,
-            transaction_cost_bps=transaction_cost_bps,
+        walk_forward_score, out_of_sample_score, stability_score, walk_windows = (
+            BetaHypothesisBacktestService._walk_forward_scores(
+                matched_samples,
+                expected_direction=expected_direction,
+                baseline_return_pct=baseline_return_pct,
+                transaction_cost_bps=transaction_cost_bps,
+            )
         )
         regime_slice = {
-            "markets": sorted({"UNKNOWN"}),
             "matched_instruments": matched_instruments,
-            "sample_size": sample_size,
+            "support_count": support_count,
+            "eligible_support_count": len(eligible_samples),
         }
         notes = {
             "minimum_sample_size": BetaHypothesisBacktestService._MIN_SAMPLE_SIZE,
             "walk_forward_windows": walk_windows,
             "baseline_policy": "UNCONDITIONAL_UNIVERSE_MEAN",
-            "sample_size_sufficient": sample_size >= BetaHypothesisBacktestService._MIN_SAMPLE_SIZE,
+            "sample_size_sufficient": support_count >= BetaHypothesisBacktestService._MIN_SAMPLE_SIZE,
             "evaluation_perspective": "direction_aligned",
-            "raw_average_return_pct": round(sum(raw_sample_values) / len(raw_sample_values), 4) if raw_sample_values else None,
+            "raw_average_return_pct": average_target_return_pct,
             "raw_median_return_pct": round(float(median(raw_sample_values)), 4) if raw_sample_values else None,
         }
         return {
-            "sample_size": sample_size,
+            "sample_size": support_count,
+            "support_count": support_count,
             "matched_instruments": matched_instruments,
             "test_start_date": min(sample_dates) if sample_dates else None,
             "test_end_date": max(sample_dates) if sample_dates else None,
+            "average_target_return_pct": average_target_return_pct,
+            "average_excess_return_pct": average_excess_return_pct,
+            "median_excess_return_pct": median_excess_return_pct,
             "average_return_pct": average_return_pct,
             "median_return_pct": median_return_pct,
-            "win_rate_pct": win_rate_pct if sample_values else None,
+            "win_rate_pct": win_rate_pct,
+            "outcome_volatility_pct": outcome_volatility_pct,
             "max_drawdown_pct": max_drawdown_pct,
             "baseline_return_pct": baseline_return_pct,
+            "baseline_edge_pct": baseline_edge_pct,
             "baseline_sign_accuracy_pct": baseline_sign_accuracy_pct,
             "transaction_cost_bps": transaction_cost_bps,
             "transaction_cost_adjusted_return_pct": transaction_cost_adjusted_return_pct,
             "walk_forward_score": walk_forward_score,
             "out_of_sample_score": out_of_sample_score,
+            "stability_score": stability_score,
             "regime_slice": regime_slice,
             "notes": notes,
         }
@@ -318,9 +386,10 @@ class BetaHypothesisBacktestService:
         expected_direction: str,
         baseline_return_pct: float,
         transaction_cost_bps: float,
-    ) -> tuple[float | None, float | None, list[dict[str, object]]]:
+    ) -> tuple[float | None, float | None, float | None, list[dict[str, object]]]:
         if not matched_samples:
-            return None, None, []
+            return None, None, None, []
+
         ordered = sorted(matched_samples, key=lambda row: row[1])
         dates = sorted({decision_date for _instrument_id, decision_date, _value in ordered})
         if len(dates) < 4:
@@ -332,7 +401,8 @@ class BetaHypothesisBacktestService:
                 for _instrument_id, _decision_date, value in ordered
             ]
             adjusted = round((sum(sample_values) / len(sample_values)) - (transaction_cost_bps / 100.0), 4)
-            return adjusted - baseline_return_pct, adjusted, []
+            return adjusted - baseline_return_pct, adjusted, 0.0, []
+
         bucket_count = min(6, max(3, len(dates) // 20))
         windows: list[dict[str, object]] = []
         for chunk in BetaHypothesisBacktestService._split_dates(dates, bucket_count):
@@ -348,6 +418,7 @@ class BetaHypothesisBacktestService:
                 continue
             avg_return = sum(chunk_values) / len(chunk_values)
             adjusted = avg_return - (transaction_cost_bps / 100.0)
+            edge = adjusted - baseline_return_pct
             windows.append(
                 {
                     "start_date": str(min(chunk)),
@@ -355,20 +426,38 @@ class BetaHypothesisBacktestService:
                     "sample_size": len(chunk_values),
                     "avg_return_pct": round(avg_return, 4),
                     "adjusted_return_pct": round(adjusted, 4),
+                    "edge_pct": round(edge, 4),
                 }
             )
         if not windows:
-            return None, None, []
+            return None, None, None, []
+
         walk_forward_score = round(
-            sum(window["adjusted_return_pct"] - baseline_return_pct for window in windows) / len(windows),
+            sum(window["edge_pct"] for window in windows) / len(windows),
             4,
         )
-        tail_windows = windows[-max(1, len(windows) // 3):]
+        tail_windows = windows[-max(1, len(windows) // 3) :]
         out_of_sample_score = round(
             sum(window["adjusted_return_pct"] for window in tail_windows) / len(tail_windows),
             4,
         )
-        return walk_forward_score, out_of_sample_score, windows
+        positive_window_ratio = len([window for window in windows if float(window["edge_pct"]) > 0.0]) / len(windows)
+        edge_volatility = pstdev([float(window["edge_pct"]) for window in windows]) if len(windows) > 1 else 0.0
+        recency_edge = sum(float(window["edge_pct"]) for window in tail_windows) / len(tail_windows)
+        stability_score = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    (positive_window_ratio * 0.55)
+                    + min(0.2, max(0.0, walk_forward_score) / 4.0)
+                    + min(0.15, max(0.0, recency_edge) / 3.0)
+                    - min(0.25, edge_volatility / 6.0),
+                ),
+            ),
+            4,
+        )
+        return walk_forward_score, out_of_sample_score, stability_score, windows
 
     @staticmethod
     def _split_dates(dates: list[object], bucket_count: int) -> list[set[object]]:

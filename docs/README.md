@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: `2026-03-14`
+Last updated: `2026-03-15`
 
 ## Source of Truth Files
 
@@ -21,6 +21,8 @@ Last updated: `2026-03-14`
 - `docs/paper_trading_beta/PAPER_TRADING_BETA_DATABASE_SCHEMA.md`
 - `docs/paper_trading_beta/PAPER_TRADING_BETA_REMEDIATION_STRATEGY_2026-03-14.md`
 - `docs/paper_trading_beta/PAPER_TRADING_BETA_HYPOTHESIS_ENGINE_EVOLUTION_2026-03-14.md`
+- `docs/paper_trading_beta/HYPOTHESIS_DISCOVERY_IMPLEMENTATION_NOTES_2026-03-15.md`
+- `docs/paper_trading_beta/INTRADAY_EXECUTION_LAYER_IMPLEMENTATION_NOTES_2026-03-15.md`
 
 ## What Each File Owns
 
@@ -45,6 +47,8 @@ Last updated: `2026-03-14`
 | `docs/paper_trading_beta/PAPER_TRADING_BETA_DATABASE_SCHEMA.md` | SQLite-first split-database schema for the beta research, scoring, governance, and immutable demo-trade system. |
 | `docs/paper_trading_beta/PAPER_TRADING_BETA_REMEDIATION_STRATEGY_2026-03-14.md` | Remediation plan for making the beta assessable, measurable, and operationally credible from DB evidence. |
 | `docs/paper_trading_beta/PAPER_TRADING_BETA_HYPOTHESIS_ENGINE_EVOLUTION_2026-03-14.md` | Next-stage architecture review and migration plan for evolving the beta from model-plus-baseline scoring into a true hypothesis-learning research engine. |
+| `docs/paper_trading_beta/HYPOTHESIS_DISCOVERY_IMPLEMENTATION_NOTES_2026-03-15.md` | Implementation notes for the bounded template-based discovery layer, runtime tradeoffs, and the later intraday extension path. |
+| `docs/paper_trading_beta/INTRADAY_EXECUTION_LAYER_IMPLEMENTATION_NOTES_2026-03-15.md` | Implementation notes for the position-aware intraday execution layer, minute aggregation path, and separation from the daily thesis engine. |
 
 ## Current Stage Snapshot
 
