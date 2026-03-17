@@ -801,16 +801,21 @@ class BetaTrainingService:
                 }
 
             feature_ids = [row.id for row in feature_defs]
+            label_instrument_ids = list({lv.instrument_id for lv in labels})
             feature_map: dict[tuple[str, str, object], float] = {}
-            for value in sess.scalars(
-                select(BetaFeatureValue).where(
+            for iid, fid, fdate, val in sess.execute(
+                select(
+                    BetaFeatureValue.instrument_id,
+                    BetaFeatureValue.feature_definition_id,
+                    BetaFeatureValue.feature_date,
+                    BetaFeatureValue.value_numeric,
+                ).where(
                     BetaFeatureValue.feature_definition_id.in_(feature_ids),
                     BetaFeatureValue.value_numeric.is_not(None),
+                    BetaFeatureValue.instrument_id.in_(label_instrument_ids),
                 )
-            ).all():
-                feature_map[(value.instrument_id, value.feature_definition_id, value.feature_date)] = float(
-                    value.value_numeric
-                )
+            ).yield_per(5000):
+                feature_map[(iid, fid, fdate)] = float(val)
 
             dataset: list[_DatasetRow] = []
             for label in labels:
