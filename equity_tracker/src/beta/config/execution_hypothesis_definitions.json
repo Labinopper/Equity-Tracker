@@ -72,7 +72,7 @@
     "entry_conditions": {
       "all": [
         {"feature": "return_since_open_pct", "op": "gt", "value": 1.5},
-        {"feature": "distance_from_session_low_pct", "op": "lt", "value": 1.0}
+        {"feature": "distance_from_session_high_pct", "op": "lt", "value": 1.0}
       ]
     },
     "metadata": {

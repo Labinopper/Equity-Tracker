@@ -299,6 +299,27 @@ class BetaHypothesisBacktestService:
         median_excess_return_pct = round(float(median(sample_values)), 4) if sample_values else None
         average_return_pct = average_excess_return_pct
         median_return_pct = median_excess_return_pct
+
+        # Parallel return profiles for robustness comparison
+        winsorize_cap = 200.0
+        winsorized_values = [max(-winsorize_cap, min(winsorize_cap, v)) for v in sample_values] if sample_values else []
+        winsorized_avg = round(sum(winsorized_values) / len(winsorized_values), 4) if winsorized_values else 0.0
+        sorted_for_trim = sorted(sample_values)
+        trim_count = max(1, int(len(sorted_for_trim) * 0.025))
+        trimmed_values = (
+            sorted_for_trim[trim_count:-trim_count]
+            if len(sorted_for_trim) > trim_count * 2
+            else sorted_for_trim
+        )
+        trimmed_avg = round(sum(trimmed_values) / len(trimmed_values), 4) if trimmed_values else 0.0
+        raw_avg = average_excess_return_pct or 0.0
+        robustness_collapse_pct = round(
+            ((raw_avg - winsorized_avg) / raw_avg * 100.0) if abs(raw_avg) > 0.01 else 0.0,
+            4,
+        )
+        _abs_median = abs(median_excess_return_pct or 0.0)
+        mean_median_ratio = round(abs(raw_avg) / max(_abs_median, 0.5), 4)
+
         outcome_volatility_pct = round(pstdev(sample_values), 4) if len(sample_values) > 1 else (0.0 if sample_values else None)
         transaction_cost_bps = float(
             max(settings.uk_equity_friction_bps, settings.us_equity_friction_bps)
@@ -323,6 +344,19 @@ class BetaHypothesisBacktestService:
                 transaction_cost_bps=transaction_cost_bps,
             )
         )
+        # Window concentration metric
+        if walk_windows and len(walk_windows) > 1:
+            _total_pos_edge = sum(max(0.0, float(w["edge_pct"])) for w in walk_windows)
+            _max_edge = max(float(w["edge_pct"]) for w in walk_windows)
+            max_window_edge_share = round(
+                (_max_edge / _total_pos_edge) if _total_pos_edge > 0.01 else 0.0,
+                4,
+            )
+            positive_window_count = len([w for w in walk_windows if float(w["edge_pct"]) > 0.0])
+        else:
+            max_window_edge_share = 0.0
+            positive_window_count = len(walk_windows) if walk_windows else 0
+
         regime_slice = {
             "matched_instruments": matched_instruments,
             "support_count": support_count,
@@ -336,6 +370,13 @@ class BetaHypothesisBacktestService:
             "evaluation_perspective": "direction_aligned",
             "raw_average_return_pct": average_target_return_pct,
             "raw_median_return_pct": round(float(median(raw_sample_values)), 4) if raw_sample_values else None,
+            "winsorized_avg_return_pct": winsorized_avg,
+            "trimmed_avg_return_pct": trimmed_avg,
+            "robustness_collapse_pct": robustness_collapse_pct,
+            "mean_median_ratio": mean_median_ratio,
+            "max_window_edge_share": max_window_edge_share,
+            "positive_window_count": positive_window_count,
+            "total_walk_forward_windows": len(walk_windows) if walk_windows else 0,
         }
         return {
             "sample_size": support_count,
@@ -444,6 +485,10 @@ class BetaHypothesisBacktestService:
         positive_window_ratio = len([window for window in windows if float(window["edge_pct"]) > 0.0]) / len(windows)
         edge_volatility = pstdev([float(window["edge_pct"]) for window in windows]) if len(windows) > 1 else 0.0
         recency_edge = sum(float(window["edge_pct"]) for window in tail_windows) / len(tail_windows)
+        total_positive_edge = sum(max(0.0, float(w["edge_pct"])) for w in windows)
+        max_window_edge = max(float(w["edge_pct"]) for w in windows)
+        max_window_edge_share = (max_window_edge / total_positive_edge) if total_positive_edge > 0.01 else 0.0
+        window_concentration_penalty = max(0.0, min(0.2, (max_window_edge_share - 0.5) * 0.4))
         stability_score = round(
             max(
                 0.0,
@@ -452,7 +497,8 @@ class BetaHypothesisBacktestService:
                     (positive_window_ratio * 0.55)
                     + min(0.2, max(0.0, walk_forward_score) / 4.0)
                     + min(0.15, max(0.0, recency_edge) / 3.0)
-                    - min(0.25, edge_volatility / 6.0),
+                    - min(0.25, edge_volatility / 6.0)
+                    - window_concentration_penalty,
                 ),
             ),
             4,

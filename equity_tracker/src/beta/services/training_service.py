@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -32,6 +33,8 @@ try:
     import numpy as _np
 except Exception:  # pragma: no cover
     _np = None
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -801,45 +804,75 @@ class BetaTrainingService:
                 }
 
             feature_ids = [row.id for row in feature_defs]
-            label_pairs = {(lv.instrument_id, lv.decision_date) for lv in labels}
-            label_instrument_ids = list({p[0] for p in label_pairs})
-            label_dates = list({p[1] for p in label_pairs})
-            feature_map: dict[tuple[str, str, object], float] = {}
-            for iid, fid, fdate, val in sess.execute(
-                select(
-                    BetaFeatureValue.instrument_id,
-                    BetaFeatureValue.feature_definition_id,
-                    BetaFeatureValue.feature_date,
-                    BetaFeatureValue.value_numeric,
-                ).where(
-                    BetaFeatureValue.feature_definition_id.in_(feature_ids),
-                    BetaFeatureValue.value_numeric.is_not(None),
-                    BetaFeatureValue.instrument_id.in_(label_instrument_ids),
-                    BetaFeatureValue.feature_date.in_(label_dates),
-                )
-            ).yield_per(5000):
-                feature_map[(iid, fid, fdate)] = float(val)
+
+            # Group labels by date for memory-efficient batched feature loading.
+            # Instead of building a global feature_map across all dates (which
+            # over-fetches the cross-product of instruments x dates), we load
+            # features one date at a time.  Peak memory is bounded to one date's
+            # worth of features (~instruments_per_date x feature_count).
+            _labels_by_date: dict[object, list] = {}
+            for lv in labels:
+                _labels_by_date.setdefault(lv.decision_date, []).append(lv)
 
             dataset: list[_DatasetRow] = []
-            for label in labels:
-                row_features: list[float] = []
-                missing = False
-                for feature_def in feature_defs:
-                    value = feature_map.get((label.instrument_id, feature_def.id, label.decision_date))
-                    if value is None:
-                        missing = True
-                        break
-                    row_features.append(value)
-                if missing:
-                    continue
-                dataset.append(
-                    _DatasetRow(
-                        instrument_id=label.instrument_id,
-                        decision_date=label.decision_date,
-                        features=row_features,
-                        label=float(label.value_numeric),
+            _total_feature_values_loaded = 0
+            _total_labels_missing_features = 0
+
+            for _decision_date in sorted(_labels_by_date.keys()):
+                _date_labels = _labels_by_date[_decision_date]
+                _date_instrument_ids = list({lv.instrument_id for lv in _date_labels})
+
+                # Small per-date dict: only (instrument_id, feature_def_id) -> value
+                _date_features: dict[tuple[str, str], float] = {}
+                for iid, fid, val in sess.execute(
+                    select(
+                        BetaFeatureValue.instrument_id,
+                        BetaFeatureValue.feature_definition_id,
+                        BetaFeatureValue.value_numeric,
+                    ).where(
+                        BetaFeatureValue.feature_definition_id.in_(feature_ids),
+                        BetaFeatureValue.value_numeric.is_not(None),
+                        BetaFeatureValue.instrument_id.in_(_date_instrument_ids),
+                        BetaFeatureValue.feature_date == _decision_date,
                     )
-                )
+                ):
+                    _date_features[(iid, fid)] = float(val)
+                    _total_feature_values_loaded += 1
+
+                for lv in _date_labels:
+                    row_features: list[float] = []
+                    missing = False
+                    for feature_def in feature_defs:
+                        value = _date_features.get((lv.instrument_id, feature_def.id))
+                        if value is None:
+                            missing = True
+                            break
+                        row_features.append(value)
+                    if missing:
+                        _total_labels_missing_features += 1
+                        continue
+                    dataset.append(
+                        _DatasetRow(
+                            instrument_id=lv.instrument_id,
+                            decision_date=lv.decision_date,
+                            features=row_features,
+                            label=float(lv.value_numeric),
+                        )
+                    )
+                # _date_features is reassigned next iteration — GC-friendly
+
+            _log.info(
+                "training_dataset_built: labels=%d feature_values_loaded=%d "
+                "labels_missing_features=%d dataset_rows=%d unique_dates=%d "
+                "unique_instruments=%d feature_count=%d",
+                len(labels),
+                _total_feature_values_loaded,
+                _total_labels_missing_features,
+                len(dataset),
+                len({r.decision_date for r in dataset}),
+                len({r.instrument_id for r in dataset}),
+                len(feature_defs),
+            )
 
             if len(dataset) < BetaTrainingService._MIN_ROWS:
                 BetaTrainingService._record_training_decision(
@@ -848,12 +881,19 @@ class BetaTrainingService:
                     reason_code="insufficient_feature_aligned_rows",
                     performed=True,
                     trained=False,
-                    notes={"dataset_rows": len(dataset)},
+                    notes={
+                        "dataset_rows": len(dataset),
+                        "feature_values_loaded": _total_feature_values_loaded,
+                        "labels_processed": len(labels),
+                        "labels_missing_features": _total_labels_missing_features,
+                    },
                 )
                 return {
                     "trained": False,
                     "reason": "insufficient_feature_aligned_rows",
                     "dataset_rows": len(dataset),
+                    "feature_values_loaded": _total_feature_values_loaded,
+                    "labels_missing_features": _total_labels_missing_features,
                 }
 
             dataset.sort(key=lambda row: (row.decision_date, row.instrument_id))
@@ -1214,6 +1254,8 @@ class BetaTrainingService:
                     "walkforward_best_baseline_name": validation_metrics.get("best_baseline_name"),
                     "walkforward_best_baseline_sign_accuracy_pct": validation_metrics.get("best_baseline_sign_accuracy_pct"),
                     "validated_baseline_policy": validated_baseline_policy,
+                    "feature_values_loaded": _total_feature_values_loaded,
+                    "labels_missing_features": _total_labels_missing_features,
                 },
             )
 

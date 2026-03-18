@@ -153,6 +153,35 @@ class BetaHypothesisBeliefService:
             + degradation_rate
             + max(0.0, 0.15 - avg_stability)
         )
+
+        # Multi-factor robustness evaluation from latest test run metrics
+        latest_notes: dict[str, object] = {}
+        try:
+            latest_notes = json.loads(latest.notes_json or "{}")
+        except (json.JSONDecodeError, TypeError):
+            pass
+        robustness_collapse = float(latest_notes.get("robustness_collapse_pct", 0.0))
+        max_window_edge_share = float(latest_notes.get("max_window_edge_share", 0.0))
+        mean_median_ratio = float(latest_notes.get("mean_median_ratio", 1.0))
+        latest_win_rate = float(latest.win_rate_pct or 50.0)
+        latest_volatility = float(latest.outcome_volatility_pct or 0.0)
+
+        robustness_penalty = 0.0
+        # Window concentration: penalize when one window dominates the edge
+        if max_window_edge_share > 0.6:
+            robustness_penalty += min(0.15, (max_window_edge_share - 0.6) * 0.375)
+        # Robustness collapse: penalize when edge collapses under winsorization
+        if robustness_collapse > 30.0:
+            robustness_penalty += min(0.12, (robustness_collapse - 30.0) / 100.0 * 0.17)
+        # Distribution shape: penalize extreme mean/median divergence
+        if mean_median_ratio > 10.0:
+            robustness_penalty += min(0.08, (mean_median_ratio - 10.0) / 100.0 * 0.1)
+        # Combined fragility: near-coinflip win rate with extreme volatility
+        if latest_win_rate < 52.0 and latest_volatility > 200.0:
+            vol_excess = min(1.0, (latest_volatility - 200.0) / 300.0)
+            rate_weakness = min(1.0, (52.0 - latest_win_rate) / 4.0)
+            robustness_penalty += min(0.06, vol_excess * rate_weakness * 0.06)
+
         confidence_score = round(
             min(
                 0.95,
@@ -162,7 +191,8 @@ class BetaHypothesisBeliefService:
                     + (sample_factor * 0.18)
                     + (evidence_factor * 0.18)
                     + min(0.3, positive_strength * 0.12)
-                    - min(0.28, negative_strength * 0.12),
+                    - min(0.28, negative_strength * 0.12)
+                    - robustness_penalty,
                 ),
             ),
             4,
@@ -243,6 +273,10 @@ class BetaHypothesisBeliefService:
                 "distinct_evidence_points": evidence_count,
                 "latest_stability_score": latest_stability,
                 "average_stability_score": avg_stability,
+                "robustness_penalty": round(robustness_penalty, 4),
+                "robustness_collapse_pct": robustness_collapse,
+                "max_window_edge_share": max_window_edge_share,
+                "mean_median_ratio": mean_median_ratio,
             },
         }
 
