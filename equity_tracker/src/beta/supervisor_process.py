@@ -33,6 +33,7 @@ from .services.news_service import BetaNewsService
 from .services.observation_service import BetaObservationService
 from .services.corpus_service import BetaCorpusService
 from .services.pipeline_assessment_service import BetaPipelineAssessmentService
+from .services.position_registry import BetaPositionRegistry
 from .services.reference_service import BetaReferenceService
 from .services.replay_service import BetaReplayService
 from .services.hypothesis_service import BetaHypothesisService
@@ -178,13 +179,16 @@ def _maybe_pause_for_memory(*, settings: BetaSettings, phase: str) -> bool:
     return True
 
 
-def _record_job_failure(*, job_name: str, job_type: str, exc: Exception) -> None:
+def _record_job_failure(*, job_name: str, job_type: str, exc: Exception, job_run_id: str | None = None) -> None:
     message = str(exc) or exc.__class__.__name__
-    BetaRuntimeService.record_job_run(
-        job_name=job_name,
-        job_type=job_type,
+    BetaRuntimeService.finish_job_run(
+        job_run_id,
         status="FAILED",
         details={"error": message, "error_type": exc.__class__.__name__},
+    )
+    BetaRuntimeService.touch_supervisor_status(
+        supervisor_status="running",
+        supervisor_pid=os.getpid(),
     )
     BetaRuntimeService.record_notification(
         notification_type=job_type,
@@ -195,16 +199,30 @@ def _record_job_failure(*, job_name: str, job_type: str, exc: Exception) -> None
 
 
 def _run_job(*, job_name: str, job_type: str, op):
+    started_at = _utcnow()
+    job_run_id = BetaRuntimeService.start_job_run(
+        job_name=job_name,
+        job_type=job_type,
+        details={"state": "RUNNING"},
+        started_at=started_at,
+    )
+    BetaRuntimeService.touch_supervisor_status(
+        supervisor_status="running",
+        supervisor_pid=os.getpid(),
+    )
     try:
         result = op()
     except Exception as exc:
-        _record_job_failure(job_name=job_name, job_type=job_type, exc=exc)
+        _record_job_failure(job_name=job_name, job_type=job_type, exc=exc, job_run_id=job_run_id)
         return None
-    BetaRuntimeService.record_job_run(
-        job_name=job_name,
-        job_type=job_type,
+    BetaRuntimeService.finish_job_run(
+        job_run_id,
         status="SUCCESS",
         details=result if isinstance(result, dict) else {"result": result},
+    )
+    BetaRuntimeService.touch_supervisor_status(
+        supervisor_status="running",
+        supervisor_pid=os.getpid(),
     )
     return result
 
@@ -478,6 +496,12 @@ def _run_supervisor_cycle(
             job_type="scoring",
             op=lambda: BetaScoringService.run_daily_shadow_cycle(settings),
         )
+        if settings.intraday_execution_enabled:
+            _run_job(
+                job_name="beta_candidate_thesis_sync",
+                job_type="intraday_execution",
+                op=lambda: BetaPositionRegistry.sync_candidate_theses(now_utc=now),
+            )
         if scoring_result is not None:
             if scoring_result.get("recommended") or scoring_result.get("positions_opened") or scoring_result.get("positions_closed"):
                 BetaRuntimeService.record_notification(
@@ -666,11 +690,15 @@ def main() -> int:
         ensure_beta_schema(engine, beta_db_path=beta_db_path)
 
         settings = BetaSettings.load(beta_db_path)
+        finalized_running_jobs = BetaRuntimeService.finalize_running_jobs()
         BetaRuntimeService.record_job_run(
             job_name="beta_supervisor_bootstrap",
             job_type="supervisor",
             status="SUCCESS",
-            details={"beta_db_path": str(beta_db_path)},
+            details={
+                "beta_db_path": str(beta_db_path),
+                "finalized_running_jobs": finalized_running_jobs,
+            },
         )
         BetaRuntimeService.record_notification(
             notification_type="runtime",

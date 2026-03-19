@@ -12,7 +12,84 @@ from ..context import BetaContext
 from ..db.models import BetaBenchmarkBar, BetaDailyBar, BetaFeatureValue, BetaInstrument, BetaLabelDefinition, BetaLabelValue
 
 _MIN_LABEL_BACKLOG_BARS = 30
-_LABEL_DEFINITIONS_PER_DATE = 3
+_LABEL_SPECS = (
+    {
+        "label_name": "fwd_3d_return_pct",
+        "version_code": "v1",
+        "horizon_days": 3,
+        "definition_text": "Three-trading-day close-to-close percent return in GBP terms.",
+        "is_canonical": False,
+        "comparison_mode": "raw",
+    },
+    {
+        "label_name": "fwd_3d_excess_return_pct",
+        "version_code": "v1",
+        "horizon_days": 3,
+        "definition_text": "Three-trading-day return minus mapped benchmark forward return over the same horizon, falling back to same-market average when needed.",
+        "is_canonical": False,
+        "comparison_mode": "benchmark_excess",
+    },
+    {
+        "label_name": "fwd_3d_sector_excess_return_pct",
+        "version_code": "v1",
+        "horizon_days": 3,
+        "definition_text": "Three-trading-day return minus heuristic sector cohort forward return over the same horizon.",
+        "is_canonical": False,
+        "comparison_mode": "sector_excess",
+    },
+    {
+        "label_name": "fwd_5d_return_pct",
+        "version_code": "v1",
+        "horizon_days": 5,
+        "definition_text": "Five-trading-day close-to-close percent return in GBP terms.",
+        "is_canonical": False,
+        "comparison_mode": "raw",
+    },
+    {
+        "label_name": "fwd_5d_excess_return_pct",
+        "version_code": "v1",
+        "horizon_days": 5,
+        "definition_text": "Five-trading-day return minus mapped benchmark forward return over the same horizon, falling back to same-market average when needed.",
+        "is_canonical": True,
+        "comparison_mode": "benchmark_excess",
+    },
+    {
+        "label_name": "fwd_5d_sector_excess_return_pct",
+        "version_code": "v1",
+        "horizon_days": 5,
+        "definition_text": "Five-trading-day return minus heuristic sector cohort forward return over the same horizon.",
+        "is_canonical": False,
+        "comparison_mode": "sector_excess",
+    },
+    {
+        "label_name": "fwd_10d_return_pct",
+        "version_code": "v1",
+        "horizon_days": 10,
+        "definition_text": "Ten-trading-day close-to-close percent return in GBP terms.",
+        "is_canonical": False,
+        "comparison_mode": "raw",
+    },
+    {
+        "label_name": "fwd_10d_excess_return_pct",
+        "version_code": "v1",
+        "horizon_days": 10,
+        "definition_text": "Ten-trading-day return minus mapped benchmark forward return over the same horizon, falling back to same-market average when needed.",
+        "is_canonical": False,
+        "comparison_mode": "benchmark_excess",
+    },
+    {
+        "label_name": "fwd_10d_sector_excess_return_pct",
+        "version_code": "v1",
+        "horizon_days": 10,
+        "definition_text": "Ten-trading-day return minus heuristic sector cohort forward return over the same horizon.",
+        "is_canonical": False,
+        "comparison_mode": "sector_excess",
+    },
+)
+_LABEL_HORIZONS = sorted({int(spec["horizon_days"]) for spec in _LABEL_SPECS})
+_LABEL_SPECS_BY_HORIZON: dict[int, list[dict[str, object]]] = defaultdict(list)
+for _spec in _LABEL_SPECS:
+    _LABEL_SPECS_BY_HORIZON[int(_spec["horizon_days"])].append(_spec)
 
 
 def _d(value: str | None) -> Decimal | None:
@@ -24,36 +101,19 @@ def _d(value: str | None) -> Decimal | None:
         return None
 
 
+def _expected_label_count(bar_count: int) -> int:
+    return sum(max(0, bar_count - horizon_days) * len(_LABEL_SPECS_BY_HORIZON[horizon_days]) for horizon_days in _LABEL_HORIZONS)
+
+
 class BetaLabelService:
     """Persist raw and market-relative forward-return labels for later model work."""
 
     @staticmethod
     def ensure_label_definitions(sess: Session) -> dict[str, str]:
-        specs = (
-            (
-                "fwd_5d_return_pct",
-                "v1",
-                5,
-                "Five-trading-day close-to-close percent return in GBP terms.",
-                False,
-            ),
-            (
-                "fwd_5d_excess_return_pct",
-                "v1",
-                5,
-                "Five-trading-day return minus mapped benchmark forward return over the same horizon, falling back to same-market average when needed.",
-                True,
-            ),
-            (
-                "fwd_5d_sector_excess_return_pct",
-                "v1",
-                5,
-                "Five-trading-day return minus heuristic sector cohort forward return over the same horizon.",
-                False,
-            ),
-        )
         mapping: dict[str, str] = {}
-        for label_name, version_code, horizon_days, definition_text, is_canonical in specs:
+        for spec in _LABEL_SPECS:
+            label_name = str(spec["label_name"])
+            version_code = str(spec["version_code"])
             existing = sess.scalar(
                 select(BetaLabelDefinition).where(
                     BetaLabelDefinition.label_name == label_name,
@@ -64,16 +124,16 @@ class BetaLabelService:
                 existing = BetaLabelDefinition(
                     label_name=label_name,
                     version_code=version_code,
-                    horizon_days=horizon_days,
-                    definition_text=definition_text,
-                    is_canonical=is_canonical,
+                    horizon_days=int(spec["horizon_days"]),
+                    definition_text=str(spec["definition_text"]),
+                    is_canonical=bool(spec["is_canonical"]),
                 )
                 sess.add(existing)
                 sess.flush()
             else:
-                existing.horizon_days = horizon_days
-                existing.definition_text = definition_text
-                existing.is_canonical = is_canonical
+                existing.horizon_days = int(spec["horizon_days"])
+                existing.definition_text = str(spec["definition_text"])
+                existing.is_canonical = bool(spec["is_canonical"])
             mapping[label_name] = existing.id
         return mapping
 
@@ -120,7 +180,7 @@ class BetaLabelService:
                 )
                 or 0
             )
-            expected_label_count = max(0, bar_count - 5) * _LABEL_DEFINITIONS_PER_DATE
+            expected_label_count = _expected_label_count(bar_count)
             if label_count >= expected_label_count:
                 continue
             priority = 0 if instrument.core_security_id else 1
@@ -143,9 +203,9 @@ class BetaLabelService:
                 core_only=core_only,
             )
             target_ids = [row.id for row in target_instruments]
-            raw_returns_by_market_date: dict[tuple[str, object], list[tuple[str, float]]] = defaultdict(list)
-            raw_returns_by_sector_date: dict[tuple[str, str, object], list[tuple[str, float]]] = defaultdict(list)
-            instrument_returns: dict[tuple[str, object], tuple[float, object]] = {}
+            raw_returns_by_market_date: dict[tuple[str, object, int], list[tuple[str, float]]] = defaultdict(list)
+            raw_returns_by_sector_date: dict[tuple[str, str, object, int], list[tuple[str, float]]] = defaultdict(list)
+            instrument_returns: dict[tuple[str, object, int], tuple[float, object]] = {}
             benchmark_rows = list(
                 sess.scalars(select(BetaBenchmarkBar).order_by(BetaBenchmarkBar.benchmark_key.asc(), BetaBenchmarkBar.bar_date.asc())).all()
             )
@@ -168,51 +228,54 @@ class BetaLabelService:
                 market = str(instrument.market or "OTHER")
                 sector_key = str(instrument.sector_key or "GENERAL")
                 for idx, bar in enumerate(bars):
-                    horizon_index = idx + 5
-                    if horizon_index >= len(bars):
-                        continue
                     current_close = closes[idx]
-                    future_close = closes[horizon_index]
-                    if current_close is None or future_close is None or current_close <= 0:
+                    if current_close is None or current_close <= 0:
                         continue
-                    raw_return = float(((future_close / current_close) - Decimal("1")) * Decimal("100"))
-                    key = (instrument.id, bar.bar_date)
-                    instrument_returns[key] = (raw_return, bars[horizon_index].bar_date)
-                    raw_returns_by_market_date[(market, bar.bar_date)].append(
-                        (instrument.id, raw_return)
-                    )
-                    raw_returns_by_sector_date[(market, sector_key, bar.bar_date)].append((instrument.id, raw_return))
+                    for horizon_days in _LABEL_HORIZONS:
+                        horizon_index = idx + horizon_days
+                        if horizon_index >= len(bars):
+                            continue
+                        future_close = closes[horizon_index]
+                        if future_close is None or future_close <= 0:
+                            continue
+                        raw_return = float(((future_close / current_close) - Decimal("1")) * Decimal("100"))
+                        decision_key = (instrument.id, bar.bar_date, horizon_days)
+                        instrument_returns[decision_key] = (raw_return, bars[horizon_index].bar_date)
+                        raw_returns_by_market_date[(market, bar.bar_date, horizon_days)].append((instrument.id, raw_return))
+                        raw_returns_by_sector_date[(market, sector_key, bar.bar_date, horizon_days)].append((instrument.id, raw_return))
 
             written = 0
-            existing_keys = {
-                (row.label_definition_id, row.instrument_id, row.decision_date): row
-                for row in sess.scalars(
-                    select(BetaLabelValue).where(BetaLabelValue.instrument_id.in_(target_ids if target_ids else [""]))
-                ).all()
-            } if target_ids else {}
+            existing_keys = (
+                {
+                    (row.label_definition_id, row.instrument_id, row.decision_date): row
+                    for row in sess.scalars(
+                        select(BetaLabelValue).where(BetaLabelValue.instrument_id.in_(target_ids if target_ids else [""]))
+                    ).all()
+                }
+                if target_ids
+                else {}
+            )
             for instrument in target_instruments:
                 market = str(instrument.market or "OTHER")
                 sector_key = str(instrument.sector_key or "GENERAL")
                 benchmark_key = str(instrument.benchmark_key or "")
-                instrument_keys = [
-                    key for key in instrument_returns.keys() if key[0] == instrument.id
-                ]
-                for key in instrument_keys:
-                    decision_date = key[1]
-                    raw_return, horizon_end_date = instrument_returns[key]
-                    peer_returns = raw_returns_by_market_date.get((market, decision_date), [])
+                instrument_keys = sorted(key for key in instrument_returns.keys() if key[0] == instrument.id)
+                for _instrument_id, decision_date, horizon_days in instrument_keys:
+                    raw_return, horizon_end_date = instrument_returns[(instrument.id, decision_date, horizon_days)]
+                    peer_returns = raw_returns_by_market_date.get((market, decision_date, horizon_days), [])
                     comparison_returns = [value for instrument_id, value in peer_returns if instrument_id != instrument.id]
                     if not comparison_returns:
                         comparison_returns = [value for _, value in peer_returns]
-                    market_benchmark = (
-                        sum(comparison_returns) / len(comparison_returns) if comparison_returns else 0.0
-                    )
-                    sector_returns = raw_returns_by_sector_date.get((market, sector_key, decision_date), [])
+                    market_benchmark = sum(comparison_returns) / len(comparison_returns) if comparison_returns else 0.0
+
+                    sector_returns = raw_returns_by_sector_date.get((market, sector_key, decision_date, horizon_days), [])
                     sector_comparison_returns = [value for instrument_id, value in sector_returns if instrument_id != instrument.id]
                     if not sector_comparison_returns:
                         sector_comparison_returns = [value for _, value in sector_returns]
                     sector_benchmark = (
-                        sum(sector_comparison_returns) / len(sector_comparison_returns) if sector_comparison_returns else market_benchmark
+                        sum(sector_comparison_returns) / len(sector_comparison_returns)
+                        if sector_comparison_returns
+                        else market_benchmark
                     )
 
                     benchmark_excess_return = raw_return - market_benchmark
@@ -223,22 +286,20 @@ class BetaLabelService:
                         benchmark_excess_return = raw_return - benchmark_return
                     sector_excess_return = raw_return - sector_benchmark
 
-                    rows_to_write = (
-                        (label_definition_ids["fwd_5d_return_pct"], raw_return, "RAW_FORWARD_RETURN"),
-                        (
-                            label_definition_ids["fwd_5d_excess_return_pct"],
-                            benchmark_excess_return,
-                            f"BENCHMARK_EXCESS_VS_{benchmark_key or market}",
-                        ),
-                        (
-                            label_definition_ids["fwd_5d_sector_excess_return_pct"],
-                            sector_excess_return,
-                            f"SECTOR_EXCESS_VS_{sector_key}",
-                        ),
-                    )
-                    for label_definition_id, numeric_value, value_text in rows_to_write:
-                        key = (label_definition_id, instrument.id, decision_date)
-                        existing = existing_keys.get(key)
+                    for spec in _LABEL_SPECS_BY_HORIZON[horizon_days]:
+                        comparison_mode = str(spec["comparison_mode"])
+                        if comparison_mode == "raw":
+                            numeric_value = raw_return
+                            value_text = f"RAW_FORWARD_RETURN_{horizon_days}D"
+                        elif comparison_mode == "benchmark_excess":
+                            numeric_value = benchmark_excess_return
+                            value_text = f"BENCHMARK_EXCESS_{horizon_days}D_VS_{benchmark_key or market}"
+                        else:
+                            numeric_value = sector_excess_return
+                            value_text = f"SECTOR_EXCESS_{horizon_days}D_VS_{sector_key}"
+                        label_definition_id = label_definition_ids[str(spec["label_name"])]
+                        row_key = (label_definition_id, instrument.id, decision_date)
+                        existing = existing_keys.get(row_key)
                         if existing is None:
                             existing = BetaLabelValue(
                                 label_definition_id=label_definition_id,
@@ -249,7 +310,7 @@ class BetaLabelService:
                                 value_text=value_text,
                             )
                             sess.add(existing)
-                            existing_keys[key] = existing
+                            existing_keys[row_key] = existing
                             written += 1
                         else:
                             existing.horizon_end_date = horizon_end_date

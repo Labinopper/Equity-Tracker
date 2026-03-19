@@ -69,12 +69,37 @@ class BetaRuntimeService:
             row.last_heartbeat_at = _utcnow()
 
     @staticmethod
+    def touch_supervisor_status(
+        *,
+        supervisor_status: str | None = None,
+        supervisor_pid: int | None = None,
+    ) -> None:
+        if not BetaContext.is_initialized():
+            return
+        with BetaContext.write_session() as sess:
+            row = sess.scalar(select(BetaSystemStatus).where(BetaSystemStatus.id == 1))
+            if row is None:
+                return
+            resolved_status = supervisor_status
+            resolved_pid = supervisor_pid
+            if os.environ.get("EQUITY_BETA_SUPERVISOR", "").strip() == "1":
+                resolved_status = resolved_status or "running"
+                resolved_pid = resolved_pid if resolved_pid is not None else os.getpid()
+            if resolved_status is not None:
+                row.supervisor_status = resolved_status
+            if resolved_pid is not None:
+                row.supervisor_pid = resolved_pid  # type: ignore[assignment]
+            row.last_heartbeat_at = _utcnow()
+
+    @staticmethod
     def record_job_run(
         *,
         job_name: str,
         job_type: str,
         status: str,
         details: dict | None = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
     ) -> None:
         with BetaContext.write_session() as sess:
             sess.add(
@@ -83,9 +108,80 @@ class BetaRuntimeService:
                     job_type=job_type,
                     status=status,
                     details_json=json.dumps(details or {}, sort_keys=True),
-                    completed_at=_utcnow(),
+                    started_at=started_at or _utcnow(),
+                    completed_at=completed_at or _utcnow(),
                 )
             )
+
+    @staticmethod
+    def start_job_run(
+        *,
+        job_name: str,
+        job_type: str,
+        details: dict | None = None,
+        started_at: datetime | None = None,
+    ) -> str | None:
+        if not BetaContext.is_initialized():
+            return None
+        with BetaContext.write_session() as sess:
+            row = BetaJobRun(
+                job_name=job_name,
+                job_type=job_type,
+                status="RUNNING",
+                details_json=json.dumps(details or {}, sort_keys=True),
+                started_at=started_at or _utcnow(),
+                completed_at=None,
+            )
+            sess.add(row)
+            sess.flush()
+            return row.id
+
+    @staticmethod
+    def finish_job_run(
+        job_run_id: str | None,
+        *,
+        status: str,
+        details: dict | None = None,
+        completed_at: datetime | None = None,
+    ) -> None:
+        if not BetaContext.is_initialized() or not job_run_id:
+            return
+        with BetaContext.write_session() as sess:
+            row = sess.get(BetaJobRun, job_run_id)
+            if row is None:
+                return
+            row.status = status
+            row.details_json = json.dumps(details or {}, sort_keys=True)
+            row.completed_at = completed_at or _utcnow()
+
+    @staticmethod
+    def finalize_running_jobs(
+        *,
+        status: str = "INTERRUPTED",
+        message_text: str = "Supervisor stopped before the job completed.",
+    ) -> int:
+        if not BetaContext.is_initialized():
+            return 0
+        finalized = 0
+        finished_at = _utcnow()
+        with BetaContext.write_session() as sess:
+            rows = list(sess.scalars(select(BetaJobRun).where(BetaJobRun.status == "RUNNING")).all())
+            for row in rows:
+                details = {}
+                if row.details_json:
+                    try:
+                        payload = json.loads(row.details_json)
+                        if isinstance(payload, dict):
+                            details = payload
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        details = {}
+                details["interrupted"] = True
+                details["message"] = message_text
+                row.status = status
+                row.details_json = json.dumps(details, sort_keys=True)
+                row.completed_at = finished_at
+                finalized += 1
+        return finalized
 
     @staticmethod
     def record_notification(

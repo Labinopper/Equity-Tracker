@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from statistics import pstdev
@@ -13,6 +14,9 @@ from ..context import BetaContext
 from ..db.models import BetaDailyBar, BetaInstrument, BetaIntradayFeatureSnapshot, BetaMinuteBar
 from .intraday_priority_service import IntradayPriorityItem
 from .session_service import BetaMarketSessionService
+
+_EXPECTED_VOLUME_LOOKBACK_SESSIONS = 20
+_MIN_EXPECTED_VOLUME_SESSIONS = 3
 
 
 def _as_decimal(value: str | None) -> Decimal | None:
@@ -35,6 +39,15 @@ def _safe_float(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _expected_profile_value(values: list[float], minute_count: int) -> float | None:
+    if minute_count <= 0 or minute_count > len(values):
+        return None
+    expected = float(values[minute_count - 1])
+    if expected <= 0:
+        return None
+    return expected
 
 
 class BetaIntradayFeatureService:
@@ -100,6 +113,14 @@ class BetaIntradayFeatureService:
                 if last_minute_ts is not None:
                     minute_query = minute_query.where(BetaMinuteBar.minute_ts > last_minute_ts)
                 minute_rows = list(sess.scalars(minute_query).all())
+                if state.get("expected_cumulative_volume_by_minute") is None:
+                    state.update(
+                        BetaIntradayFeatureService._expected_volume_profile(
+                            sess,
+                            instrument_id=instrument_id,
+                            session_date=session_date,
+                        )
+                    )
                 if not minute_rows and snapshot.feature_snapshot_json:
                     snapshot.session_state = BetaMarketSessionService.session_state(
                         priority_item.exchange,
@@ -168,6 +189,7 @@ class BetaIntradayFeatureService:
         high_price = _safe_float(row.high_price_gbp)
         low_price = _safe_float(row.low_price_gbp)
         close_price = _safe_float(row.close_price_gbp)
+        volume = max(0.0, _safe_float(row.volume_native) or 0.0)
         if open_price is None or high_price is None or low_price is None or close_price is None:
             return next_state
 
@@ -186,6 +208,10 @@ class BetaIntradayFeatureService:
         )
         next_state["last_close_price"] = close_price
         next_state["last_minute_ts"] = row.minute_ts.isoformat()
+        next_state["cumulative_volume"] = float(next_state.get("cumulative_volume") or 0.0) + volume
+        next_state["vwap_volume_total"] = float(next_state.get("vwap_volume_total") or 0.0) + volume
+        typical_price = (high_price + low_price + close_price) / 3.0
+        next_state["vwap_price_volume"] = float(next_state.get("vwap_price_volume") or 0.0) + (typical_price * volume)
 
         if minute_count <= 5:
             next_state["first_5m_close"] = close_price
@@ -209,6 +235,7 @@ class BetaIntradayFeatureService:
                 "high": high_price,
                 "low": low_price,
                 "close": close_price,
+                "volume": volume,
             }
         )
         next_state["rolling_window"] = rolling[-30:]
@@ -227,10 +254,10 @@ class BetaIntradayFeatureService:
         first_30m_close = _safe_float(state.get("first_30m_close"))
         first_30m_high = _safe_float(state.get("first_30m_high"))
         first_30m_low = _safe_float(state.get("first_30m_low"))
+        minute_count = int(state.get("minute_count") or 0)
 
         closes = [float(item["close"]) for item in rolling if _safe_float(item.get("close")) is not None]
-        highs = [float(item["high"]) for item in rolling if _safe_float(item.get("high")) is not None]
-        lows = [float(item["low"]) for item in rolling if _safe_float(item.get("low")) is not None]
+        volumes = [float(item["volume"]) for item in rolling if _safe_float(item.get("volume")) is not None]
 
         def rolling_return(window: int) -> float | None:
             if len(closes) <= window:
@@ -268,7 +295,21 @@ class BetaIntradayFeatureService:
         ):
             first_30m_range_pct = round(((first_30m_high - first_30m_low) / session_open) * 100.0, 6)
 
-        features = {
+        expected_cumulative = list(state.get("expected_cumulative_volume_by_minute") or [])
+        expected_last_15 = list(state.get("expected_last_15m_volume_by_minute") or [])
+        cumulative_volume = _safe_float(state.get("cumulative_volume")) or 0.0
+        volume_last_15 = sum(volumes[-15:]) if volumes else 0.0
+        expected_cumulative_value = _expected_profile_value(expected_cumulative, minute_count)
+        expected_last_15_value = _expected_profile_value(expected_last_15, minute_count)
+        vwap_volume_total = _safe_float(state.get("vwap_volume_total"))
+        vwap_price_volume = _safe_float(state.get("vwap_price_volume"))
+        vwap_price = (
+            (vwap_price_volume / vwap_volume_total)
+            if vwap_price_volume is not None and vwap_volume_total is not None and vwap_volume_total > 0
+            else None
+        )
+
+        return {
             "gap_from_prev_close_pct": _pct_change(session_open, previous_close),
             "return_since_open_pct": _pct_change(current_close, session_open),
             "return_last_5m_pct": rolling_return(5),
@@ -294,11 +335,75 @@ class BetaIntradayFeatureService:
             "reversal_from_low_30m_pct": _pct_change(current_close, low_30),
             "reversal_from_high_15m_pct": _pct_change(high_15, current_close),
             "reversal_from_high_30m_pct": _pct_change(high_30, current_close),
-            "cumulative_volume_vs_expected": None,
-            "volume_last_15m_vs_expected": None,
-            "distance_from_vwap_pct": None,
+            "cumulative_volume_vs_expected": (
+                round(cumulative_volume / expected_cumulative_value, 6)
+                if expected_cumulative_value is not None
+                else None
+            ),
+            "volume_last_15m_vs_expected": (
+                round(volume_last_15 / expected_last_15_value, 6)
+                if expected_last_15_value is not None
+                else None
+            ),
+            "distance_from_vwap_pct": _pct_change(current_close, vwap_price),
         }
-        return features
+
+    @staticmethod
+    def _expected_volume_profile(sess, *, instrument_id: str, session_date: date) -> dict[str, object]:
+        prior_session_dates = [
+            row[0]
+            for row in sess.execute(
+                select(BetaMinuteBar.session_date)
+                .where(
+                    BetaMinuteBar.instrument_id == instrument_id,
+                    BetaMinuteBar.session_date < session_date,
+                    BetaMinuteBar.volume_native.is_not(None),
+                )
+                .group_by(BetaMinuteBar.session_date)
+                .order_by(BetaMinuteBar.session_date.desc())
+                .limit(_EXPECTED_VOLUME_LOOKBACK_SESSIONS)
+            ).all()
+        ]
+        if not prior_session_dates:
+            return {}
+
+        session_volumes: dict[date, list[float]] = defaultdict(list)
+        for row in sess.scalars(
+            select(BetaMinuteBar)
+            .where(
+                BetaMinuteBar.instrument_id == instrument_id,
+                BetaMinuteBar.session_date.in_(prior_session_dates),
+            )
+            .order_by(BetaMinuteBar.session_date.asc(), BetaMinuteBar.minute_ts.asc())
+        ).all():
+            volume = max(0.0, _safe_float(row.volume_native) or 0.0)
+            session_volumes[row.session_date].append(volume)
+
+        volume_series = [series for series in session_volumes.values() if any(value > 0 for value in series)]
+        if len(volume_series) < _MIN_EXPECTED_VOLUME_SESSIONS:
+            return {}
+
+        expected_cumulative: list[float] = []
+        expected_last_15: list[float] = []
+        max_length = max(len(series) for series in volume_series)
+        for minute_index in range(max_length):
+            cumulative_samples: list[float] = []
+            last_15_samples: list[float] = []
+            for series in volume_series:
+                if len(series) <= minute_index:
+                    continue
+                cumulative_samples.append(sum(series[: minute_index + 1]))
+                window_start = max(0, minute_index - 14)
+                last_15_samples.append(sum(series[window_start : minute_index + 1]))
+            if not cumulative_samples:
+                continue
+            expected_cumulative.append(round(sum(cumulative_samples) / len(cumulative_samples), 6))
+            expected_last_15.append(round(sum(last_15_samples) / len(last_15_samples), 6))
+        return {
+            "expected_cumulative_volume_by_minute": expected_cumulative,
+            "expected_last_15m_volume_by_minute": expected_last_15,
+            "expected_volume_profile_sessions": len(volume_series),
+        }
 
     @staticmethod
     def _previous_close_price(sess, *, instrument_id: str, session_date: date) -> float | None:

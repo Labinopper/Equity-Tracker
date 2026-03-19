@@ -1,102 +1,316 @@
 [
-  {
-    "hypothesis_code": "GAP_AND_FADE_V1",
-    "name": "Gap and fade",
-    "signal_type": "TRIM_ON_STRENGTH",
-    "entry_conditions": {
-      "all": [
-        {"feature": "gap_from_prev_close_pct", "op": "gt", "value": 2.0},
-        {"feature": "return_since_open_pct", "op": "lt", "value": 2.0}
-      ]
+    {
+        "hypothesis_code":  "GAP_AND_FADE_V1",
+        "name":  "Gap and fade",
+        "signal_type":  "TRIM_ON_STRENGTH",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "gap_from_prev_close_pct",
+                                                 "op":  "gt",
+                                                 "value":  2.0
+                                             },
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "lt",
+                                                 "value":  2.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "relative_checks":  [
+                                                 {
+                                                     "left_feature":  "return_since_open_pct",
+                                                     "op":  "lt_feature",
+                                                     "right_feature":  "gap_from_prev_close_pct"
+                                                 }
+                                             ],
+                         "event_codes":  [
+                                             "EVENT_OPEN_GAP"
+                                         ],
+                         "base_confidence":  0.58
+                     },
+        "rationale":  "Early strength is being sold into and upside extension is fading.",
+        "source_type":  "MANUAL"
     },
-    "metadata": {
-      "relative_checks": [
-        {
-          "left_feature": "return_since_open_pct",
-          "op": "lt_feature",
-          "right_feature": "gap_from_prev_close_pct"
-        }
-      ],
-      "event_codes": ["EVENT_OPEN_GAP"],
-      "base_confidence": 0.58
+    {
+        "hypothesis_code":  "GAP_DOWN_RECOVERY_V1",
+        "name":  "Gap down recovery",
+        "signal_type":  "AVOID_SELLING_INTO_PANIC",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "gap_from_prev_close_pct",
+                                                 "op":  "lt",
+                                                 "value":  -2.0
+                                             },
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  -1.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "relative_checks":  [
+                                                 {
+                                                     "left_feature":  "return_since_open_pct",
+                                                     "op":  "gt_offset_feature",
+                                                     "right_feature":  "gap_from_prev_close_pct",
+                                                     "offset":  1.0
+                                                 }
+                                             ],
+                         "event_codes":  [
+                                             "EVENT_OPEN_GAP",
+                                             "EVENT_REVERSAL_SPIKE"
+                                         ],
+                         "base_confidence":  0.6
+                     },
+        "rationale":  "A downside gap is being repaired and panic selling may be the wrong exit timing.",
+        "source_type":  "MANUAL"
     },
-    "rationale": "Early strength is being sold into and upside extension is fading.",
-    "source_type": "MANUAL"
-  },
-  {
-    "hypothesis_code": "GAP_DOWN_RECOVERY_V1",
-    "name": "Gap down recovery",
-    "signal_type": "AVOID_SELLING_INTO_PANIC",
-    "entry_conditions": {
-      "all": [
-        {"feature": "gap_from_prev_close_pct", "op": "lt", "value": -2.0},
-        {"feature": "return_since_open_pct", "op": "gt", "value": -1.0}
-      ]
+    {
+        "hypothesis_code":  "FAILED_REBOUND_V1",
+        "name":  "Failed rebound",
+        "signal_type":  "SELL_INTO_REBOUND",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "reversal_from_low_30m_pct",
+                                                 "op":  "gt",
+                                                 "value":  3.0
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_high_pct",
+                                                 "op":  "gt",
+                                                 "value":  2.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_REVERSAL_SPIKE",
+                                             "EVENT_NEW_SESSION_HIGH"
+                                         ],
+                         "base_confidence":  0.57
+                     },
+        "rationale":  "A rebound has already happened but the tape is fading from session highs.",
+        "source_type":  "MANUAL"
     },
-    "metadata": {
-      "relative_checks": [
-        {
-          "left_feature": "return_since_open_pct",
-          "op": "gt_offset_feature",
-          "right_feature": "gap_from_prev_close_pct",
-          "offset": 1.0
-        }
-      ],
-      "event_codes": ["EVENT_OPEN_GAP", "EVENT_REVERSAL_SPIKE"],
-      "base_confidence": 0.6
+    {
+        "hypothesis_code":  "TREND_CONTINUATION_INTRADAY_V1",
+        "name":  "Intraday trend continuation",
+        "signal_type":  "HOLD_THROUGH_NOISE",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  1.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_NEW_SESSION_HIGH"
+                                         ],
+                         "base_confidence":  0.56
+                     },
+        "rationale":  "The session is trending and shallow dips are still holding above session support.",
+        "source_type":  "MANUAL"
     },
-    "rationale": "A downside gap is being repaired and panic selling may be the wrong exit timing.",
-    "source_type": "MANUAL"
-  },
-  {
-    "hypothesis_code": "FAILED_REBOUND_V1",
-    "name": "Failed rebound",
-    "signal_type": "SELL_INTO_REBOUND",
-    "entry_conditions": {
-      "all": [
-        {"feature": "reversal_from_low_30m_pct", "op": "gt", "value": 3.0},
-        {"feature": "distance_from_session_high_pct", "op": "gt", "value": 2.0}
-      ]
+    {
+        "hypothesis_code":  "VOLATILITY_COMPRESSION_INTRADAY_V1",
+        "name":  "Intraday compression confirmation",
+        "signal_type":  "WAIT_FOR_CLOSE_CONFIRMATION",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "intraday_range_pct",
+                                                 "op":  "lt",
+                                                 "value":  0.8
+                                             },
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_VOLATILITY_EXPANSION"
+                                         ],
+                         "base_confidence":  0.5
+                     },
+        "rationale":  "The move is positive but compressed enough that close confirmation matters more than intraday reaction.",
+        "source_type":  "MANUAL"
     },
-    "metadata": {
-      "event_codes": ["EVENT_REVERSAL_SPIKE", "EVENT_NEW_SESSION_HIGH"],
-      "base_confidence": 0.57
+    {
+        "hypothesis_code":  "VWAP_RECLAIM_SUPPORT_V1",
+        "name":  "VWAP reclaim support",
+        "signal_type":  "HOLD_THROUGH_NOISE",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.05
+                                             },
+                                             {
+                                                 "feature":  "reversal_from_low_15m_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_VWAP_RECLAIM"
+                                         ],
+                         "base_confidence":  0.57
+                     },
+        "rationale":  "Price has reclaimed VWAP after intraday weakness and is acting constructively.",
+        "source_type":  "MANUAL"
     },
-    "rationale": "A rebound has already happened but the tape is fading from session highs.",
-    "source_type": "MANUAL"
-  },
-  {
-    "hypothesis_code": "TREND_CONTINUATION_INTRADAY_V1",
-    "name": "Intraday trend continuation",
-    "signal_type": "HOLD_THROUGH_NOISE",
-    "entry_conditions": {
-      "all": [
-        {"feature": "return_since_open_pct", "op": "gt", "value": 1.5},
-        {"feature": "distance_from_session_high_pct", "op": "lt", "value": 1.0}
-      ]
+    {
+        "hypothesis_code":  "VWAP_BREAKDOWN_EXIT_V1",
+        "name":  "VWAP breakdown exit",
+        "signal_type":  "SELL_INTO_REBOUND",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.6
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_high_pct",
+                                                 "op":  "gt",
+                                                 "value":  1
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_VWAP_BREAKDOWN"
+                                         ],
+                         "base_confidence":  0.58
+                     },
+        "rationale":  "The tape has lost VWAP support after strength and exit quality is deteriorating.",
+        "source_type":  "MANUAL"
     },
-    "metadata": {
-      "event_codes": ["EVENT_NEW_SESSION_HIGH"],
-      "base_confidence": 0.56
+    {
+        "hypothesis_code":  "HIGH_VOLUME_BLOWOFF_V1",
+        "name":  "High-volume blowoff",
+        "signal_type":  "TRIM_ON_STRENGTH",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  2
+                                             },
+                                             {
+                                                 "feature":  "cumulative_volume_vs_expected",
+                                                 "op":  "gt",
+                                                 "value":  1.4
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  0.3
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_VOLUME_SURGE",
+                                             "EVENT_NEW_SESSION_HIGH"
+                                         ],
+                         "base_confidence":  0.6
+                     },
+        "rationale":  "Extension is happening on unusually high participation and is a candidate for trimming into strength.",
+        "source_type":  "MANUAL"
     },
-    "rationale": "The session is trending and shallow dips are still holding above session support.",
-    "source_type": "MANUAL"
-  },
-  {
-    "hypothesis_code": "VOLATILITY_COMPRESSION_INTRADAY_V1",
-    "name": "Intraday compression confirmation",
-    "signal_type": "WAIT_FOR_CLOSE_CONFIRMATION",
-    "entry_conditions": {
-      "all": [
-        {"feature": "intraday_range_pct", "op": "lt", "value": 0.8},
-        {"feature": "return_since_open_pct", "op": "gt", "value": 0.5}
-      ]
+    {
+        "hypothesis_code":  "LOW_VOLUME_DRIFT_CONFIRMATION_V1",
+        "name":  "Low-volume drift confirmation",
+        "signal_type":  "WAIT_FOR_CLOSE_CONFIRMATION",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "return_since_open_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.75
+                                             },
+                                             {
+                                                 "feature":  "volume_last_15m_vs_expected",
+                                                 "op":  "lt",
+                                                 "value":  0.8
+                                             },
+                                             {
+                                                 "feature":  "intraday_range_pct",
+                                                 "op":  "lt",
+                                                 "value":  1.2
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_LOW_VOLUME_DRIFT"
+                                         ],
+                         "base_confidence":  0.52
+                     },
+        "rationale":  "The name is drifting higher without real participation, so close confirmation matters more than the tape.",
+        "source_type":  "MANUAL"
     },
-    "metadata": {
-      "event_codes": ["EVENT_VOLATILITY_EXPANSION"],
-      "base_confidence": 0.5
-    },
-    "rationale": "The move is positive but compressed enough that close confirmation matters more than intraday reaction.",
-    "source_type": "MANUAL"
-  }
+    {
+        "hypothesis_code":  "VWAP_PANIC_RECOVERY_V1",
+        "name":  "VWAP panic recovery",
+        "signal_type":  "AVOID_SELLING_INTO_PANIC",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "gap_from_prev_close_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0
+                                             },
+                                             {
+                                                 "feature":  "reversal_from_low_15m_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.7
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_VWAP_RECLAIM",
+                                             "EVENT_REVERSAL_SPIKE"
+                                         ],
+                         "base_confidence":  0.61
+                     },
+        "rationale":  "The name is recovering through VWAP after a panic start and forced selling is likely low quality.",
+        "source_type":  "MANUAL"
+    }
 ]

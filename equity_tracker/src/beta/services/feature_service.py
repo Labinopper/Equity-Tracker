@@ -24,194 +24,55 @@ from ..db.models import (
 )
 
 _FEATURES = (
-    (
-        "ret_1d_pct",
-        "v1",
-        "price_momentum",
-        "One-day close-to-close percent return in GBP terms.",
-    ),
-    (
-        "ret_5d_pct",
-        "v1",
-        "price_momentum",
-        "Five-day close-to-close percent return in GBP terms.",
-    ),
-    (
-        "ret_10d_pct",
-        "v1",
-        "price_momentum",
-        "Ten-day close-to-close percent return in GBP terms.",
-    ),
-    (
-        "ret_20d_pct",
-        "v1",
-        "price_momentum",
-        "Twenty-day close-to-close percent return in GBP terms.",
-    ),
-    (
-        "realized_vol_5d_pct",
-        "v1",
-        "volatility",
-        "Population standard deviation of daily returns over the last five closes.",
-    ),
-    (
-        "realized_vol_20d_pct",
-        "v1",
-        "volatility",
-        "Population standard deviation of daily returns over the last twenty closes.",
-    ),
-    (
-        "distance_from_5d_mean_pct",
-        "v1",
-        "mean_reversion",
-        "Current close distance from the trailing five-day average close.",
-    ),
-    (
-        "distance_from_20d_mean_pct",
-        "v1",
-        "mean_reversion",
-        "Current close distance from the trailing twenty-day average close.",
-    ),
-    (
-        "drawdown_from_20d_high_pct",
-        "v1",
-        "mean_reversion",
-        "Current close distance below the trailing twenty-day high.",
-    ),
-    (
-        "rebound_from_20d_low_pct",
-        "v1",
-        "mean_reversion",
-        "Current close distance above the trailing twenty-day low.",
-    ),
-    (
-        "market_ret_1d_pct",
-        "v1",
-        "benchmark_context",
-        "Average same-market one-day percent return across the beta universe.",
-    ),
-    (
-        "market_ret_5d_pct",
-        "v1",
-        "benchmark_context",
-        "Average same-market five-day percent return across the beta universe.",
-    ),
-    (
-        "market_excess_1d_pct",
-        "v1",
-        "benchmark_context",
-        "Instrument one-day return minus same-market average one-day return.",
-    ),
-    (
-        "market_excess_5d_pct",
-        "v1",
-        "benchmark_context",
-        "Instrument five-day return minus same-market average five-day return.",
-    ),
-    (
-        "benchmark_ret_1d_pct",
-        "v1",
-        "benchmark_context",
-        "One-day percent return of the mapped market benchmark series.",
-    ),
-    (
-        "benchmark_ret_5d_pct",
-        "v1",
-        "benchmark_context",
-        "Five-day percent return of the mapped market benchmark series.",
-    ),
-    (
-        "benchmark_excess_1d_pct",
-        "v1",
-        "benchmark_context",
-        "Instrument one-day return minus mapped benchmark one-day return.",
-    ),
-    (
-        "benchmark_excess_5d_pct",
-        "v1",
-        "benchmark_context",
-        "Instrument five-day return minus mapped benchmark five-day return.",
-    ),
-    (
-        "sector_ret_1d_pct",
-        "v1",
-        "sector_context",
-        "Average one-day return across the instrument's heuristic sector cohort.",
-    ),
-    (
-        "sector_ret_5d_pct",
-        "v1",
-        "sector_context",
-        "Average five-day return across the instrument's heuristic sector cohort.",
-    ),
-    (
-        "sector_excess_1d_pct",
-        "v1",
-        "sector_context",
-        "Instrument one-day return minus heuristic sector cohort one-day return.",
-    ),
-    (
-        "sector_excess_5d_pct",
-        "v1",
-        "sector_context",
-        "Instrument five-day return minus heuristic sector cohort five-day return.",
-    ),
-    (
-        "intraday_pct_change",
-        "v1",
-        "intraday_context",
-        "Latest same-day intraday percent change where available, otherwise zero.",
-    ),
-    (
-        "news_sentiment_3d",
-        "v1",
-        "news_context",
-        "Average linked news sentiment score over the trailing three calendar days.",
-    ),
-    (
-        "news_count_3d",
-        "v1",
-        "news_context",
-        "Count of linked news articles over the trailing three calendar days.",
-    ),
-    (
-        "news_sentiment_7d",
-        "v1",
-        "news_context",
-        "Average linked news sentiment score over the trailing seven calendar days.",
-    ),
-    (
-        "news_count_7d",
-        "v1",
-        "news_context",
-        "Count of linked news articles over the trailing seven calendar days.",
-    ),
-    (
-        "official_sentiment_7d",
-        "v1",
-        "official_context",
-        "Average linked official-release sentiment score over the trailing seven calendar days.",
-    ),
-    (
-        "official_count_7d",
-        "v1",
-        "official_context",
-        "Count of linked official releases over the trailing seven calendar days.",
-    ),
-    (
-        "official_sentiment_14d",
-        "v1",
-        "official_context",
-        "Average linked official-release sentiment score over the trailing fourteen calendar days.",
-    ),
-    (
-        "official_count_14d",
-        "v1",
-        "official_context",
-        "Count of linked official releases over the trailing fourteen calendar days.",
-    ),
+    ("ret_1d_pct", "v1", "price_momentum", "One-day close-to-close percent return in GBP terms."),
+    ("ret_3d_pct", "v1", "price_momentum", "Three-day close-to-close percent return in GBP terms."),
+    ("ret_5d_pct", "v1", "price_momentum", "Five-day close-to-close percent return in GBP terms."),
+    ("ret_10d_pct", "v1", "price_momentum", "Ten-day close-to-close percent return in GBP terms."),
+    ("ret_20d_pct", "v1", "price_momentum", "Twenty-day close-to-close percent return in GBP terms."),
+    ("realized_vol_5d_pct", "v1", "volatility", "Population standard deviation of daily returns over the last five closes."),
+    ("realized_vol_10d_pct", "v1", "volatility", "Population standard deviation of daily returns over the last ten closes."),
+    ("realized_vol_20d_pct", "v1", "volatility", "Population standard deviation of daily returns over the last twenty closes."),
+    ("distance_from_5d_mean_pct", "v1", "mean_reversion", "Current close distance from the trailing five-day average close."),
+    ("distance_from_10d_mean_pct", "v1", "mean_reversion", "Current close distance from the trailing ten-day average close."),
+    ("distance_from_20d_mean_pct", "v1", "mean_reversion", "Current close distance from the trailing twenty-day average close."),
+    ("drawdown_from_20d_high_pct", "v1", "mean_reversion", "Current close distance below the trailing twenty-day high."),
+    ("rebound_from_20d_low_pct", "v1", "mean_reversion", "Current close distance above the trailing twenty-day low."),
+    ("market_ret_1d_pct", "v1", "benchmark_context", "Average same-market one-day percent return across the beta universe."),
+    ("market_ret_5d_pct", "v1", "benchmark_context", "Average same-market five-day percent return across the beta universe."),
+    ("market_ret_10d_pct", "v1", "benchmark_context", "Average same-market ten-day percent return across the beta universe."),
+    ("market_excess_1d_pct", "v1", "benchmark_context", "Instrument one-day return minus same-market average one-day return."),
+    ("market_excess_5d_pct", "v1", "benchmark_context", "Instrument five-day return minus same-market average five-day return."),
+    ("market_excess_10d_pct", "v1", "benchmark_context", "Instrument ten-day return minus same-market average ten-day return."),
+    ("benchmark_ret_1d_pct", "v1", "benchmark_context", "One-day percent return of the mapped market benchmark series."),
+    ("benchmark_ret_5d_pct", "v1", "benchmark_context", "Five-day percent return of the mapped market benchmark series."),
+    ("benchmark_ret_10d_pct", "v1", "benchmark_context", "Ten-day percent return of the mapped market benchmark series."),
+    ("benchmark_excess_1d_pct", "v1", "benchmark_context", "Instrument one-day return minus mapped benchmark one-day return."),
+    ("benchmark_excess_5d_pct", "v1", "benchmark_context", "Instrument five-day return minus mapped benchmark five-day return."),
+    ("benchmark_excess_10d_pct", "v1", "benchmark_context", "Instrument ten-day return minus mapped benchmark ten-day return."),
+    ("sector_ret_1d_pct", "v1", "sector_context", "Average one-day return across the instrument's heuristic sector cohort."),
+    ("sector_ret_5d_pct", "v1", "sector_context", "Average five-day return across the instrument's heuristic sector cohort."),
+    ("sector_ret_10d_pct", "v1", "sector_context", "Average ten-day return across the instrument's heuristic sector cohort."),
+    ("sector_excess_1d_pct", "v1", "sector_context", "Instrument one-day return minus heuristic sector cohort one-day return."),
+    ("sector_excess_5d_pct", "v1", "sector_context", "Instrument five-day return minus heuristic sector cohort five-day return."),
+    ("sector_excess_10d_pct", "v1", "sector_context", "Instrument ten-day return minus heuristic sector cohort ten-day return."),
+    ("intraday_pct_change", "v1", "intraday_context", "Latest same-day intraday percent change where available, otherwise zero."),
+    ("news_sentiment_1d", "v1", "news_context", "Average linked news sentiment score over the current calendar day."),
+    ("news_count_1d", "v1", "news_context", "Count of linked news articles over the current calendar day."),
+    ("news_sentiment_3d", "v1", "news_context", "Average linked news sentiment score over the trailing three calendar days."),
+    ("news_count_3d", "v1", "news_context", "Count of linked news articles over the trailing three calendar days."),
+    ("news_sentiment_7d", "v1", "news_context", "Average linked news sentiment score over the trailing seven calendar days."),
+    ("news_count_7d", "v1", "news_context", "Count of linked news articles over the trailing seven calendar days."),
+    ("days_since_latest_news", "v1", "news_context", "Days since the most recent linked news article up to the feature date."),
+    ("official_sentiment_1d", "v1", "official_context", "Average linked official-release sentiment score over the current calendar day."),
+    ("official_count_1d", "v1", "official_context", "Count of linked official releases over the current calendar day."),
+    ("official_sentiment_7d", "v1", "official_context", "Average linked official-release sentiment score over the trailing seven calendar days."),
+    ("official_count_7d", "v1", "official_context", "Count of linked official releases over the trailing seven calendar days."),
+    ("official_sentiment_14d", "v1", "official_context", "Average linked official-release sentiment score over the trailing fourteen calendar days."),
+    ("official_count_14d", "v1", "official_context", "Count of linked official releases over the trailing fourteen calendar days."),
+    ("days_since_latest_official_release", "v1", "official_context", "Days since the most recent linked official release up to the feature date."),
 )
 _MIN_FEATURE_BACKLOG_BARS = 30
+_RETURN_LOOKBACKS = (1, 3, 5, 10)
 
 
 def _d(value: str | None) -> Decimal | None:
@@ -221,6 +82,67 @@ def _d(value: str | None) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return None
+
+
+def _trailing_return(closes: list[Decimal | None], idx: int, lookback: int) -> float | None:
+    if idx < lookback:
+        return None
+    current_close = closes[idx]
+    previous_close = closes[idx - lookback]
+    if current_close is None or previous_close is None or previous_close <= 0:
+        return None
+    return float(((current_close / previous_close) - Decimal("1")) * Decimal("100"))
+
+
+def _trailing_closes(closes: list[Decimal | None], idx: int, window: int) -> list[Decimal] | None:
+    if idx < window - 1:
+        return None
+    trailing = [closes[position] for position in range(idx - window + 1, idx + 1)]
+    if any(value is None or value <= 0 for value in trailing):
+        return None
+    return [value for value in trailing if value is not None]
+
+
+def _rolling_volatility(closes: list[Decimal | None], idx: int, window: int) -> float | None:
+    trailing = _trailing_closes(closes, idx, window)
+    if trailing is None or len(trailing) < 2:
+        return None
+    returns = [
+        float(((trailing[position] / trailing[position - 1]) - Decimal("1")) * Decimal("100"))
+        for position in range(1, len(trailing))
+    ]
+    if len(returns) < 2:
+        return 0.0
+    return float(pstdev(returns))
+
+
+def _distance_from_mean(closes: list[Decimal | None], idx: int, window: int) -> float | None:
+    trailing = _trailing_closes(closes, idx, window)
+    if trailing is None:
+        return None
+    current_close = trailing[-1]
+    trailing_mean = sum(trailing) / Decimal(len(trailing))
+    if trailing_mean <= 0:
+        return None
+    return float(((current_close / trailing_mean) - Decimal("1")) * Decimal("100"))
+
+
+def _average_window_sentiment(rows: list[tuple[object, float]], *, bar_date, lookback_days: int) -> tuple[float, float]:
+    window_start = bar_date.toordinal() - (lookback_days - 1)
+    matching = [
+        sentiment
+        for event_date, sentiment in rows
+        if event_date.toordinal() >= window_start and event_date <= bar_date
+    ]
+    return float(len(matching)), (float(sum(matching) / len(matching)) if matching else 0.0)
+
+
+def _days_since_latest(rows: list[tuple[object, float]], *, bar_date) -> float:
+    prior_dates = [event_date for event_date, _sentiment in rows if event_date <= bar_date]
+    if not prior_dates:
+        return 999.0
+    latest_date = max(prior_dates)
+    return float((bar_date - latest_date).days)
 
 
 class BetaFeatureService:
@@ -247,6 +169,11 @@ class BetaFeatureService:
                 )
                 sess.add(existing)
                 sess.flush()
+            else:
+                existing.feature_family = family
+                existing.timeframe = "1D"
+                existing.definition_text = definition
+                existing.is_active = True
             mapping[feature_name] = existing.id
         return mapping
 
@@ -308,19 +235,30 @@ class BetaFeatureService:
                 instrument_ids=instrument_ids,
                 core_only=core_only,
             )
+            target_ids = [row.id for row in target_instruments]
+
             bars_by_instrument: dict[str, list[BetaDailyBar]] = {}
             closes_by_instrument: dict[str, list[Decimal | None]] = {}
-            target_ids = [row.id for row in target_instruments]
-            market_ret_1d: dict[tuple[str, object], list[tuple[str, float]]] = defaultdict(list)
-            market_ret_5d: dict[tuple[str, object], list[tuple[str, float]]] = defaultdict(list)
-            sector_ret_1d: dict[tuple[str, str, object], list[tuple[str, float]]] = defaultdict(list)
-            sector_ret_5d: dict[tuple[str, str, object], list[tuple[str, float]]] = defaultdict(list)
+            market_returns: dict[int, dict[tuple[str, object], list[tuple[str, float]]]] = {
+                1: defaultdict(list),
+                5: defaultdict(list),
+                10: defaultdict(list),
+            }
+            sector_returns: dict[int, dict[tuple[str, str, object], list[tuple[str, float]]]] = {
+                1: defaultdict(list),
+                5: defaultdict(list),
+                10: defaultdict(list),
+            }
+
             benchmark_rows = list(
                 sess.scalars(select(BetaBenchmarkBar).order_by(BetaBenchmarkBar.benchmark_key.asc(), BetaBenchmarkBar.bar_date.asc())).all()
             )
             benchmark_close_map: dict[tuple[str, object], Decimal] = {}
-            benchmark_ret_1d: dict[tuple[str, object], float] = {}
-            benchmark_ret_5d: dict[tuple[str, object], float] = {}
+            benchmark_returns: dict[int, dict[tuple[str, object], float]] = {
+                1: {},
+                5: {},
+                10: {},
+            }
             benchmark_dates_by_key: dict[str, list[object]] = defaultdict(list)
             for row in benchmark_rows:
                 close = _d(row.close_price_gbp)
@@ -334,18 +272,16 @@ class BetaFeatureService:
                     close = benchmark_close_map.get((benchmark_key, current_date))
                     if close is None or close <= 0:
                         continue
-                    if idx >= 1:
-                        prev_close = benchmark_close_map.get((benchmark_key, ordered_dates[idx - 1]))
-                        if prev_close is not None and prev_close > 0:
-                            benchmark_ret_1d[(benchmark_key, current_date)] = float(
-                                ((close / prev_close) - Decimal("1")) * Decimal("100")
-                            )
-                    if idx >= 5:
-                        prev_close = benchmark_close_map.get((benchmark_key, ordered_dates[idx - 5]))
-                        if prev_close is not None and prev_close > 0:
-                            benchmark_ret_5d[(benchmark_key, current_date)] = float(
-                                ((close / prev_close) - Decimal("1")) * Decimal("100")
-                            )
+                    for lookback in (1, 5, 10):
+                        if idx < lookback:
+                            continue
+                        previous_close = benchmark_close_map.get((benchmark_key, ordered_dates[idx - lookback]))
+                        if previous_close is None or previous_close <= 0:
+                            continue
+                        benchmark_returns[lookback][(benchmark_key, current_date)] = float(
+                            ((close / previous_close) - Decimal("1")) * Decimal("100")
+                        )
+
             for instrument in instruments:
                 bars = list(
                     sess.scalars(
@@ -360,26 +296,27 @@ class BetaFeatureService:
                 market = str(instrument.market or "OTHER")
                 sector_key = str(instrument.sector_key or "GENERAL")
                 for idx, bar in enumerate(bars):
-                    close = closes[idx]
-                    if close is None or close <= 0:
-                        continue
-                    if idx >= 1 and closes[idx - 1] and closes[idx - 1] > 0:
-                        ret_1d = float(((close / closes[idx - 1]) - Decimal("1")) * Decimal("100"))
-                        market_ret_1d[(market, bar.bar_date)].append((instrument.id, ret_1d))
-                        sector_ret_1d[(market, sector_key, bar.bar_date)].append((instrument.id, ret_1d))
-                    if idx >= 5 and closes[idx - 5] and closes[idx - 5] > 0:
-                        ret_5d = float(((close / closes[idx - 5]) - Decimal("1")) * Decimal("100"))
-                        market_ret_5d[(market, bar.bar_date)].append((instrument.id, ret_5d))
-                        sector_ret_5d[(market, sector_key, bar.bar_date)].append((instrument.id, ret_5d))
+                    for lookback in (1, 5, 10):
+                        value = _trailing_return(closes, idx, lookback)
+                        if value is None:
+                            continue
+                        market_returns[lookback][(market, bar.bar_date)].append((instrument.id, value))
+                        sector_returns[lookback][(market, sector_key, bar.bar_date)].append((instrument.id, value))
+
             written = 0
-            existing_keys = {
-                (row.feature_definition_id, row.instrument_id, row.feature_date): row
-                for row in sess.scalars(
-                    select(BetaFeatureValue).where(BetaFeatureValue.instrument_id.in_(target_ids if target_ids else [""]))
-                ).all()
-            } if target_ids else {}
+            existing_keys = (
+                {
+                    (row.feature_definition_id, row.instrument_id, row.feature_date): row
+                    for row in sess.scalars(
+                        select(BetaFeatureValue).where(BetaFeatureValue.instrument_id.in_(target_ids if target_ids else [""]))
+                    ).all()
+                }
+                if target_ids
+                else {}
+            )
             for instrument in target_instruments:
                 bars = bars_by_instrument.get(instrument.id, [])
+                closes = closes_by_instrument.get(instrument.id, [])
                 intraday_rows = list(
                     sess.scalars(
                         select(BetaIntradaySnapshot)
@@ -403,7 +340,14 @@ class BetaFeatureService:
                         .order_by(BetaFilingEvent.published_at.asc(), BetaFilingEvent.created_at.asc())
                     ).scalars().all()
                 )
-                closes = closes_by_instrument.get(instrument.id, [])
+                news_events = [
+                    ((row.published_at or row.created_at).date(), float(row.sentiment_score or 0.0))
+                    for row in news_rows
+                ]
+                filing_events = [
+                    ((row.published_at or row.created_at).date(), float(row.sentiment_score or 0.0))
+                    for row in filing_rows
+                ]
                 market = str(instrument.market or "OTHER")
                 sector_key = str(instrument.sector_key or "GENERAL")
                 benchmark_key = str(instrument.benchmark_key or "")
@@ -411,106 +355,63 @@ class BetaFeatureService:
                     close = closes[idx]
                     if close is None or close <= 0:
                         continue
+
                     values: dict[str, float] = {}
-                    current_ret_1d = None
-                    current_ret_5d = None
-                    if idx >= 1 and closes[idx - 1] and closes[idx - 1] > 0:
-                        current_ret_1d = float(((close / closes[idx - 1]) - Decimal("1")) * Decimal("100"))
-                        values["ret_1d_pct"] = current_ret_1d
-                    if idx >= 5 and closes[idx - 5] and closes[idx - 5] > 0:
-                        current_ret_5d = float(((close / closes[idx - 5]) - Decimal("1")) * Decimal("100"))
-                        values["ret_5d_pct"] = current_ret_5d
-                    if idx >= 10 and closes[idx - 10] and closes[idx - 10] > 0:
-                        values["ret_10d_pct"] = float(((close / closes[idx - 10]) - Decimal("1")) * Decimal("100"))
-                    if idx >= 20 and closes[idx - 20] and closes[idx - 20] > 0:
-                        values["ret_20d_pct"] = float(((close / closes[idx - 20]) - Decimal("1")) * Decimal("100"))
-                    if idx >= 4:
-                        trailing = [closes[i] for i in range(idx - 4, idx + 1) if closes[i] is not None and closes[i] > 0]
-                        if len(trailing) == 5:
-                            daily_returns = [
-                                float(((trailing[i] / trailing[i - 1]) - Decimal("1")) * Decimal("100"))
-                                for i in range(1, len(trailing))
-                            ]
-                            values["realized_vol_5d_pct"] = float(pstdev(daily_returns)) if len(daily_returns) >= 2 else 0.0
-                            trailing_mean = sum(trailing) / Decimal(len(trailing))
-                            if trailing_mean > 0:
-                                values["distance_from_5d_mean_pct"] = float(((close / trailing_mean) - Decimal("1")) * Decimal("100"))
-                    if idx >= 19:
-                        trailing_20 = [closes[i] for i in range(idx - 19, idx + 1) if closes[i] is not None and closes[i] > 0]
-                        if len(trailing_20) == 20:
-                            daily_returns_20 = [
-                                float(((trailing_20[i] / trailing_20[i - 1]) - Decimal("1")) * Decimal("100"))
-                                for i in range(1, len(trailing_20))
-                            ]
-                            values["realized_vol_20d_pct"] = (
-                                float(pstdev(daily_returns_20)) if len(daily_returns_20) >= 2 else 0.0
+                    current_returns = {lookback: _trailing_return(closes, idx, lookback) for lookback in (1, 3, 5, 10, 20)}
+                    for lookback, value in current_returns.items():
+                        if value is not None:
+                            values[f"ret_{lookback}d_pct"] = value
+
+                    for window in (5, 10, 20):
+                        vol_value = _rolling_volatility(closes, idx, window)
+                        if vol_value is not None:
+                            values[f"realized_vol_{window}d_pct"] = vol_value
+                        mean_distance = _distance_from_mean(closes, idx, window)
+                        if mean_distance is not None:
+                            values[f"distance_from_{window}d_mean_pct"] = mean_distance
+
+                    trailing_20 = _trailing_closes(closes, idx, 20)
+                    if trailing_20 is not None:
+                        trailing_high_20 = max(trailing_20)
+                        trailing_low_20 = min(trailing_20)
+                        if trailing_high_20 > 0:
+                            values["drawdown_from_20d_high_pct"] = float(
+                                ((close / trailing_high_20) - Decimal("1")) * Decimal("100")
                             )
-                            trailing_mean_20 = sum(trailing_20) / Decimal(len(trailing_20))
-                            if trailing_mean_20 > 0:
-                                values["distance_from_20d_mean_pct"] = float(
-                                    ((close / trailing_mean_20) - Decimal("1")) * Decimal("100")
-                                )
-                            trailing_high_20 = max(trailing_20)
-                            trailing_low_20 = min(trailing_20)
-                            if trailing_high_20 > 0:
-                                values["drawdown_from_20d_high_pct"] = float(
-                                    ((close / trailing_high_20) - Decimal("1")) * Decimal("100")
-                                )
-                            if trailing_low_20 > 0:
-                                values["rebound_from_20d_low_pct"] = float(
-                                    ((close / trailing_low_20) - Decimal("1")) * Decimal("100")
-                                )
-                    market_1d_rows = market_ret_1d.get((market, bar.bar_date), [])
-                    comparison_1d = [value for instrument_id, value in market_1d_rows if instrument_id != instrument.id]
-                    if not comparison_1d:
-                        comparison_1d = [value for _, value in market_1d_rows]
-                    market_1d_value = (
-                        float(sum(comparison_1d) / len(comparison_1d)) if comparison_1d else 0.0
-                    )
-                    values["market_ret_1d_pct"] = market_1d_value
-                    if current_ret_1d is not None:
-                        values["market_excess_1d_pct"] = current_ret_1d - market_1d_value
+                        if trailing_low_20 > 0:
+                            values["rebound_from_20d_low_pct"] = float(
+                                ((close / trailing_low_20) - Decimal("1")) * Decimal("100")
+                            )
 
-                    market_5d_rows = market_ret_5d.get((market, bar.bar_date), [])
-                    comparison_5d = [value for instrument_id, value in market_5d_rows if instrument_id != instrument.id]
-                    if not comparison_5d:
-                        comparison_5d = [value for _, value in market_5d_rows]
-                    market_5d_value = (
-                        float(sum(comparison_5d) / len(comparison_5d)) if comparison_5d else 0.0
-                    )
-                    values["market_ret_5d_pct"] = market_5d_value
-                    if current_ret_5d is not None:
-                        values["market_excess_5d_pct"] = current_ret_5d - market_5d_value
-                    benchmark_1d_value = benchmark_ret_1d.get((benchmark_key, bar.bar_date), market_1d_value)
-                    benchmark_5d_value = benchmark_ret_5d.get((benchmark_key, bar.bar_date), market_5d_value)
-                    values["benchmark_ret_1d_pct"] = benchmark_1d_value
-                    values["benchmark_ret_5d_pct"] = benchmark_5d_value
-                    if current_ret_1d is not None:
-                        values["benchmark_excess_1d_pct"] = current_ret_1d - benchmark_1d_value
-                    if current_ret_5d is not None:
-                        values["benchmark_excess_5d_pct"] = current_ret_5d - benchmark_5d_value
+                    for lookback in (1, 5, 10):
+                        market_rows = market_returns[lookback].get((market, bar.bar_date), [])
+                        comparison = [value for instrument_id, value in market_rows if instrument_id != instrument.id]
+                        if not comparison:
+                            comparison = [value for _instrument_id, value in market_rows]
+                        market_value = float(sum(comparison) / len(comparison)) if comparison else 0.0
+                        values[f"market_ret_{lookback}d_pct"] = market_value
+                        current_return = current_returns.get(lookback)
+                        if current_return is not None:
+                            values[f"market_excess_{lookback}d_pct"] = current_return - market_value
 
-                    sector_1d_rows = sector_ret_1d.get((market, sector_key, bar.bar_date), [])
-                    sector_comparison_1d = [value for instrument_id, value in sector_1d_rows if instrument_id != instrument.id]
-                    if not sector_comparison_1d:
-                        sector_comparison_1d = [value for _, value in sector_1d_rows]
-                    sector_1d_value = (
-                        float(sum(sector_comparison_1d) / len(sector_comparison_1d)) if sector_comparison_1d else market_1d_value
-                    )
-                    values["sector_ret_1d_pct"] = sector_1d_value
-                    if current_ret_1d is not None:
-                        values["sector_excess_1d_pct"] = current_ret_1d - sector_1d_value
+                        benchmark_value = benchmark_returns[lookback].get((benchmark_key, bar.bar_date), market_value)
+                        values[f"benchmark_ret_{lookback}d_pct"] = benchmark_value
+                        if current_return is not None:
+                            values[f"benchmark_excess_{lookback}d_pct"] = current_return - benchmark_value
 
-                    sector_5d_rows = sector_ret_5d.get((market, sector_key, bar.bar_date), [])
-                    sector_comparison_5d = [value for instrument_id, value in sector_5d_rows if instrument_id != instrument.id]
-                    if not sector_comparison_5d:
-                        sector_comparison_5d = [value for _, value in sector_5d_rows]
-                    sector_5d_value = (
-                        float(sum(sector_comparison_5d) / len(sector_comparison_5d)) if sector_comparison_5d else market_5d_value
-                    )
-                    values["sector_ret_5d_pct"] = sector_5d_value
-                    if current_ret_5d is not None:
-                        values["sector_excess_5d_pct"] = current_ret_5d - sector_5d_value
+                        sector_rows = sector_returns[lookback].get((market, sector_key, bar.bar_date), [])
+                        sector_comparison = [value for instrument_id, value in sector_rows if instrument_id != instrument.id]
+                        if not sector_comparison:
+                            sector_comparison = [value for _instrument_id, value in sector_rows]
+                        sector_value = (
+                            float(sum(sector_comparison) / len(sector_comparison))
+                            if sector_comparison
+                            else market_value
+                        )
+                        values[f"sector_ret_{lookback}d_pct"] = sector_value
+                        if current_return is not None:
+                            values[f"sector_excess_{lookback}d_pct"] = current_return - sector_value
+
                     intraday_candidates = [row for row in intraday_rows if row.price_date == bar.bar_date]
                     if intraday_candidates:
                         latest_intraday = intraday_candidates[-1]
@@ -521,55 +422,17 @@ class BetaFeatureService:
                     else:
                         values["intraday_pct_change"] = 0.0
 
-                    news_window_start = bar.bar_date.toordinal() - 2
-                    recent_news = [
-                        row for row in news_rows
-                        if (row.published_at or row.created_at).date().toordinal() >= news_window_start
-                        and (row.published_at or row.created_at).date() <= bar.bar_date
-                    ]
-                    values["news_count_3d"] = float(len(recent_news))
-                    values["news_sentiment_3d"] = (
-                        float(sum(float(row.sentiment_score or 0.0) for row in recent_news) / len(recent_news))
-                        if recent_news
-                        else 0.0
-                    )
-                    news_window_start_7d = bar.bar_date.toordinal() - 6
-                    recent_news_7d = [
-                        row for row in news_rows
-                        if (row.published_at or row.created_at).date().toordinal() >= news_window_start_7d
-                        and (row.published_at or row.created_at).date() <= bar.bar_date
-                    ]
-                    values["news_count_7d"] = float(len(recent_news_7d))
-                    values["news_sentiment_7d"] = (
-                        float(sum(float(row.sentiment_score or 0.0) for row in recent_news_7d) / len(recent_news_7d))
-                        if recent_news_7d
-                        else 0.0
-                    )
+                    for lookback in (1, 3, 7):
+                        count, sentiment = _average_window_sentiment(news_events, bar_date=bar.bar_date, lookback_days=lookback)
+                        values[f"news_count_{lookback}d"] = count
+                        values[f"news_sentiment_{lookback}d"] = sentiment
+                    values["days_since_latest_news"] = _days_since_latest(news_events, bar_date=bar.bar_date)
 
-                    filing_window_start = bar.bar_date.toordinal() - 6
-                    recent_filings = [
-                        row for row in filing_rows
-                        if (row.published_at or row.created_at).date().toordinal() >= filing_window_start
-                        and (row.published_at or row.created_at).date() <= bar.bar_date
-                    ]
-                    values["official_count_7d"] = float(len(recent_filings))
-                    values["official_sentiment_7d"] = (
-                        float(sum(float(row.sentiment_score or 0.0) for row in recent_filings) / len(recent_filings))
-                        if recent_filings
-                        else 0.0
-                    )
-                    filing_window_start_14d = bar.bar_date.toordinal() - 13
-                    recent_filings_14d = [
-                        row for row in filing_rows
-                        if (row.published_at or row.created_at).date().toordinal() >= filing_window_start_14d
-                        and (row.published_at or row.created_at).date() <= bar.bar_date
-                    ]
-                    values["official_count_14d"] = float(len(recent_filings_14d))
-                    values["official_sentiment_14d"] = (
-                        float(sum(float(row.sentiment_score or 0.0) for row in recent_filings_14d) / len(recent_filings_14d))
-                        if recent_filings_14d
-                        else 0.0
-                    )
+                    for lookback in (1, 7, 14):
+                        count, sentiment = _average_window_sentiment(filing_events, bar_date=bar.bar_date, lookback_days=lookback)
+                        values[f"official_count_{lookback}d"] = count
+                        values[f"official_sentiment_{lookback}d"] = sentiment
+                    values["days_since_latest_official_release"] = _days_since_latest(filing_events, bar_date=bar.bar_date)
 
                     for feature_name, numeric_value in values.items():
                         key = (feature_ids[feature_name], instrument.id, bar.bar_date)

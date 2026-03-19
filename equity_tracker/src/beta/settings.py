@@ -113,7 +113,7 @@ class BetaSettings:
         self.hypothesis_discovery_enabled = True
         self.hypothesis_discovery_history_years = 5
         self.hypothesis_discovery_universe_cap = 250
-        self.hypothesis_discovery_template_limit = 8
+        self.hypothesis_discovery_template_limit = 12
         self.hypothesis_discovery_variant_cap = 24
         self.hypothesis_discovery_max_promotions_per_run = 6
         self.hypothesis_discovery_min_support = 40

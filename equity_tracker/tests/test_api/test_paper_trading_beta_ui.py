@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -49,6 +50,7 @@ from src.beta.db.models import (
     BetaSchemaMeta,
     BetaScoreTape,
     BetaSignalCandidate,
+    BetaSystemStatus,
     BetaStrategyVersion,
     BetaUniverseMembership,
     BetaValidationRun,
@@ -61,10 +63,16 @@ from src.beta.services.corpus_service import BetaCorpusService, _HistoryPoint
 from src.beta.services.filing_service import BetaFilingService
 from src.beta.services.news_service import BetaNewsService
 from src.beta.services.observation_service import BetaObservationService
+from src.beta.services.overview_service import BetaOverviewService
+from src.beta.services.position_registry import BetaPositionRegistry
 from src.beta.services.reference_service import BetaReferenceService
+from src.beta.services.review_service import BetaReviewService
 from src.beta.services.scoring_service import _calibrated_model_confidence, _heuristic_confidence
+from src.beta.services.scoring_service import BetaScoringService
 from src.beta.services.session_service import BetaMarketSessionService
 from src.beta.services.training_service import BetaTrainingService
+from src.beta.services.evaluation_service import BetaEvaluationService
+from src.beta.services.replay_service import BetaReplayService
 from src.beta.settings import BetaSettings
 from src.beta.state import get_beta_db_path
 from src.db.engine import DatabaseEngine
@@ -1112,6 +1120,132 @@ def test_beta_supervisor_memory_guard_skips_heavy_cycle(tmp_path, monkeypatch) -
         assert guard_job is not None
         assert guard_job.status == "SKIPPED"
         assert sess.query(BetaJobRun).filter(BetaJobRun.job_name == "beta_learning_universe_sync").count() == 0
+
+
+def test_beta_supervisor_cycle_syncs_candidate_theses_after_scoring(tmp_path, monkeypatch) -> None:
+    beta_db_path = tmp_path / "candidate-thesis-sync.beta_research.db"
+    _write_beta_settings(
+        beta_db_path,
+        auto_start_supervisor=False,
+        observation_enabled=False,
+        news_enabled=False,
+        filings_enabled=False,
+        learning_enabled=False,
+        shadow_scoring_enabled=True,
+        training_enabled=False,
+        intraday_execution_enabled=True,
+        background_jobs_enabled=True,
+    )
+    monkeypatch.setenv("EQUITY_BETA_DB_PATH", str(beta_db_path))
+    initialize_beta_runtime(None, allow_supervisor=False)
+    settings = BetaSettings.load(beta_db_path)
+
+    monkeypatch.setattr(
+        "src.beta.supervisor_process.BetaMarketSessionService.live_market_priority_window",
+        lambda _settings, now_utc=None: False,
+    )
+    monkeypatch.setattr(
+        BetaScoringService,
+        "run_daily_shadow_cycle",
+        lambda _settings, core_only=False: {
+            "recommended": 0,
+            "positions_opened": 0,
+            "positions_closed": 0,
+        },
+    )
+    monkeypatch.setattr(
+        BetaPositionRegistry,
+        "sync_candidate_theses",
+        lambda now_utc=None: {
+            "states_upserted": 1,
+            "open_positions": 1,
+            "closed_positions": 0,
+            "unmatched_instruments": 0,
+        },
+    )
+    monkeypatch.setattr(BetaEvaluationService, "run_live_evaluation", lambda: {"evaluation": "ok"})
+    monkeypatch.setattr(BetaReviewService, "ensure_daily_potential_gains_review", lambda: {"performed": False})
+    monkeypatch.setattr(BetaReplayService, "ensure_daily_dashboard_pack", lambda: {"created": False})
+    monkeypatch.setattr("src.beta.supervisor_process.BetaRuntimeService.ensure_daily_snapshot", lambda _settings: None)
+    monkeypatch.setattr(
+        "src.beta.supervisor_process.BetaPipelineAssessmentService.record_snapshot",
+        lambda snapshot_type="SUPERVISOR_CYCLE", trigger_job_name=None: {"overall_status": "HEALTHY"},
+    )
+
+    now = datetime(2026, 3, 18, 21, 0, 0, tzinfo=timezone.utc)
+    _run_supervisor_cycle(
+        core_db_path=None,
+        beta_db_path=beta_db_path,
+        settings=settings,
+        now=now,
+        next_reference_sync_at=now + timedelta(hours=1),
+        next_news_sync_at=now + timedelta(hours=1),
+        next_filing_sync_at=now + timedelta(hours=1),
+        next_observation_at=now + timedelta(hours=1),
+        next_intraday_execution_at=now + timedelta(hours=1),
+        next_hypothesis_research_at=now + timedelta(hours=1),
+        next_core_scoring_at=now + timedelta(hours=1),
+        next_scoring_at=now,
+        next_eod_bar_fetch_at=now + timedelta(hours=1),
+        next_statistics_refresh_at=now + timedelta(hours=1),
+        next_bar_backfill_at=now + timedelta(hours=1),
+    )
+
+    with BetaContext.read_session() as sess:
+        scoring_job = (
+            sess.query(BetaJobRun)
+            .filter(BetaJobRun.job_name == "beta_daily_shadow_cycle")
+            .order_by(BetaJobRun.started_at.desc())
+            .first()
+        )
+        thesis_sync_job = (
+            sess.query(BetaJobRun)
+            .filter(BetaJobRun.job_name == "beta_candidate_thesis_sync")
+            .order_by(BetaJobRun.started_at.desc())
+            .first()
+        )
+
+    assert scoring_job is not None
+    assert scoring_job.status == "SUCCESS"
+    assert scoring_job.completed_at is not None
+    assert scoring_job.started_at <= scoring_job.completed_at
+    assert thesis_sync_job is not None
+    assert thesis_sync_job.status == "SUCCESS"
+    assert thesis_sync_job.completed_at is not None
+    assert thesis_sync_job.started_at <= thesis_sync_job.completed_at
+
+
+def test_beta_overview_uses_latest_job_activity_for_heartbeat(tmp_path, monkeypatch) -> None:
+    beta_db_path = tmp_path / "overview-runtime-activity.beta_research.db"
+    _write_beta_settings(beta_db_path, auto_start_supervisor=False)
+    monkeypatch.setenv("EQUITY_BETA_DB_PATH", str(beta_db_path))
+    initialize_beta_runtime(None, allow_supervisor=False)
+
+    frozen_now = datetime(2026, 3, 18, 22, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
+    monkeypatch.setattr("src.beta.services.overview_service._utcnow", lambda: frozen_now)
+
+    with BetaContext.write_session() as sess:
+        status = sess.query(BetaSystemStatus).filter(BetaSystemStatus.id == 1).first()
+        assert status is not None
+        status.supervisor_status = "running"
+        status.supervisor_pid = os.getpid()
+        status.last_heartbeat_at = frozen_now - timedelta(minutes=10)
+        sess.add(
+            BetaJobRun(
+                job_name="beta_daily_training",
+                job_type="training",
+                status="RUNNING",
+                started_at=frozen_now - timedelta(seconds=30),
+                completed_at=None,
+            )
+        )
+
+    dashboard = BetaOverviewService.get_dashboard()
+    runtime_activity = dashboard["runtime_activity"]
+
+    assert runtime_activity["current_running_job"] is not None
+    assert runtime_activity["current_running_job"]["job_name"] == "beta_daily_training"
+    assert runtime_activity["heartbeat_age_seconds"] == 30
 
 
 def test_beta_universe_sync_persists_research_rankings(client) -> None:

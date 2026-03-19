@@ -37,7 +37,7 @@ class _DiscoveryRow:
     market: str
     sector_key: str
     decision_date: date
-    label_value: float
+    label_values: dict[str, float]
     features: dict[str, float]
 
 
@@ -262,23 +262,36 @@ class BetaHypothesisDiscoveryService:
                 select(BetaFeatureDefinition).where(BetaFeatureDefinition.feature_name.in_(sorted(feature_names)))
             ).all()
         }
-        label_def = sess.scalar(
-            select(BetaLabelDefinition).where(BetaLabelDefinition.label_name == "fwd_5d_excess_return_pct")
-        )
-        if label_def is None or not feature_defs:
+        target_metrics = sorted({str(template.target_metric or "fwd_5d_excess_return_pct") for template in templates})
+        label_defs = {
+            row.label_name: row
+            for row in sess.scalars(
+                select(BetaLabelDefinition).where(BetaLabelDefinition.label_name.in_(target_metrics or [""]))
+            ).all()
+        }
+        if not label_defs or not feature_defs:
             return [], {"window_start": None, "window_end": None, "scope_instruments": len(instrument_ids)}
+        label_names_by_id = {definition.id: name for name, definition in label_defs.items()}
 
-        label_map: dict[tuple[str, date], float] = {}
+        label_map: dict[tuple[str, date], dict[str, float]] = {}
         for row in sess.execute(
-            select(BetaLabelValue.instrument_id, BetaLabelValue.decision_date, BetaLabelValue.value_numeric)
+            select(
+                BetaLabelValue.instrument_id,
+                BetaLabelValue.decision_date,
+                BetaLabelValue.label_definition_id,
+                BetaLabelValue.value_numeric,
+            )
             .where(
-                BetaLabelValue.label_definition_id == label_def.id,
+                BetaLabelValue.label_definition_id.in_([label_def.id for label_def in label_defs.values()]),
                 BetaLabelValue.instrument_id.in_(instrument_ids),
                 BetaLabelValue.decision_date >= cutoff_date,
                 BetaLabelValue.value_numeric.is_not(None),
             )
         ):
-            label_map[(row.instrument_id, row.decision_date)] = float(row.value_numeric)
+            label_name = label_names_by_id.get(row.label_definition_id)
+            if label_name is None:
+                continue
+            label_map.setdefault((row.instrument_id, row.decision_date), {})[label_name] = float(row.value_numeric)
 
         feature_map: dict[tuple[str, date], dict[str, float]] = {}
         for row in sess.execute(
@@ -314,7 +327,7 @@ class BetaHypothesisDiscoveryService:
                     market=str(instrument.market or "OTHER"),
                     sector_key=str(instrument.sector_key or "GENERAL"),
                     decision_date=decision_date,
-                    label_value=float(label_value),
+                    label_values=dict(label_value),
                     features=feature_map.get((instrument_id, decision_date), {}),
                 )
             )
@@ -450,10 +463,13 @@ class BetaHypothesisDiscoveryService:
         entry_conditions = BetaHypothesisNormalizer.normalize_conditions(candidate_spec["entry_conditions"])
         regime_filters = BetaHypothesisNormalizer.normalize_regime_filters(candidate_spec.get("regime_filters") or {})
         required_features = set(candidate_spec.get("feature_subset") or [])
+        target_metric = str(candidate_spec.get("target_metric") or "fwd_5d_excess_return_pct")
 
         eligible_rows: list[_DiscoveryRow] = []
         matched_rows: list[_DiscoveryRow] = []
         for row in dataset_rows:
+            if target_metric not in row.label_values:
+                continue
             if not required_features.issubset(row.features.keys()):
                 continue
             if regime_filters and not BetaHypothesisNormalizer.evaluate(regime_filters, row.features).matched:
@@ -496,8 +512,14 @@ class BetaHypothesisDiscoveryService:
             result["notes"]["pruned_reason"] = "insufficient_support"
             return result
 
-        matched_samples = [(row.instrument_id, row.decision_date, row.label_value) for row in matched_rows]
-        eligible_samples = [(row.instrument_id, row.decision_date, row.label_value) for row in eligible_rows]
+        matched_samples = [
+            (row.instrument_id, row.decision_date, row.label_values[target_metric])
+            for row in matched_rows
+        ]
+        eligible_samples = [
+            (row.instrument_id, row.decision_date, row.label_values[target_metric])
+            for row in eligible_rows
+        ]
         summary = BetaHypothesisBacktestService.summarize_candidate_samples(
             matched_samples=matched_samples,
             eligible_samples=eligible_samples,
@@ -673,13 +695,13 @@ class BetaHypothesisDiscoveryService:
         if regime_code in {"", "none"}:
             return {}
         if regime_code == "weak_market_regime":
-            return {"all": [{"feature": "market_ret_5d_pct", "op": "lt", "value": -1.0}]}
+            return {"all": [{"feature": "market_ret_10d_pct", "op": "lt", "value": -1.5}]}
         if regime_code == "strong_market_regime":
-            return {"all": [{"feature": "market_ret_5d_pct", "op": "gt", "value": 1.0}]}
+            return {"all": [{"feature": "market_ret_10d_pct", "op": "gt", "value": 1.5}]}
         if regime_code == "weak_sector_regime":
-            return {"all": [{"feature": "sector_ret_5d_pct", "op": "lt", "value": -1.0}]}
+            return {"all": [{"feature": "sector_ret_10d_pct", "op": "lt", "value": -1.5}]}
         if regime_code == "strong_sector_regime":
-            return {"all": [{"feature": "sector_ret_5d_pct", "op": "gt", "value": 1.0}]}
+            return {"all": [{"feature": "sector_ret_10d_pct", "op": "gt", "value": 1.5}]}
         if regime_code == "high_vol_regime":
             return {"all": [{"feature": "realized_vol_20d_pct", "op": "gte", "value": 8.0}]}
         if regime_code == "low_vol_regime":
@@ -690,7 +712,9 @@ class BetaHypothesisDiscoveryService:
     def _regime_feature_names() -> set[str]:
         return {
             "market_ret_5d_pct",
+            "market_ret_10d_pct",
             "sector_ret_5d_pct",
+            "sector_ret_10d_pct",
             "realized_vol_20d_pct",
         }
 

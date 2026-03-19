@@ -1,10 +1,12 @@
-"""Poll beta DB for all recent job runs — refreshes every 2 seconds."""
+"""Poll beta DB for recent job runs and refresh every 2 seconds."""
 
 import sqlite3
 import os
 import time
 
-DB = r"C:\EquityTrackerData\portfolio.beta_research.db"
+from watch_beta_common import resolve_beta_db_path
+
+DB = resolve_beta_db_path()
 
 LATEST_JOBS_QUERY = """
     SELECT job_name, job_type, status, max(completed_at) AS last_run
@@ -34,6 +36,8 @@ while True:
         conn = sqlite3.connect(DB, timeout=5)
         cur = conn.cursor()
 
+        print(f"DB: {DB}")
+        print()
         print("=== Latest Run Per Job ===")
         print(f"  {'JOB NAME':<42} {'TYPE':<18} {'STATUS':<10} {'LAST RUN'}")
         print(f"  {'--------':<42} {'----':<18} {'------':<10} {'--------'}")

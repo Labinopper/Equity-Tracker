@@ -2,7 +2,9 @@
 
 Last updated: `2026-03-14`
 
-Status: proposed operational architecture for the exploratory paper-trading beta. This document translates the strategy and schema into a practical runtime plan.
+Status: historical design proposal.
+
+Current note as of `2026-03-18`: the beta runtime is now implemented and has diverged from this proposal. Read `docs/paper_trading_beta/CURRENT_STATE_2026-03-18.md` first and treat this document as background context rather than current source of truth.
 
 ## 1. Purpose
 

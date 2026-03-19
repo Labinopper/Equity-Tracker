@@ -51,6 +51,7 @@ class BetaExecutionSignalService:
         now = _coerce_utc(now_utc)
         core_position_sync = BetaPositionRegistry.sync_core_portfolio_positions(now_utc=now)
         demo_position_sync = BetaPositionRegistry.sync_demo_positions(now_utc=now)
+        candidate_thesis_sync = BetaPositionRegistry.sync_candidate_theses(now_utc=now)
         watchlist = BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)
         instrument_ids = [item.instrument_id for item in watchlist["items"]]
         if instrument_ids:
@@ -74,9 +75,11 @@ class BetaExecutionSignalService:
             "active_thesis": int(watchlist["active_thesis"]),
             "general": int(watchlist["general"]),
             "position_states_upserted": int(core_position_sync.get("states_upserted", 0))
-            + int(demo_position_sync.get("states_upserted", 0)),
+            + int(demo_position_sync.get("states_upserted", 0))
+            + int(candidate_thesis_sync.get("states_upserted", 0)),
             "core_position_states_upserted": int(core_position_sync.get("states_upserted", 0)),
             "demo_position_states_upserted": int(demo_position_sync.get("states_upserted", 0)),
+            "candidate_thesis_states_upserted": int(candidate_thesis_sync.get("states_upserted", 0)),
         }
 
     @staticmethod
@@ -86,8 +89,8 @@ class BetaExecutionSignalService:
 
         now = _coerce_utc(now_utc)
         watchlist = BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)
-        held_items = [item for item in watchlist["items"] if item.tier == "HELD"]
-        if not held_items:
+        actionable_items = [item for item in watchlist["items"] if item.tier in {"HELD", "ACTIVE_THESIS"}]
+        if not actionable_items:
             return {"positions_evaluated": 0, "signals_created": 0, "triggered_evaluations": 0}
 
         with BetaContext.write_session() as sess:
@@ -98,7 +101,7 @@ class BetaExecutionSignalService:
                     select(BetaPositionState)
                     .where(
                         BetaPositionState.position_status == "OPEN",
-                        BetaPositionState.instrument_id.in_([item.instrument_id for item in held_items]),
+                        BetaPositionState.instrument_id.in_([item.instrument_id for item in actionable_items]),
                     )
                     .order_by(desc(BetaPositionState.updated_at))
                 ).all()
@@ -106,7 +109,7 @@ class BetaExecutionSignalService:
             feature_rows: dict[str, BetaIntradayFeatureSnapshot] = {}
             for row in sess.scalars(
                 select(BetaIntradayFeatureSnapshot)
-                .where(BetaIntradayFeatureSnapshot.instrument_id.in_([item.instrument_id for item in held_items]))
+                .where(BetaIntradayFeatureSnapshot.instrument_id.in_([item.instrument_id for item in actionable_items]))
                 .order_by(
                     BetaIntradayFeatureSnapshot.instrument_id.asc(),
                     BetaIntradayFeatureSnapshot.session_date.desc(),
@@ -115,8 +118,8 @@ class BetaExecutionSignalService:
             ).all():
                 if row.instrument_id not in feature_rows:
                     feature_rows[row.instrument_id] = row
-            cadence_by_instrument = {item.instrument_id: item.cadence_minutes for item in held_items}
-            session_by_instrument = {item.instrument_id: item.session_state for item in held_items}
+            cadence_by_instrument = {item.instrument_id: item.cadence_minutes for item in actionable_items}
+            session_by_instrument = {item.instrument_id: item.session_state for item in actionable_items}
             signals_created = 0
             positions_evaluated = 0
             triggered_evaluations = 0

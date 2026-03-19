@@ -52,7 +52,10 @@ class BetaIntradayPriorityService:
             held_rows = list(
                 sess.scalars(
                     select(BetaPositionState)
-                    .where(BetaPositionState.position_status == "OPEN")
+                    .where(
+                        BetaPositionState.position_status == "OPEN",
+                        BetaPositionState.position_source.in_(("DEMO", "MANUAL")),
+                    )
                     .order_by(desc(BetaPositionState.updated_at))
                 ).all()
             )

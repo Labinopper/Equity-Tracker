@@ -83,6 +83,13 @@ def _seconds_since(moment) -> int | None:
     return max(0, int(delta.total_seconds()))
 
 
+def _latest_activity_at(*moments) -> datetime | None:
+    candidates = [moment for moment in moments if moment is not None]
+    if not candidates:
+        return None
+    return max(candidates)
+
+
 class BetaOverviewService:
     """Small query service for the beta dashboard and supporting pages."""
 
@@ -337,14 +344,33 @@ class BetaOverviewService:
             for row in recent_jobs:
                 if row.job_type not in latest_jobs_by_type:
                     latest_jobs_by_type[row.job_type] = _row_to_dict(row)
+            latest_job_activity_at = _latest_activity_at(
+                *[
+                    _latest_activity_at(row.started_at, row.completed_at)
+                    for row in recent_jobs
+                ]
+            )
+            latest_runtime_activity_at = _latest_activity_at(
+                status.last_heartbeat_at if status is not None else None,
+                status.updated_at if status is not None else None,
+                latest_job_activity_at,
+            )
+            current_running_job = next((row for row in recent_jobs if row.status == "RUNNING"), None)
             supervisor_alive = _process_is_alive(status.supervisor_pid if status is not None else None)
             supervisor_status = "running" if supervisor_alive else str(status.supervisor_status or "stopped") if status is not None else "stopped"
             runtime_activity = {
                 "supervisor_alive": supervisor_alive,
                 "supervisor_status_display": supervisor_status,
-                "heartbeat_age_seconds": _seconds_since(status.last_heartbeat_at) if status is not None else None,
+                "heartbeat_age_seconds": _seconds_since(latest_runtime_activity_at),
+                "heartbeat_at": latest_runtime_activity_at,
                 "last_successful_job": _row_to_dict(latest_successful_job) if latest_successful_job is not None else None,
                 "last_failed_job": _row_to_dict(latest_failed_job) if latest_failed_job is not None else None,
+                "current_running_job": _row_to_dict(current_running_job) if current_running_job is not None else None,
+                "current_running_job_age_seconds": (
+                    _seconds_since(current_running_job.started_at)
+                    if current_running_job is not None
+                    else None
+                ),
                 "latest_jobs_by_type": latest_jobs_by_type,
                 "latest_success_count": len([row for row in recent_jobs[:12] if row.status == "SUCCESS"]),
                 "latest_failure_count": len([row for row in recent_jobs[:12] if row.status == "FAILED"]),

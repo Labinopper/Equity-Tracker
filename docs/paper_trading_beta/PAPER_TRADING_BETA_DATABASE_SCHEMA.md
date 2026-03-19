@@ -2,7 +2,9 @@
 
 Last updated: `2026-03-14`
 
-Status: proposed SQLite-first schema for the exploratory paper-trading beta. This is a research and demo-trading schema, not a live-execution schema.
+Status: historical schema proposal.
+
+Current note as of `2026-03-18`: the implemented beta DB is now a real `v7` schema defined in `equity_tracker/src/beta/db/models.py`, and it differs materially from this proposal. Read `docs/paper_trading_beta/CURRENT_STATE_2026-03-18.md` first and use this file as background context only.
 
 ## 1. High-Level Schema Overview
 

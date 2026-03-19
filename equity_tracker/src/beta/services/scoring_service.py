@@ -266,6 +266,74 @@ def _heuristic_confidence(
     return min(0.58, max(0.25, raw_confidence))
 
 
+def _quant_pct_str(value: float) -> str:
+    return str(Decimal(str(value)).quantize(Decimal("0.01")))
+
+
+def _trade_expression_plan(
+    *,
+    family_code: str | None,
+    target_metric: str | None,
+    holding_period_days: int | None,
+    predicted_return_pct: float,
+    realized_vol: float,
+) -> dict[str, object]:
+    family = str(family_code or "").upper()
+    metric = str(target_metric or "").lower()
+    horizon = int(holding_period_days or 5)
+    target_abs = abs(float(predicted_return_pct or 0.0))
+    volatility_buffer = min(1.0, max(0.0, float(realized_vol or 0.0) / 8.0))
+
+    short_horizon = (
+        horizon <= 3
+        or "3d" in metric
+        or family in {
+            "EXHAUSTION_REVERSAL",
+            "MEAN_REVERSION",
+            "PANIC_REVERSAL",
+            "FAILED_REVERSAL",
+            "PANIC_TREND",
+            "TREND_FAILURE",
+            "CATALYST_CONFIRMATION",
+        }
+    )
+    medium_horizon = (
+        horizon >= 10
+        or "10d" in metric
+        or family in {
+            "TREND_PULLBACK_RECOVERY",
+            "RELATIVE_STRENGTH",
+            "TREND_STABILITY",
+            "ACCUMULATION",
+            "SECTOR_MOMENTUM",
+            "SECTOR_ROTATION",
+        }
+    )
+
+    if short_horizon:
+        plan_code = "SHORT_HORIZON"
+        planned_horizon_days = max(3, min(5, horizon))
+        target_return_pct = max(2.4, min(4.5, target_abs * 0.9 if target_abs > 0 else 2.8))
+        stop_loss_pct = -(1.8 + volatility_buffer)
+    elif medium_horizon:
+        plan_code = "MEDIUM_HORIZON"
+        planned_horizon_days = max(8, horizon)
+        target_return_pct = max(4.8, min(8.5, target_abs * 1.05 if target_abs > 0 else 5.5))
+        stop_loss_pct = -(3.4 + volatility_buffer)
+    else:
+        plan_code = "SWING_HORIZON"
+        planned_horizon_days = max(5, horizon)
+        target_return_pct = max(3.2, min(6.2, target_abs * 0.95 if target_abs > 0 else 4.0))
+        stop_loss_pct = -(2.6 + volatility_buffer)
+
+    return {
+        "plan_code": plan_code,
+        "target_return_pct": _quant_pct_str(target_return_pct),
+        "stop_loss_pct": _quant_pct_str(stop_loss_pct),
+        "planned_horizon_days": planned_horizon_days,
+    }
+
+
 def _recent_news_context(sess, instrument_id: str) -> dict[str, object]:
     links = list(
         sess.execute(
@@ -756,6 +824,13 @@ class BetaScoringService:
                 matched_observation = None
                 recommendation_decision = None
                 hypothesis = legacy_hypothesis
+                trade_plan = _trade_expression_plan(
+                    family_code=None,
+                    target_metric=None,
+                    holding_period_days=None,
+                    predicted_return_pct=predicted_return_pct,
+                    realized_vol=realized_vol,
+                )
                 if signal_result.get("matched"):
                     hypothesis_matches += len(signal_result.get("matches") or [])
                     best_match = signal_result.get("best_match") or {}
@@ -771,11 +846,20 @@ class BetaScoringService:
                         hypothesis = signal_result.get("legacy_hypothesis")
                     if matched_family is not None:
                         family_label = matched_family.family_name
+                    trade_plan = _trade_expression_plan(
+                        family_code=matched_family.family_code if matched_family is not None else None,
+                        target_metric=matched_definition.target_metric if matched_definition is not None else None,
+                        holding_period_days=matched_definition.holding_period_days if matched_definition is not None else None,
+                        predicted_return_pct=predicted_return_pct,
+                        realized_vol=realized_vol,
+                    )
                     evidence["matched_hypothesis_code"] = matched_definition.hypothesis_code if matched_definition is not None else None
                     evidence["matched_hypothesis_name"] = matched_definition.name if matched_definition is not None else None
                     evidence["matched_hypothesis_status"] = str(best_match.get("belief_status") or "")
                     evidence["matched_hypothesis_confidence"] = float(best_match.get("belief_confidence") or 0.0)
                     evidence["matched_hypothesis_family_code"] = matched_family.family_code if matched_family is not None else None
+                    evidence["matched_target_metric"] = matched_definition.target_metric if matched_definition is not None else None
+                    evidence["matched_holding_period_days"] = matched_definition.holding_period_days if matched_definition is not None else None
                     evidence["matched_hypothesis_match_count"] = len(signal_result.get("matches") or [])
                     evidence["recommendation_decision_status"] = recommendation_decision.decision_status if recommendation_decision is not None else None
                     evidence["recommendation_reason_code"] = recommendation_decision.decision_reason_code if recommendation_decision is not None else None
@@ -790,11 +874,14 @@ class BetaScoringService:
                     evidence["matched_hypothesis_status"] = None
                     evidence["matched_hypothesis_confidence"] = None
                     evidence["matched_hypothesis_family_code"] = None
+                    evidence["matched_target_metric"] = None
+                    evidence["matched_holding_period_days"] = None
                     evidence["matched_hypothesis_match_count"] = 0
                     evidence["recommendation_decision_status"] = "NO_MATCH"
                     evidence["recommendation_reason_code"] = "no_validated_hypothesis_match"
                     evidence["recommendation_reason_text"] = "No hypothesis match produced an actionable research decision."
                     rejection_reason = rejection_reason or "No validated hypothesis matched current market state."
+                evidence["trade_expression_plan"] = trade_plan
 
                 recommendation = bool(
                     recommendation_decision is not None and recommendation_decision.decision_status == "RECOMMENDED"
@@ -1033,9 +1120,9 @@ class BetaScoringService:
                                         units=_quant_price(units),
                                         entry_price=_quant_price(entry_fill),
                                         entry_bar_date=mark_price_date,
-                                        target_return_pct="4.00",
-                                        stop_loss_pct="-3.00",
-                                        planned_horizon_days=5,
+                                        target_return_pct=str(trade_plan["target_return_pct"]),
+                                        stop_loss_pct=str(trade_plan["stop_loss_pct"]),
+                                        planned_horizon_days=int(trade_plan["planned_horizon_days"]),
                                     )
                                     sess.add(position)
                                     sess.flush()

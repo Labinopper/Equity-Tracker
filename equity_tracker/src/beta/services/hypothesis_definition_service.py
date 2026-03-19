@@ -392,7 +392,7 @@ class BetaHypothesisDefinitionService:
     def _load_json_config(filename: str) -> list[dict[str, object]]:
         path = Path(__file__).resolve().parent.parent / "config" / filename
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"Unable to load hypothesis config '{filename}': {exc}") from exc
         if not isinstance(payload, list):

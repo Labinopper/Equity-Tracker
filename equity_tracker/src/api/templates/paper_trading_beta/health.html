@@ -32,6 +32,18 @@
       <div class="position-card__label">PID / Heartbeat</div>
       <div class="position-card__value">{{ status.supervisor_pid or "-" }} / {{ runtime_activity.heartbeat_age_seconds if runtime_activity.heartbeat_age_seconds is not none else "-" }}s</div>
     </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Current Job</div>
+      <div class="position-card__value">
+        {% if runtime_activity.current_running_job %}
+        {{ runtime_activity.current_running_job.job_name }} ({{ runtime_activity.current_running_job_age_seconds if runtime_activity.current_running_job_age_seconds is not none else "-" }}s)
+        {% elif runtime_activity.last_successful_job %}
+        {{ runtime_activity.last_successful_job.job_name }} ({{ runtime_activity.last_successful_job.status }})
+        {% else %}
+        -
+        {% endif %}
+      </div>
+    </div>
   </article>
 
   <article class="card beta-stat-card">

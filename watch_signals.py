@@ -1,10 +1,12 @@
-"""Poll beta DB for WAIT_FOR_CLOSE_CONFIRMATION and NO_ACTION execution signals — refreshes every 2 seconds."""
+"""Poll beta DB for execution signals and refresh every 2 seconds."""
 
 import sqlite3
 import os
 import time
 
-DB = r"C:\EquityTrackerData\portfolio.beta_research.db"
+from watch_beta_common import resolve_beta_db_path
+
+DB = resolve_beta_db_path()
 
 SIGNALS_QUERY = """
     SELECT s.symbol, s.signal_type, s.session_date, s.signal_time,
@@ -30,6 +32,8 @@ while True:
         conn = sqlite3.connect(DB, timeout=5)
         cur = conn.cursor()
 
+        print(f"DB: {DB}")
+        print()
         print("=== Signal Counts ===")
         print(f"  {'SIGNAL TYPE':<34} {'COUNT':>6}")
         print(f"  {'-----------':<34} {'-----':>6}")

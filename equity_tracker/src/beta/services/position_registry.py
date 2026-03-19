@@ -74,7 +74,10 @@ class BetaPositionRegistry:
             rows = list(
                 sess.scalars(
                     select(BetaPositionState.symbol)
-                    .where(BetaPositionState.position_status == "OPEN")
+                    .where(
+                        BetaPositionState.position_status == "OPEN",
+                        BetaPositionState.position_source.in_(("DEMO", "MANUAL")),
+                    )
                     .order_by(BetaPositionState.updated_at.desc())
                 ).all()
             )
@@ -447,6 +450,133 @@ class BetaPositionRegistry:
                 "states_upserted": upserted,
                 "open_positions": open_positions,
                 "closed_positions": closed_positions,
+            }
+
+    @staticmethod
+    def sync_candidate_theses(*, now_utc: datetime | None = None) -> dict[str, int]:
+        if not BetaContext.is_initialized():
+            return {"states_upserted": 0, "open_positions": 0, "closed_positions": 0, "unmatched_instruments": 0}
+
+        now = now_utc.replace(tzinfo=None) if now_utc and now_utc.tzinfo else (now_utc or _utcnow())
+        with BetaContext.write_session() as sess:
+            instruments_by_symbol = {
+                str(row.symbol or "").upper(): row
+                for row in sess.scalars(select(BetaInstrument)).all()
+            }
+            open_held_symbols = {
+                str(row.symbol or "").upper()
+                for row in sess.scalars(
+                    select(BetaPositionState).where(
+                        BetaPositionState.position_status == "OPEN",
+                        BetaPositionState.position_source.in_(("DEMO", "MANUAL")),
+                    )
+                ).all()
+            }
+            simulated_states: dict[str, BetaPositionState] = {}
+            for row in sess.scalars(
+                select(BetaPositionState)
+                .where(BetaPositionState.position_source == "SIMULATED")
+                .order_by(desc(BetaPositionState.updated_at))
+            ).all():
+                symbol = str(row.symbol or "").upper()
+                if symbol and symbol not in simulated_states:
+                    simulated_states[symbol] = row
+
+            latest_candidates_by_symbol: dict[str, BetaSignalCandidate] = {}
+            for candidate in sess.scalars(
+                select(BetaSignalCandidate)
+                .where(BetaSignalCandidate.status.in_(("WATCHING", "PROMOTED")))
+                .order_by(desc(BetaSignalCandidate.updated_at), desc(BetaSignalCandidate.discovered_at))
+            ).all():
+                symbol = str(candidate.symbol or "").upper()
+                if not symbol or symbol in latest_candidates_by_symbol:
+                    continue
+                latest_candidates_by_symbol[symbol] = candidate
+
+            upserted = 0
+            closed_positions = 0
+            unmatched_instruments = 0
+            active_symbols: set[str] = set()
+            for symbol, candidate in latest_candidates_by_symbol.items():
+                if symbol in open_held_symbols:
+                    continue
+                instrument = instruments_by_symbol.get(symbol)
+                if instrument is None:
+                    unmatched_instruments += 1
+                    continue
+                active_symbols.add(symbol)
+                evidence = _candidate_payload(candidate)
+                trade_plan = evidence.get("trade_expression_plan") if isinstance(evidence.get("trade_expression_plan"), dict) else {}
+                thesis_horizon_days = int(
+                    trade_plan.get("planned_horizon_days")
+                    or evidence.get("matched_holding_period_days")
+                    or 5
+                )
+                thesis_expected = None
+                try:
+                    thesis_expected = float(evidence.get("predicted_return_pct"))
+                except (TypeError, ValueError):
+                    thesis_expected = None
+
+                state = simulated_states.get(symbol)
+                if state is None:
+                    state = BetaPositionState(
+                        symbol=symbol,
+                        position_source="SIMULATED",
+                        position_status="OPEN",
+                    )
+                    sess.add(state)
+                    sess.flush()
+                    simulated_states[symbol] = state
+
+                state.demo_position_id = None
+                state.instrument_id = instrument.id
+                state.market = candidate.market or instrument.market
+                state.position_source = "SIMULATED"
+                state.position_status = "OPEN"
+                state.position_size_gbp = None
+                state.units = None
+                state.entry_price = None
+                state.entry_timestamp = candidate.discovered_at
+                state.thesis_id = candidate.id
+                state.thesis_candidate_id = candidate.id
+                state.thesis_hypothesis_definition_id = candidate.hypothesis_definition_id
+                state.thesis_expected_return_pct = thesis_expected
+                state.thesis_horizon_days = thesis_horizon_days
+                state.thesis_remaining_days = float(thesis_horizon_days)
+                state.unrealized_return_pct = None
+                state.realized_return_pct = None
+                state.execution_quality_score = None
+                state.metadata_json = json.dumps(
+                    {
+                        "bridge_source": "CANDIDATE_WATCHLIST",
+                        "candidate_status": candidate.status,
+                        "candidate_direction": candidate.direction,
+                        "matched_target_metric": evidence.get("matched_target_metric"),
+                        "trade_expression_plan": trade_plan,
+                        "last_candidate_sync_at": now.isoformat(),
+                    },
+                    sort_keys=True,
+                )
+                upserted += 1
+
+            for symbol, state in simulated_states.items():
+                if symbol in active_symbols or state.position_status != "OPEN":
+                    continue
+                metadata = _metadata_payload(state.metadata_json)
+                metadata["bridge_source"] = "CANDIDATE_WATCHLIST"
+                metadata["closed_by_bridge"] = True
+                metadata["last_candidate_sync_at"] = now.isoformat()
+                state.position_status = "CLOSED"
+                state.thesis_remaining_days = 0.0
+                state.metadata_json = json.dumps(metadata, sort_keys=True)
+                closed_positions += 1
+
+            return {
+                "states_upserted": upserted,
+                "open_positions": upserted,
+                "closed_positions": closed_positions,
+                "unmatched_instruments": unmatched_instruments,
             }
 
     @staticmethod

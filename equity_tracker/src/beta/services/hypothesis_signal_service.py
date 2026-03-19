@@ -298,21 +298,27 @@ class BetaHypothesisSignalService:
             return "BLOCKED", "hypothesis_degraded", "Matched hypothesis is degraded and cannot drive a recommendation.", None
         if belief_status in {"REJECTED", "RETIRED"}:
             return "REJECTED", "hypothesis_rejected", "Matched hypothesis has been rejected by accumulated evidence.", None
-        if belief_status in {"DISCOVERED", "SCREENED_IN"}:
-            return "DISMISSED", "belief_insufficient", "Matched setup is newly discovered and lacks enough belief evidence.", None
-        if belief_status == "PROMISING":
-            return "BLOCKED", "hypothesis_not_validated", "Matched hypothesis is promising but not yet validated.", None
-        if belief_status != "VALIDATED":
-            return "DISMISSED", "belief_insufficient", "Matched setup does not yet have enough belief strength to generate a signal.", None
         if not BetaHypothesisSignalService._direction_compatible(expected_direction, score_direction):
             return "DISMISSED", "direction_mismatch", "Matched setup direction does not align with current score direction.", None
+        if belief_status in {"DISCOVERED", "SCREENED_IN"}:
+            if signal_qualified:
+                return "WATCHING", "research_watch_only", "Matched setup is early-stage and has been moved into the watch lane.", "WATCH_ONLY"
+            return "DISMISSED", "belief_insufficient", "Matched setup is newly discovered and lacks enough live support to watch.", None
+        if belief_status == "PROMISING":
+            if signal_qualified or belief_confidence >= 0.55:
+                return "WATCHING", "promising_watch_only", "Matched setup is promising and remains in the watch lane until validated.", "WATCH_ONLY"
+            return "DISMISSED", "belief_insufficient", "Matched promising setup does not yet have enough live support to watch.", None
+        if belief_status != "VALIDATED":
+            return "DISMISSED", "belief_insufficient", "Matched setup does not yet have enough belief strength to generate a signal.", None
         if prediction_source == "HEURISTIC":
-            return "BLOCKED", "heuristic_support_only", "Validated setup matched but live support is only heuristic.", None
+            if signal_qualified:
+                return "WATCHING", "heuristic_watch_only", "Validated setup matched but live support is heuristic-only, so it stays in the watch lane.", "WATCH_ONLY"
+            return "WATCHING", "validated_hypothesis_watch", "Validated setup matched; continue watching for stronger conviction.", None
         if belief_confidence >= 0.68 and signal_qualified and candidate_promotion_allowed:
             action = "OPEN_IF_ALLOWED" if score_direction == "BULLISH" else "WATCH_ONLY"
             return "RECOMMENDED", "validated_hypothesis_match", "Validated hypothesis matched and current score is actionable.", action
         if not signal_qualified:
             return "WATCHING", "score_not_actionable", "Validated setup matched but live score does not clear action thresholds.", None
         if not candidate_promotion_allowed:
-            return "BLOCKED", "governance_not_actionable", "Validated setup matched but governance does not allow recommendation.", None
+            return "WATCHING", "governance_watch_only", "Validated setup matched but governance does not yet allow demo promotion.", "WATCH_ONLY"
         return "WATCHING", "validated_hypothesis_watch", "Validated setup matched; continue watching for stronger conviction.", None

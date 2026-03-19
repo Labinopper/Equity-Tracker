@@ -1,457 +1,791 @@
 [
-  {
-    "family_code": "TREND_PULLBACK_RECOVERY",
-    "hypothesis_code": "TREND_PULLBACK_RECOVERY_V1",
-    "name": "20d trend positive with controlled 5d pullback",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "TEMPLATE_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_20d_pct", "op": "gt", "value": 8.0},
-        {"feature": "ret_5d_pct", "op": "between", "min": -6.0, "max": -1.0},
-        {"feature": "drawdown_from_20d_high_pct", "op": "between", "min": -12.0, "max": -1.0},
-        {"feature": "rebound_from_20d_low_pct", "op": "gt", "value": 3.0},
-        {"feature": "news_sentiment_7d", "op": "gt", "value": -0.35}
-      ]
+    {
+        "family_code":  "TREND_PULLBACK_RECOVERY",
+        "hypothesis_code":  "TREND_PULLBACK_RECOVERY_V1",
+        "name":  "20d trend positive with controlled 5d pullback",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "TEMPLATE_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "gt",
+                                                 "value":  8
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "between",
+                                                 "min":  -6,
+                                                 "max":  -1
+                                             },
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "between",
+                                                 "min":  -12,
+                                                 "max":  -1
+                                             },
+                                             {
+                                                 "feature":  "market_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  -0.75
+                                             },
+                                             {
+                                                 "feature":  "news_sentiment_7d",
+                                                 "op":  "gt",
+                                                 "value":  -0.35
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "rationale":  "Continuation-style setup after a controlled pullback inside an intact trend."
+                     }
     },
-    "metadata": {
-      "rationale": "Continuation-style setup after a controlled pullback inside an intact trend."
-    }
-  },
-  {
-    "family_code": "TREND_PULLBACK_RECOVERY",
-    "hypothesis_code": "TREND_PULLBACK_RECOVERY_V2",
-    "name": "Trend recovery with low-volatility pullback",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "TEMPLATE_MUTATION",
-    "source_type": "MANUAL",
-    "parent_hypothesis_code": "TREND_PULLBACK_RECOVERY_V1",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_10d_pct", "op": "gt", "value": 4.0},
-        {"feature": "ret_5d_pct", "op": "between", "min": -4.5, "max": -0.5},
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 6.0},
-        {"feature": "rebound_from_20d_low_pct", "op": "gt", "value": 4.0}
-      ]
-    }
-  },
-  {
-    "family_code": "CATALYST_CONFIRMATION",
-    "hypothesis_code": "CATALYST_CONFIRMATION_POSITIVE_V1",
-    "name": "Positive catalyst with price confirmation",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "TEMPLATE_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "news_count_7d", "op": "gt", "value": 0.0},
-        {"feature": "news_sentiment_7d", "op": "gt", "value": 0.1},
-        {"feature": "official_sentiment_14d", "op": "gt", "value": 0.05},
-        {"feature": "ret_5d_pct", "op": "gt", "value": 0.0},
-        {"feature": "intraday_pct_change", "op": "gt", "value": 0.0}
-      ]
-    }
-  },
-  {
-    "family_code": "CATALYST_CONFIRMATION",
-    "hypothesis_code": "CATALYST_CONFIRMATION_NEGATIVE_V1",
-    "name": "Negative catalyst with downside confirmation",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "TEMPLATE_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {
-          "any": [
-            {"feature": "news_sentiment_7d", "op": "lt", "value": -0.1},
-            {"feature": "official_sentiment_14d", "op": "lt", "value": -0.05}
-          ]
-        },
-        {"feature": "ret_5d_pct", "op": "lt", "value": -1.0},
-        {"feature": "drawdown_from_20d_high_pct", "op": "lt", "value": -3.0}
-      ]
-    }
-  },
-  {
-    "family_code": "MEAN_REVERSION",
-    "hypothesis_code": "MEAN_REVERSION_BOUNCE_V1",
-    "name": "Oversold bounce with stabilising volatility",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "TEMPLATE_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "drawdown_from_20d_high_pct", "op": "lt", "value": -8.0},
-        {"feature": "rebound_from_20d_low_pct", "op": "gt", "value": 1.0},
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 12.0},
-        {"feature": "market_excess_5d_pct", "op": "lt", "value": -1.0}
-      ]
-    }
-  },
-  {
-    "family_code": "MEAN_REVERSION",
-    "hypothesis_code": "MEAN_REVERSION_BREAKDOWN_V1",
-    "name": "Overextended downside continuation after failed rebound",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "TEMPLATE_MUTATION",
-    "source_type": "MANUAL",
-    "parent_hypothesis_code": "MEAN_REVERSION_BOUNCE_V1",
-    "entry_conditions": {
-      "all": [
-        {"feature": "drawdown_from_20d_high_pct", "op": "lt", "value": -10.0},
-        {"feature": "rebound_from_20d_low_pct", "op": "lt", "value": 2.0},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -3.0},
-        {"feature": "realized_vol_20d_pct", "op": "gt", "value": 4.0}
-      ]
-    }
-  },
-  {
-    "family_code": "EXHAUSTION_REVERSAL",
-    "hypothesis_code": "SHORT_TERM_EXHAUSTION_REVERSAL_V1",
-    "name": "SHORT_TERM_EXHAUSTION_REVERSAL_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_1d_pct", "op": "lt", "value": -3.0},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -5.0},
-        {"feature": "distance_from_20d_mean_pct", "op": "lt", "value": -6.0}
-      ]
+    {
+        "family_code":  "TREND_PULLBACK_RECOVERY",
+        "hypothesis_code":  "TREND_PULLBACK_RECOVERY_V2",
+        "name":  "Trend recovery with low-volatility pullback",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "TEMPLATE_MUTATION",
+        "source_type":  "MANUAL",
+        "parent_hypothesis_code":  "TREND_PULLBACK_RECOVERY_V1",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "between",
+                                                 "min":  -4.5,
+                                                 "max":  -0.5
+                                             },
+                                             {
+                                                 "feature":  "realized_vol_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  6
+                                             },
+                                             {
+                                                 "feature":  "rebound_from_20d_low_pct",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "benchmark_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  -0.5
+                                             }
+                                         ]
+                             }
     },
-    "metadata": {
-      "rationale": "Short-term sharp selloffs can overshoot and mean revert over the next week.",
-      "edge_vs_baselines": "Targets capitulation extremes rather than generic continuation or generic mean reversion.",
-      "likely_failure_mode": "Fails during true fundamental breakdowns or earnings/catalyst collapse."
+    {
+        "family_code":  "CATALYST_CONFIRMATION",
+        "hypothesis_code":  "CATALYST_CONFIRMATION_POSITIVE_V1",
+        "name":  "Positive catalyst with price confirmation",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "TEMPLATE_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "any":  [
+                                                             {
+                                                                 "feature":  "news_count_1d",
+                                                                 "op":  "gt",
+                                                                 "value":  0
+                                                             },
+                                                             {
+                                                                 "feature":  "official_count_1d",
+                                                                 "op":  "gt",
+                                                                 "value":  0
+                                                             }
+                                                         ]
+                                             },
+                                             {
+                                                 "any":  [
+                                                             {
+                                                                 "feature":  "news_sentiment_1d",
+                                                                 "op":  "gt",
+                                                                 "value":  0.12
+                                                             },
+                                                             {
+                                                                 "feature":  "official_sentiment_1d",
+                                                                 "op":  "gt",
+                                                                 "value":  0.08
+                                                             }
+                                                         ]
+                                             },
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "gt",
+                                                 "value":  0
+                                             },
+                                             {
+                                                 "feature":  "intraday_pct_change",
+                                                 "op":  "gt",
+                                                 "value":  -0.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "CATALYST_CONFIRMATION",
+        "hypothesis_code":  "CATALYST_CONFIRMATION_NEGATIVE_V1",
+        "name":  "Negative catalyst with downside confirmation",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "TEMPLATE_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "any":  [
+                                                             {
+                                                                 "feature":  "news_sentiment_1d",
+                                                                 "op":  "lt",
+                                                                 "value":  -0.12
+                                                             },
+                                                             {
+                                                                 "feature":  "official_sentiment_1d",
+                                                                 "op":  "lt",
+                                                                 "value":  -0.08
+                                                             }
+                                                         ]
+                                             },
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "lt",
+                                                 "value":  0
+                                             },
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  -2
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "MEAN_REVERSION",
+        "hypothesis_code":  "MEAN_REVERSION_BOUNCE_V1",
+        "name":  "Oversold bounce with stabilising volatility",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "TEMPLATE_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  -8
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -5
+                                             },
+                                             {
+                                                 "feature":  "rebound_from_20d_low_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             },
+                                             {
+                                                 "feature":  "market_excess_5d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "MEAN_REVERSION",
+        "hypothesis_code":  "MEAN_REVERSION_BREAKDOWN_V1",
+        "name":  "Overextended downside continuation after failed rebound",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "TEMPLATE_MUTATION",
+        "source_type":  "MANUAL",
+        "parent_hypothesis_code":  "MEAN_REVERSION_BOUNCE_V1",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  -10
+                                             },
+                                             {
+                                                 "feature":  "rebound_from_20d_low_pct",
+                                                 "op":  "lt",
+                                                 "value":  2
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -4
+                                             },
+                                             {
+                                                 "feature":  "realized_vol_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  2.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "EXHAUSTION_REVERSAL",
+        "hypothesis_code":  "SHORT_TERM_EXHAUSTION_REVERSAL_V1",
+        "name":  "SHORT_TERM_EXHAUSTION_REVERSAL_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -3
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_10d_mean_pct",
+                                                 "op":  "lt",
+                                                 "value":  -4
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "rationale":  "Short-term sharp selloffs can overshoot and mean revert over the next week.",
+                         "edge_vs_baselines":  "Targets capitulation extremes rather than generic continuation or generic mean reversion.",
+                         "likely_failure_mode":  "Fails during true fundamental breakdowns or earnings/catalyst collapse."
+                     }
+    },
+    {
+        "family_code":  "EXHAUSTION_REVERSAL",
+        "hypothesis_code":  "SHORT_TERM_SPIKE_FADE_V1",
+        "name":  "SHORT_TERM_SPIKE_FADE_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "gt",
+                                                 "value":  6
+                                             },
+                                             {
+                                                 "feature":  "distance_from_10d_mean_pct",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "VOLATILITY_COMPRESSION",
+        "hypothesis_code":  "LOW_VOL_BREAKOUT_SETUP_V1",
+        "name":  "LOW_VOL_BREAKOUT_SETUP_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "realized_vol_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  5.0
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.0
+                                             },
+                                             {
+                                                 "feature":  "ret_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  2.0
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "VOLATILITY_REGIME",
+        "hypothesis_code":  "VOLATILITY_EXPANSION_BREAKDOWN_V1",
+        "name":  "VOLATILITY_EXPANSION_BREAKDOWN_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "realized_vol_5d_pct",
+                                                 "op":  "gt",
+                                                 "value":  2.5
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -3.0
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "RELATIVE_STRENGTH",
+        "hypothesis_code":  "RELATIVE_STRENGTH_LEADER_V1",
+        "name":  "RELATIVE_STRENGTH_LEADER_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "sector_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.5
+                                             },
+                                             {
+                                                 "feature":  "market_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "gt",
+                                                 "value":  6
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "RELATIVE_STRENGTH",
+        "hypothesis_code":  "RELATIVE_WEAKNESS_LAGGARD_V1",
+        "name":  "RELATIVE_WEAKNESS_LAGGARD_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "sector_excess_10d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.5
+                                             },
+                                             {
+                                                 "feature":  "market_excess_10d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1
+                                             },
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -6
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "PANIC_REVERSAL",
+        "hypothesis_code":  "PANIC_LOW_REVERSAL_V1",
+        "name":  "PANIC_LOW_REVERSAL_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  -12.0
+                                             },
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.0
+                                             },
+                                             {
+                                                 "feature":  "rebound_from_20d_low_pct",
+                                                 "op":  "gt",
+                                                 "value":  2.0
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "FAILED_REVERSAL",
+        "hypothesis_code":  "FAILED_BOUNCE_CONTINUATION_V1",
+        "name":  "FAILED_BOUNCE_CONTINUATION_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  -10
+                                             },
+                                             {
+                                                 "feature":  "rebound_from_20d_low_pct",
+                                                 "op":  "lt",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -4
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "DIVERGENCE",
+        "hypothesis_code":  "MARKET_DIVERGENCE_BULL_V1",
+        "name":  "MARKET_DIVERGENCE_BULL_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "market_ret_5d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.0
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "DIVERGENCE",
+        "hypothesis_code":  "MARKET_DIVERGENCE_BEAR_V1",
+        "name":  "MARKET_DIVERGENCE_BEAR_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "market_ret_5d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.0
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "VOLATILITY_MEAN_REVERSION",
+        "hypothesis_code":  "VOLATILITY_COMPRESSION_MEAN_REVERSION_V1",
+        "name":  "VOLATILITY_COMPRESSION_MEAN_REVERSION_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "realized_vol_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  4.0
+                                             },
+                                             {
+                                                 "feature":  "ret_5d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "VOLATILITY_EXHAUSTION",
+        "hypothesis_code":  "HIGH_VOL_SPIKE_FADE_V1",
+        "name":  "HIGH_VOL_SPIKE_FADE_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "realized_vol_5d_pct",
+                                                 "op":  "gt",
+                                                 "value":  3.0
+                                             },
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "gt",
+                                                 "value":  3.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "TREND_STABILITY",
+        "hypothesis_code":  "STEADY_UPTREND_CONTINUATION_V1",
+        "name":  "STEADY_UPTREND_CONTINUATION_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "gt",
+                                                 "value":  8
+                                             },
+                                             {
+                                                 "feature":  "realized_vol_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  8
+                                             },
+                                             {
+                                                 "feature":  "distance_from_10d_mean_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "TREND_FAILURE",
+        "hypothesis_code":  "TREND_BREAK_WARNING_V1",
+        "name":  "TREND_BREAK_WARNING_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "gt",
+                                                 "value":  8
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -2.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "OVEREXTENSION",
+        "hypothesis_code":  "OVEREXTENDED_TREND_PULLBACK_V1",
+        "name":  "OVEREXTENDED_TREND_PULLBACK_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "gt",
+                                                 "value":  12.0
+                                             },
+                                             {
+                                                 "feature":  "distance_from_20d_mean_pct",
+                                                 "op":  "gt",
+                                                 "value":  8.0
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "DEEP_MEAN_REVERSION",
+        "hypothesis_code":  "DEEP_VALUE_REVERSION_V1",
+        "name":  "DEEP_VALUE_REVERSION_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_5d_excess_return_pct",
+        "holding_period_days":  5,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "drawdown_from_20d_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  -15.0
+                                             },
+                                             {
+                                                 "feature":  "realized_vol_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  15.0
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "PANIC_TREND",
+        "hypothesis_code":  "PANIC_BREAKDOWN_CONTINUATION_V1",
+        "name":  "PANIC_BREAKDOWN_CONTINUATION_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_3d_excess_return_pct",
+        "holding_period_days":  3,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_1d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -4
+                                             },
+                                             {
+                                                 "feature":  "ret_3d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -6
+                                             },
+                                             {
+                                                 "feature":  "realized_vol_5d_pct",
+                                                 "op":  "gt",
+                                                 "value":  3
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "ACCUMULATION",
+        "hypothesis_code":  "QUIET_ACCUMULATION_SETUP_V1",
+        "name":  "QUIET_ACCUMULATION_SETUP_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "ret_20d_pct",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "realized_vol_20d_pct",
+                                                 "op":  "lt",
+                                                 "value":  5
+                                             },
+                                             {
+                                                 "feature":  "benchmark_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  0
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "SECTOR_MOMENTUM",
+        "hypothesis_code":  "SECTOR_LEADERSHIP_BREAKOUT_V1",
+        "name":  "SECTOR_LEADERSHIP_BREAKOUT_V1",
+        "expected_direction":  "BULLISH",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "sector_ret_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  2
+                                             },
+                                             {
+                                                 "feature":  "sector_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "feature":  "market_excess_10d_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             }
+                                         ]
+                             }
+    },
+    {
+        "family_code":  "SECTOR_ROTATION",
+        "hypothesis_code":  "SECTOR_ROTATION_WEAKNESS_V1",
+        "name":  "SECTOR_ROTATION_WEAKNESS_V1",
+        "expected_direction":  "RISK_OFF",
+        "target_metric":  "fwd_10d_excess_return_pct",
+        "holding_period_days":  10,
+        "generation_source":  "MANUAL_SEED",
+        "source_type":  "MANUAL",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "sector_ret_10d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -2
+                                             },
+                                             {
+                                                 "feature":  "sector_excess_10d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1
+                                             },
+                                             {
+                                                 "feature":  "market_excess_10d_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.5
+                                             }
+                                         ]
+                             }
     }
-  },
-  {
-    "family_code": "EXHAUSTION_REVERSAL",
-    "hypothesis_code": "SHORT_TERM_SPIKE_FADE_V1",
-    "name": "SHORT_TERM_SPIKE_FADE_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_1d_pct", "op": "gt", "value": 4.0},
-        {"feature": "ret_5d_pct", "op": "gt", "value": 6.0},
-        {"feature": "distance_from_20d_mean_pct", "op": "gt", "value": 6.0}
-      ]
-    }
-  },
-  {
-    "family_code": "VOLATILITY_COMPRESSION",
-    "hypothesis_code": "LOW_VOL_BREAKOUT_SETUP_V1",
-    "name": "LOW_VOL_BREAKOUT_SETUP_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 5.0},
-        {"feature": "ret_5d_pct", "op": "gt", "value": 1.0},
-        {"feature": "ret_10d_pct", "op": "gt", "value": 2.0}
-      ]
-    }
-  },
-  {
-    "family_code": "VOLATILITY_REGIME",
-    "hypothesis_code": "VOLATILITY_EXPANSION_BREAKDOWN_V1",
-    "name": "VOLATILITY_EXPANSION_BREAKDOWN_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "realized_vol_5d_pct", "op": "gt", "value": 2.5},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -3.0}
-      ]
-    }
-  },
-  {
-    "family_code": "RELATIVE_STRENGTH",
-    "hypothesis_code": "RELATIVE_STRENGTH_LEADER_V1",
-    "name": "RELATIVE_STRENGTH_LEADER_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "sector_excess_5d_pct", "op": "gt", "value": 1.5},
-        {"feature": "market_excess_5d_pct", "op": "gt", "value": 1.0},
-        {"feature": "ret_20d_pct", "op": "gt", "value": 6.0}
-      ]
-    }
-  },
-  {
-    "family_code": "RELATIVE_STRENGTH",
-    "hypothesis_code": "RELATIVE_WEAKNESS_LAGGARD_V1",
-    "name": "RELATIVE_WEAKNESS_LAGGARD_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "sector_excess_5d_pct", "op": "lt", "value": -1.5},
-        {"feature": "market_excess_5d_pct", "op": "lt", "value": -1.0},
-        {"feature": "ret_20d_pct", "op": "lt", "value": -6.0}
-      ]
-    }
-  },
-  {
-    "family_code": "PANIC_REVERSAL",
-    "hypothesis_code": "PANIC_LOW_REVERSAL_V1",
-    "name": "PANIC_LOW_REVERSAL_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "drawdown_from_20d_high_pct", "op": "lt", "value": -12.0},
-        {"feature": "ret_1d_pct", "op": "gt", "value": 1.0},
-        {"feature": "rebound_from_20d_low_pct", "op": "gt", "value": 2.0}
-      ]
-    }
-  },
-  {
-    "family_code": "FAILED_REVERSAL",
-    "hypothesis_code": "FAILED_BOUNCE_CONTINUATION_V1",
-    "name": "FAILED_BOUNCE_CONTINUATION_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "drawdown_from_20d_high_pct", "op": "lt", "value": -10.0},
-        {"feature": "rebound_from_20d_low_pct", "op": "lt", "value": 1.0},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -4.0}
-      ]
-    }
-  },
-  {
-    "family_code": "DIVERGENCE",
-    "hypothesis_code": "MARKET_DIVERGENCE_BULL_V1",
-    "name": "MARKET_DIVERGENCE_BULL_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "market_ret_5d_pct", "op": "lt", "value": -1.0},
-        {"feature": "ret_5d_pct", "op": "gt", "value": 1.5}
-      ]
-    }
-  },
-  {
-    "family_code": "DIVERGENCE",
-    "hypothesis_code": "MARKET_DIVERGENCE_BEAR_V1",
-    "name": "MARKET_DIVERGENCE_BEAR_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "market_ret_5d_pct", "op": "gt", "value": 1.0},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -1.5}
-      ]
-    }
-  },
-  {
-    "family_code": "VOLATILITY_MEAN_REVERSION",
-    "hypothesis_code": "VOLATILITY_COMPRESSION_MEAN_REVERSION_V1",
-    "name": "VOLATILITY_COMPRESSION_MEAN_REVERSION_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 4.0},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -1.5}
-      ]
-    }
-  },
-  {
-    "family_code": "VOLATILITY_EXHAUSTION",
-    "hypothesis_code": "HIGH_VOL_SPIKE_FADE_V1",
-    "name": "HIGH_VOL_SPIKE_FADE_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "realized_vol_5d_pct", "op": "gt", "value": 3.0},
-        {"feature": "ret_1d_pct", "op": "gt", "value": 3.5}
-      ]
-    }
-  },
-  {
-    "family_code": "TREND_STABILITY",
-    "hypothesis_code": "STEADY_UPTREND_CONTINUATION_V1",
-    "name": "STEADY_UPTREND_CONTINUATION_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_20d_pct", "op": "gt", "value": 8.0},
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 8.0},
-        {"feature": "distance_from_20d_mean_pct", "op": "gt", "value": 1.0}
-      ]
-    }
-  },
-  {
-    "family_code": "TREND_FAILURE",
-    "hypothesis_code": "TREND_BREAK_WARNING_V1",
-    "name": "TREND_BREAK_WARNING_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_20d_pct", "op": "gt", "value": 8.0},
-        {"feature": "ret_1d_pct", "op": "lt", "value": -3.0}
-      ]
-    }
-  },
-  {
-    "family_code": "OVEREXTENSION",
-    "hypothesis_code": "OVEREXTENDED_TREND_PULLBACK_V1",
-    "name": "OVEREXTENDED_TREND_PULLBACK_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_20d_pct", "op": "gt", "value": 12.0},
-        {"feature": "distance_from_20d_mean_pct", "op": "gt", "value": 8.0}
-      ]
-    }
-  },
-  {
-    "family_code": "DEEP_MEAN_REVERSION",
-    "hypothesis_code": "DEEP_VALUE_REVERSION_V1",
-    "name": "DEEP_VALUE_REVERSION_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "drawdown_from_20d_high_pct", "op": "lt", "value": -15.0},
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 15.0}
-      ]
-    }
-  },
-  {
-    "family_code": "PANIC_TREND",
-    "hypothesis_code": "PANIC_BREAKDOWN_CONTINUATION_V1",
-    "name": "PANIC_BREAKDOWN_CONTINUATION_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_1d_pct", "op": "lt", "value": -4.0},
-        {"feature": "realized_vol_5d_pct", "op": "gt", "value": 3.0}
-      ]
-    }
-  },
-  {
-    "family_code": "ACCUMULATION",
-    "hypothesis_code": "QUIET_ACCUMULATION_SETUP_V1",
-    "name": "QUIET_ACCUMULATION_SETUP_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "ret_20d_pct", "op": "gt", "value": 4.0},
-        {"feature": "realized_vol_20d_pct", "op": "lt", "value": 5.0},
-        {"feature": "ret_5d_pct", "op": "gt", "value": 0.5}
-      ]
-    }
-  },
-  {
-    "family_code": "SECTOR_MOMENTUM",
-    "hypothesis_code": "SECTOR_LEADERSHIP_BREAKOUT_V1",
-    "name": "SECTOR_LEADERSHIP_BREAKOUT_V1",
-    "expected_direction": "BULLISH",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "sector_ret_5d_pct", "op": "gt", "value": 2.0},
-        {"feature": "sector_excess_5d_pct", "op": "gt", "value": 1.0},
-        {"feature": "ret_5d_pct", "op": "gt", "value": 1.5}
-      ]
-    }
-  },
-  {
-    "family_code": "SECTOR_ROTATION",
-    "hypothesis_code": "SECTOR_ROTATION_WEAKNESS_V1",
-    "name": "SECTOR_ROTATION_WEAKNESS_V1",
-    "expected_direction": "RISK_OFF",
-    "target_metric": "fwd_5d_excess_return_pct",
-    "holding_period_days": 5,
-    "generation_source": "MANUAL_SEED",
-    "source_type": "MANUAL",
-    "entry_conditions": {
-      "all": [
-        {"feature": "sector_ret_5d_pct", "op": "lt", "value": -2.0},
-        {"feature": "sector_excess_5d_pct", "op": "lt", "value": -1.0},
-        {"feature": "ret_5d_pct", "op": "lt", "value": -1.5}
-      ]
-    }
-  }
 ]

@@ -344,6 +344,178 @@ def test_intraday_aggregation_and_feature_snapshot_are_incremental(beta_context)
     assert features["return_last_5m_pct"] is not None
 
 
+def test_intraday_feature_snapshot_populates_vwap_and_expected_volume_profiles(beta_context):
+    session_date = date(2026, 3, 17)
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        sess.add(
+            BetaDailyBar(
+                instrument_id=instrument.id,
+                bar_date=date(2026, 3, 16),
+                close_price_gbp="100",
+                close_price_native="100",
+                currency="USD",
+                source="test",
+            )
+        )
+
+        prior_sessions = [date(2026, 3, 12), date(2026, 3, 13), date(2026, 3, 14)]
+        for prior_session in prior_sessions:
+            for minute_offset, (price, volume) in enumerate(((100, 100), (101, 120), (102, 140))):
+                ts = datetime.combine(prior_session, datetime.min.time()).replace(hour=14, minute=30 + minute_offset)
+                sess.add(
+                    BetaMinuteBar(
+                        instrument_id=instrument.id,
+                        session_date=prior_session,
+                        minute_ts=ts,
+                        open_price_gbp=str(price),
+                        high_price_gbp=str(price + 0.2),
+                        low_price_gbp=str(price - 0.2),
+                        close_price_gbp=str(price),
+                        close_price_native=str(price),
+                        currency="USD",
+                        volume_native=str(volume),
+                        snapshot_count=1,
+                        first_snapshot_at=ts,
+                        last_snapshot_at=ts,
+                        source="test",
+                    )
+                )
+
+        for minute_offset, (price, volume) in enumerate(((101, 150), (102, 150), (103, 150))):
+            ts = datetime.combine(session_date, datetime.min.time()).replace(hour=14, minute=30 + minute_offset)
+            sess.add(
+                BetaMinuteBar(
+                    instrument_id=instrument.id,
+                    session_date=session_date,
+                    minute_ts=ts,
+                    open_price_gbp=str(price),
+                    high_price_gbp=str(price + 0.2),
+                    low_price_gbp=str(price - 0.2),
+                    close_price_gbp=str(price),
+                    close_price_native=str(price),
+                    currency="USD",
+                    volume_native=str(volume),
+                    snapshot_count=1,
+                    first_snapshot_at=ts,
+                    last_snapshot_at=ts,
+                    source="test",
+                )
+            )
+
+    BetaIntradayFeatureService.refresh_feature_snapshots(
+        priority_items=[
+            IntradayPriorityItem(
+                instrument_id=instrument.id,
+                symbol="IBM",
+                market="US",
+                exchange="NASDAQ",
+                tier="ACTIVE_THESIS",
+                cadence_minutes=5,
+                priority_score=0.8,
+                session_state="REGULAR_OPEN",
+            )
+        ],
+        now_utc=datetime(2026, 3, 17, 14, 34, tzinfo=timezone.utc),
+    )
+
+    with BetaContext.read_session() as sess:
+        snapshot = sess.scalar(
+            select(BetaIntradayFeatureSnapshot).where(BetaIntradayFeatureSnapshot.instrument_id == instrument.id)
+        )
+
+    assert snapshot is not None
+    features = json.loads(snapshot.feature_snapshot_json)
+    assert features["cumulative_volume_vs_expected"] == pytest.approx(1.25, abs=1e-6)
+    assert features["volume_last_15m_vs_expected"] == pytest.approx(1.25, abs=1e-6)
+    assert features["distance_from_vwap_pct"] is not None
+
+
+def test_execution_signal_service_evaluates_active_thesis_state(beta_context):
+    settings = BetaSettings()
+    settings.intraday_execution_enabled = True
+    settings.intraday_event_trigger_enabled = True
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        candidate = BetaSignalCandidate(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            title="IBM daily thesis",
+            status="WATCHING",
+            direction="BULLISH",
+            confidence_score=0.66,
+            expected_edge_score=0.52,
+            market="US",
+            evidence_json=json.dumps(
+                {
+                    "predicted_return_pct": 3.4,
+                    "matched_target_metric": "fwd_3d_excess_return_pct",
+                    "trade_expression_plan": {"planned_horizon_days": 3},
+                },
+                sort_keys=True,
+            ),
+        )
+        sess.add(candidate)
+        sess.flush()
+        sess.add(
+            BetaIntradayFeatureSnapshot(
+                instrument_id=instrument.id,
+                session_date=date(2026, 3, 17),
+                session_state="REGULAR_OPEN",
+                priority_tier="ACTIVE_THESIS",
+                feature_snapshot_json=json.dumps(
+                    {
+                        "intraday_range_pct": 0.6,
+                        "return_since_open_pct": 0.8,
+                        "volume_last_15m_vs_expected": 0.7,
+                    },
+                    sort_keys=True,
+                ),
+                accumulator_state_json=json.dumps({}, sort_keys=True),
+            )
+        )
+
+    sync_result = BetaPositionRegistry.sync_candidate_theses(
+        now_utc=datetime(2026, 3, 17, 14, 35, 0, tzinfo=timezone.utc)
+    )
+    result = BetaExecutionSignalService.evaluate_execution_signals(
+        settings,
+        now_utc=datetime(2026, 3, 17, 14, 36, 0, tzinfo=timezone.utc),
+    )
+
+    with BetaContext.read_session() as sess:
+        states = list(
+            sess.scalars(
+                select(BetaPositionState).where(BetaPositionState.position_source == "SIMULATED")
+            ).all()
+        )
+        signals = list(sess.scalars(select(BetaExecutionSignal)).all())
+
+    assert sync_result["states_upserted"] == 1
+    assert len(states) == 1
+    assert result["positions_evaluated"] == 1
+    assert len(signals) == 1
+    assert signals[0].signal_type == "WAIT_FOR_CLOSE_CONFIRMATION"
+
+
 def test_execution_signal_service_emits_execution_only_guidance(beta_context):
     settings = BetaSettings()
     settings.intraday_execution_enabled = True
