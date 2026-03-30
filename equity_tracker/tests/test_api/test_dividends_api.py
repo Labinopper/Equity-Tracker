@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from src.api import _state
 from src.app_context import AppContext
-from src.db.repository import DividendReferenceEventRepository
+from src.db.repository import DividendReferenceEventRepository, LotRepository
 from src.services.cash_ledger_service import CashLedgerService
 from src.settings import AppSettings
 
@@ -63,6 +63,8 @@ def test_api_dividends_summary_empty_and_ui_renders(client):
     assert "Optional Lot Scope And Traceability" in page.text
     assert "Ex-Date" in page.text
     assert "Lot Explorer" in page.text
+    assert "Receipt Mode" in page.text
+    assert "Stock Quantity Received" in page.text
     assert "Tax-Year Dividend Summary" in page.text
 
 
@@ -134,6 +136,59 @@ def test_api_dividend_entry_create_supports_native_currency_and_fx(client):
     assert metadata.get("fx_source") == "manual_test"
 
 
+def test_api_dividend_entry_create_stock_reinvestment_creates_sip_dividend_lot_without_cash_post(
+    client,
+):
+    sec_id = _add_security(client, "DIVSTKAPI")
+
+    create_resp = client.post(
+        "/api/dividends/entries",
+        json={
+            "security_id": sec_id,
+            "dividend_date": "2026-02-20",
+            "amount_original_ccy": "12.50",
+            "original_currency": "GBP",
+            "lot_group": "SCHEME:ESPP",
+            "confirmation_mode": "stock",
+            "stock_quantity_received": "2.5",
+            "tax_treatment": "TAXABLE",
+            "source": "manual",
+            "notes": "stock reinvestment",
+        },
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()
+    assert created["tax_treatment"] == "ISA_EXEMPT"
+    assert created["reinvestment_scheme_type"] == "SIP_DIVIDEND"
+    assert created["reinvestment_lot_id"]
+
+    summary_resp = client.get("/api/dividends/summary")
+    assert summary_resp.status_code == 200
+    payload = summary_resp.json()
+    row = payload["entries"][0]
+    assert row["tax_treatment"] == "ISA_EXEMPT"
+    assert row["confirmation_mode"] == "stock"
+    assert row["is_stock_reinvestment"] is True
+    assert row["cash_base_gbp"] == "0.00"
+    assert payload["summary"]["actual_gross_dividends_gbp"] == "12.50"
+    assert payload["summary"]["actual_net_paid_gbp"] == "0.00"
+    assert payload["summary"]["estimated_net_dividends_gbp"] == "0.00"
+    assert payload["allocation"]["rows"][0]["cash_base_dividends_gbp"] == "0.00"
+
+    db_path = _state.get_db_path()
+    balances = CashLedgerService.balances(db_path)
+    assert balances.get("BROKER", {}).get("GBP", Decimal("0")) == Decimal("0")
+
+    with AppContext.read_session() as sess:
+        lots = LotRepository(sess).get_all_lots_for_security(sec_id)
+    assert len(lots) == 1
+    lot = lots[0]
+    assert lot.id == created["reinvestment_lot_id"]
+    assert lot.scheme_type == "SIP_DIVIDEND"
+    assert Decimal(lot.true_cost_per_share_gbp) == Decimal("0")
+    assert Decimal(lot.fmv_at_acquisition_gbp) == Decimal("5.00")
+
+
 def test_dividends_ui_add_form_submission(client):
     sec_id = _add_security(client, "DIVFORM")
 
@@ -192,6 +247,53 @@ def test_dividends_ui_add_form_supports_usd_with_optional_gbp_and_fx(client):
     db_path = _state.get_db_path()
     balances = CashLedgerService.balances(db_path)
     assert balances["BROKER"]["USD"] == Decimal("100.00")
+
+
+def test_dividends_ui_add_form_stock_reinvestment_creates_lot_without_cash_post(client):
+    sec_id = _add_security(client, "DIVFORMSTK")
+
+    submit = client.post(
+        "/dividends/add",
+        data={
+            "security_id": sec_id,
+            "dividend_date": "2026-02-19",
+            "original_currency": "GBP",
+            "amount_original_ccy": "12.50",
+            "confirmation_mode": "stock",
+            "stock_quantity_received": "2.5",
+            "lot_group": "SCHEME:ESPP",
+            "tax_treatment": "TAXABLE",
+            "source": "manual",
+            "cash_container": "BROKER",
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+    assert "created+SIP_DIVIDEND+lot+for+2.5+shares" in submit.headers["location"]
+
+    summary = client.get("/api/dividends/summary")
+    assert summary.status_code == 200
+    payload = summary.json()
+    row = payload["entries"][0]
+    assert row["confirmation_mode"] == "stock"
+    assert row["is_stock_reinvestment"] is True
+    assert row["reinvestment_scheme_type"] == "SIP_DIVIDEND"
+    assert payload["summary"]["actual_net_paid_gbp"] == "0.00"
+    assert payload["summary"]["estimated_net_dividends_gbp"] == "0.00"
+    assert payload["allocation"]["rows"][0]["cash_base_dividends_gbp"] == "0.00"
+
+    db_path = _state.get_db_path()
+    balances = CashLedgerService.balances(db_path)
+    assert balances.get("BROKER", {}).get("GBP", Decimal("0")) == Decimal("0")
+
+    with AppContext.read_session() as sess:
+        lots = LotRepository(sess).get_all_lots_for_security(sec_id)
+    assert len(lots) == 1
+    lot = lots[0]
+    assert lot.id == row["reinvestment_lot_id"]
+    assert lot.scheme_type == "SIP_DIVIDEND"
+    assert Decimal(lot.true_cost_per_share_gbp) == Decimal("0")
+    assert Decimal(lot.fmv_at_acquisition_gbp) == Decimal("5.00")
 
 
 def test_dividends_reminder_form_updates_and_clears_security_date(client):

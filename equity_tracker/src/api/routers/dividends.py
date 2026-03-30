@@ -48,6 +48,9 @@ class DividendCreatePayload(BaseModel):
     notes: str | None = None
     cash_container: Literal["BROKER", "ISA", "BANK", "NONE"] = "BROKER"
     cash_amount_original_ccy: str | None = None
+    confirmation_mode: Literal["cash", "stock"] = "cash"
+    stock_quantity_received: str | None = None
+    lot_group: str | None = None
 
 
 def _exc_message(exc: Exception) -> str:
@@ -174,6 +177,32 @@ def _tax_treatment_from_holding_scope(raw_value: str | None) -> str | None:
     return "ISA_EXEMPT" if normalized == "ISA" else "TAXABLE"
 
 
+def _holding_scope_from_lot_group(raw_value: str | None) -> str | None:
+    normalized = (raw_value or "").strip().upper()
+    if not normalized:
+        return None
+    if normalized == "ISA_ONLY":
+        return "ISA"
+    if normalized.startswith("SCHEME:"):
+        scope = normalized.split(":", 1)[1].strip()
+        return scope or None
+    return None
+
+
+def _normalize_confirmation_mode(raw_value: str | None) -> str:
+    cleaned = (raw_value or "").strip().lower() or "cash"
+    if cleaned not in {"cash", "stock"}:
+        raise ValueError("confirmation_mode must be cash or stock.")
+    return cleaned
+
+
+def _default_treatment_for_group_and_mode(lot_group: str | None, confirmation_mode: str) -> str:
+    scope = _holding_scope_from_lot_group(lot_group)
+    if (confirmation_mode or "").strip().lower() == "stock" and scope in {"ESPP", "ESPP_PLUS", "ISA"}:
+        return "ISA_EXEMPT"
+    return _default_treatment_for_group(lot_group)
+
+
 def _resolve_selected_lot_context(lot_ids: list[str]) -> dict[str, object] | None:
     normalized_lot_ids = _normalize_lot_ids(lot_ids)
     if not normalized_lot_ids:
@@ -293,8 +322,37 @@ async def api_dividend_entry_create(
         )
         fx_rate_to_gbp = _parse_decimal_optional(payload.fx_rate_to_gbp, "fx_rate_to_gbp")
         cash_container = _normalize_cash_container(payload.cash_container)
+        confirmation_mode = _normalize_confirmation_mode(payload.confirmation_mode)
+        stock_quantity_received = _parse_decimal_optional(
+            payload.stock_quantity_received,
+            "stock_quantity_received",
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    lot_group = (payload.lot_group or "").strip().upper() or None
+    if confirmation_mode == "stock":
+        if stock_quantity_received is None or stock_quantity_received <= Decimal("0"):
+            raise HTTPException(
+                status_code=422,
+                detail="stock_quantity_received is required when confirmation_mode is stock.",
+            )
+        if _holding_scope_from_lot_group(lot_group) is None:
+            raise HTTPException(
+                status_code=422,
+                detail="lot_group must resolve to a single scheme when confirmation_mode is stock.",
+            )
+
+    entry_notes = payload.notes
+    if confirmation_mode == "stock":
+        entry_notes = DividendService.append_ibkr_metadata_to_notes(
+            notes=payload.notes,
+            metadata={
+                "lot_group": lot_group,
+                "confirmation_mode": confirmation_mode,
+                "stock_quantity_received": stock_quantity_received,
+            },
+        )
 
     try:
         entry = DividendService.add_dividend_entry(
@@ -305,14 +363,51 @@ async def api_dividend_entry_create(
             original_currency=payload.original_currency,
             fx_rate_to_gbp=fx_rate_to_gbp,
             fx_rate_source=payload.fx_rate_source,
-            tax_treatment=payload.tax_treatment,
+            tax_treatment=_default_treatment_for_group_and_mode(lot_group, confirmation_mode)
+            if confirmation_mode == "stock"
+            else payload.tax_treatment,
             source=payload.source,
-            notes=payload.notes,
+            notes=entry_notes,
         )
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=_exc_message(exc)) from exc
 
-    if cash_container != "NONE":
+    if confirmation_mode == "stock":
+        post_amount = cash_amount_original_ccy
+        if post_amount is None:
+            if amount_original_ccy is not None:
+                post_amount = amount_original_ccy
+            elif amount_gbp is not None and entry.get("original_currency") == "GBP":
+                post_amount = amount_gbp
+            else:
+                post_amount = _parse_decimal_optional(
+                    entry.get("amount_original_ccy"),
+                    "amount_original_ccy",
+                )
+        if post_amount is None or post_amount <= Decimal("0"):
+            raise HTTPException(
+                status_code=422,
+                detail="Resolved reinvested amount must be greater than zero for stock confirmation.",
+            )
+        holding_scope = _holding_scope_from_lot_group(lot_group)
+        try:
+            reinvestment = DividendService.create_stock_reinvestment_lot(
+                entry_id=str(entry["id"]),
+                security_id=payload.security_id,
+                holding_scope=str(holding_scope or ""),
+                dividend_date=payload.dividend_date,
+                reinvested_amount_original_ccy=post_amount,
+                original_currency=entry["original_currency"],
+                fx_rate_to_gbp=_parse_decimal_optional(entry.get("fx_rate_to_gbp"), "fx_rate_to_gbp"),
+                stock_quantity_received=stock_quantity_received or Decimal("0"),
+                fx_rate_source=entry.get("fx_rate_source"),
+            )
+            entry["reinvestment_lot_id"] = reinvestment["lot_id"]
+            entry["reinvestment_scheme_type"] = reinvestment["scheme_type"]
+        except (ValueError, KeyError) as exc:
+            DividendService.delete_dividend_entry(str(entry["id"]))
+            raise HTTPException(status_code=422, detail=_exc_message(exc)) from exc
+    elif cash_container != "NONE":
         post_amount = cash_amount_original_ccy
         if post_amount is None:
             if amount_original_ccy is not None:
@@ -741,12 +836,14 @@ async def dividends_add_submit(
     lot_ids: list[str] = Form([]),
     dividend_date: str = Form(...),
     lot_group: str = Form("ALL"),
+    confirmation_mode: str = Form("cash"),
     ib_row: str = Form(""),
     net_amount_original_ccy: str = Form(""),
     gross_amount_original_ccy: str = Form(""),
     tax_withheld_original_ccy: str = Form(""),
     fee_original_ccy: str = Form(""),
     quantity: str = Form(""),
+    stock_quantity_received: str = Form(""),
     gross_rate_original_ccy: str = Form(""),
     ex_date: str = Form(""),
     ib_code: str = Form(""),
@@ -769,12 +866,14 @@ async def dividends_add_submit(
         "lot_ids": normalized_lot_ids,
         "dividend_date": dividend_date,
         "lot_group": lot_group,
+        "confirmation_mode": confirmation_mode,
         "ib_row": ib_row,
         "net_amount_original_ccy": net_amount_original_ccy,
         "gross_amount_original_ccy": gross_amount_original_ccy,
         "tax_withheld_original_ccy": tax_withheld_original_ccy,
         "fee_original_ccy": fee_original_ccy,
         "quantity": quantity,
+        "stock_quantity_received": stock_quantity_received,
         "gross_rate_original_ccy": gross_rate_original_ccy,
         "ex_date": ex_date,
         "ib_code": ib_code,
@@ -849,11 +948,15 @@ async def dividends_add_submit(
         parsed_gross_rate_original_ccy = _parse_decimal_optional(
             gross_rate_original_ccy, "gross_rate_original_ccy"
         )
+        parsed_stock_quantity_received = _parse_decimal_optional(
+            stock_quantity_received, "stock_quantity_received"
+        )
         parsed_fx_rate_to_gbp = _parse_decimal_optional(
             fx_rate_to_gbp, "fx_rate_to_gbp"
         )
         parsed_ex_date = _parse_date_optional(ex_date, "ex_date")
         normalized_cash_container = _normalize_cash_container(cash_container)
+        normalized_confirmation_mode = _normalize_confirmation_mode(confirmation_mode)
     except ValueError as exc:
         return _render_dividends_page(request, settings=settings, error=str(exc), prev=prev)
 
@@ -863,6 +966,7 @@ async def dividends_add_submit(
         ("tax_withheld_original_ccy", parsed_tax_withheld_original_ccy),
         ("fee_original_ccy", parsed_fee_original_ccy),
         ("gross_rate_original_ccy", parsed_gross_rate_original_ccy),
+        ("stock_quantity_received", parsed_stock_quantity_received),
     )
     for field_name, value in non_negative_fields:
         if value is not None and value < Decimal("0"):
@@ -898,14 +1002,43 @@ async def dividends_add_submit(
             prev=prev,
         )
 
-    resolved_treatment = (tax_treatment or "").strip().upper()
-    if resolved_treatment not in _VALID_TREATMENTS:
-        resolved_treatment = _default_treatment_for_group(lot_group)
-
     normalized_group = (lot_group or "").strip()
     normalized_group_value = (
         normalized_group if normalized_group.upper() not in {"", "ALL"} else None
     )
+    if normalized_confirmation_mode == "stock":
+        if (
+            parsed_stock_quantity_received is None
+            or parsed_stock_quantity_received <= Decimal("0")
+        ):
+            return _render_dividends_page(
+                request,
+                settings=settings,
+                error="Stock quantity received is required when receipt mode is stock.",
+                prev=prev,
+            )
+        if _holding_scope_from_lot_group(normalized_group_value) is None:
+            return _render_dividends_page(
+                request,
+                settings=settings,
+                error=(
+                    "Stock reinvestment requires a single-scheme lot group such as "
+                    "SCHEME:ESPP, SCHEME:ESPP_PLUS, SCHEME:BROKERAGE, or SCHEME:ISA."
+                ),
+                prev=prev,
+            )
+
+    resolved_treatment = (tax_treatment or "").strip().upper()
+    if resolved_treatment not in _VALID_TREATMENTS:
+        resolved_treatment = _default_treatment_for_group_and_mode(
+            lot_group,
+            normalized_confirmation_mode,
+        )
+    elif normalized_confirmation_mode == "stock":
+        resolved_treatment = _default_treatment_for_group_and_mode(
+            lot_group,
+            normalized_confirmation_mode,
+        )
     normalized_quantity = (quantity or "").strip() or None
     normalized_ib_code = (ib_code or "").strip() or None
     has_extended_ib_fields = any(
@@ -936,6 +1069,16 @@ async def dividends_add_submit(
         "gross_rate_original_ccy": parsed_gross_rate_original_ccy,
         "ex_date": parsed_ex_date.isoformat() if parsed_ex_date else None,
         "ib_code": normalized_ib_code,
+        "confirmation_mode": (
+            normalized_confirmation_mode
+            if normalized_confirmation_mode == "stock"
+            else None
+        ),
+        "stock_quantity_received": (
+            parsed_stock_quantity_received
+            if normalized_confirmation_mode == "stock"
+            else None
+        ),
     }
     if normalized_lot_ids:
         ib_meta["lot_ids"] = ",".join(normalized_lot_ids)
@@ -981,7 +1124,38 @@ async def dividends_add_submit(
         )
 
     msg_text = "Dividend entry added."
-    if (
+    if normalized_confirmation_mode == "stock":
+        holding_scope = _holding_scope_from_lot_group(normalized_group_value)
+        try:
+            reinvestment = DividendService.create_stock_reinvestment_lot(
+                entry_id=str(entry["id"]),
+                security_id=resolved_security_id,
+                holding_scope=str(holding_scope or ""),
+                dividend_date=parsed_date,
+                reinvested_amount_original_ccy=resolved_cash_amount_original
+                or Decimal("0"),
+                original_currency=entry["original_currency"],
+                fx_rate_to_gbp=_parse_decimal_optional(
+                    entry.get("fx_rate_to_gbp"),
+                    "fx_rate_to_gbp",
+                ),
+                stock_quantity_received=parsed_stock_quantity_received or Decimal("0"),
+                fx_rate_source=entry.get("fx_rate_source"),
+            )
+            msg_text = (
+                "Dividend entry added; "
+                f"created {reinvestment['scheme_type']} lot for "
+                f"{reinvestment['quantity']} shares."
+            )
+        except (ValueError, KeyError) as exc:
+            DividendService.delete_dividend_entry(str(entry["id"]))
+            return _render_dividends_page(
+                request,
+                settings=settings,
+                error=_exc_message(exc),
+                prev=prev,
+            )
+    elif (
         normalized_cash_container != "NONE"
         and resolved_cash_amount_original is not None
         and resolved_cash_amount_original > Decimal("0")

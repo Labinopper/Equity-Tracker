@@ -212,6 +212,50 @@ def test_dividend_summary_and_timeline_use_actual_net_cash_when_withholding_logg
     assert timeline["net_dividends_by_security_gbp"][sec.id] == "2.13"
 
 
+def test_stock_reinvestment_confirmation_creates_sip_dividend_lot_without_cash_double_count(
+    app_context,
+):
+    sec = _add_security("DIVSIP")
+
+    entry = DividendService.confirm_reference_dividend(
+        security_id=sec.id,
+        ex_dividend_date=date(2026, 2, 10),
+        dividend_date=date(2026, 3, 1),
+        holding_scope="ESPP",
+        confirmation_mode="stock",
+        amount_original_ccy=Decimal("12.50"),
+        original_currency="GBP",
+        stock_quantity_received=Decimal("2.5"),
+    )
+
+    with AppContext.read_session() as sess:
+        lots = LotRepository(sess).get_all_lots_for_security(sec.id)
+
+    assert len(lots) == 1
+    lot = lots[0]
+    assert lot.id == entry["reinvestment_lot_id"]
+    assert lot.scheme_type == "SIP_DIVIDEND"
+    assert Decimal(lot.quantity) == Decimal("2.5")
+    assert Decimal(lot.acquisition_price_gbp) == Decimal("5.00")
+    assert Decimal(lot.true_cost_per_share_gbp) == Decimal("0")
+    assert Decimal(lot.fmv_at_acquisition_gbp) == Decimal("5.00")
+
+    payload = DividendService.get_summary(as_of=date(2026, 3, 5))
+    summary = payload["summary"]
+    assert summary["actual_gross_dividends_gbp"] == "12.50"
+    assert summary["actual_net_paid_gbp"] == "0.00"
+    assert summary["all_time_isa_exempt_dividends_gbp"] == "12.50"
+    assert summary["estimated_net_dividends_gbp"] == "0.00"
+
+    allocation_row = payload["allocation"]["rows"][0]
+    assert allocation_row["cash_base_dividends_gbp"] == "0.00"
+    assert allocation_row["allocated_net_dividends_gbp"] == "0.00"
+
+    timeline = DividendService.get_net_dividends_timeline(as_of=date(2026, 3, 5))
+    assert timeline["total_net_dividends_gbp"] == "0.00"
+    assert timeline["net_dividends_by_security_gbp"][sec.id] == "0.00"
+
+
 def test_delete_dividend_entry_removes_linked_cash_ledger_rows(app_context, tmp_path):
     prior_db_path = _state.get_db_path()
     ledger_db_path = tmp_path / "dividend-delete.db"

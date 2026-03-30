@@ -160,6 +160,8 @@ class BetaIntradayOutlookService:
                 snapshot = latest_snapshots.get(item.instrument_id)
                 if snapshot is None:
                     continue
+                if str(snapshot.session_state or "").strip().upper() != "REGULAR_OPEN":
+                    continue
                 feature_values = {
                     str(key): _safe_float(value)
                     for key, value in _json_object(snapshot.feature_snapshot_json).items()

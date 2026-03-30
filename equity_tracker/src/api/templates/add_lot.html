@@ -55,6 +55,8 @@
             {{ 'selected' if prev and prev.scheme_type == st }}>
             {% if st == "ESPP_PLUS" %}
             ESPP+
+            {% elif st == "SIP_DIVIDEND" %}
+            SIP Dividend
             {% else %}
             {{ st }}
             {% endif %}
@@ -66,8 +68,8 @@
       <div
         id="row-acquisition-date"
         class="form-field"
-        data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
-        data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        data-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"
+        data-required-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"
       >
         <label for="acquisition_date">Acquisition Date *</label>
         <input
@@ -144,8 +146,8 @@
       <div
         id="row-price-input-currency"
         class="form-field"
-        data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
-        data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        data-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"
+        data-required-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"
         hidden
       >
         <label for="price_input_currency">Input Currency *</label>
@@ -203,14 +205,15 @@
       <div
         id="row-purchase-price"
         class="form-field"
-        data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
-        data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"
+        data-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"
+        data-required-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"
         hidden
       >
         <!--
           Label text is set by JS on scheme change:
           - ESPP      -> "Purchase Price (what you paid, {CCY} per share) *"
           - ESPP_PLUS -> "Gross Purchase Price (salary funded, {CCY} per share) *"
+          - SIP_DIVIDEND -> "Reinvestment FMV ({CCY} per share) *"
           - BROKERAGE -> "Acquisition Price ({CCY} per share) *"
         -->
         <label id="label-purchase-price" for="purchase_price_per_share_gbp">
@@ -818,23 +821,29 @@
 
   function applySchemeFields() {
     var scheme     = schemeSel.value;
-    var isEsppPlus = (scheme === 'ESPP_PLUS');
-    var inputCurrency = selectedInputCurrency();
-    var ccyPerShare = inputCurrency + ' per share';
+      var isEsppPlus = (scheme === 'ESPP_PLUS');
+      var isSipDividend = (scheme === 'SIP_DIVIDEND');
+      var inputCurrency = selectedInputCurrency();
+      var ccyPerShare = inputCurrency + ' per share';
 
-    /* Quantity label + ESPP_PLUS helper */
-    qtyLabel.textContent = isEsppPlus ? 'Quantity (employee shares) *' : 'Quantity *';
-    qtyEsppHint.hidden   = !isEsppPlus;
+      /* Quantity label + ESPP_PLUS helper */
+      qtyLabel.textContent = isEsppPlus
+        ? 'Quantity (employee shares) *'
+        : (isSipDividend ? 'Reinvested Shares *' : 'Quantity *');
+      qtyEsppHint.hidden   = !isEsppPlus;
 
     /*
       Purchase price label differs by scheme:
       - BROKERAGE/ISA -> "Acquisition Price (GBP per share) *"
+      - SIP_DIVIDEND -> "Reinvestment FMV (GBP per share) *"
       - ESPP      -> "Purchase Price (what you paid, GBP per share) *"
       - ESPP_PLUS -> "Gross Purchase Price (salary funded, GBP per share) *"
     */
     if (labelPurchase) {
       if (scheme === 'BROKERAGE' || scheme === 'ISA') {
         labelPurchase.textContent = 'Acquisition Price (' + ccyPerShare + ') *';
+      } else if (scheme === 'SIP_DIVIDEND') {
+        labelPurchase.textContent = 'Reinvestment FMV (' + ccyPerShare + ') *';
       } else if (scheme === 'ESPP_PLUS') {
         labelPurchase.textContent = 'Gross Purchase Price (salary funded, ' + ccyPerShare + ') *';
       } else {
@@ -870,7 +879,7 @@
     */
     var ready = false;
     if (scheme === 'RSU')                            ready = (qty > 0);
-    if (scheme === 'BROKERAGE' || scheme === 'ISA') ready = (qty > 0 && purchase > 0);
+    if (scheme === 'BROKERAGE' || scheme === 'ISA' || scheme === 'SIP_DIVIDEND') ready = (qty > 0 && purchase > 0);
     if (scheme === 'ESPP' || scheme === 'ESPP_PLUS') ready = (qty > 0 && purchase > 0);
 
     derivedWrapper.hidden = !ready;
@@ -900,6 +909,13 @@
       derivedCaveat.textContent = (scheme === 'ISA')
         ? 'ISA holdings are tax-sheltered at disposal. Stored in GBP for reporting; broker holding currency is retained.'
         : 'Stored in GBP for reporting; broker holding currency is retained.';
+
+    } else if (scheme === 'SIP_DIVIDEND') {
+      var dividendCcy = selectedInputCurrency();
+      derivedLabel.textContent = 'True economic cost';
+      derivedAmount.textContent = formatMoney(0, dividendCcy);
+      derivedCaveat.textContent =
+        'SIP dividend shares use reinvestment FMV as CGT basis, but true economic cost is stored as £0.';
 
     } else if (scheme === 'ESPP_PLUS') {
       /*
@@ -982,6 +998,8 @@
         } else {
           trueCostPerShareGbp = acqPricePerShareGbp;
         }
+      } else if (scheme === 'SIP_DIVIDEND') {
+        trueCostPerShareGbp = 0;
       } else {
         trueCostPerShareGbp = acqPricePerShareGbp;
       }
@@ -1094,6 +1112,9 @@
       }
     } else if (scheme === 'ISA') {
       sellabilityImpact = 'Sellable and ISA-sheltered for disposal tax.';
+    } else if (scheme === 'SIP_DIVIDEND') {
+      sellabilityImpact = 'Sellable, but SIP qualifying-period rules still affect disposal tax treatment.';
+      riskFlags.push('Adds SIP dividend shares with zero true cost and FMV-based CGT basis.');
     } else if (scheme === 'ESPP') {
       sellabilityImpact = 'Sellable; may change concentration and taxable wrapper exposure.';
     }

@@ -38,6 +38,7 @@ from .twelve_data_dividend_service import TwelveDataDividendService
 _GBP_Q = Decimal("0.01")
 _PCT_Q = Decimal("0.01")
 _FX_Q = Decimal("0.000001")
+_PRICE_Q = Decimal("0.00000001")
 _VALID_TREATMENTS = frozenset({"TAXABLE", "ISA_EXEMPT"})
 _GBP = "GBP"
 _IBKR_META_PREFIX = "IBKR_META:"
@@ -65,6 +66,10 @@ def _q_pct(value: Decimal) -> Decimal:
 
 def _q_fx(value: Decimal) -> Decimal:
     return value.quantize(_FX_Q, rounding=ROUND_HALF_UP)
+
+
+def _q_price(value: Decimal) -> Decimal:
+    return value.quantize(_PRICE_Q, rounding=ROUND_HALF_UP)
 
 
 def _to_decimal(value: object) -> Decimal | None:
@@ -367,11 +372,51 @@ def _holding_bucket_tax_treatment(bucket: str) -> str:
     return "ISA_EXEMPT" if (bucket or "").strip().upper() == "ISA" else "TAXABLE"
 
 
+def _tax_treatment_for_confirmation(*, bucket: str, confirmation_mode: str) -> str:
+    normalized_bucket = (bucket or "").strip().upper()
+    normalized_mode = (confirmation_mode or "").strip().lower()
+    if normalized_mode == "stock" and normalized_bucket in {"ESPP", "ESPP_PLUS", "ISA"}:
+        return "ISA_EXEMPT"
+    return _holding_bucket_tax_treatment(normalized_bucket)
+
+
 def _holding_bucket_lot_group(bucket: str) -> str:
     normalized = (bucket or "").strip().upper()
     if not normalized:
         raise ValueError("holding bucket is required.")
     return f"SCHEME:{normalized}"
+
+
+def _holding_scope_from_lot_group(lot_group: str | None) -> str | None:
+    normalized = (lot_group or "").strip().upper()
+    if not normalized:
+        return None
+    if normalized == "ISA_ONLY":
+        return "ISA"
+    if normalized.startswith("SCHEME:"):
+        scope = normalized.split(":", 1)[1].strip()
+        return scope or None
+    return None
+
+
+def _confirmation_mode_from_meta(ib_meta: dict[str, object]) -> str:
+    normalized = str(ib_meta.get("confirmation_mode") or "").strip().lower()
+    return normalized if normalized in {"cash", "stock"} else "cash"
+
+
+def _is_stock_reinvestment_meta(ib_meta: dict[str, object]) -> bool:
+    return _confirmation_mode_from_meta(ib_meta) == "stock"
+
+
+def _stock_reinvestment_scheme_for_scope(holding_scope: str) -> str:
+    normalized = (holding_scope or "").strip().upper()
+    if normalized in {"ESPP", "ESPP_PLUS"}:
+        return "SIP_DIVIDEND"
+    if normalized in {"BROKERAGE", "ISA"}:
+        return normalized
+    raise ValueError(
+        "Stock dividend reinvestment is only supported for ESPP, ESPP_PLUS, BROKERAGE, or ISA holdings."
+    )
 
 
 def _eligible_quantities_by_holding_bucket_on_ex_date(
@@ -771,6 +816,36 @@ class DividendService:
             }
 
     @staticmethod
+    def update_dividend_entry_metadata(
+        *,
+        entry_id: str,
+        metadata: dict[str, object],
+    ) -> dict[str, str]:
+        with AppContext.write_session() as sess:
+            div_repo = DividendEntryRepository(sess)
+            sec_repo = SecurityRepository(sess)
+            entry = div_repo.get_by_id(entry_id)
+            if entry is None:
+                raise KeyError(f"Dividend entry not found: {entry_id!r}")
+
+            existing_meta, clean_notes = _extract_ibkr_meta(entry.notes)
+            merged_meta = dict(existing_meta)
+            for key, value in (metadata or {}).items():
+                if value is None:
+                    merged_meta.pop(key, None)
+                    continue
+                merged_meta[key] = value
+
+            entry.notes = _append_ibkr_meta(clean_notes, merged_meta)
+            sec = sec_repo.require_by_id(entry.security_id)
+            sess.flush()
+            return {
+                "id": entry.id,
+                "security_id": entry.security_id,
+                "ticker": sec.ticker,
+            }
+
+    @staticmethod
     def add_dividend_entry(
         *,
         security_id: str,
@@ -780,6 +855,8 @@ class DividendService:
         original_currency: str | None = _GBP,
         fx_rate_to_gbp: Decimal | None = None,
         fx_rate_source: str | None = None,
+        tax_withheld_original_ccy: Decimal | None = None,
+        fee_original_ccy: Decimal | None = None,
         tax_treatment: str = "TAXABLE",
         source: str | None = "manual",
         notes: str | None = None,
@@ -794,6 +871,12 @@ class DividendService:
             else None
         )
         normalized_fx_rate = _q_fx(fx_rate_to_gbp) if fx_rate_to_gbp is not None else None
+        normalized_tax_withheld = (
+            _q_money(tax_withheld_original_ccy)
+            if tax_withheld_original_ccy is not None
+            else None
+        )
+        normalized_fee = _q_money(fee_original_ccy) if fee_original_ccy is not None else None
 
         if normalized_amount_gbp is not None and normalized_amount_gbp <= Decimal("0"):
             raise ValueError("amount_gbp must be greater than zero.")
@@ -801,6 +884,10 @@ class DividendService:
             raise ValueError("amount_original_ccy must be greater than zero.")
         if normalized_fx_rate is not None and normalized_fx_rate <= Decimal("0"):
             raise ValueError("fx_rate_to_gbp must be greater than zero.")
+        if normalized_tax_withheld is not None and normalized_tax_withheld < Decimal("0"):
+            raise ValueError("tax_withheld_original_ccy cannot be negative.")
+        if normalized_fee is not None and normalized_fee < Decimal("0"):
+            raise ValueError("fee_original_ccy cannot be negative.")
 
         if normalized_currency == _GBP:
             if normalized_amount_gbp is None and normalized_amount_original is None:
@@ -839,6 +926,16 @@ class DividendService:
         if normalized_treatment not in _VALID_TREATMENTS:
             raise ValueError("tax_treatment must be one of ['TAXABLE', 'ISA_EXEMPT'].")
 
+        merged_notes = notes
+        if normalized_tax_withheld is not None or normalized_fee is not None:
+            existing_meta, clean_notes = _extract_ibkr_meta(notes)
+            merged_meta = dict(existing_meta)
+            if normalized_tax_withheld is not None:
+                merged_meta["tax_withheld_original_ccy"] = normalized_tax_withheld
+            if normalized_fee is not None:
+                merged_meta["fee_original_ccy"] = normalized_fee
+            merged_notes = _append_ibkr_meta(clean_notes, merged_meta)
+
         with AppContext.write_session() as sess:
             sec_repo = SecurityRepository(sess)
             sec = sec_repo.require_by_id(security_id)
@@ -852,7 +949,7 @@ class DividendService:
                 fx_rate_source=normalized_fx_source,
                 tax_treatment=normalized_treatment,
                 source=source,
-                notes=notes,
+                notes=merged_notes,
             )
             sess.flush()
             return {
@@ -869,6 +966,112 @@ class DividendService:
                 "source": entry.source or "",
                 "notes": entry.notes or "",
             }
+
+    @staticmethod
+    def create_stock_reinvestment_lot(
+        *,
+        entry_id: str,
+        security_id: str,
+        holding_scope: str,
+        dividend_date: date,
+        reinvested_amount_original_ccy: Decimal,
+        original_currency: str,
+        fx_rate_to_gbp: Decimal | None,
+        stock_quantity_received: Decimal,
+        fx_rate_source: str | None = None,
+    ) -> dict[str, str]:
+        if reinvested_amount_original_ccy <= Decimal("0"):
+            raise ValueError("reinvested_amount_original_ccy must be greater than zero.")
+        if stock_quantity_received <= Decimal("0"):
+            raise ValueError("stock_quantity_received must be greater than zero.")
+
+        normalized_scope = (holding_scope or "").strip().upper()
+        scheme_type = _stock_reinvestment_scheme_for_scope(normalized_scope)
+        normalized_currency = _normalize_currency(original_currency)
+        resolved_fx = _q_fx(fx_rate_to_gbp) if fx_rate_to_gbp is not None else None
+        if resolved_fx is None:
+            if normalized_currency == _GBP:
+                resolved_fx = Decimal("1.000000")
+            else:
+                resolved_fx, fx_rate_source = _auto_fx_rate_to_gbp(
+                    from_currency=normalized_currency,
+                    dividend_date=dividend_date,
+                )
+        normalized_fx_source = (fx_rate_source or "").strip() or "dividend_reinvestment"
+        external_id = f"dividend-reinvestment:{entry_id}"
+
+        with AppContext.read_session() as sess:
+            existing = LotRepository(sess).get_by_external_id(external_id)
+        if existing is not None:
+            DividendService.update_dividend_entry_metadata(
+                entry_id=entry_id,
+                metadata={
+                    "reinvestment_lot_id": existing.id,
+                    "reinvestment_scheme_type": existing.scheme_type,
+                    "reinvestment_quantity": stock_quantity_received,
+                    "reinvestment_amount_original_ccy": reinvested_amount_original_ccy,
+                },
+            )
+            return {
+                "lot_id": existing.id,
+                "scheme_type": existing.scheme_type,
+                "quantity": str(stock_quantity_received),
+            }
+
+        total_reinvested_gbp = reinvested_amount_original_ccy * resolved_fx
+        acquisition_price_original = _q_price(
+            reinvested_amount_original_ccy / stock_quantity_received
+        )
+        acquisition_price_gbp = _q_price(total_reinvested_gbp / stock_quantity_received)
+        true_cost_per_share_gbp = (
+            Decimal("0")
+            if scheme_type == "SIP_DIVIDEND"
+            else acquisition_price_gbp
+        )
+        fmv_at_acquisition_gbp = (
+            acquisition_price_gbp
+            if scheme_type == "SIP_DIVIDEND"
+            else None
+        )
+        broker_currency = normalized_currency if scheme_type in {"BROKERAGE", "ISA"} else None
+
+        lot = PortfolioService.add_lot(
+            security_id=security_id,
+            scheme_type=scheme_type,
+            acquisition_date=dividend_date,
+            quantity=stock_quantity_received,
+            acquisition_price_gbp=acquisition_price_gbp,
+            true_cost_per_share_gbp=true_cost_per_share_gbp,
+            fmv_at_acquisition_gbp=fmv_at_acquisition_gbp,
+            acquisition_price_original_ccy=acquisition_price_original,
+            original_currency=normalized_currency,
+            broker_currency=broker_currency,
+            fx_rate_at_acquisition=resolved_fx,
+            fx_rate_source=normalized_fx_source,
+            external_id=external_id,
+            import_source="dividend_reinvestment_auto",
+            notes=(
+                f"Auto-created from dividend entry {entry_id} "
+                f"({normalized_scope} stock reinvestment)."
+            ),
+        )
+
+        DividendService.update_dividend_entry_metadata(
+            entry_id=entry_id,
+            metadata={
+                "reinvestment_lot_id": lot.id,
+                "reinvestment_scheme_type": scheme_type,
+                "reinvestment_quantity": stock_quantity_received,
+                "reinvestment_amount_original_ccy": reinvested_amount_original_ccy,
+                "reinvestment_price_original_ccy": acquisition_price_original,
+                "reinvestment_price_gbp": acquisition_price_gbp,
+            },
+        )
+        return {
+            "lot_id": lot.id,
+            "scheme_type": scheme_type,
+            "quantity": str(stock_quantity_received),
+        }
 
     @staticmethod
     def confirm_reference_dividend(
@@ -890,12 +1093,15 @@ class DividendService:
         normalized_scope = (holding_scope or "").strip().upper()
         if not normalized_scope:
             raise ValueError("holding_scope is required.")
-        tax_treatment = _holding_bucket_tax_treatment(normalized_scope)
         lot_group = _holding_bucket_lot_group(normalized_scope)
 
         normalized_mode = (confirmation_mode or "").strip().lower()
         if normalized_mode not in {"cash", "stock"}:
             raise ValueError("confirmation_mode must be cash or stock.")
+        tax_treatment = _tax_treatment_for_confirmation(
+            bucket=normalized_scope,
+            confirmation_mode=normalized_mode,
+        )
         if amount_original_ccy <= Decimal("0"):
             raise ValueError("gross amount must be greater than zero.")
         if normalized_mode == "stock" and (
@@ -924,10 +1130,12 @@ class DividendService:
             "tax_withheld_original_ccy": tax_withheld_original_ccy,
             "fee_original_ccy": fee_original_ccy,
         }
+        if normalized_mode == "stock" and tax_treatment == "ISA_EXEMPT":
+            metadata["tax_exempt_reason"] = "plan_stock_reinvestment"
         if stock_quantity_received is not None and stock_quantity_received > Decimal("0"):
             metadata["stock_quantity_received"] = stock_quantity_received
 
-        return DividendService.add_dividend_entry(
+        entry = DividendService.add_dividend_entry(
             security_id=security_id,
             dividend_date=dividend_date,
             amount_gbp=None,
@@ -942,6 +1150,25 @@ class DividendService:
                 metadata=metadata,
             ),
         )
+        if normalized_mode == "stock":
+            try:
+                reinvestment = DividendService.create_stock_reinvestment_lot(
+                    entry_id=str(entry["id"]),
+                    security_id=security_id,
+                    holding_scope=normalized_scope,
+                    dividend_date=dividend_date,
+                    reinvested_amount_original_ccy=net_amount_original_ccy,
+                    original_currency=original_currency,
+                    fx_rate_to_gbp=fx_rate_to_gbp,
+                    stock_quantity_received=stock_quantity_received or Decimal("0"),
+                    fx_rate_source=fx_rate_source,
+                )
+                entry["reinvestment_lot_id"] = reinvestment["lot_id"]
+                entry["reinvestment_scheme_type"] = reinvestment["scheme_type"]
+            except (ValueError, KeyError):
+                DividendService.delete_dividend_entry(str(entry["id"]))
+                raise
+        return entry
 
     @staticmethod
     def eligible_lot_ids_for_holding_scope(
@@ -1262,7 +1489,9 @@ class DividendService:
             net_gbp = cash_components["net_gbp"]
             tax_withheld_gbp = cash_components["tax_withheld_gbp"]
             fee_gbp = cash_components["fee_gbp"]
-            cash_base_gbp = net_gbp
+            confirmation_mode = _confirmation_mode_from_meta(ib_meta)
+            is_stock_reinvestment = _is_stock_reinvestment_meta(ib_meta)
+            cash_base_gbp = Decimal("0") if is_stock_reinvestment else net_gbp
 
             all_time_total += amount
             all_time_cash_base_total += cash_base_gbp
@@ -1281,7 +1510,7 @@ class DividendService:
                 actual_gross_dividends += gross_gbp
                 actual_withholding_tax += tax_withheld_gbp
                 actual_fees += fee_gbp
-                actual_net_paid += net_gbp
+                actual_net_paid += cash_base_gbp
                 if ib_meta:
                     actual_rows_with_ib_detail += 1
                 if tax_withheld_original > Decimal("0"):
@@ -1360,6 +1589,14 @@ class DividendService:
                     "tax_withheld_gbp": _money_str(tax_withheld_gbp),
                     "fee_gbp": _money_str(fee_gbp),
                     "net_amount_gbp": _money_str(net_gbp),
+                    "cash_base_gbp": _money_str(_q_money(cash_base_gbp)),
+                    "confirmation_mode": confirmation_mode,
+                    "is_stock_reinvestment": is_stock_reinvestment,
+                    "stock_quantity_received": (
+                        _decimal_to_plain_str(_to_decimal(ib_meta.get("stock_quantity_received")))
+                    ),
+                    "reinvestment_lot_id": ib_meta.get("reinvestment_lot_id"),
+                    "reinvestment_scheme_type": ib_meta.get("reinvestment_scheme_type"),
                     "quantity": ib_meta.get("quantity"),
                     "gross_rate_original_ccy": ib_meta.get("gross_rate_original_ccy"),
                     "ex_date": ib_meta.get("ex_date"),
@@ -1561,6 +1798,10 @@ class DividendService:
             notes.append(
                 "No withholding tax rows logged yet; add tax withheld to match broker payout slips."
             )
+        if any(bool(row.get("is_stock_reinvestment")) for row in entry_rows):
+            notes.append(
+                "Stock-reinvested dividend entries are excluded from cash payout and capital-at-risk offsets to avoid double counting against the reinvested lot value."
+            )
         reference_notes: list[str] = [
             "Reference dividends come from Twelve Data and are not auto-booked as received cash."
         ]
@@ -1673,6 +1914,11 @@ class DividendService:
                 fx_rate_to_gbp=fx_rate_to_gbp,
                 ib_meta=ib_meta,
             )
+            cash_base_gbp = (
+                Decimal("0")
+                if _is_stock_reinvestment_meta(ib_meta)
+                else cash_components["net_gbp"]
+            )
             treatment = (entry.tax_treatment or "TAXABLE").strip().upper()
             if treatment not in _VALID_TREATMENTS:
                 treatment = "TAXABLE"
@@ -1684,10 +1930,10 @@ class DividendService:
                 "dividend_date": entry.dividend_date,
                 "tax_year": tax_year,
                 "amount_gbp": amount,
-                "cash_base_gbp": cash_components["net_gbp"],
+                "cash_base_gbp": cash_base_gbp,
                 "is_taxable": is_taxable,
                 "allocated_tax_gbp": Decimal("0.00"),
-                "net_dividend_gbp": cash_components["net_gbp"],
+                "net_dividend_gbp": cash_base_gbp,
             }
             rows.append(row)
             if is_taxable:

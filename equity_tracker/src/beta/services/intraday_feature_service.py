@@ -55,6 +55,16 @@ class BetaIntradayFeatureService:
     """Maintain per-session intraday execution features incrementally."""
 
     @staticmethod
+    def _snapshot_session_state(
+        *,
+        exchange: str | None,
+        last_minute_ts: datetime | None,
+        now_utc: datetime | None,
+    ) -> str:
+        anchor = last_minute_ts or now_utc
+        return BetaMarketSessionService.session_state(exchange, now_utc=anchor)
+
+    @staticmethod
     def refresh_feature_snapshots(
         *,
         priority_items: list[IntradayPriorityItem],
@@ -126,8 +136,9 @@ class BetaIntradayFeatureService:
                         )
                     )
                 if not minute_rows and snapshot.feature_snapshot_json:
-                    snapshot.session_state = BetaMarketSessionService.session_state(
-                        priority_item.exchange,
+                    snapshot.session_state = BetaIntradayFeatureService._snapshot_session_state(
+                        exchange=priority_item.exchange,
+                        last_minute_ts=snapshot.last_minute_ts,
                         now_utc=now_utc,
                     )
                     snapshot.priority_tier = priority_item.tier
@@ -152,8 +163,9 @@ class BetaIntradayFeatureService:
                 snapshot.feature_snapshot_json = json.dumps(feature_snapshot, sort_keys=True)
                 snapshot.accumulator_state_json = json.dumps(state, sort_keys=True)
                 snapshot.priority_tier = priority_item.tier
-                snapshot.session_state = BetaMarketSessionService.session_state(
-                    priority_item.exchange,
+                snapshot.session_state = BetaIntradayFeatureService._snapshot_session_state(
+                    exchange=priority_item.exchange,
+                    last_minute_ts=snapshot.last_minute_ts,
                     now_utc=now_utc,
                 )
                 snapshots_updated += 1

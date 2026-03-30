@@ -92,7 +92,7 @@ from ..dependencies import session_required
 
 router = APIRouter(tags=["ui"], dependencies=[Depends(session_required)])
 
-ADD_LOT_SCHEME_TYPES = ("RSU", "ESPP", "ESPP_PLUS", "BROKERAGE", "ISA")
+ADD_LOT_SCHEME_TYPES = ("RSU", "ESPP", "ESPP_PLUS", "SIP_DIVIDEND", "BROKERAGE", "ISA")
 SIMULATE_SCHEME_TYPES = ["", *ADD_LOT_SCHEME_TYPES]
 DEFAULT_PRICE_INPUT_CURRENCIES = ("GBP", "USD")
 _HTML_UTF8_MEDIA_TYPE = "text/html; charset=utf-8"
@@ -2952,6 +2952,11 @@ def _derive_true_cost_per_share(
             Decimal("0.0001"), rounding=ROUND_HALF_UP
         )
 
+    if scheme_type == "SIP_DIVIDEND":
+        # SIP dividend shares use FMV at reinvestment as CGT basis, but
+        # true economic cost is zero because the dividend stays in-plan.
+        return Decimal("0")
+
     return None
 
 
@@ -3873,7 +3878,7 @@ async def add_lot_submit(
                 notes=notes.strip() or None,
             )
 
-        elif scheme_type in ("ESPP", "BROKERAGE", "ISA"):
+        elif scheme_type in ("ESPP", "BROKERAGE", "ISA", "SIP_DIVIDEND"):
             try:
                 purchase_price_input = Decimal(purchase_price_per_share_gbp)
             except InvalidOperation as exc:
@@ -3900,12 +3905,15 @@ async def add_lot_submit(
                 espp_fmv_at_purchase_gbp=espp_fmv,
                 settings=settings,
             )
-            true_cost = derived_true_cost or purchase_price
+            true_cost = (
+                derived_true_cost if derived_true_cost is not None else purchase_price
+            )
             broker_currency = (
                 normalized_price_input_currency
                 if scheme_type in {"BROKERAGE", "ISA"}
                 else None
             )
+            fmv_at_acquisition = purchase_price if scheme_type == "SIP_DIVIDEND" else espp_fmv
 
             PortfolioService.add_lot(
                 security_id=security_id,
@@ -3914,7 +3922,7 @@ async def add_lot_submit(
                 quantity=qty,
                 acquisition_price_gbp=purchase_price,
                 true_cost_per_share_gbp=true_cost,
-                fmv_at_acquisition_gbp=espp_fmv,
+                fmv_at_acquisition_gbp=fmv_at_acquisition,
                 acquisition_price_original_ccy=purchase_price_input,
                 original_currency=normalized_price_input_currency,
                 broker_currency=broker_currency,

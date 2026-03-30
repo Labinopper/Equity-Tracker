@@ -106,7 +106,7 @@ class BetaIntradayAggregationService:
                     last_row = rows[-1]
                     values = {
                         "instrument_id": instrument_id,
-                        "session_date": last_row.price_date,
+                        "session_date": minute_ts.date(),
                         "minute_ts": minute_ts,
                         "open_price_gbp": str(prices[0]),
                         "high_price_gbp": str(max(prices)),

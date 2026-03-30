@@ -18,6 +18,7 @@ from src.db.repository import SecurityCatalogRepository
 from src.db.repository.lots import LotRepository
 from src.db.repository.prices import PriceRepository
 from src.services.dividend_service import DividendService
+from src.services.fx_service import FxQuote
 from src.services.portfolio_service import PortfolioService
 from src.services.sheets_fx_service import FxRow
 from src.settings import AppSettings
@@ -105,11 +106,11 @@ def test_add_lot_form_shows_only_supported_scheme_types(client):
     assert "RSU" in resp.text
     assert "ESPP" in resp.text
     assert "ESPP+" in resp.text
+    assert "SIP_DIVIDEND" in resp.text
     assert "BROKERAGE" in resp.text
     assert "ISA" in resp.text
     assert "SIP_PARTNERSHIP" not in resp.text
     assert "SIP_MATCHING" not in resp.text
-    assert "SIP_DIVIDEND" not in resp.text
 
 
 def test_add_lot_template_has_per_scheme_field_mappings(client):
@@ -125,8 +126,8 @@ def test_add_lot_template_has_per_scheme_field_mappings(client):
     assert 'type="hidden"' in html
     assert "rsuLivePrices" in html
     assert "rsuTaxRate" in html
-    assert 'data-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"' in html
-    assert 'data-required-schemes="ESPP,ESPP_PLUS,BROKERAGE,ISA"' in html
+    assert 'data-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"' in html
+    assert 'data-required-schemes="ESPP,ESPP_PLUS,SIP_DIVIDEND,BROKERAGE,ISA"' in html
     assert 'name="price_input_currency"' in html
     assert 'value="GBP"' in html
     assert 'value="USD"' in html
@@ -250,21 +251,48 @@ def test_add_lot_isa_success(client):
     assert lot.broker_currency == "GBP"
 
 
+def test_add_lot_sip_dividend_success(client):
+    sec_id = _add_security(client, ticker="UISIPDIV")
+    resp = _post_add_lot_ui(
+        client,
+        {
+            "security_id": sec_id,
+            "scheme_type": "SIP_DIVIDEND",
+            "acquisition_date": "2025-03-01",
+            "quantity": "2.5",
+            "purchase_price_per_share_gbp": "5.25",
+        },
+    )
+    assert resp.status_code == 303
+
+    with AppContext.read_session() as sess:
+        lots = LotRepository(sess).get_all_lots_for_security(sec_id)
+    assert len(lots) == 1
+    lot = lots[0]
+    assert lot.scheme_type == "SIP_DIVIDEND"
+    assert Decimal(lot.acquisition_price_gbp) == Decimal("5.25")
+    assert Decimal(lot.true_cost_per_share_gbp) == Decimal("0")
+    assert Decimal(lot.fmv_at_acquisition_gbp) == Decimal("5.25")
+
+
 def test_add_lot_brokerage_usd_converts_to_gbp_and_persists_fx_metadata(client, monkeypatch):
     sec_id = _add_security(client, ticker="UIUSDOK", currency="USD")
 
-    def _fx() -> dict[str, FxRow]:
-        return {
-            "USD2GBP": FxRow(
-                pair="USD2GBP",
-                rate=Decimal("0.8000"),
-                as_of="2026-02-24 12:00:00",
-            )
-        }
+    def _get_rate(from_currency: str, to_currency: str, *, rates=None) -> FxQuote:
+        assert from_currency == "USD"
+        assert to_currency == "GBP"
+        return FxQuote(
+            from_currency="USD",
+            to_currency="GBP",
+            rate=Decimal("0.8000"),
+            as_of="2026-02-24 12:00:00",
+            source="google_sheets_fx_tab",
+            path=("USD2GBP",),
+        )
 
     monkeypatch.setattr(
-        "src.api.routers.ui.FxService.read_rates",
-        staticmethod(_fx),
+        "src.api.routers.ui.FxService.get_rate",
+        staticmethod(_get_rate),
     )
 
     resp = _post_add_lot_ui(
@@ -297,8 +325,12 @@ def test_add_lot_usd_rejects_when_usd2gbp_rate_missing(client, monkeypatch):
     sec_id = _add_security(client, ticker="UIUSDMISS", currency="USD")
 
     monkeypatch.setattr(
-        "src.api.routers.ui.FxService.read_rates",
-        staticmethod(lambda: {}),
+        "src.api.routers.ui.FxService.get_rate",
+        staticmethod(
+            lambda from_currency, to_currency, *, rates=None: (_ for _ in ()).throw(
+                RuntimeError("USD2GBP missing")
+            )
+        ),
     )
 
     resp = _post_add_lot_ui(
@@ -319,18 +351,21 @@ def test_add_lot_usd_rejects_when_usd2gbp_rate_missing(client, monkeypatch):
 def test_add_lot_brokerage_eur_converts_to_gbp_and_persists_fx_metadata(client, monkeypatch):
     sec_id = _add_security(client, ticker="UIEUROK", currency="EUR")
 
-    def _fx() -> dict[str, FxRow]:
-        return {
-            "EUR2GBP": FxRow(
-                pair="EUR2GBP",
-                rate=Decimal("0.8500"),
-                as_of="2026-02-24 12:30:00",
-            )
-        }
+    def _get_rate(from_currency: str, to_currency: str, *, rates=None) -> FxQuote:
+        assert from_currency == "EUR"
+        assert to_currency == "GBP"
+        return FxQuote(
+            from_currency="EUR",
+            to_currency="GBP",
+            rate=Decimal("0.8500"),
+            as_of="2026-02-24 12:30:00",
+            source="google_sheets_fx_tab",
+            path=("EUR2GBP",),
+        )
 
     monkeypatch.setattr(
-        "src.api.routers.ui.FxService.read_rates",
-        staticmethod(_fx),
+        "src.api.routers.ui.FxService.get_rate",
+        staticmethod(_get_rate),
     )
 
     resp = _post_add_lot_ui(

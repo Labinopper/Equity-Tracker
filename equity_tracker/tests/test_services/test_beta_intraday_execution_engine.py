@@ -637,6 +637,110 @@ def test_intraday_feature_snapshot_populates_vwap_and_expected_volume_profiles(b
     assert features["distance_from_vwap_pct"] is not None
 
 
+def test_intraday_aggregation_uses_observed_minute_date_when_snapshot_price_date_is_stale(beta_context):
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        for minute_offset, price in enumerate((178.5, 178.6)):
+            observed_at = datetime(2026, 3, 30, 14, 30 + minute_offset, 0)
+            sess.add(
+                BetaIntradaySnapshot(
+                    instrument_id=instrument.id,
+                    price_date=date(2026, 3, 27),
+                    price_gbp=str(price),
+                    price_native=str(price),
+                    currency="USD",
+                    observed_at=observed_at,
+                    source="test",
+                )
+            )
+
+    BetaIntradayAggregationService.aggregate_minute_bars(
+        instrument_ids=[instrument.id],
+        lookback_minutes=240,
+    )
+
+    with BetaContext.read_session() as sess:
+        minute_bars = list(
+            sess.scalars(
+                select(BetaMinuteBar)
+                .where(BetaMinuteBar.instrument_id == instrument.id)
+                .order_by(BetaMinuteBar.minute_ts.asc())
+            ).all()
+        )
+
+    assert len(minute_bars) == 2
+    assert {row.session_date for row in minute_bars} == {date(2026, 3, 30)}
+
+
+def test_intraday_feature_snapshot_keeps_last_bar_session_state_anchor(beta_context):
+    session_date = date(2026, 3, 16)
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        sess.add(
+            BetaDailyBar(
+                instrument_id=instrument.id,
+                bar_date=date(2026, 3, 13),
+                close_price_gbp="100",
+                close_price_native="100",
+                currency="USD",
+                source="test",
+            )
+        )
+        _add_minute_bar_series(
+            sess,
+            instrument_id=instrument.id,
+            session_date=session_date,
+            start_ts=datetime(2026, 3, 16, 14, 30, 0),
+            close_values=[101.0, 101.2, 101.4],
+            volume_value=1000.0,
+        )
+
+    priority_item = IntradayPriorityItem(
+        instrument_id=instrument.id,
+        symbol="IBM",
+        market="US",
+        exchange="NASDAQ",
+        tier="HELD",
+        cadence_minutes=3,
+        priority_score=1.0,
+        session_state="REGULAR_OPEN",
+    )
+    BetaIntradayFeatureService.refresh_feature_snapshots(
+        priority_items=[priority_item],
+        now_utc=datetime(2026, 3, 16, 14, 33, tzinfo=timezone.utc),
+    )
+    BetaIntradayFeatureService.refresh_feature_snapshots(
+        priority_items=[priority_item],
+        now_utc=datetime(2026, 3, 16, 22, 0, tzinfo=timezone.utc),
+    )
+
+    with BetaContext.read_session() as sess:
+        snapshot = sess.scalar(
+            select(BetaIntradayFeatureSnapshot).where(BetaIntradayFeatureSnapshot.instrument_id == instrument.id)
+        )
+
+    assert snapshot is not None
+    assert snapshot.last_minute_ts == datetime(2026, 3, 16, 14, 32, 0)
+    assert snapshot.session_state == "REGULAR_OPEN"
+
+
 def test_intraday_feature_snapshot_adds_time_of_day_and_historical_bias_features(beta_context):
     session_date = date(2026, 3, 18)
 
@@ -1540,6 +1644,65 @@ def test_intraday_outlook_service_keeps_weak_median_bias_informational(beta_cont
     assert latest.post_cost_expected_return_15m_pct == Decimal("0.1113")
     assert latest.recommended_action_side == "HOLD"
     assert latest.recommended_action_code == "NO_ACTION"
+
+
+def test_intraday_outlook_service_skips_non_regular_open_snapshots(beta_context):
+    settings = BetaSettings()
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        sess.add(
+            BetaIntradayFeatureSnapshot(
+                instrument_id=instrument.id,
+                session_date=date(2026, 3, 30),
+                session_state="CLOSED",
+                priority_tier="HELD",
+                last_minute_ts=datetime(2026, 3, 30, 10, 46, 0),
+                feature_snapshot_json=json.dumps(
+                    {
+                        "gap_from_prev_close_pct": 0.1,
+                        "return_since_open_pct": 0.0,
+                        "return_last_15m_pct": 0.0,
+                        "distance_from_vwap_pct": 0.0,
+                        "session_progress_pct": 0.0,
+                        "minutes_until_close": 390,
+                    },
+                    sort_keys=True,
+                ),
+                accumulator_state_json=json.dumps({}, sort_keys=True),
+            )
+        )
+
+    result = BetaIntradayOutlookService.capture_current_observations(
+        settings,
+        priority_items=[
+            IntradayPriorityItem(
+                instrument_id=instrument.id,
+                symbol="IBM",
+                market="US",
+                exchange="NASDAQ",
+                tier="HELD",
+                cadence_minutes=3,
+                priority_score=1.0,
+                session_state="CLOSED",
+            )
+        ],
+        now_utc=datetime(2026, 3, 30, 10, 46, 0, tzinfo=timezone.utc),
+    )
+
+    with BetaContext.read_session() as sess:
+        observation_count = sess.scalar(select(func.count()).select_from(BetaIntradayFeatureObservation))
+
+    assert result["observations_written"] == 0
+    assert observation_count == 0
 
 
 def test_execution_signal_service_only_alerts_on_state_change_or_band_change(beta_context):

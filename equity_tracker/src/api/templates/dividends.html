@@ -178,13 +178,22 @@
         <span class="form-hint">Enter the gross dividend amount before withholding tax. Net cash is derived from gross less withholding/fees when those fields are provided.</span>
       </div>
       <div class="form-field">
+        <label for="add_dividend_confirmation_mode">Receipt Mode</label>
+        {% set selected_confirmation_mode = (prev.confirmation_mode if prev and prev.confirmation_mode else 'cash') %}
+        <select id="add_dividend_confirmation_mode" name="confirmation_mode">
+          <option value="cash" {{ 'selected' if selected_confirmation_mode == 'cash' else '' }}>Cash</option>
+          <option value="stock" {{ 'selected' if selected_confirmation_mode == 'stock' else '' }}>Stock Reinvestment</option>
+        </select>
+        <span class="form-hint">Use stock reinvestment when the dividend bought new shares. Saving will create a linked lot and skip cash posting.</span>
+      </div>
+      <div class="form-field">
         <label for="add_dividend_cash_container">Cash Container</label>
         <select id="add_dividend_cash_container" name="cash_container">
           {% for container in cash_containers %}
           <option value="{{ container }}" {{ 'selected' if prev and prev.cash_container == container else '' }}>{{ container }}</option>
           {% endfor %}
         </select>
-        <span class="form-hint">Where the dividend cash should be posted after the entry is saved.</span>
+        <span class="form-hint">Used for cash receipts only. Stock reinvestments create a lot instead of posting cash.</span>
       </div>
       <div class="form-field">
         <label for="add_dividend_tax_treatment">Treatment</label>
@@ -193,6 +202,18 @@
           <option value="{{ treatment }}" {{ 'selected' if prev and prev.tax_treatment == treatment else '' }}>{{ treatment }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="form-field">
+        <label for="add_dividend_stock_quantity_received">Stock Quantity Received</label>
+        <input
+          id="add_dividend_stock_quantity_received"
+          type="text"
+          name="stock_quantity_received"
+          inputmode="decimal"
+          value="{{ prev.stock_quantity_received if prev else '' }}"
+          placeholder="Required for stock reinvestment"
+        >
+        <span class="form-hint">Enter the reinvested share quantity from the statement. Leave blank for cash dividends.</span>
       </div>
     </div>
     </div>
@@ -249,7 +270,7 @@
             <option value="{{ option.id }}" {{ 'selected' if prev and prev.lot_group == option.id else '' }}>{{ option.label }}</option>
             {% endfor %}
           </select>
-          <span class="form-hint">Used when recording at group/security level. Lot-linked submissions override this automatically.</span>
+          <span class="form-hint">Used when recording at group/security level. Stock reinvestment requires a single scheme group. Lot-linked submissions override this automatically.</span>
         </div>
         <div class="form-field">
           <label for="add_dividend_quantity">Linked Quantity</label>
