@@ -12,8 +12,11 @@ from src.beta.db.engine import BetaDatabaseEngine
 from src.beta.db.models import (
     BetaFeatureDefinition,
     BetaFeatureValue,
+    BetaHypothesisBeliefState,
     BetaHypothesisDefinition,
     BetaHypothesisFamily,
+    BetaRecommendationDecision,
+    BetaSignalObservation,
     BetaHypothesisTemplate,
     BetaHypothesisTestRun,
     BetaInstrument,
@@ -26,6 +29,7 @@ from src.beta.services.hypothesis_belief_service import BetaHypothesisBeliefServ
 from src.beta.services.hypothesis_definition_service import BetaHypothesisDefinitionService
 from src.beta.services.hypothesis_discovery_service import BetaHypothesisDiscoveryService
 from src.beta.services.hypothesis_normalizer import BetaHypothesisNormalizer
+from src.beta.services.hypothesis_signal_service import BetaHypothesisSignalService
 from src.beta.settings import BetaSettings
 
 
@@ -195,6 +199,31 @@ def test_backtest_summary_is_friction_aware():
     assert summary["baseline_edge_pct"] is not None
 
 
+def test_backtest_summary_flags_outlier_driven_edge_illusions():
+    settings = BetaSettings()
+    matched_samples = [
+        (f"i{index}", date(2026, 3, 1) + timedelta(days=index), -0.3)
+        for index in range(29)
+    ] + [("i-outlier", date(2026, 3, 30), 150.0)]
+    feature_rows = [
+        {"market_ret_10d_pct": -2.0 if index % 3 == 0 else 0.0, "realized_vol_20d_pct": 9.0 if index % 4 == 0 else 5.0}
+        for index in range(len(matched_samples))
+    ]
+    summary = BetaHypothesisBacktestService.summarize_candidate_samples(
+        matched_samples=matched_samples,
+        eligible_samples=matched_samples + [("i-extra", date(2026, 4, 1), 0.0)],
+        expected_direction="BULLISH",
+        settings=settings,
+        matched_feature_rows=feature_rows,
+    )
+
+    governance = summary["notes"]["governance"]
+
+    assert governance["watch_eligible"] is False
+    assert "median_excess_return_non_positive" in governance["hard_fail_reasons"]
+    assert "mean_median_divergence_too_high" in governance["hard_fail_reasons"]
+
+
 def test_belief_assessment_transitions_to_validated_and_retired():
     base_created = datetime(2026, 3, 10, 12, 0, 0)
     validated_runs = [
@@ -275,6 +304,173 @@ def test_belief_assessment_transitions_to_validated_and_retired():
     assert retired["status"] == "RETIRED"
 
 
+def test_belief_assessment_degrades_when_realized_live_feedback_turns_negative():
+    base_created = datetime(2026, 3, 10, 12, 0, 0)
+    validated_runs = [
+        BetaHypothesisTestRun(
+            sample_size=140,
+            support_count=140,
+            transaction_cost_adjusted_return_pct=0.45,
+            walk_forward_score=0.18,
+            out_of_sample_score=0.22,
+            baseline_edge_pct=0.12,
+            stability_score=0.55,
+            test_end_date=date(2026, 3, 1),
+            created_at=base_created,
+        ),
+        BetaHypothesisTestRun(
+            sample_size=150,
+            support_count=150,
+            transaction_cost_adjusted_return_pct=0.4,
+            walk_forward_score=0.16,
+            out_of_sample_score=0.2,
+            baseline_edge_pct=0.1,
+            stability_score=0.5,
+            test_end_date=date(2026, 2, 20),
+            created_at=base_created - timedelta(days=5),
+        ),
+        BetaHypothesisTestRun(
+            sample_size=145,
+            support_count=145,
+            transaction_cost_adjusted_return_pct=0.38,
+            walk_forward_score=0.15,
+            out_of_sample_score=0.18,
+            baseline_edge_pct=0.09,
+            stability_score=0.48,
+            test_end_date=date(2026, 2, 10),
+            created_at=base_created - timedelta(days=10),
+        ),
+    ]
+
+    degraded = BetaHypothesisBeliefService._assess_definition(
+        validated_runs,
+        realized_feedback={
+            "observation_count": 4,
+            "average_realized_return_pct": -0.8,
+            "median_realized_return_pct": -0.6,
+            "win_rate_pct": 25.0,
+            "average_prediction_error_pct": -2.1,
+            "recent_average_realized_return_pct": -1.1,
+            "degradation_rate": 0.3,
+            "latest_realized_at": base_created,
+        },
+    )
+
+    assert degraded["status"] in {"DEGRADED", "REJECTED"}
+    assert degraded["notes"]["observation_feedback"]["observation_count"] == 4
+
+
+def test_signal_service_reuses_same_day_observation_and_decision(beta_context):
+    decision_date = date(2026, 3, 18)
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+            is_active=True,
+        )
+        family = BetaHypothesisFamily(
+            family_code="REVERSAL",
+            family_name="Reversal",
+            generator_type="MANUAL",
+            default_target_metric="fwd_3d_excess_return_pct",
+            default_holding_period_days=3,
+            status="ACTIVE",
+        )
+        feature_def = BetaFeatureDefinition(
+            feature_name="ret_5d_pct",
+            version_code="test_v1",
+            feature_family="test",
+            timeframe="1D",
+            is_active=True,
+        )
+        sess.add_all([instrument, family, feature_def])
+        sess.flush()
+        definition = BetaHypothesisDefinition(
+            family_id=family.id,
+            hypothesis_code="REVERSAL_TEST_V1",
+            name="Reversal Test",
+            universe_json=json.dumps({"markets": ["US"]}, sort_keys=True),
+            entry_conditions_json=json.dumps(
+                {"all": [{"feature": "ret_5d_pct", "op": "lt", "value": -1.0}]},
+                sort_keys=True,
+            ),
+            holding_period_days=3,
+            target_metric="fwd_3d_excess_return_pct",
+            expected_direction="BULLISH",
+            status="VALIDATED",
+        )
+        sess.add(definition)
+        sess.flush()
+        sess.add(
+            BetaHypothesisBeliefState(
+                hypothesis_definition_id=definition.id,
+                confidence_score=0.82,
+                evidence_count=6,
+                in_sample_strength=0.7,
+                out_of_sample_strength=0.55,
+                degradation_rate=0.0,
+                recency_score=0.8,
+                stability_score=0.65,
+                status="VALIDATED",
+            )
+        )
+        sess.add(
+            BetaFeatureValue(
+                feature_definition_id=feature_def.id,
+                instrument_id=instrument.id,
+                feature_date=decision_date,
+                value_numeric=-2.2,
+            )
+        )
+        context = BetaHypothesisSignalService.load_runtime_context(sess)
+        first = BetaHypothesisSignalService.evaluate_live_matches(
+            sess,
+            context=context,
+            instrument=instrument,
+            decision_date=decision_date,
+            observation_time=datetime(2026, 3, 18, 10, 0, 0),
+            evidence={"validated_baseline_policy": {"policy_name": "test_policy"}},
+            direction="BULLISH",
+            confidence=0.8,
+            edge=0.6,
+            predicted_return_pct=3.4,
+            prediction_source="MODEL",
+            signal_qualified=True,
+            candidate_promotion_allowed=True,
+        )
+        second = BetaHypothesisSignalService.evaluate_live_matches(
+            sess,
+            context=context,
+            instrument=instrument,
+            decision_date=decision_date,
+            observation_time=datetime(2026, 3, 18, 10, 5, 0),
+            evidence={"validated_baseline_policy": {"policy_name": "test_policy"}},
+            direction="BULLISH",
+            confidence=0.8,
+            edge=0.6,
+            predicted_return_pct=3.4,
+            prediction_source="MODEL",
+            signal_qualified=True,
+            candidate_promotion_allowed=True,
+        )
+
+    with BetaContext.read_session() as sess:
+        observations = list(sess.scalars(select(BetaSignalObservation)).all())
+        decisions = list(sess.scalars(select(BetaRecommendationDecision)).all())
+
+    assert first["observation_counts"] == {"created": 1, "reused": 0}
+    assert first["decision_counts"] == {"created": 1, "reused": 0}
+    assert second["observation_counts"] == {"created": 0, "reused": 1}
+    assert second["decision_counts"] == {"created": 0, "reused": 1}
+    assert len(observations) == 1
+    assert len(decisions) == 1
+    assert decisions[0].decision_status == "RECOMMENDED"
+
+
 def test_discovery_run_promotes_survivor_into_definition(beta_context):
     settings = BetaSettings()
     settings.hypothesis_discovery_enabled = True
@@ -283,6 +479,12 @@ def test_discovery_run_promotes_survivor_into_definition(beta_context):
     settings.hypothesis_discovery_max_promotions_per_run = 2
     settings.hypothesis_discovery_min_support = 3
     settings.hypothesis_discovery_max_condition_count = 4
+    settings.hypothesis_discovery_min_matched_instruments = 1
+    settings.hypothesis_discovery_min_time_span_days = 1
+    settings.hypothesis_discovery_min_regime_buckets = 0
+    settings.hypothesis_discovery_min_friction_adjusted_return_pct = 0.0
+    settings.hypothesis_discovery_min_baseline_edge_pct = 0.0
+    settings.hypothesis_discovery_max_top_two_positive_return_share = 1.0
 
     with BetaContext.write_session() as sess:
         family = BetaHypothesisFamily(
@@ -349,12 +551,12 @@ def test_discovery_run_promotes_survivor_into_definition(beta_context):
             version_code="test_v1",
             horizon_days=5,
             definition_text="test",
-            is_active=True,
+            is_canonical=True,
         )
         sess.add(label_def)
         sess.flush()
 
-        decision_dates = [date(2026, 2, 1) + timedelta(days=offset) for offset in range(9)]
+        decision_dates = [date(2026, 2, 1) + timedelta(days=offset) for offset in range(30)]
         for index in range(5):
             instrument = BetaInstrument(
                 symbol=f"S{index}",

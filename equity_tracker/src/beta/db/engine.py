@@ -17,6 +17,7 @@ def _attach_sqlite_pragmas(engine) -> None:
         dbapi_conn.execute("PRAGMA foreign_keys = ON")
         dbapi_conn.execute("PRAGMA journal_mode = WAL")
         dbapi_conn.execute("PRAGMA synchronous = NORMAL")
+        dbapi_conn.execute("PRAGMA busy_timeout = 60000")
 
 
 class BetaDatabaseEngine:
@@ -30,7 +31,7 @@ class BetaDatabaseEngine:
     def open(cls, db_path: Path) -> "BetaDatabaseEngine":
         engine = create_engine(
             f"sqlite:///{db_path}",
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 60.0},
             poolclass=NullPool,
         )
         _attach_sqlite_pragmas(engine)
@@ -40,7 +41,7 @@ class BetaDatabaseEngine:
     def open_in_memory(cls) -> "BetaDatabaseEngine":
         engine = create_engine(
             "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 60.0},
             poolclass=StaticPool,
         )
         _attach_sqlite_pragmas(engine)

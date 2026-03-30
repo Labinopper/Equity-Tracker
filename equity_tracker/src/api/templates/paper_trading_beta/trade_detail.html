@@ -9,12 +9,26 @@
   </div>
 </section>
 {% else %}
-{% set position = detail.position %}
-{% set hypothesis = detail.hypothesis %}
+{% set position = detail.position or {} %}
+{% set candidate = detail.candidate or {} %}
+{% set hypothesis = detail.hypothesis or {} %}
+{% set definition = detail.hypothesis_definition or {} %}
+{% set family = detail.hypothesis_family or {} %}
+{% set belief = detail.belief_state or {} %}
+{% set observation = detail.signal_observation or {} %}
+{% set recommendation = detail.recommendation_decision or {} %}
+{% set latest_test = detail.latest_test_run or {} %}
+{% set governance = detail.governance or {} %}
+{% set gate_metrics = governance.gate_metrics if governance.gate_metrics is defined else {} %}
+{% set position_state = detail.position_state or {} %}
+{% set state_metadata = detail.position_state_metadata or {} %}
+{% set candidate_evidence = detail.candidate_evidence or {} %}
 <section class="section-header">
   <div>
     <h1>{{ position.symbol }} Demo Trade</h1>
-    <p class="muted beta-page-note">Replayable view of the demo trade lifecycle.</p>
+    <p class="muted beta-page-note">
+      Thesis-linked view of the paper trade, including the originating setup, recommendation decision, and intraday execution feedback.
+    </p>
   </div>
   <div class="beta-toolbar">
     <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/trades">Back to Trades</a>
@@ -30,24 +44,54 @@
     </div>
     <div class="position-card__section">
       <div class="position-card__label">Side</div>
-      <div class="position-card__value">{{ position.side }}</div>
+      <div class="position-card__value">{{ position.side or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Opened / Closed</div>
+      <div class="position-card__value">{{ position.opened_at or "-" }} / {{ position.closed_at or "-" }}</div>
     </div>
   </article>
+
   <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Sizing</h2></div>
+    <div class="card__header"><h2 class="card__title">Trade Plan</h2></div>
     <div class="position-card__section">
       <div class="position-card__label">Size GBP</div>
-      <div class="position-card__value">{{ position.size_gbp }}</div>
+      <div class="position-card__value">{{ position.size_gbp or "-" }}</div>
     </div>
     <div class="position-card__section">
-      <div class="position-card__label">Units / Entry</div>
-      <div class="position-card__value">{{ position.units or "-" }} / {{ position.entry_price or "-" }}</div>
+      <div class="position-card__label">Target / Stop</div>
+      <div class="position-card__value">{{ position.target_return_pct or "-" }} / {{ position.stop_loss_pct or "-" }}</div>
     </div>
     <div class="position-card__section">
-      <div class="position-card__label">Confidence / Edge</div>
-      <div class="position-card__value">{{ "%.2f"|format(position.confidence_score or 0) }} / {{ "%.2f"|format(position.expected_edge_score or 0) }}</div>
+      <div class="position-card__label">Planned Horizon</div>
+      <div class="position-card__value">{{ position.planned_horizon_days or "-" }}</div>
     </div>
   </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Setup</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Definition</div>
+      <div class="position-card__value">
+        {% if definition.id %}
+        <a href="/paper-trading-beta/hypothesis/{{ definition.id }}">{{ definition.hypothesis_code }}</a>
+        {% elif hypothesis.id %}
+        <a href="/paper-trading-beta/hypothesis/{{ hypothesis.id }}">{{ hypothesis.title }}</a>
+        {% else %}
+        -
+        {% endif %}
+      </div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Belief</div>
+      <div class="position-card__value"><span class="{{ badge_class(belief.status or definition.status or hypothesis.status) }}">{{ belief.status or definition.status or hypothesis.status or "-" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Family</div>
+      <div class="position-card__value">{{ family.family_name or family.family_code or "-" }}</div>
+    </div>
+  </article>
+
   <article class="card beta-stat-card">
     <div class="card__header"><h2 class="card__title">P&amp;L</h2></div>
     <div class="position-card__section">
@@ -58,30 +102,117 @@
       <div class="position-card__label">%</div>
       <div class="position-card__value">{{ position.pnl_pct or "-" }}</div>
     </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Exit Reason</div>
+      <div class="position-card__value">{{ position.exit_reason or "-" }}</div>
+    </div>
   </article>
+
   <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Hypothesis</h2></div>
+    <div class="card__header"><h2 class="card__title">Recommendation</h2></div>
     <div class="position-card__section">
-      <div class="position-card__label">Family</div>
-      <div class="position-card__value">
-        {% if hypothesis %}
-        <a href="/paper-trading-beta/hypothesis/{{ hypothesis.id }}">{{ hypothesis.title }}</a>
-        {% else %}
-        -
-        {% endif %}
-      </div>
+      <div class="position-card__label">Decision</div>
+      <div class="position-card__value"><span class="{{ badge_class(recommendation.decision_status) }}">{{ recommendation.decision_status or "-" }}</span></div>
     </div>
     <div class="position-card__section">
-      <div class="position-card__label">Status</div>
-      <div class="position-card__value">
-        {% if hypothesis %}
-        <span class="{{ badge_class(hypothesis.status) }}">{{ hypothesis.status }}</span>
-        {% else %}
-        -
-        {% endif %}
-      </div>
+      <div class="position-card__label">Action / Score</div>
+      <div class="position-card__value">{{ recommendation.paper_trade_action or "-" }} / {{ recommendation.recommendation_score if recommendation.recommendation_score is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Reason</div>
+      <div class="position-card__value">{{ recommendation.decision_reason_text or recommendation.decision_reason_code or "-" }}</div>
     </div>
   </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Execution State</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Source / Status</div>
+      <div class="position-card__value">{{ position_state.position_source or "-" }} / <span class="{{ badge_class(position_state.position_status) }}">{{ position_state.position_status or "-" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Thesis % / Horizon</div>
+      <div class="position-card__value">{{ position_state.thesis_expected_return_pct if position_state.thesis_expected_return_pct is not none else "-" }} / {{ position_state.thesis_horizon_days or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Execution Quality</div>
+      <div class="position-card__value">{{ position_state.execution_quality_score if position_state.execution_quality_score is not none else "-" }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Thesis Traceability</h2></div>
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <tbody>
+        <tr>
+          <th>Candidate</th>
+          <td>
+            {% if candidate.id %}
+            <a href="/paper-trading-beta/candidate/{{ candidate.id }}">{{ candidate.symbol }} candidate</a>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <th>Candidate Status</th>
+          <td><span class="{{ badge_class(candidate.status) }}">{{ candidate.status or "-" }}</span></td>
+        </tr>
+        <tr>
+          <th>Setup</th>
+          <td>{{ definition.hypothesis_code or hypothesis.title or "-" }}</td>
+          <th>Family</th>
+          <td>{{ family.family_name or family.family_code or "-" }}</td>
+        </tr>
+        <tr>
+          <th>Observation</th>
+          <td><span class="{{ badge_class(observation.observation_status) }}">{{ observation.observation_status or "-" }}</span></td>
+          <th>Expected / Realized %</th>
+          <td>{{ observation.expected_return_pct if observation.expected_return_pct is not none else "-" }} / {{ observation.realized_return_pct if observation.realized_return_pct is not none else "-" }}</td>
+        </tr>
+        <tr>
+          <th>Belief Confidence</th>
+          <td>{{ "%.2f"|format(belief.confidence_score or 0) }}</td>
+          <th>Evidence Count</th>
+          <td>{{ belief.evidence_count or 0 }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Research Validity</h2></div>
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <tbody>
+        <tr>
+          <th>Target / Horizon</th>
+          <td>{{ definition.target_metric or "-" }} / {{ definition.holding_period_days or "-" }}</td>
+          <th>Expected Direction</th>
+          <td>{{ definition.expected_direction or candidate.direction or position.side or "-" }}</td>
+        </tr>
+        <tr>
+          <th>Sample / Support</th>
+          <td>{{ latest_test.sample_size or 0 }} / {{ latest_test.support_count or 0 }}</td>
+          <th>Median Ex. / Robust Edge</th>
+          <td>{{ latest_test.median_excess_return_pct if latest_test.median_excess_return_pct is not none else "-" }} / {{ gate_metrics.winsorized_adjusted_return_pct if gate_metrics.winsorized_adjusted_return_pct is defined else "-" }}</td>
+        </tr>
+        <tr>
+          <th>Stability / Walk Fwd</th>
+          <td>{{ latest_test.stability_score if latest_test.stability_score is not none else "-" }} / {{ latest_test.walk_forward_score if latest_test.walk_forward_score is not none else "-" }}</td>
+          <th>Watch / Promote</th>
+          <td>{{ "yes" if governance.watch_eligible else "no" }} / {{ "yes" if governance.promotion_eligible else "no" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% if governance.hard_fail_reasons or governance.promotion_fail_reasons %}
+  <p class="muted">
+    Gate reasons:
+    {{ (governance.hard_fail_reasons or governance.promotion_fail_reasons)|join(", ") }}
+  </p>
+  {% endif %}
 </section>
 
 <section class="card card-spaced">
@@ -89,7 +220,9 @@
   {% if detail.position_events %}
   <div class="table-wrap">
     <table class="beta-table-compact">
-      <thead><tr><th>When</th><th>Event</th><th>Note</th><th>Payload</th></tr></thead>
+      <thead>
+        <tr><th>When</th><th>Event</th><th>Note</th><th>Payload</th></tr>
+      </thead>
       <tbody>
         {% for row in detail.position_events %}
         <tr>
@@ -108,11 +241,94 @@
 </section>
 
 <section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Execution Feedback</h2></div>
+  {% if detail.execution_signals %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr><th>When</th><th>Signal</th><th>Confidence</th><th>Trigger</th><th>Rationale</th></tr>
+      </thead>
+      <tbody>
+        {% for row in detail.execution_signals %}
+        <tr>
+          <td>{{ row.signal_time }}</td>
+          <td><span class="{{ badge_class(row.signal_type) }}">{{ row.signal_type }}</span></td>
+          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
+          <td>{{ row.event_trigger_code or "-" }}</td>
+          <td>{{ row.rationale_text or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No execution signals are linked to this trade yet.</p>
+  {% endif %}
+
+  {% if detail.execution_labels %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr><th>Signal Time</th><th>30m</th><th>60m</th><th>120m</th><th>Close</th><th>Adverse</th><th>Favorable</th><th>Done</th></tr>
+      </thead>
+      <tbody>
+        {% for row in detail.execution_labels %}
+        <tr>
+          <td>{{ row.signal_time }}</td>
+          <td>{{ row.future_30m_return_pct if row.future_30m_return_pct is not none else "-" }}</td>
+          <td>{{ row.future_60m_return_pct if row.future_60m_return_pct is not none else "-" }}</td>
+          <td>{{ row.future_120m_return_pct if row.future_120m_return_pct is not none else "-" }}</td>
+          <td>{{ row.close_return_from_signal_pct if row.close_return_from_signal_pct is not none else "-" }}</td>
+          <td>{{ row.max_adverse_move_after_signal_pct if row.max_adverse_move_after_signal_pct is not none else "-" }}</td>
+          <td>{{ row.max_favorable_move_after_signal_pct if row.max_favorable_move_after_signal_pct is not none else "-" }}</td>
+          <td>{{ row.evaluation_complete }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">State Metadata</h2></div>
+  {% if state_metadata or candidate_evidence %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr><th>Source</th><th>Key</th><th>Value</th></tr>
+      </thead>
+      <tbody>
+        {% for key, value in state_metadata.items() %}
+        <tr>
+          <td>position_state</td>
+          <td>{{ key }}</td>
+          <td><code>{{ value }}</code></td>
+        </tr>
+        {% endfor %}
+        {% for key, value in candidate_evidence.items() %}
+        <tr>
+          <td>candidate</td>
+          <td>{{ key }}</td>
+          <td><code>{{ value }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No additional state metadata was stored for this trade.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
   <div class="card__header"><h2 class="card__title">Ledger Impact</h2></div>
   {% if detail.ledger_entries %}
   <div class="table-wrap">
     <table class="beta-table-compact">
-      <thead><tr><th>When</th><th>Type</th><th>Amount GBP</th><th>Balance After</th><th>Note</th></tr></thead>
+      <thead>
+        <tr><th>When</th><th>Type</th><th>Amount GBP</th><th>Balance After</th><th>Note</th></tr>
+      </thead>
       <tbody>
         {% for row in detail.ledger_entries %}
         <tr>
@@ -136,7 +352,9 @@
   {% if detail.scores %}
   <div class="table-wrap">
     <table class="beta-table-compact">
-      <thead><tr><th>When</th><th>Direction</th><th>Confidence</th><th>Edge</th><th>Recommended</th></tr></thead>
+      <thead>
+        <tr><th>When</th><th>Direction</th><th>Confidence</th><th>Edge</th><th>Recommended</th><th>Note</th></tr>
+      </thead>
       <tbody>
         {% for row in detail.scores %}
         <tr>
@@ -145,6 +363,7 @@
           <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
           <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
           <td>{{ row.recommendation_flag }}</td>
+          <td>{{ row.rejection_reason or "-" }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -155,12 +374,14 @@
   {% endif %}
 </section>
 
-<section class="card">
+<section class="card card-spaced">
   <div class="card__header"><h2 class="card__title">Related Official Releases</h2></div>
   {% if detail.filing_events %}
   <div class="table-wrap">
     <table class="beta-table-compact">
-      <thead><tr><th>Published</th><th>Category</th><th>Sentiment</th><th>Title</th></tr></thead>
+      <thead>
+        <tr><th>Published</th><th>Category</th><th>Sentiment</th><th>Title</th></tr>
+      </thead>
       <tbody>
         {% for row in detail.filing_events %}
         <tr>
@@ -183,7 +404,9 @@
   {% if detail.news_articles %}
   <div class="table-wrap">
     <table class="beta-table-compact">
-      <thead><tr><th>Published</th><th>Sentiment</th><th>Title</th></tr></thead>
+      <thead>
+        <tr><th>Published</th><th>Sentiment</th><th>Title</th></tr>
+      </thead>
       <tbody>
         {% for row in detail.news_articles %}
         <tr>

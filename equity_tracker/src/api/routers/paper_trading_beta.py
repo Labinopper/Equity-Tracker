@@ -93,8 +93,13 @@ def _badge_class(value: str | None) -> str:
     if raw in {
         "OPEN",
         "PROMOTED",
+        "PROMISING",
+        "VALIDATED",
+        "RECOMMENDED",
+        "WATCHING",
         "SUCCESS",
         "ACTIVE",
+        "HEALTHY",
         "IMPROVING",
         "BULLISH",
         "HOLD_THROUGH_NOISE",
@@ -106,6 +111,9 @@ def _badge_class(value: str | None) -> str:
         "RISK_OFF_EXIT",
         "DISMISSED",
         "REJECTED",
+        "RETIRED",
+        "DEGRADED",
+        "BLOCKED",
         "RISK_OFF",
         "BEARISH",
         "DECLINING",
@@ -115,6 +123,8 @@ def _badge_class(value: str | None) -> str:
     }:
         return "badge badge-warning"
     if raw in {"WAIT_FOR_CLOSE_CONFIRMATION", "NO_ACTION"}:
+        return "badge badge-neutral"
+    if raw in {"DISCOVERED", "SCREENED_IN", "CANDIDATE", "RESEARCH", "STABLE", "MEDIUM", "LOW"}:
         return "badge badge-neutral"
     if raw in {"ERROR", "FAILED", "CANCELLED"}:
         return "badge badge-delete"

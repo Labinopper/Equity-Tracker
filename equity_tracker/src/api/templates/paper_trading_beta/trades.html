@@ -2,11 +2,14 @@
 {% block title %}Beta Paper Trades{% endblock %}
 {% block content %}
 {% set ledger = dashboard.ledger or {} %}
+{% set counts = dashboard.counts or {} %}
+{% set performance = dashboard.performance or {} %}
+{% set execution_feedback = dashboard.execution_feedback_summary or {} %}
 <section class="section-header">
   <div>
     <h1>Paper Trades</h1>
     <p class="muted beta-page-note">
-      Active and closed demo positions only. This page stays compact by default.
+      Trade ledger plus thesis traceability. This page is for judging whether promoted candidates are turning into coherent paper positions and whether the execution layer is helping or hurting them.
     </p>
   </div>
 </section>
@@ -33,6 +36,35 @@
       <div class="position-card__value">{{ ledger.total_equity_gbp or "0.00" }}</div>
     </div>
   </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Trade Count</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Open / Closed</div>
+      <div class="position-card__value">{{ counts.positions_open or 0 }} / {{ counts.positions_closed or 0 }}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Execution Feedback</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Actionable Signals</div>
+      <div class="position-card__value">{{ execution_feedback.actionable_signal_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Label Completion</div>
+      <div class="position-card__value">{{ execution_feedback.execution_label_completion_pct if execution_feedback.execution_label_completion_pct is not none else "-" }}{% if execution_feedback.execution_label_completion_pct is not none %}%{% endif %}</div>
+    </div>
+  </article>
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Closed Trade Trend</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Win Rate</div>
+      <div class="position-card__value">{{ performance.win_rate_pct or 0 }}%</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg P/L %</div>
+      <div class="position-card__value">{{ performance.avg_pnl_pct or 0 }}%</div>
+    </div>
+  </article>
 </section>
 
 <section class="card card-spaced">
@@ -43,22 +75,40 @@
       <thead>
         <tr>
           <th>Symbol</th>
+          <th>Candidate</th>
+          <th>Setup</th>
           <th>Status</th>
-          <th>Confidence</th>
-          <th>Edge</th>
-          <th>Size (GBP)</th>
-          <th>Opened</th>
+          <th>Target / Stop</th>
+          <th>Horizon</th>
+          <th>Unrealized %</th>
+          <th>Last Signal</th>
         </tr>
       </thead>
       <tbody>
         {% for row in dashboard.active_positions %}
         <tr>
           <td><strong><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td>
+            {% if row.candidate_id %}
+            <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.candidate_title or row.symbol }}</a><br>
+            <span class="{{ badge_class(row.candidate_status) }}">{{ row.candidate_status or "-" }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>
+            {% if row.candidate_hypothesis_definition_id %}
+            <a href="/paper-trading-beta/hypothesis/{{ row.candidate_hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a><br>
+            <span class="muted">{{ row.hypothesis_status or row.hypothesis_family_name or "" }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
           <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
-          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
-          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
-          <td>{{ row.size_gbp }}</td>
-          <td>{{ row.opened_at }}</td>
+          <td>{{ row.target_return_pct or "-" }} / {{ row.stop_loss_pct or "-" }}</td>
+          <td>{{ row.thesis_horizon_days or row.planned_horizon_days or "-" }}</td>
+          <td>{{ row.unrealized_return_pct if row.unrealized_return_pct is not none else row.pnl_pct or "-" }}</td>
+          <td>{{ row.last_execution_signal_type or "-" }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -66,6 +116,42 @@
   </div>
   {% else %}
   <p class="muted">No active demo positions yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Open Thesis States</h2></div>
+  {% if dashboard.held_position_states %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Source</th>
+          <th>Setup</th>
+          <th>Status</th>
+          <th>Thesis % / Horizon</th>
+          <th>Execution Quality</th>
+          <th>Last Signal</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.held_position_states %}
+        <tr>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.position_source }}</td>
+          <td>{{ row.hypothesis_code or "-" }}</td>
+          <td><span class="{{ badge_class(row.position_status) }}">{{ row.position_status }}</span></td>
+          <td>{{ row.thesis_expected_return_pct if row.thesis_expected_return_pct is not none else "-" }} / {{ row.thesis_horizon_days or "-" }}</td>
+          <td>{{ row.execution_quality_score if row.execution_quality_score is not none else "-" }}</td>
+          <td>{{ row.last_execution_signal_type or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No open thesis states are being tracked yet.</p>
   {% endif %}
 </section>
 
@@ -77,6 +163,8 @@
       <thead>
         <tr>
           <th>Symbol</th>
+          <th>Candidate</th>
+          <th>Setup</th>
           <th>Status</th>
           <th>P/L GBP</th>
           <th>P/L %</th>
@@ -88,10 +176,24 @@
         {% for row in dashboard.closed_positions %}
         <tr>
           <td><strong><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></strong></td>
+          <td>
+            {% if row.candidate_id %}
+            <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.candidate_title or row.symbol }}</a>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>
+            {% if row.candidate_hypothesis_definition_id %}
+            <a href="/paper-trading-beta/hypothesis/{{ row.candidate_hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a>
+            {% else %}
+            -
+            {% endif %}
+          </td>
           <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
           <td>{{ row.pnl_gbp or "-" }}</td>
-          <td>{{ row.pnl_pct or "-" }}</td>
-          <td>{{ row.exit_reason or "-" }}</td>
+          <td>{{ row.realized_return_pct if row.realized_return_pct is not none else row.pnl_pct or "-" }}</td>
+          <td>{{ row.exit_reason or row.candidate_recommendation_reason_text or "-" }}</td>
           <td>{{ row.closed_at or row.updated_at }}</td>
         </tr>
         {% endfor %}

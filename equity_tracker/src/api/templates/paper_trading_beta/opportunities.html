@@ -1,13 +1,66 @@
 {% extends "base.html" %}
 {% block title %}Beta Opportunities{% endblock %}
 {% block content %}
+{% set counts = dashboard.counts or {} %}
+{% set validity = dashboard.validity_summary or {} %}
+{% set execution_feedback = dashboard.execution_feedback_summary or {} %}
 <section class="section-header">
   <div>
     <h1>Watched Opportunities</h1>
     <p class="muted beta-page-note">
-      High-signal candidates the system is following, plus patterns it has filtered out.
+      Candidate funnel view: which setups are valid, which names are currently being watched, and why some opportunities are blocked or dismissed.
     </p>
   </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Candidate Queue</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Watching / Promoted</div>
+      <div class="position-card__value">{{ counts.candidates_watching or 0 }} / {{ counts.candidates_promoted or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Rejected</div>
+      <div class="position-card__value">{{ counts.candidates_rejected or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Setup Coverage</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Validated / Promising</div>
+      <div class="position-card__value">{{ validity.validated_count or 0 }} / {{ validity.promising_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Watch / Promote Eligible</div>
+      <div class="position-card__value">{{ validity.watch_eligible_count or 0 }} / {{ validity.promotion_eligible_count or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Live Confirmation</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Realized Obs.</div>
+      <div class="position-card__value">{{ counts.signal_observations_realized or 0 }} / {{ counts.signal_observations_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg Realized %</div>
+      <div class="position-card__value">{{ validity.avg_realized_return_pct if validity.avg_realized_return_pct is not none else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Decision Flow</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Recommended</div>
+      <div class="position-card__value">{{ counts.recommendation_decisions_recommended or 0 }} / {{ counts.recommendation_decisions_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Simulated Theses</div>
+      <div class="position-card__value">{{ execution_feedback.open_simulated_theses or 0 }}</div>
+    </div>
+  </article>
 </section>
 
 <section class="card card-spaced">
@@ -19,11 +72,12 @@
         <tr>
           <th>Symbol</th>
           <th>Candidate</th>
+          <th>Setup</th>
           <th>Direction</th>
           <th>Pred 5D %</th>
           <th>Confidence</th>
-          <th>Edge</th>
-          <th>Signal Note</th>
+          <th>Recommendation</th>
+          <th>Note</th>
         </tr>
       </thead>
       <tbody>
@@ -45,11 +99,15 @@
             -
             {% endif %}
           </td>
+          <td>
+            {{ row.matched_hypothesis_code or "-" }}<br>
+            <span class="muted">{{ row.matched_hypothesis_status or row.matched_target_metric or "" }}</span>
+          </td>
           <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
           <td>{{ "%.2f"|format(row.predicted_return_5d or 0) }}</td>
           <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
-          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
-          <td>{{ row.rejection_reason or "No explicit note captured." }}</td>
+          <td>{{ row.recommendation_reason_code or "-" }}</td>
+          <td>{{ row.recommendation_reason_text or row.rejection_reason or "No explicit note captured." }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -61,32 +119,47 @@
 </section>
 
 <section class="card card-spaced">
-  <div class="card__header"><h2 class="card__title">Hypothesis Families</h2></div>
-  {% if dashboard.hypotheses %}
+  <div class="card__header"><h2 class="card__title">Setup Queue</h2></div>
+  {% if dashboard.hypothesis_definitions %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
+          <th>Setup</th>
           <th>Family</th>
-          <th>Status</th>
-          <th>Evidence</th>
-          <th>Summary</th>
+          <th>Belief</th>
+          <th>Robust Edge</th>
+          <th>Live</th>
+          <th>Gate</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.hypotheses %}
+        {% for row in dashboard.hypothesis_definitions[:8] %}
         <tr>
-          <td><a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.title }}</a></td>
+          <td>
+            <a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.hypothesis_code }}</a><br>
+            <span class="muted">{{ row.name }}</span>
+          </td>
+          <td>{{ row.family_name or row.family_code or "-" }}</td>
           <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
-          <td>{{ row.evidence_score or "-" }}</td>
-          <td>{{ row.notes or "Awaiting evidence." }}</td>
+          <td>{{ row.winsorized_adjusted_return_pct if row.winsorized_adjusted_return_pct is not none else "-" }}</td>
+          <td>{{ row.avg_realized_return_pct if row.avg_realized_return_pct is not none else "-" }}</td>
+          <td>
+            {% if row.promotion_eligible %}
+            <span class="{{ badge_class('VALIDATED') }}">PROMOTE OK</span>
+            {% elif row.watch_eligible %}
+            <span class="{{ badge_class('WATCHING') }}">WATCH OK</span>
+            {% else %}
+            <span class="{{ badge_class(row.governance_severity or 'DEGRADED') }}">{{ row.gate_fail_reason or "gated" }}</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">No hypothesis rows available yet.</p>
+  <p class="muted">No setup-definition data is available yet.</p>
   {% endif %}
 </section>
 
@@ -99,23 +172,37 @@
         <tr>
           <th>Symbol</th>
           <th>Title</th>
-          <th>Status</th>
+          <th>Setup</th>
+          <th>Belief</th>
+          <th>Decision</th>
           <th>Direction</th>
           <th>Confidence</th>
-          <th>Edge</th>
-          <th>Evidence</th>
+          <th>Live</th>
         </tr>
       </thead>
       <tbody>
         {% for row in dashboard.watched_candidates %}
         <tr>
           <td><strong><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></strong></td>
-          <td><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a></td>
-          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>
+            <a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a><br>
+            <span class="muted">{{ row.evidence_summary or "Awaiting richer evidence." }}</span>
+          </td>
+          <td>
+            {% if row.hypothesis_definition_id %}
+            <a href="/paper-trading-beta/hypothesis/{{ row.hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="{{ badge_class(row.hypothesis_status or row.status) }}">{{ row.hypothesis_status or row.status }}</span></td>
+          <td>
+            <span class="{{ badge_class(row.recommendation_status) }}">{{ row.recommendation_status or row.status }}</span><br>
+            <span class="muted">{{ row.recommendation_reason_text or row.rejection_reason or "" }}</span>
+          </td>
           <td>{{ row.direction }}</td>
           <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
-          <td>{{ "%.2f"|format(row.expected_edge_score or 0) }}</td>
-          <td>{{ row.evidence_summary or "Awaiting richer evidence." }}</td>
+          <td>{{ row.realized_return_pct if row.realized_return_pct is not none else row.expected_return_pct if row.expected_return_pct is not none else "-" }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -135,7 +222,8 @@
         <tr>
           <th>Symbol</th>
           <th>Title</th>
-          <th>Status</th>
+          <th>Setup</th>
+          <th>Gate</th>
           <th>Reason</th>
           <th>Updated</th>
         </tr>
@@ -145,8 +233,15 @@
         <tr>
           <td><strong><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></strong></td>
           <td><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a></td>
-          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
-          <td>{{ row.rejection_reason or "No rejection note captured yet." }}</td>
+          <td>
+            {% if row.hypothesis_definition_id %}
+            <a href="/paper-trading-beta/hypothesis/{{ row.hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="{{ badge_class(row.governance_severity or row.status) }}">{{ row.gate_fail_reason or row.status }}</span></td>
+          <td>{{ row.recommendation_reason_text or row.rejection_reason or "No rejection note captured yet." }}</td>
           <td>{{ row.updated_at }}</td>
         </tr>
         {% endfor %}

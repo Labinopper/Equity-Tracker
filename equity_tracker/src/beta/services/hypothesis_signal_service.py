@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from ..db.models import (
     BetaFeatureDefinition,
@@ -109,6 +109,8 @@ class BetaHypothesisSignalService:
             decision_date=decision_date,
         )
         matched_rows: list[dict[str, object]] = []
+        observations_created = 0
+        observations_reused = 0
         for definition in context["definitions"]:
             belief = context["beliefs"].get(definition.id)
             family = context["families"].get(definition.family_id)
@@ -137,40 +139,66 @@ class BetaHypothesisSignalService:
                 score_confidence=confidence,
                 edge=edge,
             )
-            observation = BetaSignalObservation(
+            matched_conditions_json = json.dumps(match_result.matched_terms, sort_keys=True)
+            feature_snapshot_json = json.dumps(feature_snapshot, sort_keys=True)
+            regime_context_json = json.dumps(
+                {
+                    "market": instrument.market,
+                    "sector_key": instrument.sector_key,
+                    "prediction_source": prediction_source,
+                    "score_direction": direction,
+                    "belief_status": belief_status,
+                    "family_code": family.family_code if family is not None else None,
+                    "regime_filters": regime_filters,
+                    "regime_terms": regime_result.matched_terms if regime_result is not None else [],
+                },
+                sort_keys=True,
+            )
+            baseline_name = (
+                str(((evidence.get("validated_baseline_policy") or {}) if isinstance(evidence.get("validated_baseline_policy"), dict) else {}).get("policy_name") or "").strip()
+                or None
+            )
+            observation = BetaHypothesisSignalService._reusable_observation(
+                sess,
                 hypothesis_definition_id=definition.id,
-                hypothesis_test_run_id=belief.supporting_test_run_id if belief is not None else None,
                 instrument_id=instrument.id,
-                symbol=instrument.symbol,
-                observation_time=observation_time,
                 decision_date=decision_date,
-                matched_conditions_json=json.dumps(match_result.matched_terms, sort_keys=True),
-                feature_snapshot_json=json.dumps(feature_snapshot, sort_keys=True),
-                regime_context_json=json.dumps(
-                    {
-                        "market": instrument.market,
-                        "sector_key": instrument.sector_key,
-                        "prediction_source": prediction_source,
-                        "score_direction": direction,
-                        "belief_status": belief_status,
-                        "family_code": family.family_code if family is not None else None,
-                        "regime_filters": regime_filters,
-                        "regime_terms": regime_result.matched_terms if regime_result is not None else [],
-                    },
-                    sort_keys=True,
-                ),
                 prediction_source=prediction_source,
                 expected_direction=definition.expected_direction,
-                expected_return_pct=predicted_return_pct,
-                baseline_name=(
-                    str(((evidence.get("validated_baseline_policy") or {}) if isinstance(evidence.get("validated_baseline_policy"), dict) else {}).get("policy_name") or "").strip()
-                    or None
-                ),
-                belief_confidence_score=belief_confidence,
-                observation_status="MATCHED",
+                matched_conditions_json=matched_conditions_json,
+                feature_snapshot_json=feature_snapshot_json,
             )
-            sess.add(observation)
-            sess.flush()
+            observation_reused = observation is not None
+            if observation is None:
+                observation = BetaSignalObservation(
+                    hypothesis_definition_id=definition.id,
+                    hypothesis_test_run_id=belief.supporting_test_run_id if belief is not None else None,
+                    instrument_id=instrument.id,
+                    symbol=instrument.symbol,
+                    observation_time=observation_time,
+                    decision_date=decision_date,
+                    matched_conditions_json=matched_conditions_json,
+                    feature_snapshot_json=feature_snapshot_json,
+                    regime_context_json=regime_context_json,
+                    prediction_source=prediction_source,
+                    expected_direction=definition.expected_direction,
+                    expected_return_pct=predicted_return_pct,
+                    baseline_name=baseline_name,
+                    belief_confidence_score=belief_confidence,
+                    observation_status="MATCHED",
+                )
+                sess.add(observation)
+                sess.flush()
+                observations_created += 1
+            else:
+                observation.hypothesis_test_run_id = belief.supporting_test_run_id if belief is not None else None
+                observation.observation_time = observation_time
+                observation.regime_context_json = regime_context_json
+                observation.expected_return_pct = predicted_return_pct
+                observation.baseline_name = baseline_name
+                observation.belief_confidence_score = belief_confidence
+                observation.observation_status = "MATCHED"
+                observations_reused += 1
             matched_rows.append(
                 {
                     "definition": definition,
@@ -180,11 +208,17 @@ class BetaHypothesisSignalService:
                     "belief_status": belief_status,
                     "belief_confidence": belief_confidence,
                     "recommendation_score": recommendation_score,
+                    "observation_reused": observation_reused,
                 }
             )
 
         if not matched_rows:
-            return {"matched": False, "matches": []}
+            return {
+                "matched": False,
+                "matches": [],
+                "observation_counts": {"created": observations_created, "reused": observations_reused},
+                "decision_counts": {"created": 0, "reused": 0},
+            }
 
         matched_rows.sort(key=lambda row: row["recommendation_score"], reverse=True)
         best = matched_rows[0]
@@ -202,26 +236,45 @@ class BetaHypothesisSignalService:
             "signal_qualified": signal_qualified,
             "prediction_source": prediction_source,
         }
-        decision = BetaRecommendationDecision(
+        decision_counts = {"created": 0, "reused": 0}
+        decision = BetaHypothesisSignalService._reusable_decision(
+            sess,
             signal_observation_id=best["observation"].id,
-            instrument_id=instrument.id,
-            symbol=instrument.symbol,
             decision_status=decision_status,
             decision_reason_code=reason_code,
-            decision_reason_text=reason_text,
-            belief_confidence_score=float(best["belief_confidence"]),
-            portfolio_constraint_json=json.dumps(portfolio_constraint_payload, sort_keys=True),
             paper_trade_action=paper_trade_action,
-            recommendation_score=float(best["recommendation_score"]),
         )
-        sess.add(decision)
-        sess.flush()
+        portfolio_constraint_json = json.dumps(portfolio_constraint_payload, sort_keys=True)
+        if decision is None:
+            decision = BetaRecommendationDecision(
+                signal_observation_id=best["observation"].id,
+                instrument_id=instrument.id,
+                symbol=instrument.symbol,
+                decision_status=decision_status,
+                decision_reason_code=reason_code,
+                decision_reason_text=reason_text,
+                belief_confidence_score=float(best["belief_confidence"]),
+                portfolio_constraint_json=portfolio_constraint_json,
+                paper_trade_action=paper_trade_action,
+                recommendation_score=float(best["recommendation_score"]),
+            )
+            sess.add(decision)
+            sess.flush()
+            decision_counts["created"] += 1
+        else:
+            decision.decision_reason_text = reason_text
+            decision.belief_confidence_score = float(best["belief_confidence"])
+            decision.portfolio_constraint_json = portfolio_constraint_json
+            decision.recommendation_score = float(best["recommendation_score"])
+            decision_counts["reused"] += 1
         best["observation"].observation_status = decision_status
         return {
             "matched": True,
             "matches": matched_rows,
             "best_match": best,
             "decision": decision,
+            "observation_counts": {"created": observations_created, "reused": observations_reused},
+            "decision_counts": decision_counts,
             "legacy_hypothesis": context["legacy_hypotheses"].get(
                 best["family"].family_code if best["family"] is not None else ""
             ),
@@ -248,6 +301,55 @@ class BetaHypothesisSignalService:
                 continue
             snapshot[feature_def.feature_name] = float(row.value_numeric)
         return snapshot
+
+    @staticmethod
+    def _reusable_observation(
+        sess,
+        *,
+        hypothesis_definition_id: str,
+        instrument_id: str,
+        decision_date,
+        prediction_source: str,
+        expected_direction: str,
+        matched_conditions_json: str,
+        feature_snapshot_json: str,
+    ) -> BetaSignalObservation | None:
+        return sess.scalar(
+            select(BetaSignalObservation)
+            .where(
+                BetaSignalObservation.hypothesis_definition_id == hypothesis_definition_id,
+                BetaSignalObservation.instrument_id == instrument_id,
+                BetaSignalObservation.decision_date == decision_date,
+                BetaSignalObservation.prediction_source == prediction_source,
+                BetaSignalObservation.expected_direction == expected_direction,
+                BetaSignalObservation.matched_conditions_json == matched_conditions_json,
+                BetaSignalObservation.feature_snapshot_json == feature_snapshot_json,
+                BetaSignalObservation.realized_return_pct.is_(None),
+            )
+            .order_by(desc(BetaSignalObservation.observation_time), desc(BetaSignalObservation.created_at))
+            .limit(1)
+        )
+
+    @staticmethod
+    def _reusable_decision(
+        sess,
+        *,
+        signal_observation_id: str,
+        decision_status: str,
+        decision_reason_code: str,
+        paper_trade_action: str | None,
+    ) -> BetaRecommendationDecision | None:
+        return sess.scalar(
+            select(BetaRecommendationDecision)
+            .where(
+                BetaRecommendationDecision.signal_observation_id == signal_observation_id,
+                BetaRecommendationDecision.decision_status == decision_status,
+                BetaRecommendationDecision.decision_reason_code == decision_reason_code,
+                BetaRecommendationDecision.paper_trade_action == paper_trade_action,
+            )
+            .order_by(desc(BetaRecommendationDecision.created_at))
+            .limit(1)
+        )
 
     @staticmethod
     def _universe_match(definition: BetaHypothesisDefinition, instrument: BetaInstrument) -> bool:

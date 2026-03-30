@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..context import BetaContext
@@ -56,6 +56,17 @@ class BetaIntradayAggregationService:
             for instrument_id, minute_ts in latest_bar_rows:
                 if instrument_id not in latest_minute_by_instrument:
                     latest_minute_by_instrument[instrument_id] = minute_ts
+            latest_snapshot_rows = list(
+                sess.execute(
+                    select(BetaIntradaySnapshot.instrument_id, BetaIntradaySnapshot.observed_at)
+                    .where(BetaIntradaySnapshot.instrument_id.in_(instrument_ids))
+                    .order_by(BetaIntradaySnapshot.instrument_id, desc(BetaIntradaySnapshot.observed_at))
+                ).all()
+            )
+            latest_snapshot_by_instrument: dict[str, datetime] = {}
+            for instrument_id, observed_at in latest_snapshot_rows:
+                if instrument_id not in latest_snapshot_by_instrument:
+                    latest_snapshot_by_instrument[instrument_id] = observed_at
 
             minute_bars_written = 0
             for instrument_id in instrument_ids:
@@ -64,7 +75,10 @@ class BetaIntradayAggregationService:
                     continue
                 floor_cutoff = latest_minute_by_instrument.get(instrument_id)
                 if floor_cutoff is None:
-                    floor_cutoff = datetime.utcnow() - timedelta(minutes=max(30, lookback_minutes))
+                    latest_snapshot_at = latest_snapshot_by_instrument.get(instrument_id)
+                    if latest_snapshot_at is None:
+                        continue
+                    floor_cutoff = latest_snapshot_at - timedelta(minutes=max(30, lookback_minutes))
                 snapshot_rows = list(
                     sess.scalars(
                         select(BetaIntradaySnapshot)

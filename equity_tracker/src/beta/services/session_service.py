@@ -73,6 +73,48 @@ class BetaMarketSessionService:
         }
 
     @staticmethod
+    def session_clock(exchange: str | None, *, now_utc: datetime | None = None) -> dict[str, object]:
+        now = _coerce_utc(now_utc)
+        session = BetaMarketSessionService._session_bounds(exchange, now)
+        if session is None or session["weekday_closed"]:
+            return {
+                "session_state": "CLOSED",
+                "minutes_since_open": None,
+                "minutes_until_close": None,
+                "session_progress_pct": None,
+                "regular_session_minutes": None,
+            }
+        regular_session_minutes = int(
+            max(0, (session["close_dt"] - session["open_dt"]).total_seconds() // 60)
+        )
+        local_now = session["local_now"]
+        if local_now <= session["open_dt"]:
+            minutes_since_open = 0
+            minutes_until_close = regular_session_minutes
+        elif local_now >= session["close_dt"]:
+            minutes_since_open = regular_session_minutes
+            minutes_until_close = 0
+        else:
+            minutes_since_open = int(
+                max(0, (local_now - session["open_dt"]).total_seconds() // 60)
+            )
+            minutes_until_close = int(
+                max(0, (session["close_dt"] - local_now).total_seconds() // 60)
+            )
+        session_progress_pct = (
+            round((minutes_since_open / regular_session_minutes) * 100.0, 4)
+            if regular_session_minutes > 0
+            else None
+        )
+        return {
+            "session_state": BetaMarketSessionService.session_state(exchange, now_utc=now),
+            "minutes_since_open": minutes_since_open,
+            "minutes_until_close": minutes_until_close,
+            "session_progress_pct": session_progress_pct,
+            "regular_session_minutes": regular_session_minutes,
+        }
+
+    @staticmethod
     def core_markets_closed(*, now_utc: datetime | None = None) -> bool:
         now = _coerce_utc(now_utc)
         return not BetaMarketSessionService.market_is_tradeable("LSE", now_utc=now) and not BetaMarketSessionService.market_is_tradeable("NASDAQ", now_utc=now)

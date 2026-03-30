@@ -59,6 +59,11 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError
 
+from ..env_bootstrap import load_project_dotenv
+
+# Make direct uvicorn/module launches read the same .env as run_api.py.
+load_project_dotenv()
+
 from ..app_context import AppContext
 from ..beta.runtime_manager import initialize_beta_runtime, shutdown_beta_runtime
 from ..db.engine import DatabaseEngine

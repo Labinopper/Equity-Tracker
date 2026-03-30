@@ -432,6 +432,10 @@ class BetaPositionRegistry:
                 state.execution_quality_score = quality_score
                 state.metadata_json = json.dumps(
                     {
+                        "candidate_id": position.candidate_id,
+                        "hypothesis_definition_id": candidate.hypothesis_definition_id if candidate is not None else None,
+                        "signal_observation_id": candidate.signal_observation_id if candidate is not None else None,
+                        "expected_return_pct": thesis_expected,
                         "entry_price": str(entry_price) if entry_price is not None else None,
                         "target_return_pct": position.target_return_pct,
                         "stop_loss_pct": position.stop_loss_pct,
@@ -550,8 +554,12 @@ class BetaPositionRegistry:
                 state.metadata_json = json.dumps(
                     {
                         "bridge_source": "CANDIDATE_WATCHLIST",
+                        "candidate_id": candidate.id,
+                        "hypothesis_definition_id": candidate.hypothesis_definition_id,
+                        "signal_observation_id": candidate.signal_observation_id,
                         "candidate_status": candidate.status,
                         "candidate_direction": candidate.direction,
+                        "expected_return_pct": thesis_expected,
                         "matched_target_metric": evidence.get("matched_target_metric"),
                         "trade_expression_plan": trade_plan,
                         "last_candidate_sync_at": now.isoformat(),

@@ -1,7 +1,7 @@
 """Fetch 1-minute OHLCV bars from TwelveData and write directly into BetaMinuteBar.
 
-Live mode (HELD + ACTIVE_THESIS): fetches the latest ~10 bars every supervisor cycle.
-EOD mode (GENERAL): fetches the full session (~390 bars) once after market close.
+Live mode (HELD + ACTIVE_THESIS + FOCUS): fetches the latest ~10 bars every supervisor cycle.
+EOD mode (GENERAL + FOCUS): fetches the full session (~390 bars) once after market close.
 
 TwelveData returns timestamps in exchange-local time. This service converts them
 to UTC-naive before storage, consistent with the existing BetaMinuteBar convention.
@@ -151,7 +151,7 @@ class BetaIntradayBarFetchService:
         target_days: int = 30,
         credits_budget: int = 30,
     ) -> dict[str, object]:
-        """Backfill historical 1min bars for HELD and ACTIVE_THESIS instruments.
+        """Backfill historical 1min bars for HELD, ACTIVE_THESIS, and FOCUS instruments.
 
         For each eligible instrument, checks how many days of twelvedata_1min bars
         already exist and fetches backwards in 5000-bar pages until target_days is
@@ -165,7 +165,7 @@ class BetaIntradayBarFetchService:
         if not api_key:
             return {"bars_written": 0, "instruments_backfilled": 0, "credits_used": 0}
 
-        eligible = [item for item in priority_items if item.tier in {"HELD", "ACTIVE_THESIS"}]
+        eligible = [item for item in priority_items if item.tier in {"HELD", "ACTIVE_THESIS", "FOCUS"}]
         if not eligible:
             return {"bars_written": 0, "instruments_backfilled": 0, "credits_used": 0}
 
@@ -286,7 +286,7 @@ class BetaIntradayBarFetchService:
         priority_items: list[IntradayPriorityItem],
         credits_budget: int = 30,
     ) -> dict[str, int]:
-        """Fetch latest 1min bars for HELD and ACTIVE_THESIS items (called every cycle)."""
+        """Fetch latest 1min bars for HELD, ACTIVE_THESIS, and FOCUS items (called every cycle)."""
         if not BetaContext.is_initialized():
             return {"bars_written": 0, "instruments_fetched": 0, "credits_used": 0}
 
@@ -294,7 +294,7 @@ class BetaIntradayBarFetchService:
         if not api_key:
             return {"bars_written": 0, "instruments_fetched": 0, "credits_used": 0}
 
-        eligible = [item for item in priority_items if item.tier in {"HELD", "ACTIVE_THESIS"}]
+        eligible = [item for item in priority_items if item.tier in {"HELD", "ACTIVE_THESIS", "FOCUS"}]
         if not eligible:
             return {"bars_written": 0, "instruments_fetched": 0, "credits_used": 0}
 
@@ -371,7 +371,7 @@ class BetaIntradayBarFetchService:
         session_date: date | None = None,
         credits_budget: int = 20,
     ) -> dict[str, int]:
-        """Fetch full-session 1min bars for GENERAL tier (called once per day after close)."""
+        """Fetch full-session 1min bars for GENERAL and FOCUS tiers (called once per day after close)."""
         if not BetaContext.is_initialized():
             return {"bars_written": 0, "instruments_fetched": 0, "credits_used": 0}
 
@@ -379,7 +379,7 @@ class BetaIntradayBarFetchService:
         if not api_key:
             return {"bars_written": 0, "instruments_fetched": 0, "credits_used": 0}
 
-        general_items = [item for item in priority_items if item.tier == "GENERAL"]
+        general_items = [item for item in priority_items if item.tier in {"GENERAL", "FOCUS"}]
         if not general_items:
             return {"bars_written": 0, "instruments_fetched": 0, "credits_used": 0}
 

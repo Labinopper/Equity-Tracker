@@ -6,6 +6,11 @@
 {% set risk = dashboard.risk_control or {} %}
 {% set runtime_flags = dashboard.runtime_flags or {} %}
 {% set runtime_activity = dashboard.runtime_activity or {} %}
+{% set pipeline = dashboard.pipeline_health or {} %}
+{% set validity = dashboard.validity_summary or {} %}
+{% set execution_feedback = dashboard.execution_feedback_summary or {} %}
+{% set storage = pipeline.storage_profile or {} %}
+{% set productivity = pipeline.research_productivity or {} %}
 
 <section class="section-header">
   <div>
@@ -43,6 +48,54 @@
         -
         {% endif %}
       </div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Pipeline Verdict</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Overall</div>
+      <div class="position-card__value"><span class="{{ badge_class(pipeline.overall_status) }}">{{ pipeline.overall_status or "UNKNOWN" }}</span></div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Tracked Core / Full</div>
+      <div class="position-card__value">{{ "fresh" if pipeline.core_scoring_recent else "stale" }} / {{ "fresh" if pipeline.scoring_recent else "stale" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Observations</div>
+      <div class="position-card__value">{{ "fresh" if pipeline.observation_fresh else "stale" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Storage Governance</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">DB Size</div>
+      <div class="position-card__value">{{ storage.db_size_gb if storage.db_size_gb is not none else "-" }}{% if storage.db_size_gb is not none %} GB{% endif %}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Transient Rows</div>
+      <div class="position-card__value">{{ storage.transient_rows_total if storage.transient_rows_total is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Last Cleanup</div>
+      <div class="position-card__value">{{ storage.last_cleanup_at or "none yet" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Productivity</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Surviving Beliefs</div>
+      <div class="position-card__value">{{ productivity.surviving_belief_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Candidates / Survivor</div>
+      <div class="position-card__value">{{ productivity.discovery_candidates_per_surviving_belief if productivity.discovery_candidates_per_surviving_belief is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">GB / Activated Model</div>
+      <div class="position-card__value">{{ productivity.db_size_gb_per_activated_model if productivity.db_size_gb_per_activated_model is not none else "-" }}</div>
     </div>
   </article>
 
@@ -116,6 +169,152 @@
 </section>
 
 <section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Retention Policy</h2></div>
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Class</th>
+          <th>Retention</th>
+          <th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Pipeline snapshots</td>
+          <td>{{ storage.retention_days.pipeline_snapshots if storage.retention_days is defined else "-" }} days</td>
+          <td>Short-life operational exhaust.</td>
+        </tr>
+        <tr>
+          <td>Job runs</td>
+          <td>{{ storage.retention_days.job_runs if storage.retention_days is defined else "-" }} days</td>
+          <td>Short-life runtime diagnostics.</td>
+        </tr>
+        <tr>
+          <td>Score tape</td>
+          <td>
+            {{ storage.retention_days.score_tape_non_actionable if storage.retention_days is defined else "-" }}
+            /
+            {{ storage.retention_days.score_tape_actionable if storage.retention_days is defined else "-" }} days
+          </td>
+          <td>Shorter for non-actionable exhaust, longer for actionable evidence.</td>
+        </tr>
+        <tr>
+          <td>Recommendations</td>
+          <td>
+            {{ storage.retention_days.recommendations_non_actionable if storage.retention_days is defined else "-" }}
+            /
+            {{ storage.retention_days.recommendations_actionable if storage.retention_days is defined else "-" }} days
+          </td>
+          <td>Separates debug exhaust from decision-grade evidence.</td>
+        </tr>
+        <tr>
+          <td>Intraday artefacts</td>
+          <td>
+            {{ storage.retention_days.intraday_snapshots if storage.retention_days is defined else "-" }}
+            /
+            {{ storage.retention_days.intraday_feature_snapshots if storage.retention_days is defined else "-" }}
+            /
+            {{ storage.retention_days.minute_bars if storage.retention_days is defined else "-" }} days
+          </td>
+          <td>High-grain operational traces with bounded life.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Research Productivity Ratios</h2></div>
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Feature rows / validated belief</td>
+          <td>{{ productivity.feature_rows_per_validated_belief if productivity.feature_rows_per_validated_belief is not none else "-" }}</td>
+        </tr>
+        <tr>
+          <td>Feature rows / surviving belief</td>
+          <td>{{ productivity.feature_rows_per_surviving_belief if productivity.feature_rows_per_surviving_belief is not none else "-" }}</td>
+        </tr>
+        <tr>
+          <td>Discovery candidates / surviving belief</td>
+          <td>{{ productivity.discovery_candidates_per_surviving_belief if productivity.discovery_candidates_per_surviving_belief is not none else "-" }}</td>
+        </tr>
+        <tr>
+          <td>Test runs / promoted hypothesis</td>
+          <td>{{ productivity.test_runs_per_promoted_hypothesis if productivity.test_runs_per_promoted_hypothesis is not none else "-" }}</td>
+        </tr>
+        <tr>
+          <td>Recommendations / demo open last 24h</td>
+          <td>{{ productivity.recommendation_decisions_per_demo_position_opened_last_24h if productivity.recommendation_decisions_per_demo_position_opened_last_24h is not none else "-" }}</td>
+        </tr>
+        <tr>
+          <td>Execution signals / actionable event last 24h</td>
+          <td>{{ productivity.execution_signals_per_actionable_event_last_24h if productivity.execution_signals_per_actionable_event_last_24h is not none else "-" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Validity Monitors</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Validated / Promising</div>
+      <div class="position-card__value">{{ validity.validated_count or 0 }} / {{ validity.promising_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Degraded / Rejected</div>
+      <div class="position-card__value">{{ validity.degraded_count or 0 }} / {{ validity.rejected_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Watch / Promote Eligible</div>
+      <div class="position-card__value">{{ validity.watch_eligible_count or 0 }} / {{ validity.promotion_eligible_count or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Live Feedback</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Realized Obs.</div>
+      <div class="position-card__value">{{ dashboard.counts.signal_observations_realized or 0 }} / {{ dashboard.counts.signal_observations_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg Realized %</div>
+      <div class="position-card__value">{{ validity.avg_realized_return_pct if validity.avg_realized_return_pct is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg Prediction Error %</div>
+      <div class="position-card__value">{{ validity.avg_prediction_error_pct if validity.avg_prediction_error_pct is not none else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Execution Feedback</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Labels Complete</div>
+      <div class="position-card__value">{{ execution_feedback.execution_labels_complete or 0 }} / {{ execution_feedback.execution_labels_total or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Completion %</div>
+      <div class="position-card__value">{{ execution_feedback.execution_label_completion_pct if execution_feedback.execution_label_completion_pct is not none else "-" }}{% if execution_feedback.execution_label_completion_pct is not none %}%{% endif %}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Actionable Signals</div>
+      <div class="position-card__value">{{ execution_feedback.actionable_signal_count or 0 }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
   <div class="card__header"><h2 class="card__title">Current Activity</h2></div>
   <div class="table-wrap">
     <table class="beta-table-compact">
@@ -144,6 +343,32 @@
     If these rows keep refreshing with recent timestamps and success states, the beta is actively doing work.
     The clearest signs are observation, scoring, evaluation, training, and replay updating over time.
   </p>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Top Invalidation Signals</h2></div>
+  {% if validity.top_failure_reasons %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Reason</th>
+          <th>Definitions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in validity.top_failure_reasons %}
+        <tr>
+          <td>{{ row.reason }}</td>
+          <td>{{ row.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No setup invalidation reasons have been aggregated yet.</p>
+  {% endif %}
 </section>
 
 <section class="card card-spaced">

@@ -309,8 +309,478 @@
                                              "EVENT_REVERSAL_SPIKE"
                                          ],
                          "base_confidence":  0.61
-                     },
+        },
         "rationale":  "The name is recovering through VWAP after a panic start and forced selling is likely low quality.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "OPENING_WEAKNESS_REPAIR_V1",
+        "name":  "Opening weakness repair",
+        "signal_type":  "AVOID_SELLING_INTO_PANIC",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "minutes_since_open",
+                                                 "op":  "lte",
+                                                 "value":  120
+                                             },
+                                             {
+                                                 "feature":  "first_15m_return_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.0
+                                             },
+                                             {
+                                                 "feature":  "return_from_first_15m_close_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.0
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_OPENING_WEAKNESS_REPAIR",
+                                             "EVENT_VWAP_RECLAIM"
+                                         ],
+                         "base_confidence":  0.62
+                     },
+        "rationale":  "The opening flush is being repaired and selling into that recovery is usually poor execution.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "WEAK_OPEN_NAME_RECOVERY_V1",
+        "name":  "Weak open name recovery",
+        "signal_type":  "HOLD_THROUGH_NOISE",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "historical_opening_bias_sessions",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "typical_opening_15m_return_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.2
+                                             },
+                                             {
+                                                 "feature":  "minutes_since_open",
+                                                 "op":  "between",
+                                                 "min":  20,
+                                                 "max":  150
+                                             },
+                                             {
+                                                 "feature":  "return_from_first_15m_close_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.8
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.4
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_OPENING_WEAKNESS_REPAIR"
+                                         ],
+                         "base_confidence":  0.59
+                     },
+        "rationale":  "This name often starts weak and the current tape is repairing in line with that historical tendency.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "OPENING_STRENGTH_FADE_V1",
+        "name":  "Opening strength fade",
+        "signal_type":  "TRIM_ON_STRENGTH",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "minutes_since_open",
+                                                 "op":  "lte",
+                                                 "value":  120
+                                             },
+                                             {
+                                                 "feature":  "first_15m_return_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.0
+                                             },
+                                             {
+                                                 "feature":  "return_from_first_15m_close_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.0
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "lt",
+                                                 "value":  0.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_OPENING_STRENGTH_FADE"
+                                         ],
+                         "base_confidence":  0.6
+                     },
+        "rationale":  "Early enthusiasm is fading and strength is no longer being sponsored through VWAP.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "OPENING_RANGE_BREAKOUT_HOLD_V1",
+        "name":  "Opening range breakout hold",
+        "signal_type":  "HOLD_THROUGH_NOISE",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "minutes_since_open",
+                                                 "op":  "gt",
+                                                 "value":  30
+                                             },
+                                             {
+                                                 "feature":  "breakout_above_first_30m_high_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.15
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.05
+                                             },
+                                             {
+                                                 "feature":  "cumulative_volume_vs_expected",
+                                                 "op":  "gt",
+                                                 "value":  0.95
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  0.8
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_FIRST_30M_BREAKOUT"
+                                         ],
+                         "base_confidence":  0.59
+                     },
+        "rationale":  "The opening range has resolved higher with participation and the tape is still holding near highs.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "OPENING_RANGE_BREAKDOWN_EXIT_V1",
+        "name":  "Opening range breakdown exit",
+        "signal_type":  "SELL_INTO_REBOUND",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "minutes_since_open",
+                                                 "op":  "gt",
+                                                 "value":  30
+                                             },
+                                             {
+                                                 "feature":  "breakdown_below_first_30m_low_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.15
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.15
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_low_pct",
+                                                 "op":  "lt",
+                                                 "value":  0.8
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_FIRST_30M_BREAKDOWN"
+                                         ],
+                         "base_confidence":  0.61
+                     },
+        "rationale":  "The opening range has failed lower and rebounds are now more likely exit windows than fresh support.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "GAP_FILL_EXHAUSTION_V1",
+        "name":  "Gap fill exhaustion",
+        "signal_type":  "TRIM_ON_STRENGTH",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "minutes_since_open",
+                                                 "op":  "gt",
+                                                 "value":  30
+                                             },
+                                             {
+                                                 "feature":  "gap_from_prev_close_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.5
+                                             },
+                                             {
+                                                 "feature":  "gap_fill_pct",
+                                                 "op":  "gt",
+                                                 "value":  60
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.5
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_GAP_FILL",
+                                             "EVENT_OPENING_STRENGTH_FADE"
+                                         ],
+                         "base_confidence":  0.58
+                     },
+        "rationale":  "A positive opening gap has largely been filled and the fade is now dominating the session tape.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "MIDDAY_SHAKEOUT_RECOVERY_V1",
+        "name":  "Midday shakeout recovery",
+        "signal_type":  "HOLD_THROUGH_NOISE",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "session_progress_pct",
+                                                 "op":  "between",
+                                                 "min":  35,
+                                                 "max":  80
+                                             },
+                                             {
+                                                 "feature":  "reversal_from_low_30m_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.0
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.4
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_REVERSAL_SPIKE",
+                                             "EVENT_AFTERNOON_ACCELERATION"
+                                         ],
+                         "base_confidence":  0.58
+                     },
+        "rationale":  "A midday shakeout has been reclaimed and the tape is rebuilding above intraday support.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "AFTERNOON_ACCELERATION_HOLD_V1",
+        "name":  "Afternoon acceleration hold",
+        "signal_type":  "HOLD_THROUGH_NOISE",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "session_progress_pct",
+                                                 "op":  "gt",
+                                                 "value":  55
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.8
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.05
+                                             },
+                                             {
+                                                 "feature":  "distance_from_session_high_pct",
+                                                 "op":  "lt",
+                                                 "value":  0.8
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_AFTERNOON_ACCELERATION"
+                                         ],
+                         "base_confidence":  0.6
+                     },
+        "rationale":  "Later-day participation is accelerating and the tape is still pressing session highs constructively.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "STRONG_CLOSE_NAME_CONFIRMATION_V1",
+        "name":  "Strong close name confirmation",
+        "signal_type":  "WAIT_FOR_CLOSE_CONFIRMATION",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "historical_closing_bias_sessions",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "typical_closing_30m_return_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.2
+                                             },
+                                             {
+                                                 "feature":  "minutes_until_close",
+                                                 "op":  "lt",
+                                                 "value":  45
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "gt",
+                                                 "value":  0.0
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_CLOSE_RAMP"
+                                         ],
+                         "base_confidence":  0.57
+                     },
+        "rationale":  "This name historically tightens and strengthens into the close, so close confirmation is more informative than intraday noise.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "WEAK_CLOSE_NAME_FADE_V1",
+        "name":  "Weak close name fade",
+        "signal_type":  "TRIM_ON_STRENGTH",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "historical_closing_bias_sessions",
+                                                 "op":  "gt",
+                                                 "value":  4
+                                             },
+                                             {
+                                                 "feature":  "typical_closing_30m_return_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.1
+                                             },
+                                             {
+                                                 "feature":  "minutes_until_close",
+                                                 "op":  "lt",
+                                                 "value":  45
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.5
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.05
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_CLOSE_FADE"
+                                         ],
+                         "base_confidence":  0.61
+                     },
+        "rationale":  "This name often weakens into the close and the current tape is confirming that late-session fade.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "CLOSE_FADE_PROTECT_V1",
+        "name":  "Close fade protect",
+        "signal_type":  "TRIM_ON_STRENGTH",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "minutes_until_close",
+                                                 "op":  "lt",
+                                                 "value":  45
+                                             },
+                                             {
+                                                 "feature":  "return_last_30m_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.75
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.05
+                                             },
+                                             {
+                                                 "feature":  "return_from_first_30m_close_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.8
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_CLOSE_FADE"
+                                         ],
+                         "base_confidence":  0.6
+                     },
+        "rationale":  "Late-session sellers are taking control and protecting gains is more important than hoping for a closing reversal.",
+        "source_type":  "MANUAL"
+    },
+    {
+        "hypothesis_code":  "AFTERNOON_FAILURE_FROM_STRONG_OPEN_V1",
+        "name":  "Afternoon failure from strong open",
+        "signal_type":  "SELL_INTO_REBOUND",
+        "entry_conditions":  {
+                                 "all":  [
+                                             {
+                                                 "feature":  "session_progress_pct",
+                                                 "op":  "gt",
+                                                 "value":  45
+                                             },
+                                             {
+                                                 "feature":  "first_30m_return_pct",
+                                                 "op":  "gt",
+                                                 "value":  1.0
+                                             },
+                                             {
+                                                 "feature":  "return_from_first_30m_close_pct",
+                                                 "op":  "lt",
+                                                 "value":  -1.0
+                                             },
+                                             {
+                                                 "feature":  "distance_from_vwap_pct",
+                                                 "op":  "lt",
+                                                 "value":  -0.05
+                                             }
+                                         ]
+                             },
+        "metadata":  {
+                         "event_codes":  [
+                                             "EVENT_OPENING_STRENGTH_FADE",
+                                             "EVENT_CLOSE_FADE"
+                                         ],
+                         "base_confidence":  0.62
+                     },
+        "rationale":  "A strong open has failed into the back half of the session and rebounds are becoming exit opportunities.",
         "source_type":  "MANUAL"
     }
 ]

@@ -17,6 +17,7 @@ from .session_service import BetaMarketSessionService
 
 _EXPECTED_VOLUME_LOOKBACK_SESSIONS = 20
 _MIN_EXPECTED_VOLUME_SESSIONS = 3
+_MIN_HISTORICAL_INTRADAY_SESSIONS = 3
 
 
 def _as_decimal(value: str | None) -> Decimal | None:
@@ -113,9 +114,12 @@ class BetaIntradayFeatureService:
                 if last_minute_ts is not None:
                     minute_query = minute_query.where(BetaMinuteBar.minute_ts > last_minute_ts)
                 minute_rows = list(sess.scalars(minute_query).all())
-                if state.get("expected_cumulative_volume_by_minute") is None:
+                if (
+                    state.get("expected_cumulative_volume_by_minute") is None
+                    or state.get("historical_intraday_profile_sessions") is None
+                ):
                     state.update(
-                        BetaIntradayFeatureService._expected_volume_profile(
+                        BetaIntradayFeatureService._historical_intraday_profile(
                             sess,
                             instrument_id=instrument_id,
                             session_date=session_date,
@@ -141,7 +145,10 @@ class BetaIntradayFeatureService:
                     state = BetaIntradayFeatureService._consume_minute_bar(state, row)
                     snapshot.last_minute_ts = row.minute_ts
 
-                feature_snapshot = BetaIntradayFeatureService._feature_view(state)
+                feature_snapshot = BetaIntradayFeatureService._feature_view(
+                    state,
+                    exchange=priority_item.exchange,
+                )
                 snapshot.feature_snapshot_json = json.dumps(feature_snapshot, sort_keys=True)
                 snapshot.accumulator_state_json = json.dumps(state, sort_keys=True)
                 snapshot.priority_tier = priority_item.tier
@@ -159,7 +166,7 @@ class BetaIntradayFeatureService:
     @staticmethod
     def latest_features_by_instrument(
         instrument_ids: list[str],
-    ) -> dict[str, dict[str, float | None]]:
+    ) -> dict[str, dict[str, float | int | None]]:
         if not BetaContext.is_initialized() or not instrument_ids:
             return {}
         with BetaContext.read_session() as sess:
@@ -174,7 +181,7 @@ class BetaIntradayFeatureService:
                     )
                 ).all()
             )
-        latest: dict[str, dict[str, float | None]] = {}
+        latest: dict[str, dict[str, float | int | None]] = {}
         for row in rows:
             if row.instrument_id in latest:
                 continue
@@ -238,11 +245,15 @@ class BetaIntradayFeatureService:
                 "volume": volume,
             }
         )
-        next_state["rolling_window"] = rolling[-30:]
+        next_state["rolling_window"] = rolling[-90:]
         return next_state
 
     @staticmethod
-    def _feature_view(state: dict[str, object]) -> dict[str, float | None]:
+    def _feature_view(
+        state: dict[str, object],
+        *,
+        exchange: str | None = None,
+    ) -> dict[str, float | int | None]:
         rolling = list(state.get("rolling_window") or [])
         current_close = _safe_float(state.get("last_close_price"))
         session_open = _safe_float(state.get("session_open_price"))
@@ -255,6 +266,14 @@ class BetaIntradayFeatureService:
         first_30m_high = _safe_float(state.get("first_30m_high"))
         first_30m_low = _safe_float(state.get("first_30m_low"))
         minute_count = int(state.get("minute_count") or 0)
+        last_minute_ts = state.get("last_minute_ts")
+        clock_anchor = None
+        if isinstance(last_minute_ts, str):
+            try:
+                clock_anchor = datetime.fromisoformat(last_minute_ts)
+            except ValueError:
+                clock_anchor = None
+        session_clock = BetaMarketSessionService.session_clock(exchange, now_utc=clock_anchor)
 
         closes = [float(item["close"]) for item in rolling if _safe_float(item.get("close")) is not None]
         volumes = [float(item["volume"]) for item in rolling if _safe_float(item.get("volume")) is not None]
@@ -301,6 +320,12 @@ class BetaIntradayFeatureService:
         volume_last_15 = sum(volumes[-15:]) if volumes else 0.0
         expected_cumulative_value = _expected_profile_value(expected_cumulative, minute_count)
         expected_last_15_value = _expected_profile_value(expected_last_15, minute_count)
+        expected_last_30_value = None
+        if minute_count > 30 and minute_count <= len(expected_cumulative):
+            start_index = minute_count - 31
+            if 0 <= start_index < len(expected_cumulative):
+                prior_cumulative = float(expected_cumulative[start_index])
+                expected_last_30_value = max(0.0, float(expected_cumulative_value or 0.0) - prior_cumulative)
         vwap_volume_total = _safe_float(state.get("vwap_volume_total"))
         vwap_price_volume = _safe_float(state.get("vwap_price_volume"))
         vwap_price = (
@@ -308,19 +333,36 @@ class BetaIntradayFeatureService:
             if vwap_price_volume is not None and vwap_volume_total is not None and vwap_volume_total > 0
             else None
         )
+        gap_fill_pct = None
+        if (
+            current_close is not None
+            and session_open is not None
+            and previous_close is not None
+            and abs(session_open - previous_close) > 1e-9
+        ):
+            gap_points = session_open - previous_close
+            if gap_points > 0:
+                gap_fill_pct = round(((session_open - current_close) / gap_points) * 100.0, 6)
+            else:
+                gap_fill_pct = round(((current_close - session_open) / abs(gap_points)) * 100.0, 6)
 
         return {
             "gap_from_prev_close_pct": _pct_change(session_open, previous_close),
             "return_since_open_pct": _pct_change(current_close, session_open),
             "return_last_5m_pct": rolling_return(5),
             "return_last_15m_pct": rolling_return(15),
+            "return_last_30m_pct": rolling_return(30),
+            "return_last_60m_pct": rolling_return(60),
             "first_5m_return_pct": _pct_change(first_5m_close, session_open),
             "first_15m_return_pct": _pct_change(first_15m_close, session_open),
             "first_30m_return_pct": _pct_change(first_30m_close, session_open),
+            "return_from_first_15m_close_pct": _pct_change(current_close, first_15m_close),
+            "return_from_first_30m_close_pct": _pct_change(current_close, first_30m_close),
             "first_30m_range_pct": first_30m_range_pct,
             "intraday_range_pct": intraday_range_pct,
             "rolling_intraday_vol_15m_pct": rolling_vol(15),
             "rolling_intraday_vol_30m_pct": rolling_vol(30),
+            "rolling_intraday_vol_60m_pct": rolling_vol(60),
             "distance_from_session_high_pct": (
                 round(((session_high - current_close) / session_high) * 100.0, 6)
                 if session_high is not None and current_close is not None and abs(session_high) > 1e-9
@@ -335,6 +377,19 @@ class BetaIntradayFeatureService:
             "reversal_from_low_30m_pct": _pct_change(current_close, low_30),
             "reversal_from_high_15m_pct": _pct_change(high_15, current_close),
             "reversal_from_high_30m_pct": _pct_change(high_30, current_close),
+            "distance_from_first_30m_high_pct": (
+                round(((first_30m_high - current_close) / first_30m_high) * 100.0, 6)
+                if first_30m_high is not None and current_close is not None and abs(first_30m_high) > 1e-9
+                else None
+            ),
+            "distance_from_first_30m_low_pct": (
+                round(((current_close - first_30m_low) / first_30m_low) * 100.0, 6)
+                if first_30m_low is not None and current_close is not None and abs(first_30m_low) > 1e-9
+                else None
+            ),
+            "breakout_above_first_30m_high_pct": _pct_change(current_close, first_30m_high),
+            "breakdown_below_first_30m_low_pct": _pct_change(first_30m_low, current_close),
+            "gap_fill_pct": gap_fill_pct,
             "cumulative_volume_vs_expected": (
                 round(cumulative_volume / expected_cumulative_value, 6)
                 if expected_cumulative_value is not None
@@ -345,11 +400,37 @@ class BetaIntradayFeatureService:
                 if expected_last_15_value is not None
                 else None
             ),
+            "volume_last_30m_vs_expected": (
+                round(sum(volumes[-30:]) / expected_last_30_value, 6)
+                if volumes and expected_last_30_value is not None and expected_last_30_value > 0
+                else None
+            ),
             "distance_from_vwap_pct": _pct_change(current_close, vwap_price),
+            "minutes_since_open": session_clock.get("minutes_since_open"),
+            "minutes_until_close": session_clock.get("minutes_until_close"),
+            "session_progress_pct": session_clock.get("session_progress_pct"),
+            "regular_session_minutes": session_clock.get("regular_session_minutes"),
+            "typical_opening_15m_return_pct": _safe_float(state.get("typical_opening_15m_return_pct")),
+            "typical_opening_30m_return_pct": _safe_float(state.get("typical_opening_30m_return_pct")),
+            "typical_closing_30m_return_pct": _safe_float(state.get("typical_closing_30m_return_pct")),
+            "historical_intraday_profile_sessions": int(state.get("historical_intraday_profile_sessions") or 0),
+            "historical_opening_bias_sessions": int(state.get("historical_opening_bias_sessions") or 0),
+            "historical_closing_bias_sessions": int(state.get("historical_closing_bias_sessions") or 0),
         }
 
     @staticmethod
-    def _expected_volume_profile(sess, *, instrument_id: str, session_date: date) -> dict[str, object]:
+    def _historical_intraday_profile(sess, *, instrument_id: str, session_date: date) -> dict[str, object]:
+        profile: dict[str, object] = {
+            "expected_cumulative_volume_by_minute": [],
+            "expected_last_15m_volume_by_minute": [],
+            "expected_volume_profile_sessions": 0,
+            "historical_intraday_profile_sessions": 0,
+            "historical_opening_bias_sessions": 0,
+            "historical_closing_bias_sessions": 0,
+            "typical_opening_15m_return_pct": None,
+            "typical_opening_30m_return_pct": None,
+            "typical_closing_30m_return_pct": None,
+        }
         prior_session_dates = [
             row[0]
             for row in sess.execute(
@@ -365,9 +446,9 @@ class BetaIntradayFeatureService:
             ).all()
         ]
         if not prior_session_dates:
-            return {}
+            return profile
 
-        session_volumes: dict[date, list[float]] = defaultdict(list)
+        session_rows: dict[date, list[BetaMinuteBar]] = defaultdict(list)
         for row in sess.scalars(
             select(BetaMinuteBar)
             .where(
@@ -376,34 +457,87 @@ class BetaIntradayFeatureService:
             )
             .order_by(BetaMinuteBar.session_date.asc(), BetaMinuteBar.minute_ts.asc())
         ).all():
-            volume = max(0.0, _safe_float(row.volume_native) or 0.0)
-            session_volumes[row.session_date].append(volume)
+            session_rows[row.session_date].append(row)
 
-        volume_series = [series for series in session_volumes.values() if any(value > 0 for value in series)]
-        if len(volume_series) < _MIN_EXPECTED_VOLUME_SESSIONS:
-            return {}
-
-        expected_cumulative: list[float] = []
-        expected_last_15: list[float] = []
-        max_length = max(len(series) for series in volume_series)
-        for minute_index in range(max_length):
-            cumulative_samples: list[float] = []
-            last_15_samples: list[float] = []
-            for series in volume_series:
-                if len(series) <= minute_index:
+        volume_series: list[list[float]] = []
+        opening_15_returns: list[float] = []
+        opening_30_returns: list[float] = []
+        closing_30_returns: list[float] = []
+        valid_profile_sessions = 0
+        for rows in session_rows.values():
+            session_bars: list[dict[str, float]] = []
+            for row in rows:
+                open_price = _safe_float(row.open_price_gbp)
+                close_price = _safe_float(row.close_price_gbp)
+                if open_price is None or close_price is None:
                     continue
-                cumulative_samples.append(sum(series[: minute_index + 1]))
-                window_start = max(0, minute_index - 14)
-                last_15_samples.append(sum(series[window_start : minute_index + 1]))
-            if not cumulative_samples:
+                session_bars.append(
+                    {
+                        "open": open_price,
+                        "close": close_price,
+                        "volume": max(0.0, _safe_float(row.volume_native) or 0.0),
+                    }
+                )
+            if not session_bars:
                 continue
-            expected_cumulative.append(round(sum(cumulative_samples) / len(cumulative_samples), 6))
-            expected_last_15.append(round(sum(last_15_samples) / len(last_15_samples), 6))
-        return {
-            "expected_cumulative_volume_by_minute": expected_cumulative,
-            "expected_last_15m_volume_by_minute": expected_last_15,
-            "expected_volume_profile_sessions": len(volume_series),
-        }
+            valid_profile_sessions += 1
+            volumes = [bar["volume"] for bar in session_bars]
+            if any(value > 0 for value in volumes):
+                volume_series.append(volumes)
+            session_open = session_bars[0]["open"]
+            closes = [bar["close"] for bar in session_bars]
+            if abs(session_open) > 1e-9:
+                opening_15 = _pct_change(closes[14], session_open) if len(closes) >= 15 else None
+                if opening_15 is not None:
+                    opening_15_returns.append(opening_15)
+                opening_30 = _pct_change(closes[29], session_open) if len(closes) >= 30 else None
+                if opening_30 is not None:
+                    opening_30_returns.append(opening_30)
+            closing_30 = _pct_change(closes[-1], closes[-31]) if len(closes) >= 31 else None
+            if closing_30 is not None:
+                closing_30_returns.append(closing_30)
+
+        profile["historical_intraday_profile_sessions"] = valid_profile_sessions
+
+        if len(volume_series) >= _MIN_EXPECTED_VOLUME_SESSIONS:
+            expected_cumulative: list[float] = []
+            expected_last_15: list[float] = []
+            max_length = max(len(series) for series in volume_series)
+            for minute_index in range(max_length):
+                cumulative_samples: list[float] = []
+                last_15_samples: list[float] = []
+                for series in volume_series:
+                    if len(series) <= minute_index:
+                        continue
+                    cumulative_samples.append(sum(series[: minute_index + 1]))
+                    window_start = max(0, minute_index - 14)
+                    last_15_samples.append(sum(series[window_start : minute_index + 1]))
+                if not cumulative_samples:
+                    continue
+                expected_cumulative.append(round(sum(cumulative_samples) / len(cumulative_samples), 6))
+                expected_last_15.append(round(sum(last_15_samples) / len(last_15_samples), 6))
+            profile["expected_cumulative_volume_by_minute"] = expected_cumulative
+            profile["expected_last_15m_volume_by_minute"] = expected_last_15
+            profile["expected_volume_profile_sessions"] = len(volume_series)
+
+        if len(opening_15_returns) >= _MIN_HISTORICAL_INTRADAY_SESSIONS:
+            profile["typical_opening_15m_return_pct"] = round(
+                sum(opening_15_returns) / len(opening_15_returns),
+                6,
+            )
+        if len(opening_30_returns) >= _MIN_HISTORICAL_INTRADAY_SESSIONS:
+            profile["typical_opening_30m_return_pct"] = round(
+                sum(opening_30_returns) / len(opening_30_returns),
+                6,
+            )
+        if len(closing_30_returns) >= _MIN_HISTORICAL_INTRADAY_SESSIONS:
+            profile["typical_closing_30m_return_pct"] = round(
+                sum(closing_30_returns) / len(closing_30_returns),
+                6,
+            )
+        profile["historical_opening_bias_sessions"] = len(opening_15_returns)
+        profile["historical_closing_bias_sessions"] = len(closing_30_returns)
+        return profile
 
     @staticmethod
     def _previous_close_price(sess, *, instrument_id: str, session_date: date) -> float | None:

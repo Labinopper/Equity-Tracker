@@ -51,8 +51,10 @@ class BetaInstrumentStatisticsService:
             return {"refreshed": 0, "skipped": 0, "credits_used": 0}
 
         stale_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_staleness_days)
+        fetch_attempts = 0
         credits_used = 0
         refreshed = 0
+        failures = 0
         skipped = 0
 
         with BetaContext.write_session() as sess:
@@ -71,7 +73,7 @@ class BetaInstrumentStatisticsService:
             }
 
             for instrument in instruments:
-                if credits_used >= credits_budget:
+                if fetch_attempts >= credits_budget:
                     break
 
                 current = existing.get(instrument.id)
@@ -84,10 +86,12 @@ class BetaInstrumentStatisticsService:
                     if instrument.exchange
                     else instrument.symbol
                 )
+                fetch_attempts += 1
                 try:
                     payload = BetaInstrumentStatisticsService._fetch(symbol, api_key)
                     credits_used += 1
                 except Exception:
+                    failures += 1
                     continue
 
                 stats = payload.get("statistics", {})
@@ -110,7 +114,13 @@ class BetaInstrumentStatisticsService:
                 current.refreshed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 refreshed += 1
 
-        return {"refreshed": refreshed, "skipped": skipped, "credits_used": credits_used}
+        return {
+            "refreshed": refreshed,
+            "skipped": skipped,
+            "credits_used": credits_used,
+            "fetch_attempts": fetch_attempts,
+            "fetch_failures": failures,
+        }
 
     @staticmethod
     def get_statistics(instrument_id: str) -> BetaInstrumentStatistics | None:

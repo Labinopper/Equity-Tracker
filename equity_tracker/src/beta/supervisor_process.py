@@ -7,6 +7,7 @@ import os
 import signal
 import threading
 import time
+import traceback
 import ctypes
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,7 +20,13 @@ from .db.engine import BetaDatabaseEngine
 from .services.evaluation_service import BetaEvaluationService
 from .services.execution_outcome_service import BetaExecutionOutcomeService
 from .services.execution_signal_service import BetaExecutionSignalService
+from .services.execution_hypothesis_backtest_service import BetaExecutionHypothesisBacktestService
+from .services.execution_hypothesis_belief_service import BetaExecutionHypothesisBeliefService
+from .services.execution_hypothesis_discovery_service import BetaExecutionHypothesisDiscoveryService
+from .services.intraday_focus_backfill_service import BetaIntradayFocusBackfillService
+from .services.intraday_simulated_trade_service import BetaIntradaySimulatedTradeService
 from .services.intraday_bar_fetch_service import BetaIntradayBarFetchService
+from .services.intraday_outlook_service import BetaIntradayOutlookService
 from .services.intraday_priority_service import BetaIntradayPriorityService
 from .services.instrument_statistics_service import BetaInstrumentStatisticsService
 from .services.filing_service import BetaFilingService
@@ -41,6 +48,7 @@ from .services.review_service import BetaReviewService
 from .services.runtime_service import BetaRuntimeService
 from .services.scoring_service import BetaScoringService
 from .services.session_service import BetaMarketSessionService
+from .services.storage_governance_service import BetaStorageGovernanceService
 from .services.training_service import BetaTrainingService
 from .settings import BetaSettings
 
@@ -50,6 +58,7 @@ _FEATURE_BACKLOG_BATCH_SIZE = 4
 _LABEL_BACKLOG_BATCH_SIZE = 4
 _LAST_MEMORY_GUARD_AT: datetime | None = None
 _MEMORY_GUARD_NOTIFICATION_INTERVAL = timedelta(minutes=5)
+_CYCLE_ERROR_BACKOFF_SECONDS = 5
 _MARKET_OPEN_REFERENCE_DEFER = timedelta(minutes=30)
 _MARKET_OPEN_OBSERVATION_DEFER = timedelta(minutes=5)
 _MARKET_OPEN_FULL_SCORING_DEFER = timedelta(minutes=15)
@@ -67,6 +76,14 @@ def _handle_stop(_signum, _frame) -> None:
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _merge_intraday_priority_items(*groups):
+    merged: dict[str, object] = {}
+    for group in groups:
+        for item in group:
+            merged[getattr(item, "instrument_id")] = item
+    return list(merged.values())
 
 
 def _system_memory_used_pct() -> float | None:
@@ -179,12 +196,23 @@ def _maybe_pause_for_memory(*, settings: BetaSettings, phase: str) -> bool:
     return True
 
 
-def _record_job_failure(*, job_name: str, job_type: str, exc: Exception, job_run_id: str | None = None) -> None:
+def _record_job_failure(
+    *,
+    job_name: str,
+    job_type: str,
+    exc: BaseException,
+    job_run_id: str | None = None,
+    traceback_text: str | None = None,
+) -> None:
     message = str(exc) or exc.__class__.__name__
     BetaRuntimeService.finish_job_run(
         job_run_id,
         status="FAILED",
-        details={"error": message, "error_type": exc.__class__.__name__},
+        details={
+            "error": message,
+            "error_type": exc.__class__.__name__,
+            "traceback": traceback_text,
+        },
     )
     BetaRuntimeService.touch_supervisor_status(
         supervisor_status="running",
@@ -212,8 +240,14 @@ def _run_job(*, job_name: str, job_type: str, op):
     )
     try:
         result = op()
-    except Exception as exc:
-        _record_job_failure(job_name=job_name, job_type=job_type, exc=exc, job_run_id=job_run_id)
+    except BaseException as exc:
+        _record_job_failure(
+            job_name=job_name,
+            job_type=job_type,
+            exc=exc,
+            job_run_id=job_run_id,
+            traceback_text=traceback.format_exc(),
+        )
         return None
     BetaRuntimeService.finish_job_run(
         job_run_id,
@@ -225,6 +259,47 @@ def _run_job(*, job_name: str, job_type: str, op):
         supervisor_pid=os.getpid(),
     )
     return result
+
+
+def _record_cycle_exception(*, exc: BaseException) -> None:
+    message = str(exc) or exc.__class__.__name__
+    traceback_text = traceback.format_exc()
+    try:
+        BetaRuntimeService.finalize_running_jobs(
+            status="INTERRUPTED",
+            message_text=f"Supervisor cycle interrupted by unexpected error: {message}",
+        )
+    except Exception:
+        pass
+    try:
+        BetaRuntimeService.record_job_run(
+            job_name="beta_supervisor_cycle_error",
+            job_type="supervisor",
+            status="FAILED",
+            details={
+                "error": message,
+                "error_type": exc.__class__.__name__,
+                "traceback": traceback_text,
+            },
+        )
+    except Exception:
+        pass
+    try:
+        BetaRuntimeService.record_notification(
+            notification_type="runtime",
+            severity="ERROR",
+            title="Beta supervisor cycle failed",
+            message_text=message,
+        )
+    except Exception:
+        pass
+    try:
+        BetaRuntimeService.touch_supervisor_status(
+            supervisor_status="running",
+            supervisor_pid=os.getpid(),
+        )
+    except Exception:
+        pass
 
 
 def _run_supervisor_cycle(
@@ -244,6 +319,7 @@ def _run_supervisor_cycle(
     next_eod_bar_fetch_at: datetime,
     next_statistics_refresh_at: datetime,
     next_bar_backfill_at: datetime,
+    next_storage_cleanup_at: datetime,
 ) -> dict[str, datetime]:
     if not settings.enabled or settings.mode == "OFF" or not settings.background_jobs_enabled:
         return {
@@ -258,6 +334,7 @@ def _run_supervisor_cycle(
             "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
             "next_statistics_refresh_at": next_statistics_refresh_at,
             "next_bar_backfill_at": next_bar_backfill_at,
+            "next_storage_cleanup_at": next_storage_cleanup_at,
         }
 
     if _maybe_pause_for_memory(settings=settings, phase="pre_cycle"):
@@ -278,6 +355,7 @@ def _run_supervisor_cycle(
             "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
             "next_statistics_refresh_at": next_statistics_refresh_at,
             "next_bar_backfill_at": next_bar_backfill_at,
+            "next_storage_cleanup_at": next_storage_cleanup_at,
         }
 
     market_open_light_mode = BetaMarketSessionService.live_market_priority_window(settings, now_utc=now)
@@ -357,6 +435,12 @@ def _run_supervisor_cycle(
             job_type="intraday_execution",
             op=BetaExecutionOutcomeService.update_execution_outcomes,
         )
+        if settings.intraday_short_trade_simulation_enabled:
+            _run_job(
+                job_name="beta_intraday_short_trade_simulation",
+                job_type="intraday_execution",
+                op=lambda: BetaIntradaySimulatedTradeService.refresh_live_trades(settings, now_utc=now),
+            )
         next_intraday_execution_at = now + timedelta(minutes=1)
 
     # EOD bar fetch for GENERAL tier — runs once after market close, not during market hours
@@ -365,7 +449,10 @@ def _run_supervisor_cycle(
             job_name="beta_eod_bar_fetch",
             job_type="intraday_execution",
             op=lambda: BetaIntradayBarFetchService.fetch_eod_bars(
-                priority_items=list(BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)["items"]),
+                priority_items=_merge_intraday_priority_items(
+                    list(BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)["items"]),
+                    list(BetaIntradayPriorityService.build_focus_watchlist(settings, now_utc=now)["items"]),
+                ),
                 credits_budget=settings.intraday_bar_fetch_eod_credits_budget,
             ),
         )
@@ -377,11 +464,34 @@ def _run_supervisor_cycle(
             job_name="beta_intraday_bar_backfill",
             job_type="intraday_execution",
             op=lambda: BetaIntradayBarFetchService.backfill_historical_bars(
-                priority_items=list(BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)["items"]),
+                priority_items=_merge_intraday_priority_items(
+                    list(BetaIntradayPriorityService.build_watchlist(settings, now_utc=now)["items"]),
+                    list(BetaIntradayPriorityService.build_focus_watchlist(settings, now_utc=now)["items"]),
+                ),
                 target_days=settings.intraday_bar_backfill_target_days,
                 credits_budget=settings.intraday_bar_backfill_credits_budget,
             ),
         )
+        if settings.intraday_focus_backfill_enabled:
+            _run_job(
+                job_name="beta_intraday_focus_backfill",
+                job_type="intraday_execution",
+                op=lambda: BetaIntradayFocusBackfillService.backfill_reasonable_history(
+                    settings,
+                    now_utc=now,
+                ),
+            )
+        _run_job(
+            job_name="beta_intraday_outlook_history",
+            job_type="intraday_execution",
+            op=lambda: BetaIntradayOutlookService.rebuild_recent_history(settings),
+        )
+        if settings.intraday_short_trade_simulation_enabled:
+            _run_job(
+                job_name="beta_intraday_short_trade_history",
+                job_type="intraday_execution",
+                op=lambda: BetaIntradaySimulatedTradeService.rebuild_recent_history(settings),
+            )
         next_bar_backfill_at = now + timedelta(hours=24)
 
     # Statistics refresh — weekly cadence, only outside market hours to save credits
@@ -395,6 +505,24 @@ def _run_supervisor_cycle(
             ),
         )
         next_statistics_refresh_at = now + timedelta(hours=24)
+
+    if settings.storage_cleanup_enabled and now >= next_storage_cleanup_at and not market_open_light_mode:
+        cleanup_result = _run_job(
+            job_name="beta_storage_retention",
+            job_type="storage",
+            op=lambda: BetaStorageGovernanceService.enforce_retention(settings),
+        )
+        if cleanup_result is not None and int(cleanup_result.get("rows_deleted") or 0) > 0:
+            BetaRuntimeService.record_notification(
+                notification_type="storage",
+                severity="INFO",
+                title="Beta storage retention applied",
+                message_text=(
+                    f"Deleted {cleanup_result.get('rows_deleted', 0)} transient rows "
+                    "from operational exhaust tables."
+                ),
+            )
+        next_storage_cleanup_at = now + timedelta(hours=24)
 
     if settings.observation_enabled and now >= next_observation_at and not market_open_light_mode:
         observation_result = _run_job(
@@ -474,6 +602,7 @@ def _run_supervisor_cycle(
             "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
             "next_statistics_refresh_at": next_statistics_refresh_at,
             "next_bar_backfill_at": next_bar_backfill_at,
+            "next_storage_cleanup_at": next_storage_cleanup_at,
         }
 
     if settings.shadow_scoring_enabled and now >= next_core_scoring_at:
@@ -568,6 +697,44 @@ def _run_supervisor_cycle(
         next_scoring_at = now + _MARKET_OPEN_FULL_SCORING_DEFER
 
     if settings.learning_enabled and now >= next_hypothesis_research_at and not market_open_light_mode:
+        execution_discovery_result = _run_job(
+            job_name="beta_execution_hypothesis_discovery",
+            job_type="research_registry",
+            op=lambda: BetaExecutionHypothesisDiscoveryService.run_discovery(settings),
+        )
+        execution_backtest_result = _run_job(
+            job_name="beta_execution_hypothesis_backtests",
+            job_type="research_registry",
+            op=lambda: BetaExecutionHypothesisBacktestService.refresh_backtests(settings),
+        )
+        execution_belief_result = _run_job(
+            job_name="beta_execution_hypothesis_belief_refresh",
+            job_type="research_registry",
+            op=lambda: BetaExecutionHypothesisBeliefService.refresh_belief_states(settings),
+        )
+        if execution_discovery_result is not None and execution_discovery_result.get("candidates_promoted"):
+            BetaRuntimeService.record_notification(
+                notification_type="hypothesis_registry",
+                severity="INFO",
+                title="Execution hypotheses discovered",
+                message_text=(
+                    f"Promoted {execution_discovery_result.get('candidates_promoted', 0)} generated intraday execution hypotheses; "
+                    f"screened in {execution_discovery_result.get('candidates_screened_in', 0)}."
+                ),
+            )
+        if execution_belief_result is not None and (
+            execution_belief_result.get("validated_definitions") or execution_belief_result.get("promising_definitions")
+        ):
+            BetaRuntimeService.record_notification(
+                notification_type="hypothesis_registry",
+                severity="INFO",
+                title="Execution hypothesis beliefs refreshed",
+                message_text=(
+                    f"Validated {execution_belief_result.get('validated_definitions', 0)} execution definitions; "
+                    f"promising {execution_belief_result.get('promising_definitions', 0)}. "
+                    f"Backtests written {execution_backtest_result.get('test_runs_written', 0) if execution_backtest_result is not None else 0}."
+                ),
+            )
         _run_job(
             job_name="beta_hypothesis_definition_seed",
             job_type="research_registry",
@@ -639,6 +806,7 @@ def _run_supervisor_cycle(
             "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
             "next_statistics_refresh_at": next_statistics_refresh_at,
             "next_bar_backfill_at": next_bar_backfill_at,
+            "next_storage_cleanup_at": next_storage_cleanup_at,
         }
 
     if not market_open_light_mode:
@@ -665,6 +833,7 @@ def _run_supervisor_cycle(
         "next_eod_bar_fetch_at": next_eod_bar_fetch_at,
         "next_statistics_refresh_at": next_statistics_refresh_at,
         "next_bar_backfill_at": next_bar_backfill_at,
+        "next_storage_cleanup_at": next_storage_cleanup_at,
     }
 
 
@@ -718,44 +887,53 @@ def main() -> int:
         next_eod_bar_fetch_at = datetime.now(timezone.utc)
         next_statistics_refresh_at = datetime.now(timezone.utc)
         next_bar_backfill_at = datetime.now(timezone.utc)
+        next_storage_cleanup_at = datetime.now(timezone.utc)
         while not _STOP_EVENT.wait(15):
-            settings = BetaSettings.load(beta_db_path)
-            BetaRuntimeService.sync_system_status(
-                core_db_path=core_db_path,
-                beta_db_path=beta_db_path,
-                settings=settings,
-                supervisor_status="running",
-                supervisor_pid=os.getpid(),
-            )
-            now = datetime.now(timezone.utc)
-            next_times = _run_supervisor_cycle(
-                core_db_path=core_db_path,
-                beta_db_path=beta_db_path,
-                settings=settings,
-                now=now,
-                next_reference_sync_at=next_reference_sync_at,
-                next_news_sync_at=next_news_sync_at,
-                next_filing_sync_at=next_filing_sync_at,
-                next_observation_at=next_observation_at,
-                next_intraday_execution_at=next_intraday_execution_at,
-                next_hypothesis_research_at=next_hypothesis_research_at,
-                next_core_scoring_at=next_core_scoring_at,
-                next_scoring_at=next_scoring_at,
-                next_eod_bar_fetch_at=next_eod_bar_fetch_at,
-                next_statistics_refresh_at=next_statistics_refresh_at,
-                next_bar_backfill_at=next_bar_backfill_at,
-            )
-            next_reference_sync_at = next_times["next_reference_sync_at"]
-            next_news_sync_at = next_times["next_news_sync_at"]
-            next_filing_sync_at = next_times["next_filing_sync_at"]
-            next_observation_at = next_times["next_observation_at"]
-            next_intraday_execution_at = next_times["next_intraday_execution_at"]
-            next_hypothesis_research_at = next_times["next_hypothesis_research_at"]
-            next_core_scoring_at = next_times["next_core_scoring_at"]
-            next_scoring_at = next_times["next_scoring_at"]
-            next_eod_bar_fetch_at = next_times["next_eod_bar_fetch_at"]
-            next_statistics_refresh_at = next_times["next_statistics_refresh_at"]
-            next_bar_backfill_at = next_times["next_bar_backfill_at"]
+            try:
+                settings = BetaSettings.load(beta_db_path)
+                BetaRuntimeService.sync_system_status(
+                    core_db_path=core_db_path,
+                    beta_db_path=beta_db_path,
+                    settings=settings,
+                    supervisor_status="running",
+                    supervisor_pid=os.getpid(),
+                )
+                now = datetime.now(timezone.utc)
+                next_times = _run_supervisor_cycle(
+                    core_db_path=core_db_path,
+                    beta_db_path=beta_db_path,
+                    settings=settings,
+                    now=now,
+                    next_reference_sync_at=next_reference_sync_at,
+                    next_news_sync_at=next_news_sync_at,
+                    next_filing_sync_at=next_filing_sync_at,
+                    next_observation_at=next_observation_at,
+                    next_intraday_execution_at=next_intraday_execution_at,
+                    next_hypothesis_research_at=next_hypothesis_research_at,
+                    next_core_scoring_at=next_core_scoring_at,
+                    next_scoring_at=next_scoring_at,
+                    next_eod_bar_fetch_at=next_eod_bar_fetch_at,
+                    next_statistics_refresh_at=next_statistics_refresh_at,
+                    next_bar_backfill_at=next_bar_backfill_at,
+                    next_storage_cleanup_at=next_storage_cleanup_at,
+                )
+                next_reference_sync_at = next_times["next_reference_sync_at"]
+                next_news_sync_at = next_times["next_news_sync_at"]
+                next_filing_sync_at = next_times["next_filing_sync_at"]
+                next_observation_at = next_times["next_observation_at"]
+                next_intraday_execution_at = next_times["next_intraday_execution_at"]
+                next_hypothesis_research_at = next_times["next_hypothesis_research_at"]
+                next_core_scoring_at = next_times["next_core_scoring_at"]
+                next_scoring_at = next_times["next_scoring_at"]
+                next_eod_bar_fetch_at = next_times["next_eod_bar_fetch_at"]
+                next_statistics_refresh_at = next_times["next_statistics_refresh_at"]
+                next_bar_backfill_at = next_times["next_bar_backfill_at"]
+                next_storage_cleanup_at = next_times["next_storage_cleanup_at"]
+            except BaseException as exc:
+                if _STOP_EVENT.is_set():
+                    break
+                _record_cycle_exception(exc=exc)
+                time.sleep(_CYCLE_ERROR_BACKOFF_SECONDS)
     finally:
         try:
             if "settings" in locals() and "beta_db_path" in locals() and "core_db_path" in locals():

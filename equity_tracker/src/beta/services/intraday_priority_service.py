@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import case, desc, select
 
 from ..context import BetaContext
 from ..db.models import (
     BetaInstrument,
+    BetaInstrumentStatistics,
+    BetaIntradaySimulatedTrade,
     BetaPositionState,
     BetaResearchRanking,
     BetaSignalCandidate,
@@ -21,6 +25,12 @@ from .session_service import BetaMarketSessionService
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+_NATIVE_EXCHANGES_BY_MARKET: dict[str, set[str]] = {
+    "US": {"NYSE", "NASDAQ", "AMEX", "ARCA", "BATS", "CBOE"},
+    "UK": {"LSE", "LON", "XLON"},
+}
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,145 @@ class IntradayPriorityItem:
 
 class BetaIntradayPriorityService:
     """Allocate limited intraday compute to held positions first."""
+
+    @staticmethod
+    def build_focus_watchlist(settings: BetaSettings, *, now_utc: datetime | None = None) -> dict[str, object]:
+        if not BetaContext.is_initialized():
+            return {"items": [], "us_focus": 0, "uk_focus": 0, "open_trade_focus": 0}
+
+        now = now_utc or _utcnow()
+        focus_symbols = BetaIntradayPriorityService._load_focus_symbols()
+        with BetaContext.read_session() as sess:
+            instruments = list(
+                sess.scalars(select(BetaInstrument).where(BetaInstrument.is_active.is_(True))).all()
+            )
+            stats_by_instrument = {
+                row.instrument_id: row
+                for row in sess.scalars(select(BetaInstrumentStatistics)).all()
+            }
+            simulated_instrument_ids = {
+                str(instrument_id)
+                for instrument_id in sess.scalars(
+                    select(BetaIntradaySimulatedTrade.instrument_id).where(
+                        BetaIntradaySimulatedTrade.status == "OPEN",
+                        BetaIntradaySimulatedTrade.instrument_id.is_not(None),
+                    )
+                ).all()
+                if instrument_id
+            }
+
+        instruments_by_key: dict[tuple[str, str], BetaInstrument] = {}
+        instruments_by_id = {row.id: row for row in instruments}
+        for instrument in instruments:
+            if not BetaIntradayPriorityService._native_exchange_ok(
+                market=instrument.market,
+                exchange=instrument.exchange,
+            ):
+                continue
+            key = (str(instrument.symbol or "").strip().upper(), str(instrument.market or "").strip().upper())
+            instruments_by_key.setdefault(key, instrument)
+
+        items: list[IntradayPriorityItem] = []
+        seen_instrument_ids: set[str] = set()
+        us_focus = 0
+        uk_focus = 0
+
+        for market, cap in (
+            ("US", max(1, int(settings.intraday_focus_us_symbol_cap))),
+            ("UK", max(1, int(settings.intraday_focus_uk_symbol_cap))),
+        ):
+            configured_symbols = [str(symbol).strip().upper() for symbol in focus_symbols.get(market, [])]
+            added_for_market = 0
+            for symbol in configured_symbols:
+                instrument = instruments_by_key.get((symbol, market))
+                if instrument is None or instrument.id in seen_instrument_ids:
+                    continue
+                items.append(
+                    BetaIntradayPriorityService._focus_item(
+                        instrument=instrument,
+                        priority_score=1.0,
+                        now_utc=now,
+                        cadence_minutes=settings.intraday_focus_symbol_cadence_minutes,
+                    )
+                )
+                seen_instrument_ids.add(instrument.id)
+                added_for_market += 1
+                if market == "US":
+                    us_focus += 1
+                else:
+                    uk_focus += 1
+                if added_for_market >= cap:
+                    break
+
+            if added_for_market >= cap:
+                continue
+
+            ranked_candidates: list[tuple[bool, float, str, BetaInstrument]] = []
+            for instrument in instruments:
+                if instrument.id in seen_instrument_ids:
+                    continue
+                if str(instrument.market or "").strip().upper() != market:
+                    continue
+                if not BetaIntradayPriorityService._native_exchange_ok(
+                    market=instrument.market,
+                    exchange=instrument.exchange,
+                ):
+                    continue
+                market_cap = float(stats_by_instrument.get(instrument.id).market_cap or 0.0) if instrument.id in stats_by_instrument else 0.0
+                ranked_candidates.append(
+                    (
+                        market_cap > 0.0,
+                        market_cap,
+                        str(instrument.symbol or ""),
+                        instrument,
+                    )
+                )
+            ranked_candidates.sort(
+                key=lambda item: (item[0], item[1], item[2]),
+                reverse=True,
+            )
+            for has_market_cap, market_cap, _symbol, instrument in ranked_candidates:
+                items.append(
+                    BetaIntradayPriorityService._focus_item(
+                        instrument=instrument,
+                        priority_score=market_cap if has_market_cap else 0.1,
+                        now_utc=now,
+                        cadence_minutes=settings.intraday_focus_symbol_cadence_minutes,
+                    )
+                )
+                seen_instrument_ids.add(instrument.id)
+                if market == "US":
+                    us_focus += 1
+                else:
+                    uk_focus += 1
+                added_for_market += 1
+                if added_for_market >= cap:
+                    break
+
+        open_trade_focus = 0
+        for instrument_id in simulated_instrument_ids:
+            if instrument_id in seen_instrument_ids:
+                continue
+            instrument = instruments_by_id.get(instrument_id)
+            if instrument is None:
+                continue
+            items.append(
+                BetaIntradayPriorityService._focus_item(
+                    instrument=instrument,
+                    priority_score=2.0,
+                    now_utc=now,
+                    cadence_minutes=max(1, settings.intraday_focus_symbol_cadence_minutes),
+                )
+            )
+            seen_instrument_ids.add(instrument_id)
+            open_trade_focus += 1
+
+        return {
+            "items": items,
+            "us_focus": us_focus,
+            "uk_focus": uk_focus,
+            "open_trade_focus": open_trade_focus,
+        }
 
     @staticmethod
     def build_watchlist(settings: BetaSettings, *, now_utc: datetime | None = None) -> dict[str, object]:
@@ -208,3 +357,47 @@ class BetaIntradayPriorityService:
         if total_budget <= 0 or pct <= 0:
             return 0
         return max(1, int(round(total_budget * (pct / 100.0))))
+
+    @staticmethod
+    def _focus_item(
+        *,
+        instrument: BetaInstrument,
+        priority_score: float,
+        now_utc: datetime,
+        cadence_minutes: int,
+    ) -> IntradayPriorityItem:
+        return IntradayPriorityItem(
+            instrument_id=instrument.id,
+            symbol=instrument.symbol,
+            market=str(instrument.market or "OTHER"),
+            exchange=instrument.exchange,
+            tier="FOCUS",
+            cadence_minutes=max(1, int(cadence_minutes)),
+            priority_score=float(priority_score),
+            session_state=BetaMarketSessionService.session_state(instrument.exchange, now_utc=now_utc),
+        )
+
+    @staticmethod
+    def _native_exchange_ok(*, market: str | None, exchange: str | None) -> bool:
+        market_key = str(market or "").strip().upper()
+        allowed = _NATIVE_EXCHANGES_BY_MARKET.get(market_key)
+        if not allowed:
+            return True
+        return str(exchange or "").strip().upper() in allowed
+
+    @staticmethod
+    def _load_focus_symbols() -> dict[str, list[str]]:
+        config_path = Path(__file__).resolve().parents[1] / "config" / "intraday_focus_symbols.json"
+        if not config_path.exists():
+            return {"US": ["IBM"], "UK": []}
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return {"US": ["IBM"], "UK": []}
+        result: dict[str, list[str]] = {"US": [], "UK": []}
+        for market in ("US", "UK"):
+            raw_symbols = payload.get(market) or []
+            result[market] = [str(symbol).strip().upper() for symbol in raw_symbols if str(symbol).strip()]
+        if "IBM" not in result["US"]:
+            result["US"].insert(0, "IBM")
+        return result

@@ -3,43 +3,98 @@
 {% block content %}
 <section class="section-header">
   <div>
-    <h1>Hypothesis Families</h1>
+    <h1>Hypothesis Families &amp; Setups</h1>
     <p class="muted beta-page-note">
-      The governed pattern families the beta is learning from, including whether each family is
-      being promoted, suspended, or kept in research.
+      Definition-level validity view for the beta research engine, with family rollups kept as a secondary layer.
     </p>
   </div>
 </section>
 
 <section class="card card-spaced">
-  <div class="card__header"><h2 class="card__title">Current Family State</h2></div>
-  {% if dashboard.hypotheses %}
+  <div class="card__header"><h2 class="card__title">Current Setup Validity</h2></div>
+  {% if dashboard.hypothesis_definitions %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
+          <th>Setup</th>
           <th>Family</th>
-          <th>Status</th>
-          <th>Evidence</th>
-          <th>Summary</th>
-          <th>Updated</th>
+          <th>Belief</th>
+          <th>Confidence</th>
+          <th>Median Ex.</th>
+          <th>Robust Edge</th>
+          <th>Stability</th>
+          <th>Live</th>
+          <th>Gate</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.hypotheses %}
+        {% for row in dashboard.hypothesis_definitions %}
         <tr>
-          <td><strong><a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.title }}</a></strong></td>
+          <td>
+            <strong><a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.hypothesis_code }}</a></strong><br>
+            <span class="muted">{{ row.name }}</span>
+          </td>
+          <td>{{ row.family_name or row.family_code or "-" }}</td>
           <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
-          <td>{{ row.evidence_score or "-" }}</td>
-          <td>{{ row.notes or "Awaiting evidence." }}</td>
-          <td>{{ row.updated_at }}</td>
+          <td>{{ "%.2f"|format(row.belief_confidence_score or 0) }}</td>
+          <td>{{ row.median_excess_return_pct if row.median_excess_return_pct is not none else "-" }}</td>
+          <td>{{ row.winsorized_adjusted_return_pct if row.winsorized_adjusted_return_pct is not none else "-" }}</td>
+          <td>{{ row.stability_score if row.stability_score is not none else "-" }}</td>
+          <td>
+            {{ row.avg_realized_return_pct if row.avg_realized_return_pct is not none else "-" }}
+            <span class="muted">({{ row.realized_observation_count or 0 }})</span>
+          </td>
+          <td>
+            {% if row.promotion_eligible %}
+            <span class="{{ badge_class('VALIDATED') }}">PROMOTE OK</span>
+            {% elif row.watch_eligible %}
+            <span class="{{ badge_class('WATCHING') }}">WATCH OK</span>
+            {% else %}
+            <span class="{{ badge_class(row.governance_severity or 'DEGRADED') }}">{{ row.gate_fail_reason or "gated" }}</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">No hypothesis data is available yet.</p>
+  <p class="muted">No setup-definition data is available yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Family Rollup</h2></div>
+  {% if dashboard.hypothesis_definition_families %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Status</th>
+          <th>Definitions</th>
+          <th>Validated / Promising</th>
+          <th>Watch / Promote</th>
+          <th>Avg Confidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dashboard.hypothesis_definition_families %}
+        <tr>
+          <td>{{ row.family_name }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.definition_count }}</td>
+          <td>{{ row.validated_count }} / {{ row.promising_count }}</td>
+          <td>{{ row.watch_eligible_count }} / {{ row.promotion_eligible_count }}</td>
+          <td>{{ "%.2f"|format(row.avg_confidence_score or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No family rollup is available yet.</p>
   {% endif %}
 </section>
 

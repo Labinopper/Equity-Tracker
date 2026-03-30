@@ -5,9 +5,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+try:
+    from equity_tracker.src.env_bootstrap import load_project_dotenv
+except Exception:  # pragma: no cover - watcher fallback should stay best-effort
+    load_project_dotenv = None
+
 
 def resolve_beta_db_path() -> Path:
     """Resolve the beta DB from env or common local locations."""
+    if load_project_dotenv is not None:
+        load_project_dotenv()
+
     repo_root = Path(__file__).resolve().parent
     env_beta = os.environ.get("EQUITY_BETA_DB_PATH", "").strip()
     env_core = os.environ.get("EQUITY_DB_PATH", "").strip()

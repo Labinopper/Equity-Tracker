@@ -24,6 +24,80 @@ class BetaExecutionHypothesisService:
         "WAIT_FOR_CLOSE_CONFIRMATION",
         "NO_ACTION",
     }
+    _ACTION_GUIDANCE_BY_SIGNAL_TYPE: dict[str, dict[str, dict[str, str]]] = {
+        "HOLD_THROUGH_NOISE": {
+            "held": {
+                "recommended_action_side": "BUY",
+                "recommended_action_code": "ADD",
+                "recommended_action_label": "Add on supportive pullback",
+            },
+            "other": {
+                "recommended_action_side": "BUY",
+                "recommended_action_code": "ENTER",
+                "recommended_action_label": "Buy constructive continuation",
+            },
+        },
+        "AVOID_SELLING_INTO_PANIC": {
+            "held": {
+                "recommended_action_side": "BUY",
+                "recommended_action_code": "ADD",
+                "recommended_action_label": "Add into panic recovery",
+            },
+            "other": {
+                "recommended_action_side": "BUY",
+                "recommended_action_code": "ENTER",
+                "recommended_action_label": "Buy panic recovery",
+            },
+        },
+        "TRIM_ON_STRENGTH": {
+            "held": {
+                "recommended_action_side": "SELL",
+                "recommended_action_code": "TRIM",
+                "recommended_action_label": "Trim into strength",
+            },
+            "other": {
+                "recommended_action_side": "WAIT",
+                "recommended_action_code": "AVOID_ENTRY",
+                "recommended_action_label": "Avoid chasing overextended strength",
+            },
+        },
+        "SELL_INTO_REBOUND": {
+            "held": {
+                "recommended_action_side": "SELL",
+                "recommended_action_code": "EXIT",
+                "recommended_action_label": "Sell into rebound",
+            },
+            "other": {
+                "recommended_action_side": "WAIT",
+                "recommended_action_code": "AVOID_ENTRY",
+                "recommended_action_label": "Avoid weak rebound entry",
+            },
+        },
+        "WAIT_FOR_CLOSE_CONFIRMATION": {
+            "held": {
+                "recommended_action_side": "WAIT",
+                "recommended_action_code": "CONFIRM",
+                "recommended_action_label": "Wait for close confirmation",
+            },
+            "other": {
+                "recommended_action_side": "WAIT",
+                "recommended_action_code": "CONFIRM",
+                "recommended_action_label": "Wait for close confirmation",
+            },
+        },
+        "NO_ACTION": {
+            "held": {
+                "recommended_action_side": "HOLD",
+                "recommended_action_code": "NO_ACTION",
+                "recommended_action_label": "No trade action",
+            },
+            "other": {
+                "recommended_action_side": "WAIT",
+                "recommended_action_code": "NO_ACTION",
+                "recommended_action_label": "No trade action",
+            },
+        },
+    }
 
     @staticmethod
     def ensure_default_definitions() -> dict[str, int]:
@@ -181,11 +255,60 @@ class BetaExecutionHypothesisService:
         }
 
     @staticmethod
+    def action_guidance(
+        *,
+        definition: BetaExecutionHypothesisDefinition | None,
+        signal_type: str | None,
+        priority_tier: str | None = None,
+        position_source: str | None = None,
+    ) -> dict[str, str]:
+        normalized_signal = str(signal_type or "NO_ACTION").strip().upper()
+        context_key = "held" if BetaExecutionHypothesisService._held_context(
+            priority_tier=priority_tier,
+            position_source=position_source,
+        ) else "other"
+        default_guidance = (
+            BetaExecutionHypothesisService._ACTION_GUIDANCE_BY_SIGNAL_TYPE.get(normalized_signal)
+            or BetaExecutionHypothesisService._ACTION_GUIDANCE_BY_SIGNAL_TYPE["NO_ACTION"]
+        )
+        selected = dict(default_guidance.get(context_key) or default_guidance.get("other") or {})
+        metadata = BetaExecutionHypothesisService._json_object(definition.metadata_json) if definition is not None else {}
+        side = str(
+            metadata.get(f"action_side_{context_key}")
+            or metadata.get("action_side")
+            or selected.get("recommended_action_side")
+            or "WAIT"
+        ).strip().upper()
+        code = str(
+            metadata.get(f"action_code_{context_key}")
+            or metadata.get("action_code")
+            or selected.get("recommended_action_code")
+            or "NO_ACTION"
+        ).strip().upper()
+        label = str(
+            metadata.get(f"action_label_{context_key}")
+            or metadata.get("action_label")
+            or selected.get("recommended_action_label")
+            or "No trade action"
+        ).strip()
+        return {
+            "recommended_action_side": side,
+            "recommended_action_code": code,
+            "recommended_action_label": label,
+        }
+
+    @staticmethod
     def _confidence(*, metadata: dict[str, object], event_codes: list[str]) -> float:
         base_confidence = float(metadata.get("base_confidence") or 0.5)
         configured_events = [str(code) for code in metadata.get("event_codes", []) if str(code).strip()]
         overlap_bonus = 0.05 if configured_events and any(code in event_codes for code in configured_events) else 0.0
         return min(0.85, max(0.35, round(base_confidence + overlap_bonus, 4)))
+
+    @staticmethod
+    def _held_context(*, priority_tier: str | None, position_source: str | None) -> bool:
+        if str(priority_tier or "").strip().upper() == "HELD":
+            return True
+        return str(position_source or "").strip().upper() in {"MANUAL", "DEMO"}
 
     @staticmethod
     def _relative_checks_pass(

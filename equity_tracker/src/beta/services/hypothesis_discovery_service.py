@@ -14,6 +14,7 @@ from ..context import BetaContext
 from ..db.models import (
     BetaFeatureDefinition,
     BetaFeatureValue,
+    BetaHypothesisBeliefState,
     BetaHypothesisDefinition,
     BetaHypothesisDiscoveryCandidate,
     BetaHypothesisDiscoveryRun,
@@ -58,13 +59,9 @@ class BetaHypothesisDiscoveryService:
             }
 
         with BetaContext.write_session() as sess:
-            templates = list(
-                sess.scalars(
-                    select(BetaHypothesisTemplate)
-                    .where(BetaHypothesisTemplate.status == "ACTIVE")
-                    .order_by(BetaHypothesisTemplate.created_at.asc())
-                    .limit(settings.hypothesis_discovery_template_limit)
-                ).all()
+            templates, template_selection_notes = BetaHypothesisDiscoveryService._select_templates(
+                sess,
+                settings=settings,
             )
             if not templates:
                 return {
@@ -138,6 +135,10 @@ class BetaHypothesisDiscoveryService:
                 for row in generated_rows
                 if row["candidate"]["status"] in {"SCREENED_IN", "PROMOTED"}
                 and int(row["candidate"]["stage_reached"]) >= 5
+                and not (
+                    isinstance((row["candidate"].get("notes") or {}).get("governance"), dict)
+                    and not bool((row["candidate"]["notes"]["governance"]).get("promotion_eligible"))
+                )
             ]
             survivors.sort(
                 key=lambda item: (
@@ -207,6 +208,7 @@ class BetaHypothesisDiscoveryService:
                     "scope_instruments": dataset_notes.get("scope_instruments", 0),
                     "history_years": settings.hypothesis_discovery_history_years,
                     "universe_cap": settings.hypothesis_discovery_universe_cap,
+                    "template_selection_notes": template_selection_notes,
                 },
                 sort_keys=True,
             )
@@ -218,6 +220,128 @@ class BetaHypothesisDiscoveryService:
                 "discovery_run_code": discovery_run.run_code,
                 "dataset_rows": len(dataset_rows),
             }
+
+    @staticmethod
+    def _select_templates(
+        sess,
+        *,
+        settings: BetaSettings,
+    ) -> tuple[list[BetaHypothesisTemplate], list[dict[str, object]]]:
+        templates = list(
+            sess.scalars(
+                select(BetaHypothesisTemplate)
+                .where(BetaHypothesisTemplate.status == "ACTIVE")
+                .order_by(BetaHypothesisTemplate.created_at.asc())
+            ).all()
+        )
+        if not templates:
+            return [], []
+
+        template_stats: dict[str, dict[str, object]] = {}
+        for definition, belief in sess.execute(
+            select(BetaHypothesisDefinition, BetaHypothesisBeliefState)
+            .outerjoin(
+                BetaHypothesisBeliefState,
+                BetaHypothesisBeliefState.hypothesis_definition_id == BetaHypothesisDefinition.id,
+            )
+            .where(BetaHypothesisDefinition.template_code.is_not(None))
+        ).all():
+            template_code = str(definition.template_code or "").strip()
+            if not template_code:
+                continue
+            stats = template_stats.setdefault(
+                template_code,
+                {
+                    "definitions_total": 0,
+                    "survivors": 0,
+                    "validated": 0,
+                    "promising": 0,
+                    "candidate_like": 0,
+                    "degraded": 0,
+                    "rejected": 0,
+                    "latest_updated_at": definition.updated_at,
+                },
+            )
+            stats["definitions_total"] = int(stats["definitions_total"]) + 1
+            status = str(belief.status if belief is not None else definition.status or "DISCOVERED")
+            if status in {"SCREENED_IN", "CANDIDATE", "PROMISING", "VALIDATED"}:
+                stats["survivors"] = int(stats["survivors"]) + 1
+            if status in {"SCREENED_IN", "CANDIDATE"}:
+                stats["candidate_like"] = int(stats["candidate_like"]) + 1
+            if status == "PROMISING":
+                stats["promising"] = int(stats["promising"]) + 1
+            if status == "VALIDATED":
+                stats["validated"] = int(stats["validated"]) + 1
+            if status == "DEGRADED":
+                stats["degraded"] = int(stats["degraded"]) + 1
+            if status in {"REJECTED", "RETIRED", "ARCHIVED"}:
+                stats["rejected"] = int(stats["rejected"]) + 1
+            latest_updated_at = stats.get("latest_updated_at")
+            if latest_updated_at is None or definition.updated_at > latest_updated_at:
+                stats["latest_updated_at"] = definition.updated_at
+
+        ranked_templates: list[tuple[tuple[object, ...], BetaHypothesisTemplate]] = []
+        selection_notes: list[dict[str, object]] = []
+        for template in templates:
+            stats = template_stats.get(
+                template.template_code,
+                {
+                    "definitions_total": 0,
+                    "survivors": 0,
+                    "validated": 0,
+                    "promising": 0,
+                    "candidate_like": 0,
+                    "degraded": 0,
+                    "rejected": 0,
+                    "latest_updated_at": template.updated_at,
+                },
+            )
+            definitions_total = int(stats["definitions_total"])
+            survivors = int(stats["survivors"])
+            rejected_like = int(stats["degraded"]) + int(stats["rejected"])
+            skip_reason = None
+            if definitions_total >= 3 and survivors <= 0 and rejected_like >= definitions_total:
+                skip_reason = "historically_unproductive_template"
+            selection_notes.append(
+                {
+                    "template_code": template.template_code,
+                    "template_name": template.template_name,
+                    "definitions_total": definitions_total,
+                    "survivors": survivors,
+                    "validated": int(stats["validated"]),
+                    "promising": int(stats["promising"]),
+                    "candidate_like": int(stats["candidate_like"]),
+                    "degraded": int(stats["degraded"]),
+                    "rejected": int(stats["rejected"]),
+                    "selected": False,
+                    "reason": skip_reason,
+                }
+            )
+            if skip_reason is not None:
+                continue
+            ranked_templates.append(
+                (
+                    (
+                        -int(stats["validated"]),
+                        -int(stats["promising"]),
+                        -survivors,
+                        rejected_like,
+                        definitions_total,
+                        template.created_at,
+                    ),
+                    template,
+                )
+            )
+
+        ranked_templates.sort(key=lambda item: item[0])
+        selected = [item[1] for item in ranked_templates[: settings.hypothesis_discovery_template_limit]]
+        selected_codes = {template.template_code for template in selected}
+        for note in selection_notes:
+            if note["reason"] is None and note["template_code"] in selected_codes:
+                note["selected"] = True
+            elif note["reason"] is None:
+                note["reason"] = "deprioritized_by_template_limit"
+        return selected, selection_notes
 
     @staticmethod
     def _load_dataset(
@@ -507,9 +631,14 @@ class BetaHypothesisDiscoveryService:
             int(candidate_spec.get("min_support") or 0),
             settings.hypothesis_discovery_min_support,
         )
-        if support_count < min_support or matched_instruments < BetaHypothesisDiscoveryService._MIN_MATCHED_INSTRUMENTS:
+        if support_count < min_support:
             result["status"] = "PRUNED"
             result["notes"]["pruned_reason"] = "insufficient_support"
+            return result
+        if matched_instruments < settings.hypothesis_discovery_min_matched_instruments:
+            result["status"] = "PRUNED"
+            result["notes"]["pruned_reason"] = "insufficient_instrument_breadth"
+            result["notes"]["required_instruments"] = settings.hypothesis_discovery_min_matched_instruments
             return result
 
         matched_samples = [
@@ -525,6 +654,7 @@ class BetaHypothesisDiscoveryService:
             eligible_samples=eligible_samples,
             expected_direction=str(candidate_spec.get("expected_direction") or "BULLISH"),
             settings=settings,
+            matched_feature_rows=[dict(row.features) for row in matched_rows],
         )
         result.update(
             {
@@ -539,20 +669,84 @@ class BetaHypothesisDiscoveryService:
                 "stability_score": summary["stability_score"],
             }
         )
+        governance = (
+            (summary.get("notes") or {}).get("governance")
+            if isinstance(summary.get("notes"), dict)
+            else {}
+        )
+        governance = governance if isinstance(governance, dict) else {}
+        if governance:
+            result["notes"]["governance"] = governance
+        failure_modes = (
+            (summary.get("regime_slice") or {}).get("failure_modes")
+            if isinstance(summary.get("regime_slice"), dict)
+            else []
+        )
+        if isinstance(failure_modes, list) and failure_modes:
+            result["notes"]["failure_modes"] = failure_modes
 
+        summary_notes = summary.get("notes") if isinstance(summary.get("notes"), dict) else {}
+        summary_notes = summary_notes if isinstance(summary_notes, dict) else {}
+        regime_slice = summary.get("regime_slice") if isinstance(summary.get("regime_slice"), dict) else {}
+        regime_slice = regime_slice if isinstance(regime_slice, dict) else {}
         hit_rate = float(summary["win_rate_pct"] or 0.0)
         friction_adjusted = float(summary["transaction_cost_adjusted_return_pct"] or 0.0)
         baseline_edge = float(summary["baseline_edge_pct"] or 0.0)
         walk_forward = float(summary["walk_forward_score"] or 0.0)
         out_of_sample = float(summary["out_of_sample_score"] or 0.0)
         stability_score = float(summary["stability_score"] or 0.0)
-        walk_windows = ((summary.get("notes") or {}).get("walk_forward_windows") or [])
+        sample_span_days = int(summary_notes.get("sample_span_days") or 0)
+        evaluated_regime_bucket_count = int(regime_slice.get("evaluated_bucket_count") or 0)
+        top_two_positive_return_share = float(summary_notes.get("top_two_positive_return_share") or 0.0)
+        result["notes"].update(
+            {
+                "sample_span_days": sample_span_days,
+                "evaluated_regime_bucket_count": evaluated_regime_bucket_count,
+                "top_two_positive_return_share": round(top_two_positive_return_share, 4),
+            }
+        )
+        walk_windows = (summary_notes.get("walk_forward_windows") or [])
         recency_windows = walk_windows[-max(1, len(walk_windows) // 3) :] if walk_windows else []
         recency_edge = (
             sum(float(row.get("edge_pct") or 0.0) for row in recency_windows) / len(recency_windows)
             if recency_windows
             else 0.0
         )
+
+        if sample_span_days < settings.hypothesis_discovery_min_time_span_days:
+            result["status"] = "PRUNED"
+            result["stage_reached"] = 2
+            result["notes"]["pruned_reason"] = "insufficient_time_breadth"
+            result["notes"]["required_time_span_days"] = settings.hypothesis_discovery_min_time_span_days
+            return result
+        if evaluated_regime_bucket_count < settings.hypothesis_discovery_min_regime_buckets:
+            result["status"] = "PRUNED"
+            result["stage_reached"] = 2
+            result["notes"]["pruned_reason"] = "insufficient_regime_breadth"
+            result["notes"]["required_regime_buckets"] = settings.hypothesis_discovery_min_regime_buckets
+            return result
+        if friction_adjusted < settings.hypothesis_discovery_min_friction_adjusted_return_pct:
+            result["status"] = "PRUNED"
+            result["stage_reached"] = 2
+            result["notes"]["pruned_reason"] = "insufficient_post_friction_headroom"
+            result["notes"]["required_friction_adjusted_return_pct"] = (
+                settings.hypothesis_discovery_min_friction_adjusted_return_pct
+            )
+            return result
+        if baseline_edge < settings.hypothesis_discovery_min_baseline_edge_pct:
+            result["status"] = "PRUNED"
+            result["stage_reached"] = 2
+            result["notes"]["pruned_reason"] = "insufficient_baseline_edge"
+            result["notes"]["required_baseline_edge_pct"] = settings.hypothesis_discovery_min_baseline_edge_pct
+            return result
+        if top_two_positive_return_share > settings.hypothesis_discovery_max_top_two_positive_return_share:
+            result["status"] = "PRUNED"
+            result["stage_reached"] = 2
+            result["notes"]["pruned_reason"] = "outlier_concentration_too_high"
+            result["notes"]["max_top_two_positive_return_share"] = (
+                settings.hypothesis_discovery_max_top_two_positive_return_share
+            )
+            return result
 
         if friction_adjusted <= 0.0 or hit_rate < 48.0:
             result["status"] = "PRUNED"
@@ -581,6 +775,14 @@ class BetaHypothesisDiscoveryService:
             result["notes"]["pruned_reason"] = "unstable_or_stale"
             return result
 
+        hard_fail_reasons = governance.get("hard_fail_reasons") if isinstance(governance, dict) else []
+        if isinstance(hard_fail_reasons, list) and hard_fail_reasons:
+            result["status"] = "PRUNED"
+            result["stage_reached"] = 5
+            result["notes"]["pruned_reason"] = "governance_hard_fail"
+            result["notes"]["gate_reasons"] = [str(reason) for reason in hard_fail_reasons]
+            return result
+
         result["status"] = "SCREENED_IN"
         result["stage_reached"] = 5
         result["notes"].update(
@@ -589,6 +791,9 @@ class BetaHypothesisDiscoveryService:
                 "recency_edge_pct": round(recency_edge, 4),
             }
         )
+        promotion_fail_reasons = governance.get("promotion_fail_reasons") if isinstance(governance, dict) else []
+        if isinstance(promotion_fail_reasons, list) and promotion_fail_reasons:
+            result["notes"]["promotion_gate_reasons"] = [str(reason) for reason in promotion_fail_reasons]
         return result
 
     @staticmethod

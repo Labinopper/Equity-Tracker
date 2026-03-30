@@ -123,6 +123,53 @@ def _bars_held(entry_bar_date, current_bar_date, bars: list[BetaDailyBar]) -> in
     return len([bar for bar in bars if bar.bar_date > entry_bar_date and bar.bar_date <= current_bar_date])
 
 
+def _close_enough(left: float | None, right: float | None, *, tolerance: float) -> bool:
+    if left is None and right is None:
+        return True
+    if left is None or right is None:
+        return False
+    return abs(float(left) - float(right)) <= tolerance
+
+
+def _should_persist_score_tape(
+    sess,
+    *,
+    instrument_id: str,
+    scored_at,
+    direction: str,
+    recommendation: bool,
+    rejection_reason: str | None,
+    predicted_return_pct: float | None,
+    confidence_score: float,
+    expected_edge_score: float,
+) -> bool:
+    if recommendation:
+        return True
+    previous = sess.scalar(
+        select(BetaScoreTape)
+        .where(BetaScoreTape.instrument_id == instrument_id)
+        .order_by(desc(BetaScoreTape.scored_at), desc(BetaScoreTape.id))
+        .limit(1)
+    )
+    if previous is None or previous.recommendation_flag:
+        return True
+    if previous.scored_at is None or scored_at is None:
+        return True
+    if scored_at - previous.scored_at > timedelta(hours=6):
+        return True
+    if str(previous.direction or "") != direction:
+        return True
+    if str(previous.rejection_reason or "") != str(rejection_reason or ""):
+        return True
+    if not _close_enough(previous.predicted_return_5d, predicted_return_pct, tolerance=0.2):
+        return True
+    if not _close_enough(previous.confidence_score, confidence_score, tolerance=0.015):
+        return True
+    if not _close_enough(previous.expected_edge_score, expected_edge_score, tolerance=0.02):
+        return True
+    return False
+
+
 def _latest_intraday_snapshot(sess, instrument_id: str) -> BetaIntradaySnapshot | None:
     return sess.scalar(
         select(BetaIntradaySnapshot)
@@ -568,7 +615,10 @@ class BetaScoringService:
             hypothesis_matches = 0
             validated_hypothesis_matches = 0
             signal_observations_created = 0
+            signal_observations_reused = 0
             recommendation_decisions_created = 0
+            recommendation_decisions_reused = 0
+            score_tape_rows_skipped = 0
 
             for instrument in instruments:
                 open_position = sess.scalar(
@@ -838,10 +888,14 @@ class BetaScoringService:
                     matched_family = best_match.get("family")
                     matched_observation = best_match.get("observation")
                     recommendation_decision = signal_result.get("decision")
+                    observation_counts = signal_result.get("observation_counts") or {}
+                    decision_counts = signal_result.get("decision_counts") or {}
                     if matched_observation is not None:
-                        signal_observations_created += len(signal_result.get("matches") or [])
+                        signal_observations_created += int(observation_counts.get("created") or 0)
+                        signal_observations_reused += int(observation_counts.get("reused") or 0)
                     if recommendation_decision is not None:
-                        recommendation_decisions_created += 1
+                        recommendation_decisions_created += int(decision_counts.get("created") or 0)
+                        recommendation_decisions_reused += int(decision_counts.get("reused") or 0)
                     if signal_result.get("legacy_hypothesis") is not None:
                         hypothesis = signal_result.get("legacy_hypothesis")
                     if matched_family is not None:
@@ -889,23 +943,37 @@ class BetaScoringService:
                 scored += 1
                 if recommendation:
                     recommended += 1
-                sess.add(
-                    BetaScoreTape(
-                        score_run_id=score_run.id,
-                        instrument_id=instrument.id,
-                        strategy_version_id=active_strategy.id if active_strategy is not None else None,
-                        model_version_id=active_model["id"] if active_model is not None else None,
-                        symbol=instrument.symbol,
-                        direction=direction,
-                        predicted_return_5d=predicted_return_pct,
-                        realized_volatility_5d=realized_vol,
-                        confidence_score=confidence,
-                        expected_edge_score=edge,
-                        recommendation_flag=recommendation,
-                        rejection_reason=rejection_reason,
-                        evidence_json=json.dumps(evidence, sort_keys=True),
+                if _should_persist_score_tape(
+                    sess,
+                    instrument_id=instrument.id,
+                    scored_at=mark_observed_at,
+                    direction=direction,
+                    recommendation=recommendation,
+                    rejection_reason=rejection_reason,
+                    predicted_return_pct=predicted_return_pct,
+                    confidence_score=confidence,
+                    expected_edge_score=edge,
+                ):
+                    sess.add(
+                        BetaScoreTape(
+                            score_run_id=score_run.id,
+                            instrument_id=instrument.id,
+                            strategy_version_id=active_strategy.id if active_strategy is not None else None,
+                            model_version_id=active_model["id"] if active_model is not None else None,
+                            symbol=instrument.symbol,
+                            direction=direction,
+                            predicted_return_5d=predicted_return_pct,
+                            realized_volatility_5d=realized_vol,
+                            confidence_score=confidence,
+                            expected_edge_score=edge,
+                            recommendation_flag=recommendation,
+                            rejection_reason=rejection_reason,
+                            evidence_json=json.dumps(evidence, sort_keys=True),
+                            scored_at=mark_observed_at,
+                        )
                     )
-                )
+                else:
+                    score_tape_rows_skipped += 1
 
                 candidate = sess.scalar(
                     select(BetaSignalCandidate)
@@ -1217,7 +1285,10 @@ class BetaScoringService:
                 "hypothesis_matches": hypothesis_matches,
                 "validated_hypothesis_matches": validated_hypothesis_matches,
                 "signal_observations_created": signal_observations_created,
+                "signal_observations_reused": signal_observations_reused,
                 "recommendation_decisions_created": recommendation_decisions_created,
+                "recommendation_decisions_reused": recommendation_decisions_reused,
+                "score_tape_rows_skipped": score_tape_rows_skipped,
                 "active_model_version": active_model["version_code"] if active_model is not None else None,
                 "active_strategy_version": active_strategy.version_code if active_strategy is not None else None,
                 "entries_paused": int(risk_state.demo_entries_paused),

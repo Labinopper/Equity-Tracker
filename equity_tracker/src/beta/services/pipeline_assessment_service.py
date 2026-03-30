@@ -10,7 +10,9 @@ from sqlalchemy import desc, func, select
 from ..context import BetaContext
 from ..db.models import (
     BetaDailyBar,
+    BetaDemoPosition,
     BetaEvaluationRun,
+    BetaExecutionSignal,
     BetaFeatureValue,
     BetaHypothesisBeliefState,
     BetaHypothesisDiscoveryCandidate,
@@ -32,6 +34,7 @@ from ..db.models import (
     BetaStrategyVersion,
     BetaTrainingDecision,
 )
+from .storage_governance_service import BetaStorageGovernanceService
 
 
 def _utcnow() -> datetime:
@@ -40,6 +43,18 @@ def _utcnow() -> datetime:
 
 def _dt_to_iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _json_safe(value: object) -> object:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _job_details(job: BetaJobRun | None) -> dict[str, object]:
@@ -146,6 +161,10 @@ class BetaPipelineAssessmentService:
                 "beta_daily_shadow_cycle",
                 "beta_tracked_core_shadow_cycle",
                 "beta_live_evaluation",
+                "beta_intraday_outlook_history",
+                "beta_execution_hypothesis_discovery",
+                "beta_execution_hypothesis_backtests",
+                "beta_execution_hypothesis_belief_refresh",
                 "beta_hypothesis_backtests",
                 "beta_hypothesis_discovery",
                 "beta_hypothesis_belief_refresh",
@@ -314,6 +333,97 @@ class BetaPipelineAssessmentService:
             latest_belief_update = sess.scalar(
                 select(BetaHypothesisBeliefState).order_by(desc(BetaHypothesisBeliefState.updated_at)).limit(1)
             )
+            surviving_belief_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaHypothesisBeliefState).where(
+                        BetaHypothesisBeliefState.status.in_(("SCREENED_IN", "CANDIDATE", "PROMISING", "VALIDATED"))
+                    )
+                )
+                or 0
+            )
+            activated_model_count = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaModelVersion).where(
+                        BetaModelVersion.activated_at.is_not(None)
+                    )
+                )
+                or 0
+            )
+            demo_positions_opened_last_24h = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaDemoPosition).where(
+                        BetaDemoPosition.opened_at >= recent_score_cutoff
+                    )
+                )
+                or 0
+            )
+            execution_signals_last_24h = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaExecutionSignal).where(
+                        BetaExecutionSignal.signal_time >= recent_score_cutoff
+                    )
+                )
+                or 0
+            )
+            execution_actionable_events_last_24h = int(
+                sess.scalar(
+                    select(func.count()).select_from(BetaExecutionSignal).where(
+                        BetaExecutionSignal.signal_time >= recent_score_cutoff,
+                        BetaExecutionSignal.signal_type.not_in(("NO_ACTION", "WAIT_FOR_CLOSE_CONFIRMATION")),
+                    )
+                )
+                or 0
+            )
+            storage_profile = BetaStorageGovernanceService.build_profile()
+            research_productivity = {
+                "surviving_belief_count": surviving_belief_count,
+                "feature_rows_per_validated_belief": round(
+                    (int(sess.scalar(select(func.count()).select_from(BetaFeatureValue)) or 0) / validated_hypothesis_count),
+                    2,
+                )
+                if validated_hypothesis_count > 0
+                else None,
+                "feature_rows_per_surviving_belief": round(
+                    (int(sess.scalar(select(func.count()).select_from(BetaFeatureValue)) or 0) / surviving_belief_count),
+                    2,
+                )
+                if surviving_belief_count > 0
+                else None,
+                "discovery_candidates_per_surviving_belief": round(
+                    (int(sess.scalar(select(func.count()).select_from(BetaHypothesisDiscoveryCandidate)) or 0) / surviving_belief_count),
+                    2,
+                )
+                if surviving_belief_count > 0
+                else None,
+                "test_runs_per_promoted_hypothesis": round(
+                    (int(sess.scalar(select(func.count()).select_from(BetaHypothesisTestRun)) or 0) / hypotheses_promoted),
+                    2,
+                )
+                if hypotheses_promoted > 0
+                else None,
+                "db_size_gb_per_activated_model": round(
+                    float(storage_profile.get("db_size_gb") or 0.0) / activated_model_count,
+                    4,
+                )
+                if activated_model_count > 0
+                else None,
+                "recommendation_decisions_per_demo_position_opened_last_24h": round(
+                    recommendation_decisions_last_24h / demo_positions_opened_last_24h,
+                    2,
+                )
+                if demo_positions_opened_last_24h > 0
+                else None,
+                "execution_signals_per_actionable_event_last_24h": round(
+                    execution_signals_last_24h / execution_actionable_events_last_24h,
+                    2,
+                )
+                if execution_actionable_events_last_24h > 0
+                else None,
+                "activated_model_count": activated_model_count,
+                "demo_positions_opened_last_24h": demo_positions_opened_last_24h,
+                "execution_signals_last_24h": execution_signals_last_24h,
+                "execution_actionable_events_last_24h": execution_actionable_events_last_24h,
+            }
 
             latest_training_job = latest_jobs["beta_daily_training"]
             latest_scoring_job = latest_jobs["beta_daily_shadow_cycle"]
@@ -526,6 +636,8 @@ class BetaPipelineAssessmentService:
                 "beliefs_recent": beliefs_recent,
                 "latest_hypothesis_test_at": _dt_to_iso(latest_hypothesis_test.created_at if latest_hypothesis_test is not None else None),
                 "latest_belief_update_at": _dt_to_iso(latest_belief_update.updated_at if latest_belief_update is not None else None),
+                "storage_profile": storage_profile,
+                "research_productivity": research_productivity,
                 "lane_metrics": {
                     "tracked_core": lane_metrics(
                         score_run=latest_core_score_run,
@@ -590,6 +702,7 @@ class BetaPipelineAssessmentService:
         metrics = BetaPipelineAssessmentService.build_metrics()
         if not BetaContext.is_initialized():
             return metrics
+        persisted_metrics = _json_safe(metrics)
 
         with BetaContext.write_session() as sess:
             sess.add(
@@ -598,7 +711,7 @@ class BetaPipelineAssessmentService:
                     trigger_job_name=trigger_job_name,
                     overall_status=str(metrics.get("overall_status") or "UNAVAILABLE"),
                     summary_text=str(metrics.get("summary_text") or ""),
-                    metrics_json=json.dumps(metrics, sort_keys=True),
+                    metrics_json=json.dumps(persisted_metrics, sort_keys=True),
                 )
             )
         return metrics

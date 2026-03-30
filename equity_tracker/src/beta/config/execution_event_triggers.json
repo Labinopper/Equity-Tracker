@@ -94,5 +94,111 @@
         {"feature": "return_since_open_pct", "op": "gt", "value": 0.5}
       ]
     }
+  },
+  {
+    "event_code": "EVENT_OPENING_WEAKNESS",
+    "name": "Opening weakness",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_since_open", "op": "lte", "value": 60},
+        {"feature": "first_15m_return_pct", "op": "lt", "value": -1.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_OPENING_STRENGTH",
+    "name": "Opening strength",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_since_open", "op": "lte", "value": 60},
+        {"feature": "first_15m_return_pct", "op": "gt", "value": 1.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_OPENING_WEAKNESS_REPAIR",
+    "name": "Opening weakness repair",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_since_open", "op": "lte", "value": 120},
+        {"feature": "first_15m_return_pct", "op": "lt", "value": -1.0},
+        {"feature": "return_from_first_15m_close_pct", "op": "gt", "value": 1.0},
+        {"feature": "distance_from_vwap_pct", "op": "gt", "value": 0.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_OPENING_STRENGTH_FADE",
+    "name": "Opening strength fade",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_since_open", "op": "lte", "value": 120},
+        {"feature": "first_15m_return_pct", "op": "gt", "value": 1.0},
+        {"feature": "return_from_first_15m_close_pct", "op": "lt", "value": -1.0},
+        {"feature": "distance_from_vwap_pct", "op": "lt", "value": 0.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_FIRST_30M_BREAKOUT",
+    "name": "Opening range breakout",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_since_open", "op": "gt", "value": 30},
+        {"feature": "breakout_above_first_30m_high_pct", "op": "gt", "value": 0.15}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_FIRST_30M_BREAKDOWN",
+    "name": "Opening range breakdown",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_since_open", "op": "gt", "value": 30},
+        {"feature": "breakdown_below_first_30m_low_pct", "op": "gt", "value": 0.15}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_GAP_FILL",
+    "name": "Gap fill",
+    "conditions": {
+      "all": [
+        {"feature": "gap_fill_pct", "op": "gt", "value": 75.0}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_AFTERNOON_ACCELERATION",
+    "name": "Afternoon acceleration",
+    "conditions": {
+      "all": [
+        {"feature": "session_progress_pct", "op": "gt", "value": 55.0},
+        {"feature": "return_last_30m_pct", "op": "gt", "value": 0.8},
+        {"feature": "distance_from_vwap_pct", "op": "gt", "value": 0.05}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_CLOSE_RAMP",
+    "name": "Close ramp",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_until_close", "op": "lte", "value": 45},
+        {"feature": "return_last_30m_pct", "op": "gt", "value": 0.75},
+        {"feature": "distance_from_session_high_pct", "op": "lt", "value": 0.6}
+      ]
+    }
+  },
+  {
+    "event_code": "EVENT_CLOSE_FADE",
+    "name": "Close fade",
+    "conditions": {
+      "all": [
+        {"feature": "minutes_until_close", "op": "lte", "value": 45},
+        {"feature": "return_last_30m_pct", "op": "lt", "value": -0.75},
+        {"feature": "distance_from_vwap_pct", "op": "lt", "value": -0.05}
+      ]
+    }
   }
 ]

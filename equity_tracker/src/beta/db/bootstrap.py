@@ -8,6 +8,7 @@ from pathlib import Path
 from shutil import move
 
 from sqlalchemy import Boolean, Date, DateTime, Float, Integer, inspect, select, text
+from sqlalchemy.schema import CreateTable
 
 from .engine import BetaDatabaseEngine
 from .models import (
@@ -18,7 +19,7 @@ from .models import (
     BetaSystemStatus,
 )
 
-_SCHEMA_VERSION = "v7"
+_SCHEMA_VERSION = "v14"
 
 
 def _missing_beta_columns(engine: BetaDatabaseEngine) -> list[tuple[str, object]]:
@@ -105,16 +106,69 @@ def _ensure_beta_indexes(engine: BetaDatabaseEngine) -> list[str]:
     return created
 
 
+def _create_table_sql(engine: BetaDatabaseEngine, table_name: str) -> str:
+    table = BetaBase.metadata.tables[table_name]
+    return str(CreateTable(table).compile(dialect=engine.raw_engine.dialect))
+
+
+def _copy_table_rows(conn, *, table_name: str, source_name: str) -> None:
+    column_names = [column.name for column in BetaBase.metadata.tables[table_name].columns]
+    column_sql = ", ".join(column_names)
+    conn.execute(
+        text(
+            f"INSERT INTO {table_name} ({column_sql}) "
+            f"SELECT {column_sql} FROM {source_name}"
+        )
+    )
+
+
+def _migrate_intraday_simulated_trade_direction_constraint(engine: BetaDatabaseEngine) -> list[str]:
+    with engine.raw_engine.connect() as conn:
+        table_sql = conn.execute(
+            text(
+                """
+                SELECT sql
+                FROM sqlite_master
+                WHERE type = 'table' AND name = 'beta_intraday_simulated_trades'
+                """
+            )
+        ).scalar()
+    if not table_sql or "direction IN ('LONG')" not in str(table_sql):
+        return []
+
+    with engine.raw_engine.begin() as conn:
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.execute(text("ALTER TABLE beta_intraday_simulated_trade_events RENAME TO beta_intraday_simulated_trade_events_old"))
+        conn.execute(text("ALTER TABLE beta_intraday_simulated_trades RENAME TO beta_intraday_simulated_trades_old"))
+        conn.execute(text(_create_table_sql(engine, "beta_intraday_simulated_trades")))
+        conn.execute(text(_create_table_sql(engine, "beta_intraday_simulated_trade_events")))
+        _copy_table_rows(
+            conn,
+            table_name="beta_intraday_simulated_trades",
+            source_name="beta_intraday_simulated_trades_old",
+        )
+        _copy_table_rows(
+            conn,
+            table_name="beta_intraday_simulated_trade_events",
+            source_name="beta_intraday_simulated_trade_events_old",
+        )
+        conn.execute(text("DROP TABLE beta_intraday_simulated_trade_events_old"))
+        conn.execute(text("DROP TABLE beta_intraday_simulated_trades_old"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+    return ["beta_intraday_simulated_trades.direction_constraint"]
+
+
 def apply_beta_schema_migrations(engine: BetaDatabaseEngine) -> list[str]:
     """Apply additive in-place schema migrations for existing beta DBs."""
     BetaBase.metadata.create_all(engine.raw_engine)
+    applied: list[str] = []
+    applied.extend(_migrate_intraday_simulated_trade_direction_constraint(engine))
     missing = _missing_beta_columns(engine)
     if not missing:
-        _ensure_beta_indexes(engine)
-        return []
+        applied.extend(f"index:{index_name}" for index_name in _ensure_beta_indexes(engine))
+        return applied
 
     preparer = engine.raw_engine.dialect.identifier_preparer
-    applied: list[str] = []
     with engine.raw_engine.begin() as conn:
         for table_name, column in missing:
             quoted_table = preparer.quote(table_name)

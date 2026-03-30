@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from random import Random
 from statistics import median, pstdev
 
 from sqlalchemy import desc, select
@@ -21,6 +22,7 @@ from ..db.models import (
 )
 from ..settings import BetaSettings
 from ..state import get_beta_db_path
+from .hypothesis_governance_service import BetaHypothesisGovernanceService
 from .hypothesis_normalizer import BetaHypothesisNormalizer
 
 
@@ -156,6 +158,7 @@ class BetaHypothesisBacktestService:
 
                 matched_samples: list[tuple[str, object, float]] = []
                 eligible_samples: list[tuple[str, object, float]] = []
+                matched_feature_rows: list[dict[str, float]] = []
                 for (instrument_id, decision_date), snapshot in feature_snapshots.items():
                     instrument = instruments.get(instrument_id)
                     if instrument is None:
@@ -172,12 +175,14 @@ class BetaHypothesisBacktestService:
                     eligible_samples.append((instrument_id, decision_date, label_value))
                     if BetaHypothesisNormalizer.evaluate(conditions, snapshot).matched:
                         matched_samples.append((instrument_id, decision_date, label_value))
+                        matched_feature_rows.append(dict(snapshot))
 
                 summary = BetaHypothesisBacktestService._summarize_samples(
                     matched_samples=matched_samples,
                     eligible_samples=eligible_samples,
                     expected_direction=str(definition.expected_direction or "BULLISH"),
                     settings=settings,
+                    matched_feature_rows=matched_feature_rows,
                 )
 
                 test_run = BetaHypothesisTestRun(
@@ -245,12 +250,14 @@ class BetaHypothesisBacktestService:
         eligible_samples: list[tuple[str, object, float]],
         expected_direction: str,
         settings: BetaSettings,
+        matched_feature_rows: list[dict[str, float]] | None = None,
     ) -> dict[str, object]:
         return BetaHypothesisBacktestService._summarize_samples(
             matched_samples=matched_samples,
             eligible_samples=eligible_samples,
             expected_direction=expected_direction,
             settings=settings,
+            matched_feature_rows=matched_feature_rows,
         )
 
     @staticmethod
@@ -260,6 +267,7 @@ class BetaHypothesisBacktestService:
         eligible_samples: list[tuple[str, object, float]],
         expected_direction: str,
         settings: BetaSettings,
+        matched_feature_rows: list[dict[str, float]] | None = None,
     ) -> dict[str, object]:
         raw_sample_values = [value for _instrument_id, _decision_date, value in matched_samples]
         sample_values = [
@@ -272,6 +280,11 @@ class BetaHypothesisBacktestService:
         sample_dates = [decision_date for _instrument_id, decision_date, _value in matched_samples]
         support_count = len(sample_values)
         matched_instruments = len({instrument_id for instrument_id, _decision_date, _value in matched_samples})
+        sample_span_days = (
+            int((max(sample_dates) - min(sample_dates)).days)
+            if len(sample_dates) >= 2
+            else 0
+        )
 
         raw_eligible_values = [value for _instrument_id, _decision_date, value in eligible_samples]
         aligned_eligible_values = [
@@ -299,6 +312,7 @@ class BetaHypothesisBacktestService:
         median_excess_return_pct = round(float(median(sample_values)), 4) if sample_values else None
         average_return_pct = average_excess_return_pct
         median_return_pct = median_excess_return_pct
+        median_ci_low_pct, median_ci_high_pct = BetaHypothesisBacktestService._bootstrap_median_interval(sample_values)
 
         # Parallel return profiles for robustness comparison
         winsorize_cap = 200.0
@@ -319,6 +333,12 @@ class BetaHypothesisBacktestService:
         )
         _abs_median = abs(median_excess_return_pct or 0.0)
         mean_median_ratio = round(abs(raw_avg) / max(_abs_median, 0.5), 4)
+        positive_values = sorted([value for value in sample_values if value > 0.0], reverse=True)
+        total_positive_return = sum(positive_values)
+        top_two_positive_return_share = round(
+            (sum(positive_values[:2]) / total_positive_return) if total_positive_return > 0.01 else 0.0,
+            4,
+        )
 
         outcome_volatility_pct = round(pstdev(sample_values), 4) if len(sample_values) > 1 else (0.0 if sample_values else None)
         transaction_cost_bps = float(
@@ -330,6 +350,8 @@ class BetaHypothesisBacktestService:
             if average_excess_return_pct is not None
             else None
         )
+        winsorized_adjusted_return_pct = round(winsorized_avg - (transaction_cost_bps / 100.0), 4) if winsorized_values else None
+        trimmed_adjusted_return_pct = round(trimmed_avg - (transaction_cost_bps / 100.0), 4) if trimmed_values else None
         baseline_edge_pct = (
             round((transaction_cost_adjusted_return_pct or 0.0) - baseline_return_pct, 4)
             if transaction_cost_adjusted_return_pct is not None
@@ -362,23 +384,35 @@ class BetaHypothesisBacktestService:
             "support_count": support_count,
             "eligible_support_count": len(eligible_samples),
         }
+        regime_slice.update(
+            BetaHypothesisBacktestService._regime_slice_summary(
+                matched_feature_rows=matched_feature_rows or [],
+                aligned_returns=sample_values,
+            )
+        )
         notes = {
             "minimum_sample_size": BetaHypothesisBacktestService._MIN_SAMPLE_SIZE,
             "walk_forward_windows": walk_windows,
             "baseline_policy": "UNCONDITIONAL_UNIVERSE_MEAN",
             "sample_size_sufficient": support_count >= BetaHypothesisBacktestService._MIN_SAMPLE_SIZE,
+            "sample_span_days": sample_span_days,
             "evaluation_perspective": "direction_aligned",
             "raw_average_return_pct": average_target_return_pct,
             "raw_median_return_pct": round(float(median(raw_sample_values)), 4) if raw_sample_values else None,
+            "median_ci_low_pct": median_ci_low_pct,
+            "median_ci_high_pct": median_ci_high_pct,
             "winsorized_avg_return_pct": winsorized_avg,
             "trimmed_avg_return_pct": trimmed_avg,
+            "winsorized_adjusted_return_pct": winsorized_adjusted_return_pct,
+            "trimmed_adjusted_return_pct": trimmed_adjusted_return_pct,
             "robustness_collapse_pct": robustness_collapse_pct,
             "mean_median_ratio": mean_median_ratio,
+            "top_two_positive_return_share": top_two_positive_return_share,
             "max_window_edge_share": max_window_edge_share,
             "positive_window_count": positive_window_count,
             "total_walk_forward_windows": len(walk_windows) if walk_windows else 0,
         }
-        return {
+        summary = {
             "sample_size": support_count,
             "support_count": support_count,
             "matched_instruments": matched_instruments,
@@ -403,6 +437,151 @@ class BetaHypothesisBacktestService:
             "regime_slice": regime_slice,
             "notes": notes,
         }
+        summary["notes"]["governance"] = BetaHypothesisGovernanceService.evaluate_summary(summary)
+        return summary
+
+    @staticmethod
+    def _bootstrap_median_interval(sample_values: list[float], *, iterations: int = 128) -> tuple[float | None, float | None]:
+        if len(sample_values) < 5:
+            return None, None
+        seed = len(sample_values) * 997
+        for index, value in enumerate(sorted(sample_values)):
+            seed += int(round(value * 100.0)) * (index + 1)
+        rng = Random(seed)
+        bootstrapped: list[float] = []
+        for _ in range(iterations):
+            resample = [sample_values[rng.randrange(len(sample_values))] for _idx in range(len(sample_values))]
+            bootstrapped.append(float(median(resample)))
+        bootstrapped.sort()
+        low_index = max(0, min(len(bootstrapped) - 1, int(len(bootstrapped) * 0.1)))
+        high_index = max(0, min(len(bootstrapped) - 1, int(len(bootstrapped) * 0.9)))
+        return round(bootstrapped[low_index], 4), round(bootstrapped[high_index], 4)
+
+    @staticmethod
+    def _regime_slice_summary(
+        *,
+        matched_feature_rows: list[dict[str, float]],
+        aligned_returns: list[float],
+    ) -> dict[str, object]:
+        if not matched_feature_rows or len(matched_feature_rows) != len(aligned_returns):
+            return {
+                "evaluated_bucket_count": 0,
+                "regime_consistency_score": None,
+                "failure_modes": [],
+            }
+
+        dimensions = {
+            "market_regime": BetaHypothesisBacktestService._market_regime_bucket,
+            "volatility_regime": BetaHypothesisBacktestService._volatility_regime_bucket,
+            "sector_regime": BetaHypothesisBacktestService._sector_regime_bucket,
+        }
+        min_bucket_support = 5
+        evaluated_stats: list[dict[str, object]] = []
+        regime_summary: dict[str, object] = {}
+        failure_modes: list[dict[str, object]] = []
+
+        for dimension_name, resolver in dimensions.items():
+            grouped: dict[str, list[float]] = {}
+            for feature_row, aligned_return in zip(matched_feature_rows, aligned_returns):
+                bucket = resolver(feature_row)
+                if bucket is None:
+                    continue
+                grouped.setdefault(bucket, []).append(aligned_return)
+
+            stats: list[dict[str, object]] = []
+            for bucket, values in sorted(grouped.items()):
+                avg_return_pct = round(sum(values) / len(values), 4) if values else 0.0
+                win_rate_pct = round(
+                    (len([value for value in values if value > 0]) / len(values)) * 100.0,
+                    2,
+                ) if values else 0.0
+                row = {
+                    "bucket": bucket,
+                    "sample_size": len(values),
+                    "avg_return_pct": avg_return_pct,
+                    "median_return_pct": round(float(median(values)), 4) if values else None,
+                    "win_rate_pct": win_rate_pct,
+                }
+                stats.append(row)
+                if len(values) >= min_bucket_support:
+                    evaluated_stats.append({"dimension": dimension_name, **row})
+                    if avg_return_pct <= 0.0 or win_rate_pct < 50.0:
+                        failure_modes.append(
+                            {
+                                "dimension": dimension_name,
+                                "bucket": bucket,
+                                "avg_return_pct": avg_return_pct,
+                                "win_rate_pct": win_rate_pct,
+                                "sample_size": len(values),
+                            }
+                        )
+            regime_summary[dimension_name] = stats
+
+        if len(evaluated_stats) < 2:
+            regime_summary["evaluated_bucket_count"] = len(evaluated_stats)
+            regime_summary["regime_consistency_score"] = None
+            regime_summary["failure_modes"] = failure_modes
+            return regime_summary
+
+        positive_bucket_ratio = len(
+            [
+                row
+                for row in evaluated_stats
+                if float(row["avg_return_pct"]) > 0.0 and float(row["win_rate_pct"]) >= 50.0
+            ]
+        ) / len(evaluated_stats)
+        bucket_returns = [float(row["avg_return_pct"]) for row in evaluated_stats]
+        dispersion = pstdev(bucket_returns) if len(bucket_returns) > 1 else 0.0
+        minimum_bucket_return = min(bucket_returns)
+        regime_consistency_score = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    (positive_bucket_ratio * 0.75)
+                    + min(0.15, max(0.0, minimum_bucket_return) / 4.0)
+                    - min(0.25, dispersion / 5.0),
+                ),
+            ),
+            4,
+        )
+        regime_summary["evaluated_bucket_count"] = len(evaluated_stats)
+        regime_summary["regime_consistency_score"] = regime_consistency_score
+        regime_summary["failure_modes"] = failure_modes
+        return regime_summary
+
+    @staticmethod
+    def _market_regime_bucket(feature_row: dict[str, float]) -> str | None:
+        value = feature_row.get("market_ret_10d_pct")
+        if value is None:
+            return None
+        if value <= -1.5:
+            return "weak_market"
+        if value >= 1.5:
+            return "strong_market"
+        return "neutral_market"
+
+    @staticmethod
+    def _volatility_regime_bucket(feature_row: dict[str, float]) -> str | None:
+        value = feature_row.get("realized_vol_20d_pct")
+        if value is None:
+            return None
+        if value >= 8.0:
+            return "high_volatility"
+        if value <= 4.0:
+            return "low_volatility"
+        return "medium_volatility"
+
+    @staticmethod
+    def _sector_regime_bucket(feature_row: dict[str, float]) -> str | None:
+        value = feature_row.get("sector_ret_10d_pct")
+        if value is None:
+            return None
+        if value <= -1.5:
+            return "weak_sector"
+        if value >= 1.5:
+            return "strong_sector"
+        return "neutral_sector"
 
     @staticmethod
     def _max_drawdown(sample_values: list[float]) -> float | None:

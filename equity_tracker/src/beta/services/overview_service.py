@@ -7,7 +7,7 @@ import os
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 
 from ..context import BetaContext
 from ..db.models import (
@@ -30,7 +30,11 @@ from ..db.models import (
     BetaFilingEventLink,
     BetaFilingSource,
     BetaHypothesis,
+    BetaHypothesisBeliefState,
+    BetaHypothesisDefinition,
     BetaHypothesisEvent,
+    BetaHypothesisFamily,
+    BetaHypothesisTestRun,
     BetaInstrument,
     BetaIntradaySnapshot,
     BetaJobRun,
@@ -41,10 +45,12 @@ from ..db.models import (
     BetaNewsArticleLink,
     BetaNewsSource,
     BetaPositionState,
+    BetaRecommendationDecision,
     BetaRiskControlState,
     BetaScoreTape,
     BetaSignalCandidateEvent,
     BetaSignalCandidate,
+    BetaSignalObservation,
     BetaStrategyVersion,
     BetaSystemStatus,
     BetaUiNotification,
@@ -52,6 +58,7 @@ from ..db.models import (
     BetaUniverseMembership,
     BetaValidationRun,
 )
+from ..services.pipeline_assessment_service import BetaPipelineAssessmentService
 from ..services.session_service import BetaMarketSessionService
 from ..settings import BetaSettings
 from ..state import get_beta_db_path
@@ -60,6 +67,16 @@ from ..services.training_service import BetaTrainingService
 
 def _row_to_dict(row) -> dict:
     return {column.name: getattr(row, column.name) for column in row.__table__.columns}
+
+
+def _json_object(raw: str | None) -> dict[str, object]:
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _utcnow():
@@ -105,6 +122,7 @@ class BetaOverviewService:
         candidate_by_symbol: dict[str, BetaSignalCandidate] = {}
         for row in candidate_rows:
             candidate_by_symbol.setdefault(str(row.symbol), row)
+        candidate_payloads = {row.id: _json_object(row.evidence_json) for row in candidate_rows}
 
         stmt = (
             select(BetaScoreTape, BetaInstrument)
@@ -121,12 +139,20 @@ class BetaOverviewService:
                 continue
             seen_instruments.add(str(score_row.instrument_id))
             candidate = candidate_by_symbol.get(str(score_row.symbol))
+            candidate_payload = candidate_payloads.get(candidate.id, {}) if candidate is not None else {}
             latest_rows.append(
                 {
                     **_row_to_dict(score_row),
                     "candidate_id": candidate.id if candidate is not None else None,
                     "candidate_status": candidate.status if candidate is not None else None,
                     "candidate_updated_at": candidate.updated_at if candidate is not None else None,
+                    "matched_hypothesis_code": candidate_payload.get("matched_hypothesis_code"),
+                    "matched_hypothesis_name": candidate_payload.get("matched_hypothesis_name"),
+                    "matched_hypothesis_status": candidate_payload.get("matched_hypothesis_status"),
+                    "matched_target_metric": candidate_payload.get("matched_target_metric"),
+                    "matched_holding_period_days": candidate_payload.get("matched_holding_period_days"),
+                    "recommendation_reason_code": candidate_payload.get("recommendation_reason_code"),
+                    "recommendation_reason_text": candidate_payload.get("recommendation_reason_text"),
                     "core_security_id": instrument.core_security_id,
                     "exchange": instrument.exchange,
                     "market": instrument.market,
@@ -135,6 +161,622 @@ class BetaOverviewService:
             if len(latest_rows) >= limit:
                 break
         return latest_rows
+
+    @staticmethod
+    def _latest_definition_tests(sess) -> dict[str, BetaHypothesisTestRun]:
+        subquery = (
+            select(
+                BetaHypothesisTestRun.hypothesis_definition_id.label("definition_id"),
+                func.max(BetaHypothesisTestRun.created_at).label("latest_created_at"),
+            )
+            .group_by(BetaHypothesisTestRun.hypothesis_definition_id)
+            .subquery()
+        )
+        rows = list(
+            sess.execute(
+                select(BetaHypothesisTestRun).join(
+                    subquery,
+                    (
+                        (BetaHypothesisTestRun.hypothesis_definition_id == subquery.c.definition_id)
+                        & (BetaHypothesisTestRun.created_at == subquery.c.latest_created_at)
+                    ),
+                )
+            ).scalars().all()
+        )
+        return {row.hypothesis_definition_id: row for row in rows}
+
+    @staticmethod
+    def _observation_feedback_by_definition(sess) -> dict[str, dict[str, object]]:
+        rows = list(
+            sess.execute(
+                select(
+                    BetaSignalObservation.hypothesis_definition_id,
+                    func.count().label("matched_count"),
+                    func.sum(
+                        case((BetaSignalObservation.realized_return_pct.is_not(None), 1), else_=0)
+                    ).label("realized_count"),
+                    func.sum(
+                        case((BetaSignalObservation.realized_return_pct > 0, 1), else_=0)
+                    ).label("positive_realized_count"),
+                    func.avg(BetaSignalObservation.realized_return_pct).label("avg_realized_return_pct"),
+                    func.avg(
+                        BetaSignalObservation.realized_return_pct - BetaSignalObservation.expected_return_pct
+                    ).label("avg_prediction_error_pct"),
+                    func.max(BetaSignalObservation.realized_at).label("latest_realized_at"),
+                    func.max(BetaSignalObservation.observation_time).label("latest_observation_at"),
+                )
+                .group_by(BetaSignalObservation.hypothesis_definition_id)
+            ).all()
+        )
+        feedback: dict[str, dict[str, object]] = {}
+        for row in rows:
+            realized_count = int(row.realized_count or 0)
+            positive_realized_count = int(row.positive_realized_count or 0)
+            feedback[str(row.hypothesis_definition_id)] = {
+                "matched_count": int(row.matched_count or 0),
+                "realized_count": realized_count,
+                "realized_win_rate_pct": round((positive_realized_count / realized_count) * 100.0, 2)
+                if realized_count
+                else None,
+                "avg_realized_return_pct": float(row.avg_realized_return_pct)
+                if row.avg_realized_return_pct is not None
+                else None,
+                "avg_prediction_error_pct": float(row.avg_prediction_error_pct)
+                if row.avg_prediction_error_pct is not None
+                else None,
+                "latest_realized_at": row.latest_realized_at,
+                "latest_observation_at": row.latest_observation_at,
+            }
+        return feedback
+
+    @staticmethod
+    def _definition_rows(sess, *, limit: int | None = None) -> list[dict[str, object]]:
+        definitions = list(
+            sess.scalars(select(BetaHypothesisDefinition).order_by(desc(BetaHypothesisDefinition.updated_at))).all()
+        )
+        families = {
+            row.id: row
+            for row in sess.scalars(select(BetaHypothesisFamily)).all()
+        }
+        beliefs = {
+            row.hypothesis_definition_id: row
+            for row in sess.scalars(select(BetaHypothesisBeliefState)).all()
+        }
+        latest_tests = BetaOverviewService._latest_definition_tests(sess)
+        observation_feedback = BetaOverviewService._observation_feedback_by_definition(sess)
+
+        rows: list[dict[str, object]] = []
+        for definition in definitions:
+            family = families.get(definition.family_id) if definition.family_id is not None else None
+            belief = beliefs.get(definition.id)
+            latest_test = latest_tests.get(definition.id)
+            latest_test_notes = _json_object(latest_test.notes_json) if latest_test is not None else {}
+            governance = latest_test_notes.get("governance") if isinstance(latest_test_notes.get("governance"), dict) else {}
+            governance = governance if isinstance(governance, dict) else {}
+            gate_metrics = governance.get("gate_metrics") if isinstance(governance.get("gate_metrics"), dict) else {}
+            gate_metrics = gate_metrics if isinstance(gate_metrics, dict) else {}
+            hard_fail_reasons = governance.get("hard_fail_reasons") if isinstance(governance.get("hard_fail_reasons"), list) else []
+            promotion_fail_reasons = governance.get("promotion_fail_reasons") if isinstance(governance.get("promotion_fail_reasons"), list) else []
+            regime_slice = _json_object(latest_test.regime_slice_json) if latest_test is not None else {}
+            failure_modes = regime_slice.get("failure_modes") if isinstance(regime_slice.get("failure_modes"), list) else []
+            feedback = observation_feedback.get(definition.id, {})
+
+            rows.append(
+                {
+                    "id": definition.id,
+                    "hypothesis_code": definition.hypothesis_code,
+                    "name": definition.name,
+                    "expected_direction": definition.expected_direction,
+                    "target_metric": definition.target_metric,
+                    "holding_period_days": definition.holding_period_days,
+                    "family_id": family.id if family is not None else None,
+                    "family_code": family.family_code if family is not None else None,
+                    "family_name": family.family_name if family is not None else None,
+                    "status": str(belief.status if belief is not None else definition.status),
+                    "definition_status": definition.status,
+                    "belief_confidence_score": float(belief.confidence_score) if belief is not None else None,
+                    "belief_evidence_count": int(belief.evidence_count) if belief is not None else 0,
+                    "sample_size": int(latest_test.sample_size or 0) if latest_test is not None else 0,
+                    "support_count": int(latest_test.support_count or 0) if latest_test is not None else 0,
+                    "median_excess_return_pct": latest_test.median_excess_return_pct if latest_test is not None else None,
+                    "transaction_cost_adjusted_return_pct": latest_test.transaction_cost_adjusted_return_pct if latest_test is not None else None,
+                    "baseline_edge_pct": latest_test.baseline_edge_pct if latest_test is not None else None,
+                    "win_rate_pct": latest_test.win_rate_pct if latest_test is not None else None,
+                    "stability_score": latest_test.stability_score if latest_test is not None else None,
+                    "walk_forward_score": latest_test.walk_forward_score if latest_test is not None else None,
+                    "out_of_sample_score": latest_test.out_of_sample_score if latest_test is not None else None,
+                    "regime_consistency_score": regime_slice.get("regime_consistency_score"),
+                    "matched_observation_count": int(feedback.get("matched_count") or 0),
+                    "realized_observation_count": int(feedback.get("realized_count") or 0),
+                    "avg_realized_return_pct": feedback.get("avg_realized_return_pct"),
+                    "avg_prediction_error_pct": feedback.get("avg_prediction_error_pct"),
+                    "realized_win_rate_pct": feedback.get("realized_win_rate_pct"),
+                    "watch_eligible": bool(governance.get("watch_eligible")) if governance else None,
+                    "promotion_eligible": bool(governance.get("promotion_eligible")) if governance else None,
+                    "governance_severity": governance.get("severity"),
+                    "gate_fail_reason": (
+                        str(hard_fail_reasons[0])
+                        if hard_fail_reasons
+                        else str(promotion_fail_reasons[0])
+                        if promotion_fail_reasons
+                        else None
+                    ),
+                    "hard_fail_reasons": [str(reason) for reason in hard_fail_reasons],
+                    "promotion_fail_reasons": [str(reason) for reason in promotion_fail_reasons],
+                    "failure_modes": failure_modes,
+                    "winsorized_adjusted_return_pct": gate_metrics.get("winsorized_adjusted_return_pct"),
+                    "trimmed_adjusted_return_pct": gate_metrics.get("trimmed_adjusted_return_pct"),
+                    "latest_test_at": latest_test.created_at if latest_test is not None else None,
+                    "latest_realized_at": feedback.get("latest_realized_at"),
+                    "updated_at": definition.updated_at,
+                }
+            )
+
+        rows.sort(
+            key=lambda item: (
+                _status_rank(item.get("status")),
+                -_safe_float(item.get("belief_confidence_score")),
+                -_safe_float(item.get("baseline_edge_pct")),
+                -_safe_float(item.get("stability_score")),
+                item.get("updated_at") or datetime.min,
+            )
+        )
+        return rows[:limit] if limit is not None else rows
+
+    @staticmethod
+    def _definition_family_rows(definition_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        grouped: dict[str, dict[str, object]] = {}
+        for row in definition_rows:
+            family_code = str(row.get("family_code") or "UNASSIGNED")
+            family = grouped.setdefault(
+                family_code,
+                {
+                    "family_code": family_code,
+                    "family_name": row.get("family_name") or family_code,
+                    "definition_count": 0,
+                    "validated_count": 0,
+                    "promising_count": 0,
+                    "degraded_count": 0,
+                    "rejected_count": 0,
+                    "watch_eligible_count": 0,
+                    "promotion_eligible_count": 0,
+                    "avg_confidence_score": 0.0,
+                    "updated_at": row.get("updated_at"),
+                },
+            )
+            family["definition_count"] = int(family["definition_count"]) + 1
+            status = str(row.get("status") or "")
+            if status == "VALIDATED":
+                family["validated_count"] = int(family["validated_count"]) + 1
+            if status == "PROMISING":
+                family["promising_count"] = int(family["promising_count"]) + 1
+            if status == "DEGRADED":
+                family["degraded_count"] = int(family["degraded_count"]) + 1
+            if status in {"REJECTED", "RETIRED"}:
+                family["rejected_count"] = int(family["rejected_count"]) + 1
+            if row.get("watch_eligible") is True:
+                family["watch_eligible_count"] = int(family["watch_eligible_count"]) + 1
+            if row.get("promotion_eligible") is True:
+                family["promotion_eligible_count"] = int(family["promotion_eligible_count"]) + 1
+            family["avg_confidence_score"] = float(family["avg_confidence_score"]) + _safe_float(
+                row.get("belief_confidence_score")
+            )
+            updated_at = row.get("updated_at")
+            if updated_at is not None and (
+                family.get("updated_at") is None or updated_at > family.get("updated_at")
+            ):
+                family["updated_at"] = updated_at
+
+        rows: list[dict[str, object]] = []
+        for family in grouped.values():
+            definition_count = max(1, int(family["definition_count"]))
+            avg_confidence_score = round(float(family["avg_confidence_score"]) / definition_count, 4)
+            status = "RESEARCH"
+            if int(family["validated_count"]) > 0:
+                status = "VALIDATED"
+            elif int(family["promising_count"]) > 0:
+                status = "PROMISING"
+            elif int(family["watch_eligible_count"]) <= 0 and int(family["definition_count"]) > 0:
+                status = "DEGRADED"
+            rows.append(
+                {
+                    **family,
+                    "avg_confidence_score": avg_confidence_score,
+                    "status": status,
+                }
+            )
+        rows.sort(
+            key=lambda item: (
+                _status_rank(item.get("status")),
+                -_safe_float(item.get("avg_confidence_score")),
+                item.get("family_name") or "",
+            )
+        )
+        return rows
+
+    @staticmethod
+    def _definition_validity_summary(definition_rows: list[dict[str, object]]) -> dict[str, object]:
+        summary = {
+            "definition_count": len(definition_rows),
+            "validated_count": 0,
+            "promising_count": 0,
+            "candidate_count": 0,
+            "degraded_count": 0,
+            "rejected_count": 0,
+            "watch_eligible_count": 0,
+            "promotion_eligible_count": 0,
+            "realized_feedback_count": 0,
+            "avg_confidence_score": 0.0,
+            "avg_realized_return_pct": None,
+            "avg_prediction_error_pct": None,
+            "top_failure_reasons": [],
+        }
+        if not definition_rows:
+            return summary
+
+        realized_returns = [
+            float(row["avg_realized_return_pct"])
+            for row in definition_rows
+            if row.get("avg_realized_return_pct") is not None
+        ]
+        prediction_errors = [
+            float(row["avg_prediction_error_pct"])
+            for row in definition_rows
+            if row.get("avg_prediction_error_pct") is not None
+        ]
+        failure_counts: dict[str, int] = {}
+        total_confidence = 0.0
+        for row in definition_rows:
+            status = str(row.get("status") or "")
+            if status == "VALIDATED":
+                summary["validated_count"] = int(summary["validated_count"]) + 1
+            elif status == "PROMISING":
+                summary["promising_count"] = int(summary["promising_count"]) + 1
+            elif status in {"CANDIDATE", "SCREENED_IN", "DISCOVERED"}:
+                summary["candidate_count"] = int(summary["candidate_count"]) + 1
+            elif status == "DEGRADED":
+                summary["degraded_count"] = int(summary["degraded_count"]) + 1
+            elif status in {"REJECTED", "RETIRED"}:
+                summary["rejected_count"] = int(summary["rejected_count"]) + 1
+            if row.get("watch_eligible") is True:
+                summary["watch_eligible_count"] = int(summary["watch_eligible_count"]) + 1
+            if row.get("promotion_eligible") is True:
+                summary["promotion_eligible_count"] = int(summary["promotion_eligible_count"]) + 1
+            if int(row.get("realized_observation_count") or 0) > 0:
+                summary["realized_feedback_count"] = int(summary["realized_feedback_count"]) + 1
+            total_confidence += _safe_float(row.get("belief_confidence_score"))
+            for reason in list(row.get("hard_fail_reasons") or []) + list(row.get("promotion_fail_reasons") or []):
+                failure_counts[str(reason)] = failure_counts.get(str(reason), 0) + 1
+
+        summary["avg_confidence_score"] = round(total_confidence / max(1, len(definition_rows)), 4)
+        summary["avg_realized_return_pct"] = round(sum(realized_returns) / len(realized_returns), 4) if realized_returns else None
+        summary["avg_prediction_error_pct"] = round(sum(prediction_errors) / len(prediction_errors), 4) if prediction_errors else None
+        summary["top_failure_reasons"] = [
+            {"reason": reason, "count": count}
+            for reason, count in sorted(failure_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ]
+        return summary
+
+    @staticmethod
+    def _execution_feedback_summary(sess) -> dict[str, object]:
+        execution_labels_total = int(sess.scalar(select(func.count()).select_from(BetaExecutionLabelValue)) or 0)
+        execution_labels_complete = int(
+            sess.scalar(
+                select(func.count()).select_from(BetaExecutionLabelValue).where(BetaExecutionLabelValue.evaluation_complete.is_(True))
+            )
+            or 0
+        )
+        actionable_signals = int(
+            sess.scalar(
+                select(func.count())
+                .select_from(BetaExecutionSignal)
+                .where(BetaExecutionSignal.signal_type != "NO_ACTION")
+            )
+            or 0
+        )
+        latest_actionable_signal = sess.scalar(
+            select(BetaExecutionSignal)
+            .where(BetaExecutionSignal.signal_type != "NO_ACTION")
+            .order_by(desc(BetaExecutionSignal.signal_time), desc(BetaExecutionSignal.created_at))
+            .limit(1)
+        )
+        open_simulated = int(
+            sess.scalar(
+                select(func.count())
+                .select_from(BetaPositionState)
+                .where(
+                    BetaPositionState.position_source == "SIMULATED",
+                    BetaPositionState.position_status == "OPEN",
+                )
+            )
+            or 0
+        )
+        return {
+            "execution_labels_total": execution_labels_total,
+            "execution_labels_complete": execution_labels_complete,
+            "execution_label_completion_pct": round((execution_labels_complete / execution_labels_total) * 100.0, 1)
+            if execution_labels_total
+            else None,
+            "actionable_signal_count": actionable_signals,
+            "no_action_signal_count": int(
+                sess.scalar(
+                    select(func.count())
+                    .select_from(BetaExecutionSignal)
+                    .where(BetaExecutionSignal.signal_type == "NO_ACTION")
+                )
+                or 0
+            ),
+            "open_simulated_theses": open_simulated,
+            "latest_actionable_signal": _row_to_dict(latest_actionable_signal) if latest_actionable_signal is not None else None,
+        }
+
+    @staticmethod
+    def _enrich_candidate_rows(
+        sess,
+        candidate_rows: Sequence[BetaSignalCandidate],
+        *,
+        definition_rows: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        if not candidate_rows:
+            return []
+
+        definition_lookup = {
+            str(row["id"]): row
+            for row in (definition_rows or BetaOverviewService._definition_rows(sess))
+        }
+        observation_ids = [row.signal_observation_id for row in candidate_rows if row.signal_observation_id]
+        recommendation_ids = [row.recommendation_decision_id for row in candidate_rows if row.recommendation_decision_id]
+        candidate_ids = [row.id for row in candidate_rows]
+
+        observations = {
+            row.id: row
+            for row in (
+                sess.scalars(select(BetaSignalObservation).where(BetaSignalObservation.id.in_(observation_ids))).all()
+                if observation_ids
+                else []
+            )
+        }
+        recommendations = {
+            row.id: row
+            for row in (
+                sess.scalars(
+                    select(BetaRecommendationDecision).where(BetaRecommendationDecision.id.in_(recommendation_ids))
+                ).all()
+                if recommendation_ids
+                else []
+            )
+        }
+        latest_position_states: dict[str, BetaPositionState] = {}
+        if candidate_ids:
+            state_subquery = (
+                select(
+                    BetaPositionState.thesis_candidate_id.label("candidate_id"),
+                    func.max(BetaPositionState.updated_at).label("latest_updated_at"),
+                )
+                .where(BetaPositionState.thesis_candidate_id.in_(candidate_ids))
+                .group_by(BetaPositionState.thesis_candidate_id)
+                .subquery()
+            )
+            latest_states = list(
+                sess.execute(
+                    select(BetaPositionState).join(
+                        state_subquery,
+                        (
+                            (BetaPositionState.thesis_candidate_id == state_subquery.c.candidate_id)
+                            & (BetaPositionState.updated_at == state_subquery.c.latest_updated_at)
+                        ),
+                    )
+                ).scalars().all()
+            )
+            latest_position_states = {
+                str(row.thesis_candidate_id): row for row in latest_states if row.thesis_candidate_id is not None
+            }
+
+        enriched_rows: list[dict[str, object]] = []
+        for candidate in candidate_rows:
+            evidence_payload = _json_object(candidate.evidence_json)
+            definition_info = (
+                definition_lookup.get(str(candidate.hypothesis_definition_id))
+                if candidate.hypothesis_definition_id is not None
+                else None
+            ) or {}
+            observation = observations.get(candidate.signal_observation_id) if candidate.signal_observation_id else None
+            recommendation = (
+                recommendations.get(candidate.recommendation_decision_id)
+                if candidate.recommendation_decision_id
+                else None
+            )
+            position_state = latest_position_states.get(str(candidate.id))
+            enriched_rows.append(
+                {
+                    **_row_to_dict(candidate),
+                    "evidence_payload": evidence_payload,
+                    "hypothesis_code": evidence_payload.get("matched_hypothesis_code") or definition_info.get("hypothesis_code"),
+                    "hypothesis_name": evidence_payload.get("matched_hypothesis_name") or definition_info.get("name"),
+                    "hypothesis_status": evidence_payload.get("matched_hypothesis_status") or definition_info.get("status"),
+                    "hypothesis_family_code": definition_info.get("family_code"),
+                    "hypothesis_family_name": definition_info.get("family_name"),
+                    "target_metric": evidence_payload.get("matched_target_metric") or definition_info.get("target_metric"),
+                    "holding_period_days": evidence_payload.get("matched_holding_period_days")
+                    or definition_info.get("holding_period_days"),
+                    "expected_direction": definition_info.get("expected_direction"),
+                    "watch_eligible": definition_info.get("watch_eligible"),
+                    "promotion_eligible": definition_info.get("promotion_eligible"),
+                    "governance_severity": definition_info.get("governance_severity"),
+                    "gate_fail_reason": definition_info.get("gate_fail_reason"),
+                    "median_excess_return_pct": definition_info.get("median_excess_return_pct"),
+                    "winsorized_adjusted_return_pct": definition_info.get("winsorized_adjusted_return_pct"),
+                    "stability_score": definition_info.get("stability_score"),
+                    "avg_realized_return_pct": definition_info.get("avg_realized_return_pct"),
+                    "observation_status": observation.observation_status if observation is not None else None,
+                    "observation_time": observation.observation_time if observation is not None else None,
+                    "expected_return_pct": observation.expected_return_pct if observation is not None else None,
+                    "realized_return_pct": observation.realized_return_pct if observation is not None else None,
+                    "recommendation_status": recommendation.decision_status if recommendation is not None else None,
+                    "recommendation_reason_code": (
+                        recommendation.decision_reason_code
+                        if recommendation is not None
+                        else evidence_payload.get("recommendation_reason_code")
+                    ),
+                    "recommendation_reason_text": (
+                        recommendation.decision_reason_text
+                        if recommendation is not None
+                        else evidence_payload.get("recommendation_reason_text")
+                    ),
+                    "recommendation_score": recommendation.recommendation_score if recommendation is not None else None,
+                    "paper_trade_action": recommendation.paper_trade_action if recommendation is not None else None,
+                    "position_state_id": position_state.id if position_state is not None else None,
+                    "position_state_status": position_state.position_status if position_state is not None else None,
+                    "position_source": position_state.position_source if position_state is not None else None,
+                    "thesis_expected_return_pct": (
+                        position_state.thesis_expected_return_pct if position_state is not None else None
+                    ),
+                    "thesis_horizon_days": position_state.thesis_horizon_days if position_state is not None else None,
+                    "execution_quality_score": (
+                        position_state.execution_quality_score if position_state is not None else None
+                    ),
+                    "last_execution_signal_type": (
+                        position_state.last_execution_signal_type if position_state is not None else None
+                    ),
+                    "last_execution_signal_at": (
+                        position_state.last_execution_signal_at if position_state is not None else None
+                    ),
+                }
+            )
+        return enriched_rows
+
+    @staticmethod
+    def _enrich_position_rows(
+        sess,
+        position_rows: Sequence[BetaDemoPosition],
+        *,
+        definition_rows: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        if not position_rows:
+            return []
+
+        candidate_ids = [row.candidate_id for row in position_rows if row.candidate_id]
+        candidates = list(
+            sess.scalars(select(BetaSignalCandidate).where(BetaSignalCandidate.id.in_(candidate_ids))).all()
+        ) if candidate_ids else []
+        candidate_lookup = {
+            str(row["id"]): row
+            for row in BetaOverviewService._enrich_candidate_rows(
+                sess,
+                candidates,
+                definition_rows=definition_rows,
+            )
+        }
+
+        position_ids = [row.id for row in position_rows]
+        latest_states_by_position: dict[str, BetaPositionState] = {}
+        if position_ids:
+            state_subquery = (
+                select(
+                    BetaPositionState.demo_position_id.label("position_id"),
+                    func.max(BetaPositionState.updated_at).label("latest_updated_at"),
+                )
+                .where(BetaPositionState.demo_position_id.in_(position_ids))
+                .group_by(BetaPositionState.demo_position_id)
+                .subquery()
+            )
+            latest_states = list(
+                sess.execute(
+                    select(BetaPositionState).join(
+                        state_subquery,
+                        (
+                            (BetaPositionState.demo_position_id == state_subquery.c.position_id)
+                            & (BetaPositionState.updated_at == state_subquery.c.latest_updated_at)
+                        ),
+                    )
+                ).scalars().all()
+            )
+            latest_states_by_position = {
+                str(row.demo_position_id): row for row in latest_states if row.demo_position_id is not None
+            }
+
+        enriched_rows: list[dict[str, object]] = []
+        for position in position_rows:
+            candidate_info = candidate_lookup.get(str(position.candidate_id)) if position.candidate_id else None
+            position_state = latest_states_by_position.get(str(position.id))
+            enriched_rows.append(
+                {
+                    **_row_to_dict(position),
+                    "candidate_title": candidate_info.get("title") if candidate_info else None,
+                    "candidate_status": candidate_info.get("status") if candidate_info else None,
+                    "candidate_direction": candidate_info.get("direction") if candidate_info else None,
+                    "candidate_hypothesis_definition_id": (
+                        candidate_info.get("hypothesis_definition_id") if candidate_info else None
+                    ),
+                    "candidate_recommendation_status": (
+                        candidate_info.get("recommendation_status") if candidate_info else None
+                    ),
+                    "candidate_recommendation_reason_text": (
+                        candidate_info.get("recommendation_reason_text") if candidate_info else None
+                    ),
+                    "hypothesis_code": candidate_info.get("hypothesis_code") if candidate_info else None,
+                    "hypothesis_name": candidate_info.get("hypothesis_name") if candidate_info else None,
+                    "hypothesis_status": candidate_info.get("hypothesis_status") if candidate_info else None,
+                    "hypothesis_family_name": candidate_info.get("hypothesis_family_name") if candidate_info else None,
+                    "watch_eligible": candidate_info.get("watch_eligible") if candidate_info else None,
+                    "promotion_eligible": candidate_info.get("promotion_eligible") if candidate_info else None,
+                    "gate_fail_reason": candidate_info.get("gate_fail_reason") if candidate_info else None,
+                    "position_state_status": position_state.position_status if position_state is not None else None,
+                    "position_source": position_state.position_source if position_state is not None else None,
+                    "thesis_expected_return_pct": (
+                        position_state.thesis_expected_return_pct if position_state is not None else None
+                    ),
+                    "thesis_horizon_days": position_state.thesis_horizon_days if position_state is not None else None,
+                    "thesis_remaining_days": position_state.thesis_remaining_days if position_state is not None else None,
+                    "unrealized_return_pct": position_state.unrealized_return_pct if position_state is not None else None,
+                    "realized_return_pct": position_state.realized_return_pct if position_state is not None else None,
+                    "execution_quality_score": (
+                        position_state.execution_quality_score if position_state is not None else None
+                    ),
+                    "last_execution_signal_type": (
+                        position_state.last_execution_signal_type if position_state is not None else None
+                    ),
+                    "last_execution_signal_at": (
+                        position_state.last_execution_signal_at if position_state is not None else None
+                    ),
+                }
+            )
+        return enriched_rows
+
+    @staticmethod
+    def _enrich_position_state_rows(
+        sess,
+        position_state_rows: Sequence[BetaPositionState],
+        *,
+        definition_rows: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        if not position_state_rows:
+            return []
+
+        definition_lookup = {
+            str(row["id"]): row
+            for row in (definition_rows or BetaOverviewService._definition_rows(sess))
+        }
+        enriched_rows: list[dict[str, object]] = []
+        for position_state in position_state_rows:
+            definition_info = (
+                definition_lookup.get(str(position_state.thesis_hypothesis_definition_id))
+                if position_state.thesis_hypothesis_definition_id is not None
+                else None
+            ) or {}
+            enriched_rows.append(
+                {
+                    **_row_to_dict(position_state),
+                    "hypothesis_code": definition_info.get("hypothesis_code"),
+                    "hypothesis_name": definition_info.get("name"),
+                    "hypothesis_status": definition_info.get("status"),
+                    "hypothesis_family_name": definition_info.get("family_name"),
+                    "watch_eligible": definition_info.get("watch_eligible"),
+                    "promotion_eligible": definition_info.get("promotion_eligible"),
+                    "gate_fail_reason": definition_info.get("gate_fail_reason"),
+                }
+            )
+        return enriched_rows
 
     @staticmethod
     def get_dashboard() -> dict[str, object]:
@@ -170,6 +812,25 @@ class BetaOverviewService:
                     select(func.count()).select_from(BetaHypothesis).where(BetaHypothesis.status == "SUSPENDED")
                 )
                 or 0,
+                "hypothesis_definitions_total": sess.scalar(select(func.count()).select_from(BetaHypothesisDefinition)) or 0,
+                "hypothesis_definitions_validated": sess.scalar(
+                    select(func.count()).select_from(BetaHypothesisBeliefState).where(BetaHypothesisBeliefState.status == "VALIDATED")
+                )
+                or 0,
+                "hypothesis_definitions_promising": sess.scalar(
+                    select(func.count()).select_from(BetaHypothesisBeliefState).where(BetaHypothesisBeliefState.status == "PROMISING")
+                )
+                or 0,
+                "hypothesis_definitions_degraded": sess.scalar(
+                    select(func.count()).select_from(BetaHypothesisBeliefState).where(BetaHypothesisBeliefState.status == "DEGRADED")
+                )
+                or 0,
+                "hypothesis_definitions_rejected": sess.scalar(
+                    select(func.count()).select_from(BetaHypothesisBeliefState).where(
+                        BetaHypothesisBeliefState.status.in_(("REJECTED", "RETIRED"))
+                    )
+                )
+                or 0,
                 "candidates_watching": sess.scalar(
                     select(func.count()).select_from(BetaSignalCandidate).where(BetaSignalCandidate.status == "WATCHING")
                 )
@@ -194,8 +855,30 @@ class BetaOverviewService:
                     select(func.count()).select_from(BetaDemoPosition).where(BetaDemoPosition.status != "OPEN")
                 )
                 or 0,
+                "simulated_positions_open": sess.scalar(
+                    select(func.count()).select_from(BetaPositionState).where(
+                        BetaPositionState.position_status == "OPEN",
+                        BetaPositionState.position_source == "SIMULATED",
+                    )
+                )
+                or 0,
                 "execution_signals_total": sess.scalar(select(func.count()).select_from(BetaExecutionSignal)) or 0,
                 "execution_labels_total": sess.scalar(select(func.count()).select_from(BetaExecutionLabelValue)) or 0,
+                "signal_observations_total": sess.scalar(select(func.count()).select_from(BetaSignalObservation)) or 0,
+                "signal_observations_realized": sess.scalar(
+                    select(func.count()).select_from(BetaSignalObservation).where(BetaSignalObservation.realized_return_pct.is_not(None))
+                )
+                or 0,
+                "recommendation_decisions_total": sess.scalar(
+                    select(func.count()).select_from(BetaRecommendationDecision)
+                )
+                or 0,
+                "recommendation_decisions_recommended": sess.scalar(
+                    select(func.count()).select_from(BetaRecommendationDecision).where(
+                        BetaRecommendationDecision.decision_status == "RECOMMENDED"
+                    )
+                )
+                or 0,
                 "execution_notifications_total": sess.scalar(
                     select(func.count())
                     .select_from(BetaUiNotification)
@@ -380,14 +1063,58 @@ class BetaOverviewService:
                 key=lambda row: (_safe_float(row.evidence_score), row.updated_at),
                 reverse=True,
             )
+            definition_rows = BetaOverviewService._definition_rows(sess)
+            definition_family_rows = BetaOverviewService._definition_family_rows(definition_rows)
+            validity_summary = BetaOverviewService._definition_validity_summary(definition_rows)
+            execution_feedback_summary = BetaOverviewService._execution_feedback_summary(sess)
+            pipeline_health = BetaPipelineAssessmentService.build_metrics()
+            active_positions = list(
+                sess.scalars(
+                    select(BetaDemoPosition)
+                    .where(BetaDemoPosition.status == "OPEN")
+                    .order_by(desc(BetaDemoPosition.opened_at))
+                    .limit(8)
+                ).all()
+            )
+            held_position_states = list(
+                sess.scalars(
+                    select(BetaPositionState)
+                    .where(BetaPositionState.position_status == "OPEN")
+                    .order_by(desc(BetaPositionState.updated_at))
+                    .limit(8)
+                ).all()
+            )
+            watched_candidates = list(
+                sess.scalars(
+                    select(BetaSignalCandidate)
+                    .where(BetaSignalCandidate.status.in_(("WATCHING", "PROMOTED")))
+                    .order_by(
+                        desc(BetaSignalCandidate.confidence_score),
+                        desc(BetaSignalCandidate.expected_edge_score),
+                        desc(BetaSignalCandidate.updated_at),
+                    )
+                    .limit(8)
+                ).all()
+            )
+            rejected_candidates = list(
+                sess.scalars(
+                    select(BetaSignalCandidate)
+                    .where(BetaSignalCandidate.status.in_(("DISMISSED", "REJECTED")))
+                    .order_by(desc(BetaSignalCandidate.updated_at))
+                    .limit(8)
+                ).all()
+            )
 
             return {
                 "available": True,
                 "status": _row_to_dict(status) if status is not None else None,
                 "runtime_flags": runtime_flags,
                 "runtime_activity": runtime_activity,
+                "pipeline_health": pipeline_health,
                 "counts": counts,
                 "performance": performance,
+                "validity_summary": validity_summary,
+                "execution_feedback_summary": execution_feedback_summary,
                 "ledger": _row_to_dict(ledger) if ledger is not None else None,
                 "risk_control": _row_to_dict(risk_control) if risk_control is not None else None,
                 "active_model": _row_to_dict(active_model) if active_model is not None else None,
@@ -399,50 +1126,38 @@ class BetaOverviewService:
                 "latest_evaluation_summary": _row_to_dict(latest_evaluation_summary) if latest_evaluation_summary is not None else None,
                 "confidence_buckets": confidence_buckets,
                 "direction_summaries": direction_summaries,
+                "hypothesis_definitions": definition_rows[:12],
+                "hypothesis_definition_families": definition_family_rows[:12],
                 "hypotheses": BetaOverviewService._query_rows(hypothesis_rows[:8]),
-                "active_positions": BetaOverviewService._query_rows(
-                    sess.scalars(
-                        select(BetaDemoPosition)
-                        .where(BetaDemoPosition.status == "OPEN")
-                        .order_by(desc(BetaDemoPosition.opened_at))
-                        .limit(8)
-                    )
+                "active_positions": BetaOverviewService._enrich_position_rows(
+                    sess,
+                    active_positions,
+                    definition_rows=definition_rows,
                 ),
-                "held_position_states": BetaOverviewService._query_rows(
-                    sess.scalars(
-                        select(BetaPositionState)
-                        .where(BetaPositionState.position_status == "OPEN")
-                        .order_by(desc(BetaPositionState.updated_at))
-                        .limit(8)
-                    )
+                "held_position_states": BetaOverviewService._enrich_position_state_rows(
+                    sess,
+                    held_position_states,
+                    definition_rows=definition_rows,
                 ),
-                "closed_positions": BetaOverviewService._query_rows(
-                    closed_positions[:8]
+                "closed_positions": BetaOverviewService._enrich_position_rows(
+                    sess,
+                    closed_positions[:8],
+                    definition_rows=definition_rows,
                 ),
-                "watched_candidates": BetaOverviewService._query_rows(
-                    sess.scalars(
-                        select(BetaSignalCandidate)
-                        .where(BetaSignalCandidate.status.in_(("WATCHING", "PROMOTED")))
-                        .order_by(
-                            desc(BetaSignalCandidate.confidence_score),
-                            desc(BetaSignalCandidate.expected_edge_score),
-                            desc(BetaSignalCandidate.updated_at),
-                        )
-                        .limit(8)
-                    )
+                "watched_candidates": BetaOverviewService._enrich_candidate_rows(
+                    sess,
+                    watched_candidates,
+                    definition_rows=definition_rows,
                 ),
                 "tracked_core_signals": BetaOverviewService._latest_score_rows(
                     sess,
                     tracked_core_only=True,
                     limit=8,
                 ),
-                "rejected_candidates": BetaOverviewService._query_rows(
-                    sess.scalars(
-                        select(BetaSignalCandidate)
-                        .where(BetaSignalCandidate.status.in_(("DISMISSED", "REJECTED")))
-                        .order_by(desc(BetaSignalCandidate.updated_at))
-                        .limit(8)
-                    )
+                "rejected_candidates": BetaOverviewService._enrich_candidate_rows(
+                    sess,
+                    rejected_candidates,
+                    definition_rows=definition_rows,
                 ),
                 "notifications": BetaOverviewService._query_rows(
                     sess.scalars(
@@ -590,6 +1305,46 @@ class BetaOverviewService:
             hypothesis = None
             if candidate.hypothesis_id is not None:
                 hypothesis = sess.scalar(select(BetaHypothesis).where(BetaHypothesis.id == candidate.hypothesis_id))
+            definition = None
+            family = None
+            belief = None
+            observation = None
+            recommendation = None
+            latest_test = None
+            position_state = None
+            if candidate.hypothesis_definition_id is not None:
+                definition = sess.scalar(
+                    select(BetaHypothesisDefinition).where(BetaHypothesisDefinition.id == candidate.hypothesis_definition_id)
+                )
+                if definition is not None and definition.family_id is not None:
+                    family = sess.scalar(select(BetaHypothesisFamily).where(BetaHypothesisFamily.id == definition.family_id))
+                belief = sess.scalar(
+                    select(BetaHypothesisBeliefState).where(
+                        BetaHypothesisBeliefState.hypothesis_definition_id == candidate.hypothesis_definition_id
+                    )
+                )
+                latest_test = sess.scalar(
+                    select(BetaHypothesisTestRun)
+                    .where(BetaHypothesisTestRun.hypothesis_definition_id == candidate.hypothesis_definition_id)
+                    .order_by(desc(BetaHypothesisTestRun.created_at))
+                    .limit(1)
+                )
+            if candidate.signal_observation_id is not None:
+                observation = sess.scalar(
+                    select(BetaSignalObservation).where(BetaSignalObservation.id == candidate.signal_observation_id)
+                )
+            if candidate.recommendation_decision_id is not None:
+                recommendation = sess.scalar(
+                    select(BetaRecommendationDecision).where(
+                        BetaRecommendationDecision.id == candidate.recommendation_decision_id
+                    )
+                )
+            position_state = sess.scalar(
+                select(BetaPositionState)
+                .where(BetaPositionState.thesis_candidate_id == candidate.id)
+                .order_by(desc(BetaPositionState.updated_at))
+                .limit(1)
+            )
             positions = list(
                 sess.scalars(
                     select(BetaDemoPosition)
@@ -615,9 +1370,47 @@ class BetaOverviewService:
                     .limit(10)
                 ).all()
             )
+            execution_signals = []
+            execution_labels = []
+            if position_state is not None:
+                execution_signals = list(
+                    sess.scalars(
+                        select(BetaExecutionSignal)
+                        .where(BetaExecutionSignal.position_state_id == position_state.id)
+                        .order_by(desc(BetaExecutionSignal.signal_time))
+                        .limit(12)
+                    ).all()
+                )
+                execution_labels = list(
+                    sess.scalars(
+                        select(BetaExecutionLabelValue)
+                        .where(BetaExecutionLabelValue.position_state_id == position_state.id)
+                        .order_by(desc(BetaExecutionLabelValue.updated_at))
+                        .limit(12)
+                    ).all()
+                )
+            observation_context = _json_object(observation.regime_context_json) if observation is not None else {}
+            latest_test_notes = _json_object(latest_test.notes_json) if latest_test is not None else {}
             return {
                 "candidate": _row_to_dict(candidate),
                 "hypothesis": _row_to_dict(hypothesis) if hypothesis is not None else None,
+                "hypothesis_definition": _row_to_dict(definition) if definition is not None else None,
+                "hypothesis_family": _row_to_dict(family) if family is not None else None,
+                "belief_state": _row_to_dict(belief) if belief is not None else None,
+                "signal_observation": _row_to_dict(observation) if observation is not None else None,
+                "recommendation_decision": _row_to_dict(recommendation) if recommendation is not None else None,
+                "latest_test_run": _row_to_dict(latest_test) if latest_test is not None else None,
+                "latest_test_notes": latest_test_notes,
+                "governance": (
+                    latest_test_notes.get("governance")
+                    if isinstance(latest_test_notes.get("governance"), dict)
+                    else None
+                ),
+                "observation_context": observation_context,
+                "position_state": _row_to_dict(position_state) if position_state is not None else None,
+                "execution_signals": BetaOverviewService._query_rows(execution_signals),
+                "execution_labels": BetaOverviewService._query_rows(execution_labels),
+                "evidence_payload": _json_object(candidate.evidence_json),
                 "candidate_events": BetaOverviewService._query_rows(
                     sess.scalars(
                         select(BetaSignalCandidateEvent)
@@ -670,10 +1463,49 @@ class BetaOverviewService:
                 return None
             candidate = None
             hypothesis = None
+            definition = None
+            family = None
+            belief = None
+            observation = None
+            recommendation = None
+            latest_test = None
             if position.candidate_id is not None:
                 candidate = sess.scalar(select(BetaSignalCandidate).where(BetaSignalCandidate.id == position.candidate_id))
             if candidate is not None and candidate.hypothesis_id is not None:
                 hypothesis = sess.scalar(select(BetaHypothesis).where(BetaHypothesis.id == candidate.hypothesis_id))
+            if candidate is not None and candidate.hypothesis_definition_id is not None:
+                definition = sess.scalar(
+                    select(BetaHypothesisDefinition).where(BetaHypothesisDefinition.id == candidate.hypothesis_definition_id)
+                )
+                if definition is not None and definition.family_id is not None:
+                    family = sess.scalar(select(BetaHypothesisFamily).where(BetaHypothesisFamily.id == definition.family_id))
+                belief = sess.scalar(
+                    select(BetaHypothesisBeliefState).where(
+                        BetaHypothesisBeliefState.hypothesis_definition_id == candidate.hypothesis_definition_id
+                    )
+                )
+                latest_test = sess.scalar(
+                    select(BetaHypothesisTestRun)
+                    .where(BetaHypothesisTestRun.hypothesis_definition_id == candidate.hypothesis_definition_id)
+                    .order_by(desc(BetaHypothesisTestRun.created_at))
+                    .limit(1)
+                )
+            if candidate is not None and candidate.signal_observation_id is not None:
+                observation = sess.scalar(
+                    select(BetaSignalObservation).where(BetaSignalObservation.id == candidate.signal_observation_id)
+                )
+            if candidate is not None and candidate.recommendation_decision_id is not None:
+                recommendation = sess.scalar(
+                    select(BetaRecommendationDecision).where(
+                        BetaRecommendationDecision.id == candidate.recommendation_decision_id
+                    )
+                )
+            position_state = sess.scalar(
+                select(BetaPositionState)
+                .where(BetaPositionState.demo_position_id == position.id)
+                .order_by(desc(BetaPositionState.updated_at))
+                .limit(1)
+            )
             news_rows = list(
                 sess.execute(
                     select(BetaNewsArticle, BetaNewsArticleLink)
@@ -692,10 +1524,48 @@ class BetaOverviewService:
                     .limit(10)
                 ).all()
             )
+            execution_signals = []
+            execution_labels = []
+            if position_state is not None:
+                execution_signals = list(
+                    sess.scalars(
+                        select(BetaExecutionSignal)
+                        .where(BetaExecutionSignal.position_state_id == position_state.id)
+                        .order_by(desc(BetaExecutionSignal.signal_time))
+                        .limit(20)
+                    ).all()
+                )
+                execution_labels = list(
+                    sess.scalars(
+                        select(BetaExecutionLabelValue)
+                        .where(BetaExecutionLabelValue.position_state_id == position_state.id)
+                        .order_by(desc(BetaExecutionLabelValue.updated_at))
+                        .limit(20)
+                    ).all()
+                )
+            position_state_metadata = _json_object(position_state.metadata_json) if position_state is not None else {}
+            latest_test_notes = _json_object(latest_test.notes_json) if latest_test is not None else {}
             return {
                 "position": _row_to_dict(position),
                 "candidate": _row_to_dict(candidate) if candidate is not None else None,
                 "hypothesis": _row_to_dict(hypothesis) if hypothesis is not None else None,
+                "hypothesis_definition": _row_to_dict(definition) if definition is not None else None,
+                "hypothesis_family": _row_to_dict(family) if family is not None else None,
+                "belief_state": _row_to_dict(belief) if belief is not None else None,
+                "signal_observation": _row_to_dict(observation) if observation is not None else None,
+                "recommendation_decision": _row_to_dict(recommendation) if recommendation is not None else None,
+                "latest_test_run": _row_to_dict(latest_test) if latest_test is not None else None,
+                "latest_test_notes": latest_test_notes,
+                "governance": (
+                    latest_test_notes.get("governance")
+                    if isinstance(latest_test_notes.get("governance"), dict)
+                    else None
+                ),
+                "position_state": _row_to_dict(position_state) if position_state is not None else None,
+                "position_state_metadata": position_state_metadata,
+                "execution_signals": BetaOverviewService._query_rows(execution_signals),
+                "execution_labels": BetaOverviewService._query_rows(execution_labels),
+                "candidate_evidence": _json_object(candidate.evidence_json) if candidate is not None else {},
                 "position_events": BetaOverviewService._query_rows(
                     sess.scalars(
                         select(BetaDemoPositionEvent)
@@ -742,6 +1612,86 @@ class BetaOverviewService:
             return None
 
         with BetaContext.read_session() as sess:
+            definition = sess.scalar(
+                select(BetaHypothesisDefinition).where(BetaHypothesisDefinition.id == hypothesis_id)
+            )
+            if definition is not None:
+                family = None
+                if definition.family_id is not None:
+                    family = sess.scalar(select(BetaHypothesisFamily).where(BetaHypothesisFamily.id == definition.family_id))
+                belief = sess.scalar(
+                    select(BetaHypothesisBeliefState).where(
+                        BetaHypothesisBeliefState.hypothesis_definition_id == definition.id
+                    )
+                )
+                latest_test = sess.scalar(
+                    select(BetaHypothesisTestRun)
+                    .where(BetaHypothesisTestRun.hypothesis_definition_id == definition.id)
+                    .order_by(desc(BetaHypothesisTestRun.created_at))
+                    .limit(1)
+                )
+                recent_tests = list(
+                    sess.scalars(
+                        select(BetaHypothesisTestRun)
+                        .where(BetaHypothesisTestRun.hypothesis_definition_id == definition.id)
+                        .order_by(desc(BetaHypothesisTestRun.created_at))
+                        .limit(12)
+                    ).all()
+                )
+                observations = list(
+                    sess.scalars(
+                        select(BetaSignalObservation)
+                        .where(BetaSignalObservation.hypothesis_definition_id == definition.id)
+                        .order_by(desc(BetaSignalObservation.realized_at), desc(BetaSignalObservation.observation_time))
+                        .limit(20)
+                    ).all()
+                )
+                candidates = list(
+                    sess.scalars(
+                        select(BetaSignalCandidate)
+                        .where(BetaSignalCandidate.hypothesis_definition_id == definition.id)
+                        .order_by(desc(BetaSignalCandidate.updated_at))
+                        .limit(30)
+                    ).all()
+                )
+                candidate_ids = [row.id for row in candidates]
+                positions = []
+                if candidate_ids:
+                    positions = list(
+                        sess.scalars(
+                            select(BetaDemoPosition)
+                            .where(BetaDemoPosition.candidate_id.in_(candidate_ids))
+                            .order_by(desc(BetaDemoPosition.updated_at))
+                            .limit(30)
+                        ).all()
+                    )
+                thesis_states = list(
+                    sess.scalars(
+                        select(BetaPositionState)
+                        .where(BetaPositionState.thesis_hypothesis_definition_id == definition.id)
+                        .order_by(desc(BetaPositionState.updated_at))
+                        .limit(20)
+                    ).all()
+                )
+                latest_test_notes = _json_object(latest_test.notes_json) if latest_test is not None else {}
+                governance = latest_test_notes.get("governance") if isinstance(latest_test_notes.get("governance"), dict) else None
+                observation_feedback = BetaOverviewService._observation_feedback_by_definition(sess).get(definition.id, {})
+                return {
+                    "detail_type": "definition",
+                    "hypothesis_definition": _row_to_dict(definition),
+                    "hypothesis_family": _row_to_dict(family) if family is not None else None,
+                    "belief_state": _row_to_dict(belief) if belief is not None else None,
+                    "latest_test_run": _row_to_dict(latest_test) if latest_test is not None else None,
+                    "latest_test_notes": latest_test_notes,
+                    "governance": governance,
+                    "observation_feedback": observation_feedback,
+                    "recent_tests": BetaOverviewService._query_rows(recent_tests),
+                    "observations": BetaOverviewService._query_rows(observations),
+                    "candidates": BetaOverviewService._query_rows(candidates),
+                    "positions": BetaOverviewService._query_rows(positions),
+                    "position_states": BetaOverviewService._query_rows(thesis_states),
+                }
+
             hypothesis = sess.scalar(select(BetaHypothesis).where(BetaHypothesis.id == hypothesis_id))
             if hypothesis is None:
                 return None
@@ -765,6 +1715,7 @@ class BetaOverviewService:
                     ).all()
                 )
             return {
+                "detail_type": "family",
                 "hypothesis": _row_to_dict(hypothesis),
                 "events": BetaOverviewService._query_rows(
                     sess.scalars(
@@ -784,3 +1735,21 @@ def _safe_float(value) -> float:
         return float(value or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _status_rank(value: str | None) -> int:
+    order = {
+        "VALIDATED": 0,
+        "PROMISING": 1,
+        "CANDIDATE": 2,
+        "SCREENED_IN": 3,
+        "DISCOVERED": 4,
+        "WATCHING": 5,
+        "RECOMMENDED": 6,
+        "DEGRADED": 7,
+        "BLOCKED": 8,
+        "REJECTED": 9,
+        "RETIRED": 10,
+        "ARCHIVED": 11,
+    }
+    return order.get(str(value or "").upper(), 20)
