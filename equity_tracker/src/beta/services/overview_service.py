@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
@@ -110,9 +111,42 @@ def _latest_activity_at(*moments) -> datetime | None:
 class BetaOverviewService:
     """Small query service for the beta dashboard and supporting pages."""
 
+    _DASHBOARD_CACHE_LOCK = threading.Lock()
+    _DASHBOARD_CACHE_TTL_SECONDS = 60
+    _DASHBOARD_CACHE: dict[str, object] | None = None
+    _DASHBOARD_CACHE_AT: datetime | None = None
+    _DASHBOARD_CACHE_DB_PATH: str | None = None
+
     @staticmethod
     def is_available() -> bool:
         return BetaContext.is_initialized()
+
+    @staticmethod
+    def invalidate_dashboard_cache() -> None:
+        with BetaOverviewService._DASHBOARD_CACHE_LOCK:
+            BetaOverviewService._DASHBOARD_CACHE = None
+            BetaOverviewService._DASHBOARD_CACHE_AT = None
+            BetaOverviewService._DASHBOARD_CACHE_DB_PATH = None
+
+    @staticmethod
+    def _get_cached_dashboard(*, beta_db_path: str | None) -> dict[str, object] | None:
+        with BetaOverviewService._DASHBOARD_CACHE_LOCK:
+            if BetaOverviewService._DASHBOARD_CACHE is None or BetaOverviewService._DASHBOARD_CACHE_AT is None:
+                return None
+            if BetaOverviewService._DASHBOARD_CACHE_DB_PATH != beta_db_path:
+                return None
+            age_seconds = (_utcnow() - BetaOverviewService._DASHBOARD_CACHE_AT).total_seconds()
+            if age_seconds > BetaOverviewService._DASHBOARD_CACHE_TTL_SECONDS:
+                return None
+            return BetaOverviewService._DASHBOARD_CACHE
+
+    @staticmethod
+    def _store_cached_dashboard(*, beta_db_path: str | None, dashboard: dict[str, object]) -> dict[str, object]:
+        with BetaOverviewService._DASHBOARD_CACHE_LOCK:
+            BetaOverviewService._DASHBOARD_CACHE = dashboard
+            BetaOverviewService._DASHBOARD_CACHE_AT = _utcnow()
+            BetaOverviewService._DASHBOARD_CACHE_DB_PATH = beta_db_path
+        return dashboard
 
     @staticmethod
     def _latest_score_rows(sess, *, tracked_core_only: bool, limit: int = 8) -> list[dict]:
@@ -794,8 +828,13 @@ class BetaOverviewService:
                 "snapshots": [],
             }
 
+        beta_db_path = get_beta_db_path()
+        beta_db_key = str(beta_db_path) if beta_db_path is not None else None
+        cached = BetaOverviewService._get_cached_dashboard(beta_db_path=beta_db_key)
+        if cached is not None:
+            return cached
+
         with BetaContext.read_session() as sess:
-            beta_db_path = get_beta_db_path()
             settings = BetaSettings.load(beta_db_path) if beta_db_path is not None else BetaSettings()
             status = sess.scalar(select(BetaSystemStatus).where(BetaSystemStatus.id == 1))
             counts = {
@@ -1067,7 +1106,14 @@ class BetaOverviewService:
             definition_family_rows = BetaOverviewService._definition_family_rows(definition_rows)
             validity_summary = BetaOverviewService._definition_validity_summary(definition_rows)
             execution_feedback_summary = BetaOverviewService._execution_feedback_summary(sess)
-            pipeline_health = BetaPipelineAssessmentService.build_metrics()
+            pipeline_health = (
+                BetaPipelineAssessmentService.latest_snapshot_metrics(snapshot_type="SUPERVISOR_CYCLE")
+                or {
+                    "available": False,
+                    "overall_status": "BOOTSTRAPPING",
+                    "summary_text": "Pipeline snapshot not yet available.",
+                }
+            )
             active_positions = list(
                 sess.scalars(
                     select(BetaDemoPosition)
@@ -1105,7 +1151,7 @@ class BetaOverviewService:
                 ).all()
             )
 
-            return {
+            dashboard = {
                 "available": True,
                 "status": _row_to_dict(status) if status is not None else None,
                 "runtime_flags": runtime_flags,
@@ -1288,6 +1334,10 @@ class BetaOverviewService:
                     ).all()
                 ],
             }
+            return BetaOverviewService._store_cached_dashboard(
+                beta_db_path=beta_db_key,
+                dashboard=dashboard,
+            )
 
     @staticmethod
     def _query_rows(rows: Sequence) -> list[dict]:

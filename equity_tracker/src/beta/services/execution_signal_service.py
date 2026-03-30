@@ -109,7 +109,7 @@ class BetaExecutionSignalService:
                 priority_items=all_items,
                 now_utc=now,
             )
-            outlook_labels = BetaIntradayOutlookService.update_outcome_labels()
+            outlook_labels = BetaIntradayOutlookService.update_outcome_labels(instrument_ids=instrument_ids)
         else:
             outlook_capture = {"observations_written": 0, "outlooks_annotated": 0}
             outlook_labels = {"labels_written": 0, "observations_evaluated": 0}

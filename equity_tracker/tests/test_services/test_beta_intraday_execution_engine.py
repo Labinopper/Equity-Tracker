@@ -1959,6 +1959,254 @@ def test_intraday_outlook_history_rebuild_can_filter_to_specific_instruments(bet
     assert {row.symbol for row in observations} == {"IBM"}
 
 
+def test_intraday_outlook_label_updates_only_incomplete_rows_by_default(beta_context):
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NYSE",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        complete_observation = BetaIntradayFeatureObservation(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            session_date=date(2026, 3, 15),
+            observed_at=datetime(2026, 3, 15, 14, 30),
+            session_state="REGULAR_OPEN",
+            priority_tier="BACKFILL",
+            state_code="COMPLETE_STATE",
+            state_family_code="COMPLETE_STATE",
+            state_label="Complete state",
+            rationale_text="existing complete observation",
+            feature_snapshot_json=json.dumps({}, sort_keys=True),
+        )
+        pending_observation = BetaIntradayFeatureObservation(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            session_date=date(2026, 3, 16),
+            observed_at=datetime(2026, 3, 16, 14, 30),
+            session_state="REGULAR_OPEN",
+            priority_tier="BACKFILL",
+            state_code="PENDING_STATE",
+            state_family_code="PENDING_STATE",
+            state_label="Pending state",
+            rationale_text="pending observation",
+            feature_snapshot_json=json.dumps({}, sort_keys=True),
+        )
+        sess.add_all([complete_observation, pending_observation])
+        sess.flush()
+        sess.add(
+            BetaIntradayFeatureLabelValue(
+                observation_id=complete_observation.id,
+                instrument_id=instrument.id,
+                symbol="IBM",
+                session_date=complete_observation.session_date,
+                observed_at=complete_observation.observed_at,
+                future_15m_return_pct=9.99,
+                close_return_pct=9.99,
+                evaluation_complete=True,
+            )
+        )
+        _add_minute_bar_series(
+            sess,
+            instrument_id=instrument.id,
+            session_date=pending_observation.session_date,
+            start_ts=pending_observation.observed_at,
+            close_values=[100.0, 100.2, 100.4, 100.5, 100.6, 100.7],
+            volume_value=1000.0,
+        )
+
+    result = BetaIntradayOutlookService.update_outcome_labels(instrument_ids=[instrument.id])
+
+    with BetaContext.read_session() as sess:
+        labels = list(
+            sess.scalars(
+                select(BetaIntradayFeatureLabelValue).order_by(BetaIntradayFeatureLabelValue.observed_at.asc())
+            ).all()
+        )
+
+    assert result["observations_evaluated"] == 1
+    assert result["labels_written"] == 1
+    assert len(labels) == 2
+    assert round(labels[0].future_15m_return_pct or 0.0, 2) == 9.99
+    assert labels[0].evaluation_complete is True
+    assert labels[1].observation_id == pending_observation.id
+    assert labels[1].future_5m_return_pct is not None
+    assert labels[1].close_return_pct is not None
+
+
+def test_intraday_outlook_history_rebuild_refreshes_dependent_later_observations(beta_context, monkeypatch):
+    settings = BetaSettings()
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NYSE",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        existing_later_observation = BetaIntradayFeatureObservation(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            session_date=date(2026, 3, 17),
+            observed_at=datetime(2026, 3, 17, 14, 30),
+            session_state="REGULAR_OPEN",
+            priority_tier="BACKFILL",
+            state_code="LATER_STATE",
+            state_family_code="LATER_STATE",
+            state_label="Later state",
+            rationale_text="later observation",
+            feature_snapshot_json=json.dumps({}, sort_keys=True),
+        )
+        sess.add(existing_later_observation)
+        sess.flush()
+        later_observation_id = existing_later_observation.id
+        _add_minute_bar_series(
+            sess,
+            instrument_id=instrument.id,
+            session_date=date(2026, 3, 16),
+            start_ts=datetime(2026, 3, 16, 14, 30),
+            close_values=[100.0, 100.05, 100.1, 100.15, 100.2, 100.25],
+            volume_value=1000.0,
+        )
+
+    refresh_calls: dict[str, object] = {}
+    original_refresh = BetaIntradayOutlookService.refresh_outlook_annotations
+
+    def _spy_refresh(settings_arg, *, observation_ids=None, instrument_ids=None):
+        refresh_calls["observation_ids"] = list(observation_ids or [])
+        refresh_calls["instrument_ids"] = instrument_ids
+        return original_refresh(
+            settings_arg,
+            observation_ids=observation_ids,
+            instrument_ids=instrument_ids,
+        )
+
+    monkeypatch.setattr(
+        BetaIntradayOutlookService,
+        "refresh_outlook_annotations",
+        staticmethod(_spy_refresh),
+    )
+
+    result = BetaIntradayOutlookService.rebuild_recent_history(
+        settings,
+        target_days=30,
+        instrument_ids=[instrument.id],
+    )
+
+    assert refresh_calls["observation_ids"]
+    assert refresh_calls["instrument_ids"] is None
+    assert later_observation_id in refresh_calls["observation_ids"]
+    assert result["observations_updated"] == len(refresh_calls["observation_ids"])
+
+
+def test_execution_signal_service_limits_outlook_label_updates_to_watchlist(beta_context, monkeypatch):
+    settings = BetaSettings()
+    settings.intraday_bar_fetch_enabled = False
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NYSE",
+            currency="USD",
+        )
+        other = BetaInstrument(
+            symbol="AAPL",
+            name="Apple",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add_all([instrument, other])
+        sess.flush()
+
+    watch_item = IntradayPriorityItem(
+        instrument_id=instrument.id,
+        symbol="IBM",
+        market="US",
+        exchange="NYSE",
+        tier="HELD",
+        cadence_minutes=3,
+        priority_score=1.0,
+        session_state="REGULAR_OPEN",
+    )
+    monkeypatch.setattr(
+        BetaPositionRegistry,
+        "sync_core_portfolio_positions",
+        staticmethod(lambda now_utc=None: {"states_upserted": 0}),
+    )
+    monkeypatch.setattr(
+        BetaPositionRegistry,
+        "sync_demo_positions",
+        staticmethod(lambda now_utc=None: {"states_upserted": 0}),
+    )
+    monkeypatch.setattr(
+        BetaPositionRegistry,
+        "sync_candidate_theses",
+        staticmethod(lambda now_utc=None: {"states_upserted": 0}),
+    )
+    monkeypatch.setattr(
+        BetaIntradayPriorityService,
+        "build_watchlist",
+        staticmethod(lambda settings_arg, now_utc=None: {"items": [watch_item], "held": 1, "active_thesis": 0, "general": 0}),
+    )
+    monkeypatch.setattr(
+        BetaIntradayPriorityService,
+        "build_focus_watchlist",
+        staticmethod(lambda settings_arg, now_utc=None: {"items": []}),
+    )
+    monkeypatch.setattr(
+        BetaObservationService,
+        "sync_intraday_snapshots",
+        staticmethod(lambda instrument_ids=None: None),
+    )
+    monkeypatch.setattr(
+        BetaIntradayAggregationService,
+        "aggregate_minute_bars",
+        staticmethod(lambda instrument_ids=None, lookback_minutes=None: None),
+    )
+    monkeypatch.setattr(
+        BetaIntradayFeatureService,
+        "refresh_feature_snapshots",
+        staticmethod(lambda priority_items=None, now_utc=None: None),
+    )
+    monkeypatch.setattr(
+        BetaIntradayOutlookService,
+        "capture_current_observations",
+        staticmethod(lambda settings_arg, priority_items=None, now_utc=None: {"observations_written": 0, "outlooks_annotated": 0}),
+    )
+
+    captured: dict[str, object] = {}
+
+    def _capture_update(*, observation_ids=None, instrument_ids=None):
+        captured["observation_ids"] = observation_ids
+        captured["instrument_ids"] = list(instrument_ids or [])
+        return {"labels_written": 0, "observations_evaluated": 0}
+
+    monkeypatch.setattr(
+        BetaIntradayOutlookService,
+        "update_outcome_labels",
+        staticmethod(_capture_update),
+    )
+
+    result = BetaExecutionSignalService.prepare_execution_context(
+        settings,
+        now_utc=datetime(2026, 3, 19, 14, 30, tzinfo=timezone.utc),
+    )
+
+    assert result["prepared_items_total"] == 1
+    assert captured["observation_ids"] is None
+    assert captured["instrument_ids"] == [instrument.id]
+
+
 def test_intraday_focus_backfill_service_builds_focus_evidence_from_existing_history(beta_context):
     settings = BetaSettings()
     settings.intraday_focus_us_symbol_cap = 1

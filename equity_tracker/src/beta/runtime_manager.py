@@ -146,6 +146,8 @@ def beta_ui_is_enabled(beta_db_path: Path | None) -> bool:
 
 def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool = True) -> Path | None:
     """Bootstrap the beta DB and, when enabled, start the supervisor process."""
+    from .services.overview_service import BetaOverviewService
+
     beta_db_path = resolve_beta_db_path(core_db_path)
     if beta_db_path is None:
         return None
@@ -205,6 +207,7 @@ def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool
         shutdown_beta_runtime()
         return None
 
+    BetaOverviewService.invalidate_dashboard_cache()
     return beta_db_path
 
 
@@ -215,6 +218,8 @@ def reload_beta_runtime(core_db_path: Path | None) -> Path | None:
 
 def shutdown_beta_runtime(*, stop_supervisor: bool = True) -> None:
     """Release the beta DB context and optionally stop the detached supervisor."""
+    from .services.overview_service import BetaOverviewService
+
     current_beta_db_path = get_beta_db_path()
     if stop_supervisor:
         _stop_supervisor_process()
@@ -230,6 +235,7 @@ def shutdown_beta_runtime(*, stop_supervisor: bool = True) -> None:
             )
     set_beta_db_path(None)
     BetaContext.lock()
+    BetaOverviewService.invalidate_dashboard_cache()
 
 
 def _start_supervisor(core_db_path: Path, beta_db_path: Path, settings: BetaSettings) -> None:

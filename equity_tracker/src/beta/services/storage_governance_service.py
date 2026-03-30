@@ -87,6 +87,8 @@ class BetaStorageGovernanceService:
                 "execution_label_values": int(
                     sess.scalar(select(func.count()).select_from(BetaExecutionLabelValue)) or 0
                 ),
+            }
+            retained_counts = {
                 "intraday_feature_observations": int(
                     sess.scalar(select(func.count()).select_from(BetaIntradayFeatureObservation)) or 0
                 ),
@@ -103,6 +105,7 @@ class BetaStorageGovernanceService:
 
         transient_rows_total = int(sum(transient_counts.values()))
         permanent_rows_total = int(sum(permanent_counts.values()))
+        retained_rows_total = int(sum(retained_counts.values()))
         retention_days = {
             "pipeline_snapshots": int(profile_settings.storage_pipeline_snapshot_retention_days),
             "job_runs": int(profile_settings.storage_job_run_retention_days),
@@ -112,10 +115,11 @@ class BetaStorageGovernanceService:
             "recommendations_actionable": int(profile_settings.storage_actionable_recommendation_retention_days),
             "intraday_snapshots": int(profile_settings.storage_intraday_snapshot_retention_days),
             "intraday_feature_snapshots": int(profile_settings.storage_intraday_feature_retention_days),
+            "intraday_outlook_history": int(profile_settings.storage_intraday_outlook_retention_days),
             "minute_bars": int(profile_settings.storage_minute_bar_retention_days),
         }
         transient_share_pct = round(
-            (transient_rows_total / max(1, transient_rows_total + permanent_rows_total)) * 100.0,
+            (transient_rows_total / max(1, transient_rows_total + permanent_rows_total + retained_rows_total)) * 100.0,
             2,
         )
         return {
@@ -127,8 +131,10 @@ class BetaStorageGovernanceService:
             "retention_days": retention_days,
             "transient_counts": transient_counts,
             "permanent_counts": permanent_counts,
+            "retained_counts": retained_counts,
             "transient_rows_total": transient_rows_total,
             "permanent_rows_total": permanent_rows_total,
+            "retained_rows_total": retained_rows_total,
             "transient_share_pct": transient_share_pct,
             "asset_classes": {
                 "permanent_research_assets": [
@@ -137,6 +143,8 @@ class BetaStorageGovernanceService:
                     "beta_hypothesis_test_runs",
                     "beta_hypothesis_belief_states",
                     "beta_execution_label_values",
+                ],
+                "retained_research_assets": [
                     "beta_intraday_feature_observations",
                     "beta_intraday_feature_label_values",
                 ],
@@ -156,8 +164,8 @@ class BetaStorageGovernanceService:
             "last_cleanup_details": _job_details(latest_cleanup_job),
             "summary_text": (
                 f"DB {round(db_size_bytes / (1024.0 * 1024.0 * 1024.0), 2)} GB, transient rows "
-                f"{transient_rows_total}, permanent rows {permanent_rows_total}, transient share "
-                f"{transient_share_pct}%."
+                f"{transient_rows_total}, retained research rows {retained_rows_total}, "
+                f"permanent rows {permanent_rows_total}, transient share {transient_share_pct}%."
             ),
         }
 
@@ -186,6 +194,7 @@ class BetaStorageGovernanceService:
         )
         intraday_snapshot_cutoff = now - timedelta(days=max(1, settings.storage_intraday_snapshot_retention_days))
         intraday_feature_cutoff = now - timedelta(days=max(1, settings.storage_intraday_feature_retention_days))
+        intraday_outlook_cutoff = now - timedelta(days=max(30, settings.storage_intraday_outlook_retention_days))
         minute_bar_cutoff = now - timedelta(days=max(1, settings.storage_minute_bar_retention_days))
         pipeline_cutoff = now - timedelta(days=max(1, settings.storage_pipeline_snapshot_retention_days))
         job_cutoff = now - timedelta(days=max(1, settings.storage_job_run_retention_days))
@@ -274,6 +283,22 @@ class BetaStorageGovernanceService:
                 ).rowcount
                 or 0
             )
+            deleted["intraday_outlook_label_values"] = int(
+                sess.execute(
+                    delete(BetaIntradayFeatureLabelValue).where(
+                        BetaIntradayFeatureLabelValue.observed_at < intraday_outlook_cutoff
+                    )
+                ).rowcount
+                or 0
+            )
+            deleted["intraday_outlook_observations"] = int(
+                sess.execute(
+                    delete(BetaIntradayFeatureObservation).where(
+                        BetaIntradayFeatureObservation.observed_at < intraday_outlook_cutoff
+                    )
+                ).rowcount
+                or 0
+            )
             deleted["minute_bars"] = int(
                 sess.execute(delete(BetaMinuteBar).where(BetaMinuteBar.minute_ts < minute_bar_cutoff)).rowcount or 0
             )
@@ -300,6 +325,7 @@ class BetaStorageGovernanceService:
                 "recommendations_actionable": int(settings.storage_actionable_recommendation_retention_days),
                 "intraday_snapshots": int(settings.storage_intraday_snapshot_retention_days),
                 "intraday_feature_snapshots": int(settings.storage_intraday_feature_retention_days),
+                "intraday_outlook_history": int(settings.storage_intraday_outlook_retention_days),
                 "minute_bars": int(settings.storage_minute_bar_retention_days),
             },
             "profile": BetaStorageGovernanceService.build_profile(settings=settings),

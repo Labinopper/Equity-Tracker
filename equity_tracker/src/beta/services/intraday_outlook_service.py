@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from statistics import median, pstdev
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from ..context import BetaContext
 from ..db.models import (
@@ -62,6 +62,20 @@ def _safe_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalized_ids(values: list[str] | None) -> list[str]:
+    return [str(value) for value in (values or []) if str(value).strip()]
+
+
+def _backfill_refresh_filters(rows: list[tuple[str, datetime]]) -> list[object]:
+    return [
+        and_(
+            BetaIntradayFeatureObservation.instrument_id == instrument_id,
+            BetaIntradayFeatureObservation.observed_at >= observed_at,
+        )
+        for instrument_id, observed_at in rows
+    ]
 
 
 def _percentile(values: list[float], pct: float) -> float | None:
@@ -225,13 +239,13 @@ class BetaIntradayOutlookService:
         target_days: int | None = None,
         instrument_ids: list[str] | None = None,
         now_utc: datetime | None = None,
-    ) -> dict[str, int]:
+    ) -> dict[str, object]:
         if not BetaContext.is_initialized():
-            return {"sessions_backfilled": 0, "observations_written": 0}
+            return {"sessions_backfilled": 0, "observations_written": 0, "observation_ids": []}
 
         history_days = max(1, int(target_days or settings.intraday_execution_hypothesis_history_days))
         cutoff_date = (_coerce_utc(now_utc) - timedelta(days=history_days)).date()
-        instrument_filter = [str(value) for value in (instrument_ids or []) if str(value).strip()]
+        instrument_filter = _normalized_ids(instrument_ids)
 
         with BetaContext.write_session() as sess:
             BetaExecutionHypothesisService.ensure_default_definitions()
@@ -268,6 +282,7 @@ class BetaIntradayOutlookService:
 
             sessions_backfilled = 0
             observations_written = 0
+            created_observation_ids: list[str] = []
             for instrument_id, session_date in session_keys:
                 if (instrument_id, session_date) in existing_sessions:
                     continue
@@ -352,6 +367,7 @@ class BetaIntradayOutlookService:
                     )
                     sess.add(observation)
                     sess.flush()
+                    created_observation_ids.append(observation.id)
                     latest_captured = observation
                     observations_written += 1
 
@@ -361,6 +377,7 @@ class BetaIntradayOutlookService:
         return {
             "sessions_backfilled": sessions_backfilled,
             "observations_written": observations_written,
+            "observation_ids": created_observation_ids,
         }
 
     @staticmethod
@@ -368,30 +385,39 @@ class BetaIntradayOutlookService:
         *,
         observation_ids: list[str] | None = None,
         instrument_ids: list[str] | None = None,
-    ) -> dict[str, int]:
+    ) -> dict[str, object]:
         if not BetaContext.is_initialized():
-            return {"labels_written": 0, "observations_evaluated": 0}
+            return {"labels_written": 0, "observations_evaluated": 0, "observation_ids": []}
 
+        normalized_observation_ids = _normalized_ids(observation_ids)
+        normalized_instrument_ids = _normalized_ids(instrument_ids)
         with BetaContext.write_session() as sess:
-            existing_labels = {
-                row.observation_id: row
-                for row in sess.scalars(select(BetaIntradayFeatureLabelValue)).all()
-            }
-            query = select(BetaIntradayFeatureObservation).order_by(
-                BetaIntradayFeatureObservation.observed_at.asc(),
-                BetaIntradayFeatureObservation.created_at.asc(),
+            query = (
+                select(BetaIntradayFeatureObservation, BetaIntradayFeatureLabelValue)
+                .outerjoin(
+                    BetaIntradayFeatureLabelValue,
+                    BetaIntradayFeatureLabelValue.observation_id == BetaIntradayFeatureObservation.id,
+                )
+                .order_by(
+                    BetaIntradayFeatureObservation.observed_at.asc(),
+                    BetaIntradayFeatureObservation.created_at.asc(),
+                )
             )
-            if observation_ids:
-                query = query.where(BetaIntradayFeatureObservation.id.in_(observation_ids))
-            if instrument_ids:
-                query = query.where(BetaIntradayFeatureObservation.instrument_id.in_(instrument_ids))
-            observations = list(sess.scalars(query).all())
+            if normalized_observation_ids:
+                query = query.where(BetaIntradayFeatureObservation.id.in_(normalized_observation_ids))
+            if normalized_instrument_ids:
+                query = query.where(BetaIntradayFeatureObservation.instrument_id.in_(normalized_instrument_ids))
+            if not normalized_observation_ids:
+                query = query.where(
+                    or_(
+                        BetaIntradayFeatureLabelValue.id.is_(None),
+                        BetaIntradayFeatureLabelValue.evaluation_complete.is_(False),
+                    )
+                )
+            observations = list(sess.execute(query).all())
             labels_written = 0
-            for observation in observations:
-                label = existing_labels.get(observation.id)
-                if label is not None and label.evaluation_complete and not observation_ids:
-                    continue
-
+            updated_observation_ids: list[str] = []
+            for observation, label in observations:
                 minute_rows = list(
                     sess.scalars(
                         select(BetaMinuteBar)
@@ -414,7 +440,6 @@ class BetaIntradayOutlookService:
                         observed_at=observation.observed_at,
                     )
                     sess.add(label)
-                    existing_labels[observation.id] = label
 
                 base_price = _safe_float(minute_rows[0].close_price_gbp)
                 if base_price is None or abs(base_price) < 1e-9:
@@ -485,10 +510,12 @@ class BetaIntradayOutlookService:
                     )
                 )
                 labels_written += 1
+                updated_observation_ids.append(observation.id)
 
             return {
                 "labels_written": labels_written,
                 "observations_evaluated": len(observations),
+                "observation_ids": updated_observation_ids,
             }
 
     @staticmethod
@@ -543,9 +570,27 @@ class BetaIntradayOutlookService:
             now_utc=now_utc,
         )
         labels = BetaIntradayOutlookService.update_outcome_labels(instrument_ids=instrument_ids)
-        refresh = BetaIntradayOutlookService.refresh_outlook_annotations(
-            settings,
-            instrument_ids=instrument_ids,
+        backfilled_observation_ids = _normalized_ids(backfill.get("observation_ids"))
+        refresh_filters: list[object] = []
+        if backfilled_observation_ids:
+            with BetaContext.read_session() as sess:
+                backfilled_rows = list(
+                    sess.execute(
+                        select(
+                            BetaIntradayFeatureObservation.instrument_id,
+                            BetaIntradayFeatureObservation.observed_at,
+                        )
+                        .where(BetaIntradayFeatureObservation.id.in_(backfilled_observation_ids))
+                    ).all()
+                )
+            refresh_filters = _backfill_refresh_filters(backfilled_rows)
+        refresh = (
+            BetaIntradayOutlookService.refresh_outlook_annotations(
+                settings,
+                observation_ids=BetaIntradayOutlookService._observation_ids_matching_filters(refresh_filters),
+            )
+            if refresh_filters
+            else {"observations_updated": 0}
         )
         return {
             "sessions_backfilled": int(backfill.get("sessions_backfilled") or 0),
@@ -553,6 +598,23 @@ class BetaIntradayOutlookService:
             "labels_written": int(labels.get("labels_written") or 0),
             "observations_updated": int(refresh.get("observations_updated") or 0),
         }
+
+    @staticmethod
+    def _observation_ids_matching_filters(filters: list[object]) -> list[str]:
+        if not filters or not BetaContext.is_initialized():
+            return []
+        with BetaContext.read_session() as sess:
+            return [
+                str(row.id)
+                for row in sess.scalars(
+                    select(BetaIntradayFeatureObservation)
+                    .where(or_(*filters))
+                    .order_by(
+                        BetaIntradayFeatureObservation.observed_at.asc(),
+                        BetaIntradayFeatureObservation.created_at.asc(),
+                    )
+                ).all()
+            ]
 
     @staticmethod
     def _best_execution_match(

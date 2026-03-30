@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from ...app_context import AppContext
 from ...beta.services.evaluation_service import BetaEvaluationService
@@ -80,6 +81,10 @@ def _load_beta_context() -> tuple[dict[str, object], BetaSettings | None]:
     return BetaOverviewService.get_dashboard(), BetaSettings.load(beta_db_path)
 
 
+async def _load_beta_context_async() -> tuple[dict[str, object], BetaSettings | None]:
+    return await run_in_threadpool(_load_beta_context)
+
+
 def _beta_ui_available() -> bool:
     return beta_ui_is_enabled(get_beta_db_path() or _ensure_beta_ready())
 
@@ -137,7 +142,7 @@ async def beta_overview(request: Request) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    dashboard, settings = _load_beta_context()
+    dashboard, settings = await _load_beta_context_async()
     return _html_template_response(
         request,
         "paper_trading_beta/overview.html",
@@ -156,7 +161,7 @@ async def beta_opportunities(request: Request) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    dashboard, settings = _load_beta_context()
+    dashboard, settings = await _load_beta_context_async()
     return _html_template_response(
         request,
         "paper_trading_beta/opportunities.html",
@@ -175,7 +180,7 @@ async def beta_hypotheses(request: Request) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    dashboard, settings = _load_beta_context()
+    dashboard, settings = await _load_beta_context_async()
     return _html_template_response(
         request,
         "paper_trading_beta/hypotheses.html",
@@ -194,7 +199,7 @@ async def beta_trades(request: Request) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    dashboard, settings = _load_beta_context()
+    dashboard, settings = await _load_beta_context_async()
     return _html_template_response(
         request,
         "paper_trading_beta/trades.html",
@@ -213,14 +218,14 @@ async def beta_replay(request: Request) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    dashboard, settings = _load_beta_context()
+    dashboard, settings = await _load_beta_context_async()
     return _html_template_response(
         request,
         "paper_trading_beta/replay.html",
         {
             "request": request,
             "dashboard": dashboard,
-            "replay_packs": BetaReplayService.list_recent_packs(),
+            "replay_packs": await run_in_threadpool(BetaReplayService.list_recent_packs),
             "beta_settings": settings,
             "badge_class": _badge_class,
         },
@@ -233,8 +238,8 @@ async def beta_hypothesis_detail(request: Request, hypothesis_id: str) -> HTMLRe
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    _ensure_beta_ready()
-    detail = BetaOverviewService.get_hypothesis_detail(hypothesis_id)
+    await run_in_threadpool(_ensure_beta_ready)
+    detail = await run_in_threadpool(BetaOverviewService.get_hypothesis_detail, hypothesis_id)
     if detail is None:
         return _html_template_response(
             request,
@@ -255,8 +260,8 @@ async def beta_candidate_detail(request: Request, candidate_id: str) -> HTMLResp
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    _ensure_beta_ready()
-    detail = BetaOverviewService.get_candidate_detail(candidate_id)
+    await run_in_threadpool(_ensure_beta_ready)
+    detail = await run_in_threadpool(BetaOverviewService.get_candidate_detail, candidate_id)
     if detail is None:
         return _html_template_response(
             request,
@@ -277,8 +282,8 @@ async def beta_trade_detail(request: Request, position_id: str) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    _ensure_beta_ready()
-    detail = BetaOverviewService.get_trade_detail(position_id)
+    await run_in_threadpool(_ensure_beta_ready)
+    detail = await run_in_threadpool(BetaOverviewService.get_trade_detail, position_id)
     if detail is None:
         return _html_template_response(
             request,
@@ -299,7 +304,7 @@ async def beta_health(request: Request) -> HTMLResponse:
         return _locked_response(request)
     if not _beta_ui_available():
         return _beta_disabled_response()
-    dashboard, settings = _load_beta_context()
+    dashboard, settings = await _load_beta_context_async()
     return _html_template_response(
         request,
         "paper_trading_beta/health.html",
@@ -529,6 +534,7 @@ async def beta_control(
         beta_db_path=beta_db_path,
         settings=settings,
     )
+    BetaOverviewService.invalidate_dashboard_cache()
     BetaRuntimeService.record_notification(
         notification_type="manual_control",
         severity="INFO",

@@ -45,6 +45,13 @@ def _dt_to_iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _seconds_since(moment: datetime | None) -> int | None:
+    if moment is None:
+        return None
+    delta = _utcnow() - moment
+    return max(0, int(delta.total_seconds()))
+
+
 def _json_safe(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -93,6 +100,43 @@ class BetaPipelineAssessmentService:
     _STALE_JOB_MINUTES = 15
     _STALE_OBSERVATION_MINUTES = 10
     _RECENT_SCORE_HOURS = 24
+
+    @staticmethod
+    def latest_snapshot_metrics(
+        *,
+        snapshot_type: str = "SUPERVISOR_CYCLE",
+    ) -> dict[str, object] | None:
+        """Return the latest persisted pipeline snapshot metrics, if available."""
+        if not BetaContext.is_initialized():
+            return None
+
+        with BetaContext.read_session() as sess:
+            snapshot = sess.scalar(
+                select(BetaPipelineSnapshot)
+                .where(BetaPipelineSnapshot.snapshot_type == snapshot_type)
+                .order_by(desc(BetaPipelineSnapshot.created_at))
+                .limit(1)
+            )
+
+        if snapshot is None:
+            return None
+
+        try:
+            payload = json.loads(snapshot.metrics_json or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        metrics = dict(payload)
+        metrics.setdefault("available", True)
+        metrics.setdefault("overall_status", snapshot.overall_status)
+        metrics.setdefault("summary_text", snapshot.summary_text or "")
+        metrics["snapshot_type"] = snapshot.snapshot_type
+        metrics["snapshot_trigger_job_name"] = snapshot.trigger_job_name
+        metrics["snapshot_created_at"] = _dt_to_iso(snapshot.created_at)
+        metrics["snapshot_age_seconds"] = _seconds_since(snapshot.created_at)
+        return metrics
 
     @staticmethod
     def build_metrics() -> dict[str, object]:

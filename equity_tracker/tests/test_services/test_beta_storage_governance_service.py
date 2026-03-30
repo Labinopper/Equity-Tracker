@@ -13,6 +13,8 @@ from src.beta.db.models import (
     BetaHypothesisDefinition,
     BetaHypothesisFamily,
     BetaInstrument,
+    BetaIntradayFeatureLabelValue,
+    BetaIntradayFeatureObservation,
     BetaIntradayFeatureSnapshot,
     BetaIntradaySnapshot,
     BetaJobRun,
@@ -54,6 +56,7 @@ def test_storage_governance_prunes_old_transient_exhaust(beta_context, monkeypat
     settings.storage_actionable_recommendation_retention_days = 20
     settings.storage_intraday_snapshot_retention_days = 7
     settings.storage_intraday_feature_retention_days = 7
+    settings.storage_intraday_outlook_retention_days = 30
     settings.storage_minute_bar_retention_days = 10
 
     monkeypatch.setattr("src.beta.services.storage_governance_service._utcnow", lambda: now)
@@ -353,6 +356,62 @@ def test_storage_governance_prunes_old_transient_exhaust(beta_context, monkeypat
                 ),
             ]
         )
+        old_outlook = BetaIntradayFeatureObservation(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            session_date=date(2026, 2, 10),
+            observed_at=now - timedelta(days=40),
+            session_state="REGULAR_OPEN",
+            priority_tier="BACKFILL",
+            state_code="OLD_TEST",
+            state_family_code="OLD_TEST",
+            state_label="Old test outlook",
+            rationale_text="old observation",
+            feature_snapshot_json=json.dumps({}, sort_keys=True),
+            created_at=now - timedelta(days=40),
+        )
+        recent_outlook = BetaIntradayFeatureObservation(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            session_date=date(2026, 3, 18),
+            observed_at=recent_time,
+            session_state="REGULAR_OPEN",
+            priority_tier="BACKFILL",
+            state_code="RECENT_TEST",
+            state_family_code="RECENT_TEST",
+            state_label="Recent test outlook",
+            rationale_text="recent observation",
+            feature_snapshot_json=json.dumps({}, sort_keys=True),
+            created_at=recent_time,
+        )
+        sess.add_all([old_outlook, recent_outlook])
+        sess.flush()
+        sess.add_all(
+            [
+                BetaIntradayFeatureLabelValue(
+                    observation_id=old_outlook.id,
+                    instrument_id=instrument.id,
+                    symbol="IBM",
+                    session_date=old_outlook.session_date,
+                    observed_at=old_outlook.observed_at,
+                    future_15m_return_pct=0.2,
+                    close_return_pct=0.3,
+                    evaluation_complete=True,
+                    created_at=now - timedelta(days=40),
+                ),
+                BetaIntradayFeatureLabelValue(
+                    observation_id=recent_outlook.id,
+                    instrument_id=instrument.id,
+                    symbol="IBM",
+                    session_date=recent_outlook.session_date,
+                    observed_at=recent_outlook.observed_at,
+                    future_15m_return_pct=0.1,
+                    close_return_pct=0.15,
+                    evaluation_complete=True,
+                    created_at=recent_time,
+                ),
+            ]
+        )
 
     result = BetaStorageGovernanceService.enforce_retention(settings)
 
@@ -363,6 +422,10 @@ def test_storage_governance_prunes_old_transient_exhaust(beta_context, monkeypat
         recommendation_count = int(sess.scalar(select(func.count()).select_from(BetaRecommendationDecision)) or 0)
         intraday_snapshot_count = int(sess.scalar(select(func.count()).select_from(BetaIntradaySnapshot)) or 0)
         intraday_feature_count = int(sess.scalar(select(func.count()).select_from(BetaIntradayFeatureSnapshot)) or 0)
+        intraday_outlook_count = int(sess.scalar(select(func.count()).select_from(BetaIntradayFeatureObservation)) or 0)
+        intraday_outlook_label_count = int(
+            sess.scalar(select(func.count()).select_from(BetaIntradayFeatureLabelValue)) or 0
+        )
         minute_bar_count = int(sess.scalar(select(func.count()).select_from(BetaMinuteBar)) or 0)
         candidate_event_count = int(sess.scalar(select(func.count()).select_from(BetaSignalCandidateEvent)) or 0)
 
@@ -376,6 +439,8 @@ def test_storage_governance_prunes_old_transient_exhaust(beta_context, monkeypat
     assert result["deleted"]["recommendations_actionable"] == 0
     assert result["deleted"]["intraday_snapshots"] == 1
     assert result["deleted"]["intraday_feature_snapshots"] == 1
+    assert result["deleted"]["intraday_outlook_label_values"] == 1
+    assert result["deleted"]["intraday_outlook_observations"] == 1
     assert result["deleted"]["minute_bars"] == 1
     assert result["deleted"]["candidate_events"] == 1
     assert pipeline_count == 1
@@ -384,6 +449,8 @@ def test_storage_governance_prunes_old_transient_exhaust(beta_context, monkeypat
     assert recommendation_count == 2
     assert intraday_snapshot_count == 1
     assert intraday_feature_count == 1
+    assert intraday_outlook_count == 1
+    assert intraday_outlook_label_count == 1
     assert minute_bar_count == 1
     assert candidate_event_count == 1
 

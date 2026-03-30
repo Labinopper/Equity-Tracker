@@ -45,6 +45,7 @@ from src.beta.db.models import (
     BetaNewsArticle,
     BetaNewsArticleLink,
     BetaNewsSource,
+    BetaPipelineSnapshot,
     BetaRiskControlState,
     BetaResearchRanking,
     BetaSchemaMeta,
@@ -1246,6 +1247,44 @@ def test_beta_overview_uses_latest_job_activity_for_heartbeat(tmp_path, monkeypa
     assert runtime_activity["current_running_job"] is not None
     assert runtime_activity["current_running_job"]["job_name"] == "beta_daily_training"
     assert runtime_activity["heartbeat_age_seconds"] == 30
+
+
+def test_beta_overview_uses_cached_pipeline_snapshot_instead_of_live_recompute(tmp_path, monkeypatch) -> None:
+    beta_db_path = tmp_path / "overview-cached-snapshot.beta_research.db"
+    _write_beta_settings(beta_db_path, auto_start_supervisor=False)
+    monkeypatch.setenv("EQUITY_BETA_DB_PATH", str(beta_db_path))
+    initialize_beta_runtime(None, allow_supervisor=False)
+
+    with BetaContext.write_session() as sess:
+        sess.add(
+            BetaPipelineSnapshot(
+                snapshot_type="SUPERVISOR_CYCLE",
+                trigger_job_name="beta_supervisor_cycle",
+                overall_status="HEALTHY",
+                summary_text="Cached snapshot summary.",
+                metrics_json=json.dumps(
+                    {
+                        "available": True,
+                        "overall_status": "HEALTHY",
+                        "summary_text": "Cached snapshot summary.",
+                        "scores_last_24h": 12,
+                    },
+                    sort_keys=True,
+                ),
+            )
+        )
+
+    BetaOverviewService.invalidate_dashboard_cache()
+    monkeypatch.setattr(
+        "src.beta.services.pipeline_assessment_service.BetaPipelineAssessmentService.build_metrics",
+        lambda: (_ for _ in ()).throw(AssertionError("live pipeline recompute should not run")),
+    )
+
+    dashboard = BetaOverviewService.get_dashboard()
+
+    assert dashboard["pipeline_health"]["overall_status"] == "HEALTHY"
+    assert dashboard["pipeline_health"]["summary_text"] == "Cached snapshot summary."
+    assert dashboard["pipeline_health"]["scores_last_24h"] == 12
 
 
 def test_beta_universe_sync_persists_research_rankings(client) -> None:

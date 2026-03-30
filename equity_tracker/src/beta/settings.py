@@ -64,6 +64,7 @@ class BetaSettings:
     storage_actionable_recommendation_retention_days: int
     storage_intraday_snapshot_retention_days: int
     storage_intraday_feature_retention_days: int
+    storage_intraday_outlook_retention_days: int
     storage_minute_bar_retention_days: int
     intraday_execution_enabled: bool
     intraday_event_trigger_enabled: bool
@@ -190,6 +191,7 @@ class BetaSettings:
         self.storage_actionable_recommendation_retention_days = 45
         self.storage_intraday_snapshot_retention_days = 14
         self.storage_intraday_feature_retention_days = 14
+        self.storage_intraday_outlook_retention_days = 120
         self.storage_minute_bar_retention_days = 45
         self.intraday_execution_enabled = True
         self.intraday_event_trigger_enabled = True
@@ -336,6 +338,7 @@ class BetaSettings:
             "storage_actionable_recommendation_retention_days": self.storage_actionable_recommendation_retention_days,
             "storage_intraday_snapshot_retention_days": self.storage_intraday_snapshot_retention_days,
             "storage_intraday_feature_retention_days": self.storage_intraday_feature_retention_days,
+            "storage_intraday_outlook_retention_days": self.storage_intraday_outlook_retention_days,
             "storage_minute_bar_retention_days": self.storage_minute_bar_retention_days,
             "intraday_execution_enabled": self.intraday_execution_enabled,
             "intraday_event_trigger_enabled": self.intraday_event_trigger_enabled,
@@ -607,6 +610,13 @@ class BetaSettings:
             _safe_int(
                 data.get("storage_intraday_feature_retention_days"),
                 self.storage_intraday_feature_retention_days,
+            ),
+        )
+        self.storage_intraday_outlook_retention_days = max(
+            30,
+            _safe_int(
+                data.get("storage_intraday_outlook_retention_days"),
+                self.storage_intraday_outlook_retention_days,
             ),
         )
         self.storage_minute_bar_retention_days = max(
