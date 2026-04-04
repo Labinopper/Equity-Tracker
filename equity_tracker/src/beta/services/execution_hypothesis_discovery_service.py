@@ -74,6 +74,26 @@ class BetaExecutionHypothesisDiscoveryService:
                     "candidates_promoted": 0,
                 }
 
+            input_fingerprint, fingerprint_details = BetaExecutionHypothesisDiscoveryService._input_fingerprint(
+                templates=templates,
+                dataset_rows=dataset_rows,
+                settings=settings,
+            )
+            latest_fingerprint = BetaExecutionHypothesisDiscoveryService._latest_input_fingerprint(sess)
+            if latest_fingerprint == input_fingerprint:
+                return {
+                    "job_status": "SKIPPED",
+                    "reason": "unchanged_execution_discovery_inputs",
+                    "templates_considered": len(templates),
+                    "candidates_generated": 0,
+                    "candidates_screened_in": 0,
+                    "candidates_promoted": 0,
+                    "discovery_window_start": fingerprint_details["window_start"],
+                    "discovery_window_end": fingerprint_details["window_end"],
+                    "dataset_rows": fingerprint_details["dataset_rows"],
+                    "input_fingerprint": input_fingerprint,
+                }
+
             discovery_run = BetaExecutionHypothesisDiscoveryRun(
                 run_code=datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f"),
                 status="SUCCESS",
@@ -206,6 +226,8 @@ class BetaExecutionHypothesisDiscoveryService:
                 {
                     "dataset_rows": len(dataset_rows),
                     "template_codes": [template.hypothesis_code for template in templates],
+                    "input_fingerprint": input_fingerprint,
+                    "fingerprint_details": fingerprint_details,
                 },
                 sort_keys=True,
             )
@@ -215,6 +237,7 @@ class BetaExecutionHypothesisDiscoveryService:
                 "candidates_screened_in": candidates_screened_in,
                 "candidates_promoted": promoted,
                 "discovery_run_code": discovery_run.run_code,
+                "input_fingerprint": input_fingerprint,
             }
 
     @staticmethod
@@ -226,6 +249,75 @@ class BetaExecutionHypothesisDiscoveryService:
             if candidate_hash:
                 hashes.add(candidate_hash)
         return hashes
+
+    @staticmethod
+    def _latest_input_fingerprint(sess) -> str | None:
+        latest_run = sess.scalar(
+            select(BetaExecutionHypothesisDiscoveryRun)
+            .order_by(BetaExecutionHypothesisDiscoveryRun.created_at.desc())
+            .limit(1)
+        )
+        if latest_run is None:
+            return None
+        notes = _json_object(latest_run.notes_json)
+        fingerprint = str(notes.get("input_fingerprint") or "").strip()
+        return fingerprint or None
+
+    @staticmethod
+    def _input_fingerprint(
+        *,
+        templates: list[BetaExecutionHypothesisDefinition],
+        dataset_rows: list[object],
+        settings: BetaSettings,
+    ) -> tuple[str, dict[str, object]]:
+        hasher = hashlib.sha1()
+        hasher.update(str(int(settings.intraday_execution_hypothesis_history_days)).encode("utf-8"))
+        hasher.update(str(int(settings.intraday_execution_hypothesis_template_limit)).encode("utf-8"))
+        hasher.update(str(int(settings.intraday_execution_hypothesis_variant_cap)).encode("utf-8"))
+        hasher.update(str(int(settings.intraday_execution_hypothesis_max_promotions_per_run)).encode("utf-8"))
+
+        template_codes: list[str] = []
+        for template in templates:
+            template_payload = {
+                "hypothesis_code": template.hypothesis_code,
+                "signal_type": template.signal_type,
+                "entry_conditions_json": template.entry_conditions_json,
+                "regime_filters_json": template.regime_filters_json,
+                "feature_subset_json": template.feature_subset_json,
+                "metadata_json": template.metadata_json,
+                "status": template.status,
+            }
+            template_codes.append(str(template.hypothesis_code))
+            hasher.update(json.dumps(template_payload, sort_keys=True).encode("utf-8"))
+
+        window_start = min((row.signal_time for row in dataset_rows), default=None)
+        window_end = max((row.signal_time for row in dataset_rows), default=None)
+        distinct_signals: set[str] = set()
+        distinct_symbols: set[str] = set()
+        for row in dataset_rows:
+            distinct_signals.add(str(row.execution_signal_id))
+            distinct_symbols.add(str(row.symbol))
+            row_payload = {
+                "execution_signal_id": row.execution_signal_id,
+                "signal_time": row.signal_time.isoformat(),
+                "symbol": row.symbol,
+                "source_signal_type": row.source_signal_type,
+                "event_trigger_code": row.event_trigger_code,
+                "event_codes": list(row.event_codes),
+                "feature_values": row.feature_values,
+                "stored_action_aligned_return_pct": row.stored_action_aligned_return_pct,
+                "stored_time_to_peak_minutes": row.stored_time_to_peak_minutes,
+            }
+            hasher.update(json.dumps(row_payload, sort_keys=True, default=str).encode("utf-8"))
+
+        return hasher.hexdigest(), {
+            "dataset_rows": len(dataset_rows),
+            "distinct_signals": len(distinct_signals),
+            "distinct_symbols": len(distinct_symbols),
+            "template_codes": template_codes,
+            "window_start": window_start.isoformat() if window_start is not None else None,
+            "window_end": window_end.isoformat() if window_end is not None else None,
+        }
 
     @staticmethod
     def _generate_candidate_specs(

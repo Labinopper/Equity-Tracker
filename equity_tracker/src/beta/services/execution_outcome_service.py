@@ -17,6 +17,7 @@ from ..db.models import (
     BetaSignalObservation,
 )
 from .execution_economic_annotation_service import BetaExecutionEconomicAnnotationService
+from .prediction_accuracy_service import BetaPredictionAccuracyService
 
 
 def _safe_float(value) -> float | None:
@@ -129,8 +130,41 @@ class BetaExecutionOutcomeService:
                     )
                 )
                 labels_written += 1
+                
+                # Update prediction accuracy with realized outcome for execution signals
+                if label.evaluation_complete and signal.execution_hypothesis_definition_id is not None:
+                    try:
+                        # Use the most complete realized return available
+                        realized_return = (
+                            label.close_return_from_signal_pct
+                            if label.close_return_from_signal_pct is not None
+                            else label.future_120m_return_pct
+                            if label.future_120m_return_pct is not None
+                            else label.future_60m_return_pct
+                        )
+                        if realized_return is not None:
+                            # Find prediction log entry for this execution signal
+                            from ..db.models import BetaPredictionAccuracyLog
+                            prediction_log = sess.scalar(
+                                select(BetaPredictionAccuracyLog)
+                                .where(BetaPredictionAccuracyLog.execution_signal_id == signal.id)
+                                .limit(1)
+                            )
+                            if prediction_log is not None:
+                                BetaPredictionAccuracyService.update_realized_outcome(
+                                    prediction_log_id=prediction_log.id,
+                                    realized_return_pct=realized_return,
+                                    realization_time=label.updated_at,
+                                )
+                    except Exception:
+                        # Don't fail outcome computation if prediction update fails
+                        pass
 
             observations_updated = BetaExecutionOutcomeService._sync_realized_observations(sess)
+            
+            # Also update prediction accuracy for daily hypothesis signals
+            BetaExecutionOutcomeService._update_hypothesis_prediction_outcomes(sess)
+            
             return {
                 "labels_written": labels_written,
                 "signals_evaluated": len(signals),
@@ -297,3 +331,60 @@ class BetaExecutionOutcomeService:
         except (TypeError, ValueError, json.JSONDecodeError):
             return {}
         return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _update_hypothesis_prediction_outcomes(sess) -> int:
+        """Update prediction accuracy for daily hypothesis signal observations."""
+        from ..db.models import BetaPredictionAccuracyLog
+
+        updated = 0
+
+        pending_logs = list(
+            sess.scalars(
+                select(BetaPredictionAccuracyLog).where(
+                    BetaPredictionAccuracyLog.signal_observation_id.is_not(None),
+                    BetaPredictionAccuracyLog.realized_return_pct.is_(None),
+                )
+            ).all()
+        )
+        if not pending_logs:
+            return 0
+
+        observation_ids = sorted(
+            {
+                str(log.signal_observation_id)
+                for log in pending_logs
+                if isinstance(log.signal_observation_id, str) and log.signal_observation_id
+            }
+        )
+        if not observation_ids:
+            return 0
+
+        realized_observations = {
+            observation.id: observation
+            for observation in sess.scalars(
+                select(BetaSignalObservation).where(
+                    BetaSignalObservation.id.in_(observation_ids),
+                    BetaSignalObservation.realized_return_pct.is_not(None),
+                    BetaSignalObservation.realized_at.is_not(None),
+                )
+            ).all()
+        }
+
+        for prediction_log in pending_logs:
+            observation = realized_observations.get(str(prediction_log.signal_observation_id))
+            if observation is None or observation.realized_return_pct is None or observation.realized_at is None:
+                continue
+
+            try:
+                BetaPredictionAccuracyService.update_realized_outcome(
+                    prediction_log_id=prediction_log.id,
+                    realized_return_pct=observation.realized_return_pct,
+                    realization_time=observation.realized_at,
+                )
+                updated += 1
+            except Exception:
+                # Continue processing other observations if one fails
+                continue
+
+        return updated

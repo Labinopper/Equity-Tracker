@@ -657,27 +657,41 @@
   function updateFreshnessTimers() {
     var now = new Date();
     document.querySelectorAll("[data-freshness-live='1']").forEach(function (el) {
-      var changedAtRaw = el.getAttribute("data-changed-at");
-      if (!changedAtRaw) {
+      var refreshedAtRaw = el.getAttribute("data-refreshed-at");
+      if (!refreshedAtRaw) {
         return;
       }
-      var changedAt = new Date(changedAtRaw);
-      if (Number.isNaN(changedAt.getTime())) {
+      var refreshedAt = new Date(refreshedAtRaw);
+      if (Number.isNaN(refreshedAt.getTime())) {
         return;
       }
-      var ageSeconds = Math.max(0, Math.floor((now.getTime() - changedAt.getTime()) / 1000));
+      var ageSeconds = Math.max(0, Math.floor((now.getTime() - refreshedAt.getTime()) / 1000));
       var staleMinutes = Number.parseInt(el.getAttribute("data-stale-minutes") || "20", 10);
       var isWarning = ageSeconds >= (staleMinutes * 60);
       el.textContent = "Updated " + formatFreshnessAge(ageSeconds) + " ago";
       el.classList.toggle("daily-change-meta--warning", isWarning);
       el.classList.toggle("daily-change-meta--ok", !isWarning);
-      el.title = "Price last changed at " +
-        changedAt.getUTCFullYear() + "-" +
-        String(changedAt.getUTCMonth() + 1).padStart(2, "0") + "-" +
-        String(changedAt.getUTCDate()).padStart(2, "0") + " " +
-        String(changedAt.getUTCHours()).padStart(2, "0") + ":" +
-        String(changedAt.getUTCMinutes()).padStart(2, "0") + ":" +
-        String(changedAt.getUTCSeconds()).padStart(2, "0") + " UTC";
+      var title = "Price feed last refreshed at " +
+        refreshedAt.getUTCFullYear() + "-" +
+        String(refreshedAt.getUTCMonth() + 1).padStart(2, "0") + "-" +
+        String(refreshedAt.getUTCDate()).padStart(2, "0") + " " +
+        String(refreshedAt.getUTCHours()).padStart(2, "0") + ":" +
+        String(refreshedAt.getUTCMinutes()).padStart(2, "0") + ":" +
+        String(refreshedAt.getUTCSeconds()).padStart(2, "0") + " UTC";
+      var changedAtRaw = el.getAttribute("data-price-changed-at");
+      if (changedAtRaw) {
+        var changedAt = new Date(changedAtRaw);
+        if (!Number.isNaN(changedAt.getTime()) && changedAt.getTime() !== refreshedAt.getTime()) {
+          title += " | Displayed price last changed at " +
+            changedAt.getUTCFullYear() + "-" +
+            String(changedAt.getUTCMonth() + 1).padStart(2, "0") + "-" +
+            String(changedAt.getUTCDate()).padStart(2, "0") + " " +
+            String(changedAt.getUTCHours()).padStart(2, "0") + ":" +
+            String(changedAt.getUTCMinutes()).padStart(2, "0") + ":" +
+            String(changedAt.getUTCSeconds()).padStart(2, "0") + " UTC";
+        }
+      }
+      el.title = title;
     });
   }
 

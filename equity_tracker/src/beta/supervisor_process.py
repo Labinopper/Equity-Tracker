@@ -27,6 +27,11 @@ from .services.intraday_focus_backfill_service import BetaIntradayFocusBackfillS
 from .services.intraday_simulated_trade_service import BetaIntradaySimulatedTradeService
 from .services.intraday_bar_fetch_service import BetaIntradayBarFetchService
 from .services.intraday_outlook_service import BetaIntradayOutlookService
+from .services.intraday_pattern_exploration_learning_service import BetaIntradayPatternExplorationLearningService
+from .services.intraday_pattern_execution_learning_service import BetaIntradayPatternExecutionLearningService
+from .services.intraday_pattern_exploration_service import BetaIntradayPatternExplorationService
+from .services.intraday_pattern_parameter_learning_service import BetaIntradayPatternParameterLearningService
+from .services.intraday_pattern_threshold_learning_service import BetaIntradayPatternThresholdLearningService
 from .services.intraday_priority_service import BetaIntradayPriorityService
 from .services.instrument_statistics_service import BetaInstrumentStatisticsService
 from .services.filing_service import BetaFilingService
@@ -50,6 +55,7 @@ from .services.scoring_service import BetaScoringService
 from .services.session_service import BetaMarketSessionService
 from .services.storage_governance_service import BetaStorageGovernanceService
 from .services.training_service import BetaTrainingService
+from .services.prediction_accuracy_service import BetaPredictionAccuracyService
 from .settings import BetaSettings
 
 _STOP_EVENT = threading.Event()
@@ -249,9 +255,14 @@ def _run_job(*, job_name: str, job_type: str, op):
             traceback_text=traceback.format_exc(),
         )
         return None
+    job_status = "SUCCESS"
+    if isinstance(result, dict):
+        requested_status = str(result.get("job_status") or "").strip().upper()
+        if requested_status in {"SUCCESS", "SKIPPED", "FAILED", "INTERRUPTED"}:
+            job_status = requested_status
     BetaRuntimeService.finish_job_run(
         job_run_id,
-        status="SUCCESS",
+        status=job_status,
         details=result if isinstance(result, dict) else {"result": result},
     )
     BetaRuntimeService.touch_supervisor_status(
@@ -259,6 +270,38 @@ def _run_job(*, job_name: str, job_type: str, op):
         supervisor_pid=os.getpid(),
     )
     return result
+
+
+def _run_prediction_calibration_job() -> dict[str, object] | None:
+    calibration_result = _run_job(
+        job_name="beta_prediction_calibration",
+        job_type="accuracy_tracking",
+        op=lambda: BetaPredictionAccuracyService.compute_calibration_metrics(
+            lookback_days=30,
+        ),
+    )
+    if calibration_result is None or calibration_result.get("error"):
+        return calibration_result
+
+    total_predictions = sum(
+        band_data.get("count", 0)
+        for band_data in calibration_result.get("by_confidence_band", {}).values()
+        if isinstance(band_data, dict)
+    )
+    if total_predictions <= 0:
+        return calibration_result
+
+    overall_accuracy = calibration_result.get("overall", {}).get("directional_accuracy_pct", 0)
+    BetaRuntimeService.record_notification(
+        notification_type="accuracy_tracking",
+        severity="INFO",
+        title="Prediction calibration computed",
+        message_text=(
+            f"Analyzed {total_predictions} predictions over 30 days. "
+            f"Overall directional accuracy: {overall_accuracy:.1f}%."
+        ),
+    )
+    return calibration_result
 
 
 def _record_cycle_exception(*, exc: BaseException) -> None:
@@ -321,6 +364,8 @@ def _run_supervisor_cycle(
     next_bar_backfill_at: datetime,
     next_storage_cleanup_at: datetime,
 ) -> dict[str, datetime]:
+    intraday_only_mode = bool(getattr(settings, "intraday_only_mode", False))
+
     if not settings.enabled or settings.mode == "OFF" or not settings.background_jobs_enabled:
         return {
             "next_reference_sync_at": next_reference_sync_at,
@@ -525,62 +570,67 @@ def _run_supervisor_cycle(
         next_storage_cleanup_at = now + timedelta(hours=24)
 
     if settings.observation_enabled and now >= next_observation_at and not market_open_light_mode:
-        observation_result = _run_job(
-            job_name="beta_daily_observation_sync",
-            job_type="observation",
-            op=lambda: {
-                "daily": BetaObservationService.sync_daily_bars(),
-                "intraday": BetaObservationService.sync_intraday_snapshots(),
-                "corpus": BetaCorpusService.backfill_market_corpus(
-                    batch_size=_CORPUS_BACKFILL_BATCH_SIZE,
-                    include_benchmarks=True,
-                ),
-            },
-        )
-        if observation_result is not None:
-            corpus_result = observation_result.get("corpus", {})
-            if corpus_result.get("instrument_bars_added") or corpus_result.get("benchmarks_added"):
-                BetaRuntimeService.record_notification(
-                    notification_type="corpus",
-                    severity="INFO",
-                    title="Beta corpus backfill progressed",
-                    message_text=(
-                        f"Added {corpus_result.get('instrument_bars_added', 0)} daily bars across "
-                        f"{corpus_result.get('instruments_backfilled', 0)} instruments and "
-                        f"{corpus_result.get('benchmarks_added', 0)} benchmark bars."
+        if intraday_only_mode:
+            next_observation_at = now + timedelta(
+                minutes=max(5, int(getattr(settings, "intraday_focus_symbol_cadence_minutes", 5)))
+            )
+        else:
+            observation_result = _run_job(
+                job_name="beta_daily_observation_sync",
+                job_type="observation",
+                op=lambda: {
+                    "daily": BetaObservationService.sync_daily_bars(),
+                    "intraday": BetaObservationService.sync_intraday_snapshots(),
+                    "corpus": BetaCorpusService.backfill_market_corpus(
+                        batch_size=_CORPUS_BACKFILL_BATCH_SIZE,
+                        include_benchmarks=True,
                     ),
-                )
-        _run_job(
-            job_name="beta_tracked_core_feature_build",
-            job_type="feature_store",
-            op=BetaFeatureService.generate_core_tracked_features,
-        )
-        _run_job(
-            job_name="beta_tracked_core_label_build",
-            job_type="label_store",
-            op=BetaLabelService.generate_core_tracked_labels,
-        )
-        _run_job(
-            job_name="beta_feature_backlog_build",
-            job_type="feature_store",
-            op=lambda: BetaFeatureService.generate_feature_backlog(batch_size=_FEATURE_BACKLOG_BATCH_SIZE),
-        )
-        _run_job(
-            job_name="beta_label_backlog_build",
-            job_type="label_store",
-            op=lambda: BetaLabelService.generate_label_backlog(batch_size=_LABEL_BACKLOG_BATCH_SIZE),
-        )
-        _run_job(
-            job_name="beta_research_universe_refresh",
-            job_type="reference",
-            op=lambda: BetaReferenceService.refresh_research_membership_states(
-                refill_if_needed=bool(
-                    observation_result
-                    and observation_result.get("corpus", {}).get("instruments_retired", 0)
-                )
-            ),
-        )
-        next_observation_at = now + timedelta(minutes=1)
+                },
+            )
+            if observation_result is not None:
+                corpus_result = observation_result.get("corpus", {})
+                if corpus_result.get("instrument_bars_added") or corpus_result.get("benchmarks_added"):
+                    BetaRuntimeService.record_notification(
+                        notification_type="corpus",
+                        severity="INFO",
+                        title="Beta corpus backfill progressed",
+                        message_text=(
+                            f"Added {corpus_result.get('instrument_bars_added', 0)} daily bars across "
+                            f"{corpus_result.get('instruments_backfilled', 0)} instruments and "
+                            f"{corpus_result.get('benchmarks_added', 0)} benchmark bars."
+                        ),
+                    )
+            _run_job(
+                job_name="beta_tracked_core_feature_build",
+                job_type="feature_store",
+                op=BetaFeatureService.generate_core_tracked_features,
+            )
+            _run_job(
+                job_name="beta_tracked_core_label_build",
+                job_type="label_store",
+                op=BetaLabelService.generate_core_tracked_labels,
+            )
+            _run_job(
+                job_name="beta_feature_backlog_build",
+                job_type="feature_store",
+                op=lambda: BetaFeatureService.generate_feature_backlog(batch_size=_FEATURE_BACKLOG_BATCH_SIZE),
+            )
+            _run_job(
+                job_name="beta_label_backlog_build",
+                job_type="label_store",
+                op=lambda: BetaLabelService.generate_label_backlog(batch_size=_LABEL_BACKLOG_BATCH_SIZE),
+            )
+            _run_job(
+                job_name="beta_research_universe_refresh",
+                job_type="reference",
+                op=lambda: BetaReferenceService.refresh_research_membership_states(
+                    refill_if_needed=bool(
+                        observation_result
+                        and observation_result.get("corpus", {}).get("instruments_retired", 0)
+                    )
+                ),
+            )
+            next_observation_at = now + timedelta(minutes=1)
     elif settings.observation_enabled and now >= next_observation_at and market_open_light_mode:
         next_observation_at = now + _MARKET_OPEN_OBSERVATION_DEFER
 
@@ -605,7 +655,7 @@ def _run_supervisor_cycle(
             "next_storage_cleanup_at": next_storage_cleanup_at,
         }
 
-    if settings.shadow_scoring_enabled and now >= next_core_scoring_at:
+    if not intraday_only_mode and settings.shadow_scoring_enabled and now >= next_core_scoring_at:
         _run_job(
             job_name="beta_tracked_core_shadow_cycle",
             job_type="scoring",
@@ -619,7 +669,7 @@ def _run_supervisor_cycle(
             )
         )
 
-    if settings.shadow_scoring_enabled and now >= next_scoring_at and not market_open_light_mode:
+    if not intraday_only_mode and settings.shadow_scoring_enabled and now >= next_scoring_at and not market_open_light_mode:
         scoring_result = _run_job(
             job_name="beta_daily_shadow_cycle",
             job_type="scoring",
@@ -692,99 +742,215 @@ def _run_supervisor_cycle(
                     f"{review_result.get('findings', 0)} findings."
                 ),
             )
+
+        _run_prediction_calibration_job()
         next_scoring_at = now + timedelta(minutes=max(1, settings.shadow_default_cadence_minutes))
-    elif settings.shadow_scoring_enabled and now >= next_scoring_at and market_open_light_mode:
+    elif not intraday_only_mode and settings.shadow_scoring_enabled and now >= next_scoring_at and market_open_light_mode:
         next_scoring_at = now + _MARKET_OPEN_FULL_SCORING_DEFER
 
     if settings.learning_enabled and now >= next_hypothesis_research_at and not market_open_light_mode:
-        execution_discovery_result = _run_job(
-            job_name="beta_execution_hypothesis_discovery",
-            job_type="research_registry",
-            op=lambda: BetaExecutionHypothesisDiscoveryService.run_discovery(settings),
-        )
-        execution_backtest_result = _run_job(
-            job_name="beta_execution_hypothesis_backtests",
-            job_type="research_registry",
-            op=lambda: BetaExecutionHypothesisBacktestService.refresh_backtests(settings),
-        )
-        execution_belief_result = _run_job(
-            job_name="beta_execution_hypothesis_belief_refresh",
-            job_type="research_registry",
-            op=lambda: BetaExecutionHypothesisBeliefService.refresh_belief_states(settings),
-        )
-        if execution_discovery_result is not None and execution_discovery_result.get("candidates_promoted"):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Execution hypotheses discovered",
-                message_text=(
-                    f"Promoted {execution_discovery_result.get('candidates_promoted', 0)} generated intraday execution hypotheses; "
-                    f"screened in {execution_discovery_result.get('candidates_screened_in', 0)}."
-                ),
+        execution_backtest_result = None
+        execution_belief_result = None
+        if settings.intraday_execution_hypothesis_research_enabled:
+            execution_discovery_result = _run_job(
+                job_name="beta_execution_hypothesis_discovery",
+                job_type="research_registry",
+                op=lambda: BetaExecutionHypothesisDiscoveryService.run_discovery(settings),
             )
-        if execution_belief_result is not None and (
-            execution_belief_result.get("validated_definitions") or execution_belief_result.get("promising_definitions")
-        ):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Execution hypothesis beliefs refreshed",
-                message_text=(
-                    f"Validated {execution_belief_result.get('validated_definitions', 0)} execution definitions; "
-                    f"promising {execution_belief_result.get('promising_definitions', 0)}. "
-                    f"Backtests written {execution_backtest_result.get('test_runs_written', 0) if execution_backtest_result is not None else 0}."
-                ),
+            if execution_discovery_result is not None and execution_discovery_result.get("job_status") == "SKIPPED":
+                execution_backtest_result = _run_job(
+                    job_name="beta_execution_hypothesis_backtests",
+                    job_type="research_registry",
+                    op=lambda: {
+                        "job_status": "SKIPPED",
+                        "reason": "execution_discovery_inputs_unchanged",
+                        "test_runs_written": 0,
+                    },
+                )
+                execution_belief_result = _run_job(
+                    job_name="beta_execution_hypothesis_belief_refresh",
+                    job_type="research_registry",
+                    op=lambda: {
+                        "job_status": "SKIPPED",
+                        "reason": "execution_discovery_inputs_unchanged",
+                        "beliefs_written": 0,
+                    },
+                )
+            else:
+                execution_backtest_result = _run_job(
+                    job_name="beta_execution_hypothesis_backtests",
+                    job_type="research_registry",
+                    op=lambda: BetaExecutionHypothesisBacktestService.refresh_backtests(settings),
+                )
+                execution_belief_result = _run_job(
+                    job_name="beta_execution_hypothesis_belief_refresh",
+                    job_type="research_registry",
+                    op=lambda: BetaExecutionHypothesisBeliefService.refresh_belief_states(settings),
+                )
+            if execution_discovery_result is not None and execution_discovery_result.get("candidates_promoted"):
+                BetaRuntimeService.record_notification(
+                    notification_type="hypothesis_registry",
+                    severity="INFO",
+                    title="Execution hypotheses discovered",
+                    message_text=(
+                        f"Promoted {execution_discovery_result.get('candidates_promoted', 0)} generated intraday execution hypotheses; "
+                        f"screened in {execution_discovery_result.get('candidates_screened_in', 0)}."
+                    ),
+                )
+            if execution_belief_result is not None and (
+                execution_belief_result.get("validated_definitions") or execution_belief_result.get("promising_definitions")
+            ):
+                BetaRuntimeService.record_notification(
+                    notification_type="hypothesis_registry",
+                    severity="INFO",
+                    title="Execution hypothesis beliefs refreshed",
+                    message_text=(
+                        f"Validated {execution_belief_result.get('validated_definitions', 0)} execution definitions; "
+                        f"promising {execution_belief_result.get('promising_definitions', 0)}. "
+                        f"Backtests written {execution_backtest_result.get('test_runs_written', 0) if execution_backtest_result is not None else 0}."
+                    ),
+                )
+
+        if settings.intraday_pattern_exploration_enabled:
+            exploration_learning_result = _run_job(
+                job_name="beta_intraday_pattern_exploration_learning",
+                job_type="research_registry",
+                op=lambda: BetaIntradayPatternExplorationLearningService.learn_exploration_profile(settings),
             )
-        _run_job(
-            job_name="beta_hypothesis_definition_seed",
-            job_type="research_registry",
-            op=BetaHypothesisDefinitionService.ensure_default_research_objects,
-        )
-        _run_job(
-            job_name="beta_hypothesis_discovery",
-            job_type="research_registry",
-            op=lambda: BetaHypothesisDiscoveryService.run_discovery(settings),
-        )
-        backtest_result = _run_job(
-            job_name="beta_hypothesis_backtests",
-            job_type="research_registry",
-            op=BetaHypothesisBacktestService.refresh_backtests,
-        )
-        belief_result = _run_job(
-            job_name="beta_hypothesis_belief_refresh",
-            job_type="research_registry",
-            op=BetaHypothesisBeliefService.refresh_belief_states,
-        )
-        hypothesis_refresh = _run_job(
-            job_name="beta_hypothesis_refresh",
-            job_type="research_registry",
-            op=BetaHypothesisService.refresh_hypotheses,
-        )
-        if hypothesis_refresh is not None and hypothesis_refresh.get("changed"):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Hypothesis registry changed",
-                message_text=(
-                    f"Changed {hypothesis_refresh.get('changed', 0)} family states; "
-                    f"promoted {hypothesis_refresh.get('promoted', 0)}, suspended "
-                    f"{hypothesis_refresh.get('suspended', 0)}."
-                ),
+            if exploration_learning_result is not None and exploration_learning_result.get("profile_created"):
+                BetaRuntimeService.record_notification(
+                    notification_type="research_registry",
+                    severity="INFO",
+                    title="Intraday exploration profile refreshed",
+                    message_text=(
+                        f"Learned exploration profile across "
+                        f"{exploration_learning_result.get('distinct_family_count', 0)} families with "
+                        f"context depth {exploration_learning_result.get('recommended_max_context_depth', 0)}."
+                    ),
+                )
+            threshold_result = _run_job(
+                job_name="beta_intraday_pattern_threshold_learning",
+                job_type="research_registry",
+                op=lambda: BetaIntradayPatternThresholdLearningService.learn_threshold_profile(settings),
             )
-        if belief_result is not None and (
-            belief_result.get("validated_definitions") or belief_result.get("promising_definitions")
-        ):
-            BetaRuntimeService.record_notification(
-                notification_type="hypothesis_registry",
-                severity="INFO",
-                title="Hypothesis beliefs refreshed",
-                message_text=(
-                    f"Validated {belief_result.get('validated_definitions', 0)} definitions; "
-                    f"promising {belief_result.get('promising_definitions', 0)}. "
-                    f"Backtests written {backtest_result.get('test_runs_written', 0) if backtest_result is not None else 0}."
-                ),
+            if threshold_result is not None and threshold_result.get("profile_created"):
+                BetaRuntimeService.record_notification(
+                    notification_type="research_registry",
+                    severity="INFO",
+                    title="Intraday pattern thresholds refreshed",
+                    message_text=(
+                        f"Learned intraday thresholds from "
+                        f"{threshold_result.get('observation_count', 0)} labeled observations across "
+                        f"{threshold_result.get('distinct_instrument_count', 0)} instruments."
+                    ),
+                )
+            pattern_result = _run_job(
+                job_name="beta_intraday_pattern_exploration",
+                job_type="research_registry",
+                op=lambda: BetaIntradayPatternExplorationService.run_exploration(settings),
             )
-        next_hypothesis_research_at = now + timedelta(hours=1)
+            if pattern_result is not None and pattern_result.get("patterns_screened_in"):
+                BetaRuntimeService.record_notification(
+                    notification_type="research_registry",
+                    severity="INFO",
+                    title="Intraday pattern exploration refreshed",
+                    message_text=(
+                        f"Generated {pattern_result.get('patterns_generated', 0)} intraday patterns and "
+                        f"screened in {pattern_result.get('patterns_screened_in', 0)} over "
+                        f"{pattern_result.get('labeled_observations', 0)} labeled observations."
+                    ),
+                )
+            policy_result = _run_job(
+                job_name="beta_intraday_pattern_policy_learning",
+                job_type="research_registry",
+                op=lambda: BetaIntradayPatternParameterLearningService.learn_policy_profile(settings),
+            )
+            if policy_result is not None and policy_result.get("profile_created"):
+                BetaRuntimeService.record_notification(
+                    notification_type="research_registry",
+                    severity="INFO",
+                    title="Intraday pattern policy refreshed",
+                    message_text=(
+                        f"Learned {policy_result.get('source_mode', 'policy')} approval policy "
+                        f"with top {policy_result.get('recommended_top_n', 0)} pockets and "
+                        f"max {policy_result.get('recommended_max_open_trades', 0)} open live-forward trades."
+                    ),
+                )
+            execution_result = _run_job(
+                job_name="beta_intraday_pattern_execution_learning",
+                job_type="research_registry",
+                op=lambda: BetaIntradayPatternExecutionLearningService.learn_execution_profile(settings),
+            )
+            if execution_result is not None and execution_result.get("profile_created"):
+                BetaRuntimeService.record_notification(
+                    notification_type="research_registry",
+                    severity="INFO",
+                    title="Intraday execution profile refreshed",
+                    message_text=(
+                        f"Learned execution profile with target x{execution_result.get('recommended_target_capture_ratio', 1.0)} "
+                        f"and hold x{execution_result.get('recommended_max_hold_ratio', 1.0)}."
+                    ),
+                )
+
+        if intraday_only_mode:
+            _run_prediction_calibration_job()
+        else:
+            _run_job(
+                job_name="beta_hypothesis_definition_seed",
+                job_type="research_registry",
+                op=BetaHypothesisDefinitionService.ensure_default_research_objects,
+            )
+            _run_job(
+                job_name="beta_hypothesis_discovery",
+                job_type="research_registry",
+                op=lambda: BetaHypothesisDiscoveryService.run_discovery(settings),
+            )
+            backtest_result = _run_job(
+                job_name="beta_hypothesis_backtests",
+                job_type="research_registry",
+                op=BetaHypothesisBacktestService.refresh_backtests,
+            )
+            belief_result = _run_job(
+                job_name="beta_hypothesis_belief_refresh",
+                job_type="research_registry",
+                op=BetaHypothesisBeliefService.refresh_belief_states,
+            )
+            hypothesis_refresh = _run_job(
+                job_name="beta_hypothesis_refresh",
+                job_type="research_registry",
+                op=BetaHypothesisService.refresh_hypotheses,
+            )
+            if hypothesis_refresh is not None and hypothesis_refresh.get("changed"):
+                BetaRuntimeService.record_notification(
+                    notification_type="hypothesis_registry",
+                    severity="INFO",
+                    title="Hypothesis registry changed",
+                    message_text=(
+                        f"Changed {hypothesis_refresh.get('changed', 0)} family states; "
+                        f"promoted {hypothesis_refresh.get('promoted', 0)}, suspended "
+                        f"{hypothesis_refresh.get('suspended', 0)}."
+                    ),
+                )
+            if belief_result is not None and (
+                belief_result.get("validated_definitions") or belief_result.get("promising_definitions")
+            ):
+                BetaRuntimeService.record_notification(
+                    notification_type="hypothesis_registry",
+                    severity="INFO",
+                    title="Hypothesis beliefs refreshed",
+                    message_text=(
+                        f"Validated {belief_result.get('validated_definitions', 0)} definitions; "
+                        f"promising {belief_result.get('promising_definitions', 0)}. "
+                        f"Backtests written {backtest_result.get('test_runs_written', 0) if backtest_result is not None else 0}."
+                    ),
+                )
+        next_hypothesis_research_at = now + timedelta(
+            minutes=(
+                max(5, int(getattr(settings, "intraday_pattern_research_cadence_minutes", 30)))
+                if intraday_only_mode
+                else 60
+            )
+        )
     elif settings.learning_enabled and now >= next_hypothesis_research_at and market_open_light_mode:
         next_hypothesis_research_at = now + _MARKET_OPEN_RESEARCH_DEFER
 

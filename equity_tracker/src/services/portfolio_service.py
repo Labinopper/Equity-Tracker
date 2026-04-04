@@ -90,9 +90,15 @@ class SIPQualifyingStatus:
     """
     SIP income-tax qualifying period status for a single SIP lot.
 
-    category       : UNDER_THREE_YEARS, THREE_TO_FIVE_YEARS, or FIVE_PLUS_YEARS
+    category       : Under-3 / 3-5 / 5+ for partnership & matching shares.
+                     SIP_DIVIDEND uses UNDER_THREE_YEARS before the 3-year
+                     point and FIVE_PLUS_YEARS afterwards because dividend
+                     shares fully mature after 3 years.
     three_year_date: Date when the 3-year threshold is crossed
-    five_year_date : Date when the 5-year threshold is crossed
+    five_year_date : Date when the 5-year threshold is crossed. For
+                     SIP_DIVIDEND, this is set to the same date as the
+                     3-year threshold so downstream milestone logic stops
+                     at the point dividend shares become fully tax-free.
     """
     category: SIPHoldingPeriodCategory
     three_year_date: date
@@ -754,8 +760,8 @@ def _forfeiture_risk_for_lot(lot: Lot, as_of: date) -> ForfeitureRisk | None:
 
 
 # All scheme types that follow SIP-style holding period tax rules.
-# ESPP (partnership) and ESPP_PLUS (matching) shares are held in a UK SIP trust
-# and follow the same 0–3yr / 3–5yr / 5yr+ income-tax treatment as SIP_* lots.
+# SIP_DIVIDEND is included here for portfolio milestone visibility, but its
+# tax window ends fully at 3 years rather than following the generic 5-year path.
 _SIP_LIKE_SCHEMES = frozenset({
     "ESPP_PLUS", "SIP_PARTNERSHIP", "SIP_MATCHING", "SIP_DIVIDEND"
 })
@@ -782,6 +788,17 @@ def _sip_qualifying_status_for_lot(lot: Lot, as_of: date) -> SIPQualifyingStatus
     except ValueError:
         three_yr = acq.replace(year=acq.year + 3, day=28)
         five_yr = acq.replace(year=acq.year + 5, day=28)
+    if lot.scheme_type == "SIP_DIVIDEND":
+        cat = (
+            SIPHoldingPeriodCategory.UNDER_THREE_YEARS
+            if as_of < three_yr
+            else SIPHoldingPeriodCategory.FIVE_PLUS_YEARS
+        )
+        return SIPQualifyingStatus(
+            category=cat,
+            three_year_date=three_yr,
+            five_year_date=three_yr,
+        )
     if as_of < three_yr:
         cat = SIPHoldingPeriodCategory.UNDER_THREE_YEARS
     elif as_of < five_yr:

@@ -26,6 +26,7 @@ from .intraday_outlook_service import BetaIntradayOutlookService
 from .intraday_priority_service import BetaIntradayPriorityService, IntradayPriorityItem
 from .observation_service import BetaObservationService
 from .position_registry import BetaPositionRegistry
+from .prediction_accuracy_service import BetaPredictionAccuracyService
 
 
 def _utcnow() -> datetime:
@@ -301,6 +302,7 @@ class BetaExecutionSignalService:
                 ):
                     continue
                 sess.add(signal)
+                sess.flush()
                 position.last_execution_signal_type = signal.signal_type
                 position.last_execution_signal_at = now
                 BetaExecutionSignalService._maybe_record_state_change_notification(
@@ -309,6 +311,27 @@ class BetaExecutionSignalService:
                     signal=signal,
                     previous_signal=last_signal,
                 )
+                
+                # Log prediction for accuracy tracking (intraday execution signals)
+                if matched_definition is not None and signal.signal_type != "NO_ACTION":
+                    try:
+                        # Estimate predicted return based on signal type and confidence
+                        predicted_return_pct = BetaExecutionSignalService._estimate_predicted_return(
+                            signal_type=signal.signal_type,
+                            confidence_score=signal.confidence_score,
+                        )
+                        BetaPredictionAccuracyService.log_prediction(
+                            hypothesis_definition_id=matched_definition.id,
+                            execution_signal_id=signal.id,
+                            predicted_return_pct=predicted_return_pct,
+                            confidence_score=signal.confidence_score,
+                            prediction_time=now,
+                            horizon_days=1,  # Intraday signals have 1-day horizon
+                        )
+                    except Exception:
+                        # Don't fail signal generation if prediction logging fails
+                        pass
+                
                 signals_created += 1
 
             return {
@@ -514,3 +537,28 @@ class BetaExecutionSignalService:
                 if base_rationale
                 else f"Outlook guardrail suppressed action because {reason_text}."
             )
+
+    @staticmethod
+    def _estimate_predicted_return(signal_type: str, confidence_score: float) -> float:
+        """Estimate predicted return based on signal type and confidence.
+        
+        This is a heuristic for intraday execution signals where we don't have
+        explicit return predictions. The return estimate is based on:
+        - Signal type (bullish vs bearish)
+        - Confidence score (higher confidence = larger expected move)
+        """
+        # Base return expectations by signal type
+        signal_returns = {
+            "HOLD_THROUGH_NOISE": 0.5,  # Expect small positive continuation
+            "TRIM_ON_STRENGTH": -0.3,  # Expect pullback after strength
+            "SELL_INTO_REBOUND": -1.0,  # Expect continued weakness
+            "AVOID_SELLING_INTO_PANIC": 1.5,  # Expect bounce from oversold
+            "WAIT_FOR_CLOSE_CONFIRMATION": 0.0,  # Neutral, waiting for clarity
+        }
+        
+        base_return = signal_returns.get(signal_type, 0.0)
+        
+        # Scale by confidence (0.5-1.0 confidence maps to 0.5-1.5x multiplier)
+        confidence_multiplier = 0.5 + (confidence_score * 1.0)
+        
+        return base_return * confidence_multiplier

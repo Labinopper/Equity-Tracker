@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from statistics import median, pstdev
 from typing import Any
 
@@ -22,6 +22,10 @@ from ..settings import BetaSettings
 from ..state import get_beta_db_path
 from .execution_economic_annotation_service import BetaExecutionEconomicAnnotationService
 from .execution_hypothesis_service import BetaExecutionHypothesisService
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(frozen=True)
@@ -127,7 +131,9 @@ class BetaExecutionHypothesisBacktestService:
 
     @staticmethod
     def load_dataset(sess, *, settings: BetaSettings) -> list[_ExecutionDatasetRow]:
-        history_cutoff = datetime.utcnow() - timedelta(days=max(1, int(settings.intraday_execution_hypothesis_history_days)))
+        history_cutoff = _utcnow() - timedelta(
+            days=max(1, int(settings.intraday_execution_hypothesis_history_days))
+        )
         rows: list[_ExecutionDatasetRow] = []
         query = (
             select(BetaExecutionSignal, BetaExecutionLabelValue)

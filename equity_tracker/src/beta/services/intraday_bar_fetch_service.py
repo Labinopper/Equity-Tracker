@@ -40,6 +40,10 @@ _EXCHANGE_TIMEZONES: dict[str, str] = {
 }
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _api_key() -> str | None:
     return os.environ.get("EQUITY_TWELVE_DATA_API_KEY", "").strip() or None
 
@@ -174,7 +178,7 @@ class BetaIntradayBarFetchService:
         instruments_backfilled = 0
         errors: list[str] = []
         usd_rate_cache: dict[date, Decimal | None] = {}
-        cutoff_dt = datetime.utcnow().replace(microsecond=0) - timedelta(days=target_days)
+        cutoff_dt = _utcnow().replace(microsecond=0) - timedelta(days=target_days)
 
         with BetaContext.write_session() as sess:
             instruments = {

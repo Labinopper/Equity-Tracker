@@ -419,6 +419,24 @@ def _stock_reinvestment_scheme_for_scope(holding_scope: str) -> str:
     )
 
 
+def _reinvestment_display_name(
+    *,
+    holding_scope: str | None,
+    reinvestment_scheme_type: str | None,
+) -> str | None:
+    normalized_scope = (holding_scope or "").strip().upper()
+    normalized_scheme = (reinvestment_scheme_type or "").strip().upper()
+    if not normalized_scheme:
+        return None
+    if normalized_scheme == "SIP_DIVIDEND":
+        if normalized_scope:
+            return f"{_holding_bucket_label(normalized_scope)} Dividend"
+        return "SIP Dividend"
+    if normalized_scope:
+        return f"{_holding_bucket_label(normalized_scope)} Reinvestment"
+    return _holding_bucket_label(normalized_scheme)
+
+
 def _eligible_quantities_by_holding_bucket_on_ex_date(
     *,
     security_id: str,
@@ -1049,6 +1067,7 @@ class DividendService:
             fx_rate_at_acquisition=resolved_fx,
             fx_rate_source=normalized_fx_source,
             external_id=external_id,
+            broker_reference=f"{normalized_scope}_DIVIDEND" if scheme_type == "SIP_DIVIDEND" else None,
             import_source="dividend_reinvestment_auto",
             notes=(
                 f"Auto-created from dividend entry {entry_id} "
@@ -1569,6 +1588,14 @@ class DividendService:
                     Decimal(security_bucket["isa_exempt_dividends_gbp"]) + amount
                 )
 
+            lot_group = ib_meta.get("lot_group")
+            holding_scope = _holding_scope_from_lot_group(str(lot_group or ""))
+            reinvestment_scheme_type = ib_meta.get("reinvestment_scheme_type")
+            reinvestment_display_name = _reinvestment_display_name(
+                holding_scope=holding_scope,
+                reinvestment_scheme_type=str(reinvestment_scheme_type or ""),
+            )
+
             entry_rows.append(
                 {
                     "id": entry.id,
@@ -1596,12 +1623,13 @@ class DividendService:
                         _decimal_to_plain_str(_to_decimal(ib_meta.get("stock_quantity_received")))
                     ),
                     "reinvestment_lot_id": ib_meta.get("reinvestment_lot_id"),
-                    "reinvestment_scheme_type": ib_meta.get("reinvestment_scheme_type"),
+                    "reinvestment_scheme_type": reinvestment_scheme_type,
+                    "reinvestment_display_name": reinvestment_display_name,
                     "quantity": ib_meta.get("quantity"),
                     "gross_rate_original_ccy": ib_meta.get("gross_rate_original_ccy"),
                     "ex_date": ib_meta.get("ex_date"),
                     "ib_code": ib_meta.get("ib_code"),
-                    "lot_group": ib_meta.get("lot_group"),
+                    "lot_group": lot_group,
                     "lot_ids": lot_id_values,
                     "lot_link_count": len(lot_id_values),
                     "has_lot_links": bool(lot_id_values),

@@ -7,6 +7,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from typing import Any
 
 from sqlalchemy import desc, func, select
 
@@ -34,6 +35,27 @@ try:
 except Exception:  # pragma: no cover
     _np = None
 
+try:
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+except Exception:  # pragma: no cover
+    Pipeline = None
+    Ridge = None
+    StandardScaler = None
+
+try:
+    from xgboost import XGBRegressor
+except Exception:  # pragma: no cover
+    XGBRegressor = None
+
+try:
+    import statsmodels.api as _sm
+    from statsmodels.tsa.stattools import adfuller as _adfuller
+except Exception:  # pragma: no cover
+    _sm = None
+    _adfuller = None
+
 _log = logging.getLogger(__name__)
 
 
@@ -49,7 +71,7 @@ class BetaTrainingService:
     """Build a compact linear challenger from stored daily features and labels."""
 
     _MODEL_NAME = "daily_ridge_v2"
-    _ALGORITHM = "numpy_ridge_closed_form"
+    _ALGORITHM = "sklearn_standard_scaler_ridge"
     _MIN_ROWS = 60
     _MIN_VALIDATION_ROWS = 20
     _MIN_VALIDATION_DATES = 15
@@ -68,6 +90,8 @@ class BetaTrainingService:
     _SUSPICIOUS_LOW_RETURN_ABS = 0.10
     _STALE_MODEL_RETRAIN_HOURS = 24
     _RIDGE_ALPHA = 2.0
+    _XGBOOST_RANDOM_STATE = 42
+    _MAX_STATS_FEATURES = 40
 
     @staticmethod
     def _record_training_decision(
@@ -452,7 +476,7 @@ class BetaTrainingService:
         }
 
     @staticmethod
-    def _fit_linear_model(
+    def _fit_linear_model_closed_form(
         feature_rows: list[list[float]],
         label_rows: list[float],
     ) -> tuple[float, object, object, object]:
@@ -473,6 +497,34 @@ class BetaTrainingService:
         return intercept, weights, means, scales
 
     @staticmethod
+    def _fit_linear_model(
+        feature_rows: list[list[float]],
+        label_rows: list[float],
+    ) -> tuple[float, object, object, object]:
+        if _np is None:
+            raise RuntimeError("numpy_unavailable")
+        if Pipeline is None or Ridge is None or StandardScaler is None:
+            return BetaTrainingService._fit_linear_model_closed_form(feature_rows, label_rows)
+
+        x_train = _np.array(feature_rows, dtype=float)
+        y_train = _np.array(label_rows, dtype=float)
+        pipeline = Pipeline(
+            steps=[
+                ("scaler", StandardScaler()),
+                ("ridge", Ridge(alpha=BetaTrainingService._RIDGE_ALPHA)),
+            ]
+        )
+        pipeline.fit(x_train, y_train)
+        scaler = pipeline.named_steps["scaler"]
+        ridge = pipeline.named_steps["ridge"]
+        means = _np.asarray(getattr(scaler, "mean_", _np.zeros(x_train.shape[1], dtype=float)), dtype=float)
+        scales = _np.asarray(getattr(scaler, "scale_", _np.ones(x_train.shape[1], dtype=float)), dtype=float)
+        scales = _np.where(scales == 0.0, 1.0, scales)
+        weights = _np.asarray(getattr(ridge, "coef_", _np.zeros(x_train.shape[1], dtype=float)), dtype=float)
+        intercept = float(getattr(ridge, "intercept_", 0.0))
+        return intercept, weights, means, scales
+
+    @staticmethod
     def _predict_rows(
         feature_rows: list[list[float]],
         *,
@@ -486,6 +538,269 @@ class BetaTrainingService:
         return intercept + scaled.dot(weights)
 
     @staticmethod
+    def _benchmark_factories() -> dict[str, Any]:
+        factories: dict[str, Any] = {}
+        if XGBRegressor is not None:
+            factories["xgboost_regressor"] = lambda: XGBRegressor(
+                objective="reg:squarederror",
+                n_estimators=160,
+                max_depth=3,
+                learning_rate=0.05,
+                subsample=0.85,
+                colsample_bytree=0.85,
+                min_child_weight=5.0,
+                reg_lambda=2.0,
+                random_state=BetaTrainingService._XGBOOST_RANDOM_STATE,
+                n_jobs=1,
+                verbosity=0,
+            )
+        return factories
+
+    @staticmethod
+    def _fit_benchmark_predictions(train_matrix, train_labels, eval_matrix) -> dict[str, dict[str, object]]:
+        results: dict[str, dict[str, object]] = {}
+        factories = BetaTrainingService._benchmark_factories()
+        if not factories:
+            results["xgboost_regressor"] = {
+                "available": False,
+                "trained": False,
+                "reason": "xgboost_unavailable",
+            }
+            return results
+
+        for benchmark_name, factory in factories.items():
+            try:
+                estimator = factory()
+                estimator.fit(train_matrix, train_labels)
+                predictions = _np.asarray(estimator.predict(eval_matrix), dtype=float)
+                results[benchmark_name] = {
+                    "available": True,
+                    "trained": True,
+                    "predictions": predictions,
+                }
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                results[benchmark_name] = {
+                    "available": True,
+                    "trained": False,
+                    "error_type": exc.__class__.__name__,
+                    "error": str(exc) or exc.__class__.__name__,
+                }
+        return results
+
+    @staticmethod
+    def _summarize_benchmark_holdout(
+        *,
+        feature_names: list[str],
+        train_matrix,
+        train_labels,
+        evaluation_matrix,
+        evaluation_rows: list[_DatasetRow],
+        actual,
+    ) -> dict[str, dict[str, object]]:
+        baselines = BetaTrainingService._evaluate_baselines(feature_names, evaluation_rows, actual)
+        best_baseline_name = None
+        best_baseline_accuracy = None
+        best_baseline_return = None
+        if baselines:
+            best_baseline_name, best_baseline_summary = max(
+                baselines.items(),
+                key=lambda item: float(item[1].get("sign_accuracy_pct") or 0.0),
+            )
+            best_baseline_accuracy = float(best_baseline_summary.get("sign_accuracy_pct") or 0.0)
+            best_baseline_return = float(best_baseline_summary.get("avg_return_pct") or 0.0)
+
+        summaries: dict[str, dict[str, object]] = {}
+        for benchmark_name, result in BetaTrainingService._fit_benchmark_predictions(
+            train_matrix,
+            train_labels,
+            evaluation_matrix,
+        ).items():
+            summary: dict[str, object] = {
+                "available": bool(result.get("available")),
+                "trained": bool(result.get("trained")),
+                "best_baseline_name": best_baseline_name,
+                "best_baseline_sign_accuracy_pct": best_baseline_accuracy,
+                "best_baseline_return_pct": best_baseline_return,
+            }
+            if not result.get("trained"):
+                if result.get("reason"):
+                    summary["reason"] = result.get("reason")
+                if result.get("error_type"):
+                    summary["error_type"] = result.get("error_type")
+                    summary["error"] = result.get("error")
+                summaries[benchmark_name] = summary
+                continue
+
+            predictions = result["predictions"]
+            metrics = BetaTrainingService._evaluate_predictions(predictions, actual)
+            summary["metrics"] = metrics
+            summary["beats_best_baseline_sign_accuracy"] = (
+                best_baseline_accuracy is not None
+                and float(metrics.get("sign_accuracy_pct") or 0.0) > float(best_baseline_accuracy)
+            )
+            summary["beats_best_baseline_return"] = (
+                best_baseline_return is not None
+                and float(metrics.get("avg_return_pct") or 0.0) > float(best_baseline_return)
+            )
+            summaries[benchmark_name] = summary
+        return summaries
+
+    @staticmethod
+    def _aggregate_benchmark_metrics(
+        windows_by_model: dict[str, list[dict[str, float]]],
+        benchmark_metadata: dict[str, dict[str, object]],
+    ) -> dict[str, dict[str, object]]:
+        metric_names = ("mae", "sign_accuracy_pct", "avg_return_pct", "avg_selected_return_pct", "positive_rate_pct")
+        aggregated: dict[str, dict[str, object]] = {}
+        for benchmark_name, metadata in benchmark_metadata.items():
+            rows = windows_by_model.get(benchmark_name, [])
+            summary: dict[str, object] = {
+                "available": bool(metadata.get("available")),
+                "trained": bool(metadata.get("trained")),
+            }
+            if metadata.get("reason"):
+                summary["reason"] = metadata.get("reason")
+            if metadata.get("error_type"):
+                summary["error_type"] = metadata.get("error_type")
+                summary["error"] = metadata.get("error")
+            if rows:
+                summary["window_count"] = len(rows)
+                for metric_name in metric_names:
+                    decimals = 4 if metric_name in {"mae", "avg_return_pct", "avg_selected_return_pct"} else 2
+                    summary[metric_name] = round(
+                        sum(float(row.get(metric_name) or 0.0) for row in rows) / len(rows),
+                        decimals,
+                    )
+            aggregated[benchmark_name] = summary
+        return aggregated
+
+    @staticmethod
+    def _stationarity_summary(values, *, label: str) -> dict[str, object]:
+        if _adfuller is None:
+            return {"label": label, "available": False, "reason": "statsmodels_unavailable"}
+        if values is None or len(values) < 25:
+            return {"label": label, "available": False, "reason": "insufficient_samples"}
+        try:
+            statistic, pvalue, usedlag, nobs, critical_values, _icbest = _adfuller(values, autolag="AIC")
+        except Exception as exc:  # pragma: no cover - library/data edge case
+            return {
+                "label": label,
+                "available": False,
+                "reason": "adfuller_failed",
+                "error_type": exc.__class__.__name__,
+                "error": str(exc) or exc.__class__.__name__,
+            }
+        return {
+            "label": label,
+            "available": True,
+            "adf_statistic": round(float(statistic), 6),
+            "pvalue": round(float(pvalue), 6),
+            "used_lag": int(usedlag),
+            "observations": int(nobs),
+            "critical_values": {str(key): round(float(value), 6) for key, value in critical_values.items()},
+            "is_stationary_5pct": bool(float(pvalue) <= 0.05),
+        }
+
+    @staticmethod
+    def _regime_slice_summary(feature_names: list[str], feature_matrix, label_vector) -> dict[str, object]:
+        feature_index = {name: idx for idx, name in enumerate(feature_names)}
+        candidate_dimensions = (
+            ("market_regime", ("benchmark_excess_5d_pct", "market_excess_5d_pct", "market_ret_5d_pct")),
+            ("volatility_regime", ("realized_vol_20d_pct", "realized_vol_10d_pct", "ret_vol_20d_pct")),
+        )
+        summary: dict[str, object] = {}
+        for dimension_name, candidates in candidate_dimensions:
+            source_feature = next((name for name in candidates if name in feature_index), None)
+            if source_feature is None:
+                continue
+            values = feature_matrix[:, feature_index[source_feature]]
+            low = float(_np.nanpercentile(values, 33.0))
+            high = float(_np.nanpercentile(values, 67.0))
+            buckets = {
+                "LOW": values <= low,
+                "MID": (values > low) & (values < high),
+                "HIGH": values >= high,
+            }
+            bucket_rows: dict[str, object] = {"source_feature": source_feature}
+            for bucket_name, mask in buckets.items():
+                if not mask.any():
+                    continue
+                bucket_rows[bucket_name] = {
+                    "count": int(mask.sum()),
+                    "mean_label_pct": round(float(_np.mean(label_vector[mask])), 4),
+                    "median_label_pct": round(float(_np.median(label_vector[mask])), 4),
+                }
+            summary[dimension_name] = bucket_rows
+        return summary
+
+    @staticmethod
+    def _statsmodels_sanity_checks(
+        *,
+        feature_names: list[str],
+        feature_matrix,
+        label_vector,
+        predictions,
+    ) -> dict[str, object]:
+        diagnostics: dict[str, object] = {
+            "available": bool(_sm is not None and _adfuller is not None),
+            "regime_slices": BetaTrainingService._regime_slice_summary(feature_names, feature_matrix, label_vector),
+        }
+        if _sm is None or _adfuller is None:
+            diagnostics["reason"] = "statsmodels_unavailable"
+            return diagnostics
+        if len(label_vector) < 25:
+            diagnostics["reason"] = "insufficient_samples"
+            return diagnostics
+
+        feature_limit = min(len(feature_names), BetaTrainingService._MAX_STATS_FEATURES)
+        limited_names = feature_names[:feature_limit]
+        limited_matrix = feature_matrix[:, :feature_limit]
+        scaled_means = limited_matrix.mean(axis=0)
+        scaled_stds = limited_matrix.std(axis=0)
+        scaled_stds = _np.where(scaled_stds == 0.0, 1.0, scaled_stds)
+        scaled_matrix = (limited_matrix - scaled_means) / scaled_stds
+
+        diagnostics["label_stationarity"] = BetaTrainingService._stationarity_summary(label_vector, label="label")
+        diagnostics["residual_stationarity"] = BetaTrainingService._stationarity_summary(
+            label_vector - predictions,
+            label="residual",
+        )
+
+        try:
+            design_matrix = _sm.add_constant(scaled_matrix, has_constant="add")
+            ols_result = _sm.OLS(label_vector, design_matrix).fit(cov_type="HC3")
+            top_features: list[dict[str, object]] = []
+            for index, feature_name in enumerate(limited_names, start=1):
+                top_features.append(
+                    {
+                        "feature_name": feature_name,
+                        "coefficient": round(float(ols_result.params[index]), 6),
+                        "t_stat": round(float(ols_result.tvalues[index]), 6),
+                        "pvalue": round(float(ols_result.pvalues[index]), 6),
+                    }
+                )
+            top_features.sort(key=lambda item: abs(float(item["t_stat"])), reverse=True)
+            significant_feature_count = sum(1 for item in top_features if float(item["pvalue"]) <= 0.05)
+            diagnostics["ols_inference"] = {
+                "feature_count_used": feature_limit,
+                "feature_count_truncated": max(0, len(feature_names) - feature_limit),
+                "r_squared": round(float(ols_result.rsquared), 6),
+                "adj_r_squared": round(float(ols_result.rsquared_adj), 6),
+                "f_pvalue": round(float(ols_result.f_pvalue), 6) if ols_result.f_pvalue is not None else None,
+                "durbin_watson": round(float(_sm.stats.stattools.durbin_watson(ols_result.resid)), 6),
+                "significant_feature_count": int(significant_feature_count),
+                "top_features": top_features[:10],
+            }
+        except Exception as exc:  # pragma: no cover - numerical/library edge case
+            diagnostics["ols_inference"] = {
+                "feature_count_used": feature_limit,
+                "feature_count_truncated": max(0, len(feature_names) - feature_limit),
+                "error_type": exc.__class__.__name__,
+                "error": str(exc) or exc.__class__.__name__,
+            }
+        return diagnostics
+
+    @staticmethod
     def _walk_forward_validate(dataset: list[_DatasetRow], feature_names: list[str]) -> dict[str, object]:
         if _np is None or len(dataset) < (BetaTrainingService._MIN_ROWS + BetaTrainingService._MIN_VALIDATION_ROWS):
             return {
@@ -494,6 +809,7 @@ class BetaTrainingService:
                 "avg_validation_sign_accuracy_pct": None,
                 "avg_validation_return_pct": None,
                 "baseline_summaries": {},
+                "benchmark_summaries": {},
                 "windows": [],
             }
 
@@ -505,6 +821,7 @@ class BetaTrainingService:
                 "avg_validation_sign_accuracy_pct": None,
                 "avg_validation_return_pct": None,
                 "baseline_summaries": {},
+                "benchmark_summaries": {},
                 "windows": [],
             }
 
@@ -529,6 +846,8 @@ class BetaTrainingService:
 
         window_metrics: list[dict[str, object]] = []
         baseline_metrics_by_window: list[dict[str, dict[str, float | str | None]]] = []
+        benchmark_metrics_by_window: dict[str, list[dict[str, float]]] = {}
+        benchmark_metadata: dict[str, dict[str, object]] = {}
         for start_index in candidate_starts:
             train_dates = set(unique_dates[:start_index])
             validation_dates = set(unique_dates[start_index : start_index + validation_window_dates])
@@ -559,6 +878,36 @@ class BetaTrainingService:
             model_metrics = BetaTrainingService._evaluate_predictions(predictions, actual)
             baseline_metrics = BetaTrainingService._evaluate_baselines(feature_names, validation_rows, actual)
             baseline_metrics_by_window.append(baseline_metrics)
+            benchmark_summaries = BetaTrainingService._summarize_benchmark_holdout(
+                feature_names=feature_names,
+                train_matrix=train_matrix,
+                train_labels=y_train,
+                evaluation_matrix=validation_matrix,
+                evaluation_rows=validation_rows,
+                actual=actual,
+            )
+            for benchmark_name, benchmark_summary in benchmark_summaries.items():
+                benchmark_metadata.setdefault(
+                    benchmark_name,
+                    {
+                        "available": bool(benchmark_summary.get("available")),
+                        "trained": bool(benchmark_summary.get("trained")),
+                        "reason": benchmark_summary.get("reason"),
+                        "error_type": benchmark_summary.get("error_type"),
+                        "error": benchmark_summary.get("error"),
+                    },
+                )
+                metrics = benchmark_summary.get("metrics")
+                if isinstance(metrics, dict):
+                    benchmark_metrics_by_window.setdefault(benchmark_name, []).append(
+                        {
+                            "mae": float(metrics.get("mae") or 0.0),
+                            "sign_accuracy_pct": float(metrics.get("sign_accuracy_pct") or 0.0),
+                            "avg_return_pct": float(metrics.get("avg_return_pct") or 0.0),
+                            "avg_selected_return_pct": float(metrics.get("avg_selected_return_pct") or 0.0),
+                            "positive_rate_pct": float(metrics.get("positive_rate_pct") or 0.0),
+                        }
+                    )
             window_metrics.append(
                 {
                     "train_rows": len(train_rows),
@@ -572,6 +921,7 @@ class BetaTrainingService:
                     "avg_selected_return_pct": model_metrics["avg_selected_return_pct"],
                     "positive_rate_pct": model_metrics["positive_rate_pct"],
                     "baselines": baseline_metrics,
+                    "benchmarks": benchmark_summaries,
                 }
             )
 
@@ -582,6 +932,7 @@ class BetaTrainingService:
                 "avg_validation_sign_accuracy_pct": None,
                 "avg_validation_return_pct": None,
                 "baseline_summaries": {},
+                "benchmark_summaries": {},
                 "windows": [],
             }
 
@@ -608,6 +959,10 @@ class BetaTrainingService:
                 4,
             ),
             "baseline_summaries": baseline_summaries,
+            "benchmark_summaries": BetaTrainingService._aggregate_benchmark_metrics(
+                benchmark_metrics_by_window,
+                benchmark_metadata,
+            ),
             "best_baseline_name": best_baseline_name,
             "best_baseline_sign_accuracy_pct": best_baseline_accuracy,
             "best_baseline_return_pct": best_baseline_return,
@@ -981,11 +1336,11 @@ class BetaTrainingService:
                 )
 
             experiment_run = BetaExperimentRun(
-                experiment_name="daily_ridge_training",
+                experiment_name="daily_tabular_training",
                 dataset_version_id=dataset_version.id,
                 label_definition_id=label_def.id,
                 status="RUNNING",
-                summary_text="Training daily ridge challenger on canonical beta label with baseline-aware validation.",
+                summary_text="Training daily tabular challenger with sklearn ridge, XGBoost benchmarks, and statsmodels sanity checks.",
             )
             sess.add(experiment_run)
             sess.flush()
@@ -1012,7 +1367,31 @@ class BetaTrainingService:
             train_metrics = BetaTrainingService._evaluate_predictions(y_train_pred, y_train)
             holdout_metrics = BetaTrainingService._evaluate_predictions(y_val_pred, y_val)
             holdout_baselines = BetaTrainingService._evaluate_baselines(feature_names, validation_rows, y_val)
+            benchmark_holdout_summaries = BetaTrainingService._summarize_benchmark_holdout(
+                feature_names=feature_names,
+                train_matrix=x_train,
+                train_labels=y_train_clipped,
+                evaluation_matrix=x_val,
+                evaluation_rows=validation_rows,
+                actual=y_val,
+            )
+            statsmodels_sanity_checks = BetaTrainingService._statsmodels_sanity_checks(
+                feature_names=feature_names,
+                feature_matrix=x_train,
+                label_vector=y_train,
+                predictions=y_train_pred,
+            )
             confidence_calibration = BetaTrainingService._build_confidence_calibration(y_val_pred, y_val)
+            modeling_stack = {
+                "primary_model": {
+                    "algorithm": BetaTrainingService._ALGORITHM,
+                    "uses_sklearn_pipeline": bool(Pipeline is not None and Ridge is not None and StandardScaler is not None),
+                    "fallback_closed_form": bool(Pipeline is None or Ridge is None or StandardScaler is None),
+                    "ridge_alpha": BetaTrainingService._RIDGE_ALPHA,
+                },
+                "benchmark_challengers": sorted(benchmark_holdout_summaries.keys()),
+                "statsmodels_available": bool(_sm is not None and _adfuller is not None),
+            }
             best_holdout_baseline_name = None
             best_holdout_baseline_accuracy = None
             best_holdout_baseline_return = None
@@ -1056,6 +1435,9 @@ class BetaTrainingService:
                         "feature_clip_highs": [round(float(value), 6) for value in feature_clip_highs],
                         "label_clip_range_pct": [round(float(label_clip_low), 6), round(float(label_clip_high), 6)],
                         "confidence_calibration": confidence_calibration,
+                        "benchmark_challengers": benchmark_holdout_summaries,
+                        "statsmodels_sanity_checks": statsmodels_sanity_checks,
+                        "modeling_stack": modeling_stack,
                         "validated_baseline_policy": validated_baseline_policy,
                     },
                     sort_keys=True,
@@ -1106,7 +1488,7 @@ class BetaTrainingService:
                 avg_validation_mae=validation_metrics.get("avg_validation_mae"),  # type: ignore[arg-type]
                 avg_validation_sign_accuracy_pct=validation_metrics.get("avg_validation_sign_accuracy_pct"),  # type: ignore[arg-type]
                 avg_validation_return_pct=validation_metrics.get("avg_validation_return_pct"),  # type: ignore[arg-type]
-                summary_text="Walk-forward validation over rolling trailing windows.",
+                summary_text="Walk-forward validation over rolling trailing windows with benchmark challengers.",
                 notes_json=json.dumps(validation_metrics, sort_keys=True),
             )
             sess.add(validation_run)
@@ -1184,6 +1566,10 @@ class BetaTrainingService:
                     "feature_clip_highs": [round(float(value), 6) for value in feature_clip_highs],
                     "label_clip_range_pct": [round(float(label_clip_low), 6), round(float(label_clip_high), 6)],
                     "confidence_calibration": confidence_calibration,
+                    "benchmark_challengers": benchmark_holdout_summaries,
+                    "statsmodels_sanity_checks": statsmodels_sanity_checks,
+                    "modeling_stack": modeling_stack,
+                    "walkforward_benchmark_summaries": validation_metrics.get("benchmark_summaries", {}),
                     "validated_baseline_policy": validated_baseline_policy,
                 },
                 sort_keys=True,
@@ -1223,6 +1609,9 @@ class BetaTrainingService:
                     "feature_clip_highs": [round(float(value), 6) for value in feature_clip_highs],
                     "label_clip_range_pct": [round(float(label_clip_low), 6), round(float(label_clip_high), 6)],
                     "confidence_calibration": confidence_calibration,
+                    "benchmark_challengers": benchmark_holdout_summaries,
+                    "statsmodels_sanity_checks": statsmodels_sanity_checks,
+                    "modeling_stack": modeling_stack,
                     "validated_baseline_policy": validated_baseline_policy,
                     "walkforward_validation": validation_metrics,
                     "activated": should_activate,
@@ -1250,9 +1639,12 @@ class BetaTrainingService:
                     "holdout_baselines": holdout_baselines,
                     "best_holdout_baseline_name": best_holdout_baseline_name,
                     "best_holdout_baseline_sign_accuracy_pct": best_holdout_baseline_accuracy,
+                    "benchmark_challengers": benchmark_holdout_summaries,
+                    "statsmodels_sanity_checks": statsmodels_sanity_checks,
                     "walkforward_validation_return_pct": walkforward_return,
                     "walkforward_best_baseline_name": validation_metrics.get("best_baseline_name"),
                     "walkforward_best_baseline_sign_accuracy_pct": validation_metrics.get("best_baseline_sign_accuracy_pct"),
+                    "walkforward_benchmark_summaries": validation_metrics.get("benchmark_summaries", {}),
                     "validated_baseline_policy": validated_baseline_policy,
                     "feature_values_loaded": _total_feature_values_loaded,
                     "labels_missing_features": _total_labels_missing_features,
@@ -1274,9 +1666,12 @@ class BetaTrainingService:
                 "holdout_baselines": holdout_baselines,
                 "best_holdout_baseline_name": best_holdout_baseline_name,
                 "best_holdout_baseline_sign_accuracy_pct": best_holdout_baseline_accuracy,
+                "benchmark_challengers": benchmark_holdout_summaries,
+                "statsmodels_sanity_checks": statsmodels_sanity_checks,
                 "validated_baseline_policy": validated_baseline_policy,
                 "walkforward_validation_sign_accuracy_pct": walkforward_accuracy,
                 "walkforward_validation_return_pct": walkforward_return,
+                "walkforward_benchmark_summaries": validation_metrics.get("benchmark_summaries", {}),
                 "walkforward_window_count": window_count,
                 "activated": should_activate,
                 "activation_gate_reasons": activation_gate_reasons,

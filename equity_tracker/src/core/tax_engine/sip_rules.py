@@ -12,17 +12,25 @@ SIP Share Types:
                  Free at acquisition. Subject to forfeiture if partnership shares
                  removed within 3 years.
     DIVIDEND:    Acquired from dividends reinvested within the plan.
-                 No income tax at acquisition. Same holding rules as matching shares.
+                 No income tax at acquisition. Reinvested dividends remain
+                 tax-free if the dividend shares stay in the SIP for 3+ years
+                 or are removed for a qualifying leaver reason.
 
-Key holding period rules (same for all SIP share types):
-    < 3 years in plan:  Income tax + NI charged on market value at disposal/withdrawal.
-                        This effectively claws back the original tax saving.
-    3–5 years in plan:  Income tax on LOWER of:
-                          (a) market value when removed from plan, or
-                          (b) market value when acquired (= original cost/gross deduction
-                              for partnership; FMV for matching/dividend shares).
-                        NI is NOT charged (only IT).
-    5+ years in plan:   No income tax, no NI. Disposal is completely income-tax free.
+Key holding period rules:
+    PARTNERSHIP / MATCHING:
+        < 3 years in plan:  Income tax + NI charged on market value at disposal/withdrawal.
+                            This effectively claws back the original tax saving.
+        3–5 years in plan:  Income tax on LOWER of:
+                              (a) market value when removed from plan, or
+                              (b) market value when acquired (= original cost/gross deduction
+                                  for partnership; FMV for matching shares).
+                            NI is NOT charged (only IT).
+        5+ years in plan:   No income tax, no NI. Disposal is completely income-tax free.
+
+    DIVIDEND:
+        < 3 years in plan:  The original reinvested dividend becomes taxable.
+                            NI is not charged.
+        3+ years in plan:   No income tax, no NI.
 
 CGT treatment:
     For all SIP shares, when removed from the plan (withdrawn or sold):
@@ -347,6 +355,23 @@ def _compute_income_tax_amount(
     holding = event.holding
     quantity = event.quantity
     market_value_total = event.total_market_value_gbp
+
+    if holding.share_type == SIPShareType.DIVIDEND:
+        acquisition_value_total = (holding.acquisition_market_value_gbp * quantity).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        if period == SIPHoldingPeriodCategory.UNDER_THREE_YEARS:
+            notes.append(
+                f"Dividend shares held < 3 years: the original reinvested dividend "
+                f"(£{acquisition_value_total:,.2f}) becomes taxable. No NI applies."
+            )
+            return acquisition_value_total, Decimal("0")
+
+        notes.append(
+            "Dividend shares held 3+ years: reinvested dividends remain tax-free. "
+            "No income tax or NI applies on removal."
+        )
+        return Decimal("0"), Decimal("0")
 
     if period == SIPHoldingPeriodCategory.FIVE_PLUS_YEARS:
         # No income tax, no NI on removal after 5 years

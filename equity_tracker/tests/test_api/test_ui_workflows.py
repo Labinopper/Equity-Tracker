@@ -8,6 +8,7 @@ from src.api.routers.ui import (
     _build_per_scheme_reports,
     _build_portfolio_position_rows,
     _compute_exit_summary,
+    _daily_freshness_note,
     _portfolio_blocked_restricted_value,
     _portfolio_est_net_liquidity,
 )
@@ -788,6 +789,75 @@ def test_portfolio_refresh_diagnostics_rendered(client):
     assert "refresh-state" in home.text
 
 
+def test_portfolio_page_runs_budgeted_live_refresh_for_today(client, monkeypatch):
+    calls = {"ibkr": 0, "intraday": 0, "fx": 0}
+
+    monkeypatch.setattr(
+        "src.api.routers.ui.IbkrPriceService.ingest_all",
+        staticmethod(lambda: calls.__setitem__("ibkr", calls["ibkr"] + 1) or 0),
+    )
+    monkeypatch.setattr(
+        "src.api.routers.ui.PriceService.refresh_intraday_budgeted",
+        staticmethod(
+            lambda: calls.__setitem__("intraday", calls["intraday"] + 1)
+            or {"enabled": True, "fetched": 0, "planned": 0, "remaining_calls": 0, "errors": []}
+        ),
+    )
+    monkeypatch.setattr(
+        "src.api.routers.ui.PriceService.refresh_fx_budgeted",
+        staticmethod(
+            lambda: calls.__setitem__("fx", calls["fx"] + 1)
+            or {"enabled": True, "fetched": 0, "planned": 0, "remaining_calls": 0, "errors": []}
+        ),
+    )
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert calls == {"ibkr": 1, "intraday": 1, "fx": 1}
+
+
+def test_portfolio_page_skips_budgeted_live_refresh_for_historical_as_of(client, monkeypatch):
+    calls = {"ibkr": 0, "intraday": 0, "fx": 0}
+
+    monkeypatch.setattr(
+        "src.api.routers.ui.IbkrPriceService.ingest_all",
+        staticmethod(lambda: calls.__setitem__("ibkr", calls["ibkr"] + 1) or 0),
+    )
+    monkeypatch.setattr(
+        "src.api.routers.ui.PriceService.refresh_intraday_budgeted",
+        staticmethod(
+            lambda: calls.__setitem__("intraday", calls["intraday"] + 1)
+            or {"enabled": True, "fetched": 0, "planned": 0, "remaining_calls": 0, "errors": []}
+        ),
+    )
+    monkeypatch.setattr(
+        "src.api.routers.ui.PriceService.refresh_fx_budgeted",
+        staticmethod(
+            lambda: calls.__setitem__("fx", calls["fx"] + 1)
+            or {"enabled": True, "fetched": 0, "planned": 0, "remaining_calls": 0, "errors": []}
+        ),
+    )
+
+    home = client.get("/?as_of=2025-03-01")
+    assert home.status_code == 200
+    assert calls == {"ibkr": 0, "intraday": 0, "fx": 0}
+
+
+def test_daily_freshness_note_uses_last_refresh_time_for_updated_age():
+    now_utc = datetime(2026, 3, 30, 14, 0, tzinfo=timezone.utc)
+    text, level, title = _daily_freshness_note(
+        exchange="NYSE",
+        price_last_refreshed_at=datetime(2026, 3, 30, 13, 59, tzinfo=timezone.utc),
+        price_last_changed_at=datetime(2026, 3, 30, 13, 0, tzinfo=timezone.utc),
+        now_utc=now_utc,
+    )
+
+    assert text == "Updated 60s ago"
+    assert level == "ok"
+    assert "Price feed last refreshed at 2026-03-30 13:59:00 UTC" in title
+    assert "Displayed price last changed at 2026-03-30 13:00:00 UTC" in title
+
+
 def test_prices_refresh_updates_success_diagnostics(client, monkeypatch):
     def _ok():
         return {"fetched": 2, "failed": 0, "errors": []}
@@ -829,8 +899,9 @@ def test_portfolio_refresh_script_has_retry_safe_guard(client):
     home = client.get("/")
     assert home.status_code == 200
     html = home.text
-    assert "var inFlight = false;" in html
-    assert "function resetCountdown()" in html
+    assert "var refreshInFlight = false;" in html
+    assert "var viewSyncInFlight = false;" in html
+    assert "function syncLiveView()" in html
     assert "function doRefresh()" in html
 
 
@@ -1787,6 +1858,99 @@ def test_portfolio_view_model_keeps_non_espp_rows_separate(client, db_engine):
     rows = _build_portfolio_position_rows(summary)[sec_id]
     assert len(rows) == 2
     assert all(row.row_kind == "SINGLE_LOT" for row in rows)
+
+
+def test_portfolio_view_model_labels_sip_dividend_rows_by_origin_scope(client, db_engine):
+    _, db_path = db_engine
+    settings = AppSettings.defaults_for(db_path)
+    settings.save()
+
+    sec_id = _add_security(client, ticker="UIDIVLAB", currency="USD")
+    PortfolioService.add_lot(
+        security_id=sec_id,
+        scheme_type="SIP_DIVIDEND",
+        acquisition_date=date(2026, 3, 17),
+        quantity=Decimal("0.00433"),
+        acquisition_price_gbp=Decimal("177.82909931"),
+        true_cost_per_share_gbp=Decimal("0"),
+        fmv_at_acquisition_gbp=Decimal("177.82909931"),
+        original_currency="GBP",
+        broker_reference="ESPP_PLUS_DIVIDEND",
+        notes="Auto-created from dividend entry demo (ESPP_PLUS stock reinvestment).",
+    )
+
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=date(2026, 3, 30),
+            close_price_original_ccy="238.22",
+            close_price_gbp="180.70",
+            currency="USD",
+            source="test-ui",
+        )
+
+    summary = PortfolioService.get_portfolio_summary(
+        settings=AppSettings.load(db_path),
+        use_live_true_cost=False,
+    )
+    rows = _build_portfolio_position_rows(summary)[sec_id]
+    assert len(rows) == 1
+    assert rows[0].scheme_display == "ESPP+ Dividend"
+
+
+def test_portfolio_view_model_sip_dividend_long_term_matures_at_three_years(client, db_engine):
+    _, db_path = db_engine
+    settings = AppSettings.defaults_for(db_path)
+    settings.default_gross_income = Decimal("80000")
+    settings.default_pension_sacrifice = Decimal("0")
+    settings.default_other_income = Decimal("0")
+    settings.default_student_loan_plan = None
+    settings.save()
+
+    sec_id = _add_security(client, ticker="UIDIV3Y", currency="USD")
+    PortfolioService.add_lot(
+        security_id=sec_id,
+        scheme_type="SIP_DIVIDEND",
+        acquisition_date=date(2025, 6, 1),
+        quantity=Decimal("1"),
+        acquisition_price_gbp=Decimal("100.00"),
+        true_cost_per_share_gbp=Decimal("0"),
+        fmv_at_acquisition_gbp=Decimal("100.00"),
+        original_currency="GBP",
+        broker_reference="ESPP_DIVIDEND",
+        notes="Auto-created from dividend entry demo (ESPP stock reinvestment).",
+    )
+
+    as_of = date(2026, 3, 30)
+    with AppContext.write_session() as sess:
+        PriceRepository(sess).upsert(
+            security_id=sec_id,
+            price_date=as_of,
+            close_price_original_ccy="180.00",
+            close_price_gbp="180.00",
+            currency="USD",
+            source="test-ui",
+        )
+
+    summary = PortfolioService.get_portfolio_summary(
+        settings=AppSettings.load(db_path),
+        use_live_true_cost=False,
+        as_of=as_of,
+    )
+    rows = _build_portfolio_position_rows(
+        summary,
+        settings=AppSettings.load(db_path),
+        as_of=as_of,
+    )[sec_id]
+    assert len(rows) == 1
+    row = rows[0]
+
+    assert row.scheme_display == "ESPP Dividend"
+    assert row.has_tax_window is True
+    assert row.next_milestone_date == date(2028, 6, 1)
+    assert row.long_term_date == date(2028, 6, 1)
+    assert row.long_term_net == Decimal("180.00")
+    assert row.next_milestone_net == Decimal("180.00")
 
 
 def test_portfolio_view_model_forfeiture_cash_and_economic_logic(client, db_engine):

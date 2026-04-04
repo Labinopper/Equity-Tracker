@@ -16,6 +16,7 @@ from src.beta.db.models import (
     BetaDemoPosition,
     BetaExecutionHypothesisBeliefState,
     BetaExecutionHypothesisDiscoveryCandidate,
+    BetaExecutionHypothesisDiscoveryRun,
     BetaExecutionHypothesisDefinition,
     BetaExecutionLabelValue,
     BetaExecutionSignal,
@@ -24,12 +25,19 @@ from src.beta.db.models import (
     BetaInstrument,
     BetaIntradayFeatureLabelValue,
     BetaIntradayFeatureObservation,
+    BetaIntradayPatternCandidate,
+    BetaIntradayPatternDiscoveryRun,
+    BetaIntradayPatternExecutionProfile,
+    BetaIntradayPatternExplorationProfile,
+    BetaIntradayPatternPolicyProfile,
+    BetaIntradayPatternThresholdProfile,
     BetaIntradayFeatureSnapshot,
     BetaIntradaySimulatedTrade,
     BetaIntradaySimulatedTradeEvent,
     BetaIntradaySnapshot,
     BetaMinuteBar,
     BetaPositionState,
+    BetaPredictionAccuracyLog,
     BetaSignalCandidate,
     BetaSignalObservation,
     BetaUiNotification,
@@ -43,6 +51,12 @@ from src.beta.services.intraday_aggregation_service import BetaIntradayAggregati
 from src.beta.services.intraday_feature_service import BetaIntradayFeatureService
 from src.beta.services.intraday_focus_backfill_service import BetaIntradayFocusBackfillService
 from src.beta.services.intraday_outlook_service import BetaIntradayOutlookService
+from src.beta.services.intraday_pattern_exploration_service import BetaIntradayPatternExplorationService
+from src.beta.services.intraday_pattern_execution_learning_service import BetaIntradayPatternExecutionLearningService
+from src.beta.services.intraday_pattern_exploration_learning_service import BetaIntradayPatternExplorationLearningService
+from src.beta.services.intraday_pattern_parameter_learning_service import BetaIntradayPatternParameterLearningService
+from src.beta.services.intraday_pattern_review_service import BetaIntradayPatternReviewService
+from src.beta.services.intraday_pattern_threshold_learning_service import BetaIntradayPatternThresholdLearningService
 from src.beta.services.intraday_priority_service import BetaIntradayPriorityService, IntradayPriorityItem
 from src.beta.services.intraday_simulated_trade_service import BetaIntradaySimulatedTradeService
 from src.beta.services.observation_service import BetaObservationService
@@ -387,10 +401,12 @@ def test_execution_hypothesis_research_generates_discovery_backtests_and_beliefs
             )
 
     discovery = BetaExecutionHypothesisDiscoveryService.run_discovery(settings)
+    repeated_discovery = BetaExecutionHypothesisDiscoveryService.run_discovery(settings)
     backtests = BetaExecutionHypothesisBacktestService.refresh_backtests(settings)
     beliefs = BetaExecutionHypothesisBeliefService.refresh_belief_states(settings)
 
     with BetaContext.read_session() as sess:
+        discovery_run_count = sess.scalar(select(func.count()).select_from(BetaExecutionHypothesisDiscoveryRun)) or 0
         latest_test_run = sess.scalar(
             select(BetaExecutionHypothesisTestRun)
             .where(BetaExecutionHypothesisTestRun.execution_hypothesis_definition_id == template.id)
@@ -406,8 +422,10 @@ def test_execution_hypothesis_research_generates_discovery_backtests_and_beliefs
         )
 
     assert discovery["candidates_generated"] >= 1
+    assert repeated_discovery["job_status"] == "SKIPPED"
     assert backtests["test_runs_written"] >= 1
     assert beliefs["beliefs_written"] >= 1
+    assert discovery_run_count == 1
     assert latest_test_run is not None
     assert latest_test_run.support_count >= 10
     assert belief is not None
@@ -1265,6 +1283,160 @@ def test_execution_signal_service_populates_actionable_economic_annotation(beta_
     assert signal.expected_hold_max_minutes >= signal.expected_hold_min_minutes
     assert signal.recommended_action_side == "SELL"
     assert signal.recommended_action_code == "TRIM"
+
+
+def test_execution_signal_prediction_log_reconciles_to_realized_outcome(beta_context):
+    settings = BetaSettings()
+    settings.intraday_execution_enabled = True
+    settings.intraday_event_trigger_enabled = True
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        execution_definition = BetaExecutionHypothesisDefinition(
+            hypothesis_code="EXECUTION_ACCURACY_TEST",
+            name="Execution accuracy test",
+            signal_type="TRIM_ON_STRENGTH",
+            entry_conditions_json=json.dumps(
+                {"all": [{"feature": "gap_from_prev_close_pct", "op": "gt", "value": 9.0}]},
+                sort_keys=True,
+            ),
+            regime_filters_json=json.dumps({}, sort_keys=True),
+            feature_subset_json=json.dumps(["gap_from_prev_close_pct"], sort_keys=True),
+            rationale_text="Execution accuracy regression test.",
+            source_type="MANUAL",
+            metadata_json=json.dumps(
+                {
+                    "base_confidence": 0.8,
+                    "event_codes": ["EVENT_OPEN_GAP"],
+                    "default_hold_window_minutes": [10, 40],
+                },
+                sort_keys=True,
+            ),
+            provenance_json=json.dumps({"source": "MANUAL"}, sort_keys=True),
+            status="ACTIVE",
+        )
+        sess.add_all([instrument, execution_definition])
+        sess.flush()
+        current_position = BetaPositionState(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            market="US",
+            position_source="DEMO",
+            position_status="OPEN",
+            thesis_expected_return_pct=4.0,
+        )
+        sess.add(current_position)
+        sess.flush()
+
+        for idx in range(30):
+            historical_signal = BetaExecutionSignal(
+                execution_hypothesis_definition_id=execution_definition.id,
+                position_state_id=current_position.id,
+                instrument_id=instrument.id,
+                symbol="IBM",
+                session_date=date(2026, 3, 15),
+                signal_time=datetime(2026, 3, 15, 9, 0, 0) + timedelta(minutes=idx),
+                session_state="REGULAR_OPEN",
+                signal_type="TRIM_ON_STRENGTH",
+                confidence_score=0.7,
+                event_trigger_code="EVENT_OPEN_GAP",
+                matched_conditions_json="[]",
+                feature_snapshot_json="{}",
+            )
+            sess.add(historical_signal)
+            sess.flush()
+            sess.add(
+                BetaExecutionLabelValue(
+                    execution_signal_id=historical_signal.id,
+                    position_state_id=current_position.id,
+                    instrument_id=instrument.id,
+                    symbol="IBM",
+                    session_date=date(2026, 3, 15),
+                    signal_time=historical_signal.signal_time,
+                    action_aligned_return_pct=0.30,
+                    time_to_peak_minutes=15 + idx,
+                    evaluation_complete=True,
+                )
+            )
+
+        sess.add(
+            BetaIntradayFeatureSnapshot(
+                instrument_id=instrument.id,
+                session_date=date(2026, 3, 16),
+                session_state="REGULAR_OPEN",
+                priority_tier="HELD",
+                feature_snapshot_json=json.dumps(
+                    {"gap_from_prev_close_pct": 10.0},
+                    sort_keys=True,
+                ),
+                accumulator_state_json=json.dumps({}, sort_keys=True),
+            )
+        )
+        for ts, price in zip(
+            [
+                datetime(2026, 3, 16, 15, 0),
+                datetime(2026, 3, 16, 15, 30),
+                datetime(2026, 3, 16, 16, 0),
+                datetime(2026, 3, 16, 16, 30),
+                datetime(2026, 3, 16, 17, 0),
+            ],
+            [100, 101, 99, 97, 96],
+        ):
+            sess.add(
+                BetaMinuteBar(
+                    instrument_id=instrument.id,
+                    session_date=date(2026, 3, 16),
+                    minute_ts=ts,
+                    open_price_gbp=str(price),
+                    high_price_gbp=str(price),
+                    low_price_gbp=str(price),
+                    close_price_gbp=str(price),
+                    close_price_native=str(price),
+                    currency="USD",
+                    snapshot_count=1,
+                    first_snapshot_at=ts,
+                    last_snapshot_at=ts,
+                    source="test",
+                )
+            )
+
+    BetaExecutionSignalService.evaluate_execution_signals(
+        settings,
+        now_utc=datetime(2026, 3, 16, 15, 0, 0, tzinfo=timezone.utc),
+    )
+
+    with BetaContext.read_session() as sess:
+        signal = sess.scalar(
+            select(BetaExecutionSignal)
+            .where(BetaExecutionSignal.session_date == date(2026, 3, 16))
+            .order_by(BetaExecutionSignal.signal_time.desc())
+            .limit(1)
+        )
+        assert signal is not None
+        prediction_log = sess.scalar(
+            select(BetaPredictionAccuracyLog)
+            .where(BetaPredictionAccuracyLog.execution_signal_id == signal.id)
+            .limit(1)
+        )
+
+    assert prediction_log is not None
+    assert prediction_log.signal_observation_id is None
+    assert prediction_log.realized_return_pct is None
+
+    BetaExecutionOutcomeService.update_execution_outcomes()
+
+    with BetaContext.read_session() as sess:
+        refreshed_log = sess.get(BetaPredictionAccuracyLog, prediction_log.id)
+
+    assert refreshed_log is not None
+    assert refreshed_log.realized_return_pct is not None
+    assert refreshed_log.realization_time is not None
 
 
 def test_execution_signal_service_marks_insufficient_history_non_actionable(beta_context):
@@ -2582,6 +2754,7 @@ def test_intraday_simulated_trade_history_rebuild_creates_closed_trade(beta_cont
 
 def test_intraday_simulated_trade_live_refresh_opens_then_closes(beta_context):
     settings = BetaSettings()
+    settings.intraday_pattern_live_forward_enabled = False
     settings.intraday_focus_us_symbol_cap = 1
     settings.intraday_focus_uk_symbol_cap = 1
 
@@ -2697,6 +2870,153 @@ def test_intraday_simulated_trade_live_refresh_opens_then_closes(beta_context):
     assert trade.simulation_source == "LIVE_FORWARD"
     assert trade.status == "CLOSED"
     assert trade.exit_reason_code in {"GUIDANCE_EXIT", "TARGET_HIT"}
+
+
+def test_intraday_simulated_trade_live_refresh_uses_approved_pattern_whitelist(beta_context, monkeypatch):
+    settings = BetaSettings()
+    settings.intraday_pattern_live_forward_enabled = True
+    settings.intraday_pattern_live_forward_top_n = 1
+    settings.intraday_pattern_live_forward_min_quality_score = 0.20
+    settings.intraday_pattern_live_forward_max_open_trades = 1
+    settings.intraday_focus_us_symbol_cap = 1
+    settings.intraday_focus_uk_symbol_cap = 1
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NYSE",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+        observation = BetaIntradayFeatureObservation(
+            instrument_id=instrument.id,
+            symbol="IBM",
+            session_date=date(2026, 3, 19),
+            observed_at=datetime(2026, 3, 19, 14, 30),
+            session_state="REGULAR_OPEN",
+            priority_tier="FOCUS",
+            state_code="OPEN__SHAKEOUT_RECOVERY",
+            state_family_code="SHAKEOUT_RECOVERY",
+            state_label="Open / Shakeout recovery",
+            signal_type="WAIT_FOR_CONFIRMATION",
+            recommended_action_side="WAIT",
+            recommended_action_code="NO_ACTION",
+            recommended_action_label="Wait for confirmation",
+            feature_snapshot_json=json.dumps(
+                {
+                    "minutes_since_open": 10.0,
+                    "session_progress_pct": 5.0,
+                    "volume_last_15m_vs_expected": 1.10,
+                    "intraday_range_pct": 1.35,
+                    "return_last_15m_pct": 0.42,
+                    "distance_from_vwap_pct": 0.03,
+                },
+                sort_keys=True,
+            ),
+            expected_return_15m_pct=Decimal("0.1800"),
+            expected_return_30m_pct=Decimal("0.2400"),
+            post_cost_expected_return_15m_pct=Decimal("0.1200"),
+            historical_win_rate=Decimal("0.5400"),
+            confidence_score=0.48,
+            confidence_label="MEDIUM",
+            confidence_reasons_json=json.dumps({"exact_state_match": False, "top_symbol_share": 0.20}, sort_keys=True),
+            outlook_sample_size=14,
+            matched_instrument_count=2,
+            opportunity_status="ACTIONABLE",
+        )
+        sess.add(observation)
+        sess.flush()
+        spec = next(
+            row
+            for row in BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+                observation,
+                settings=settings,
+            )
+            if row["anchor_family_code"] == "STATE_FAMILY"
+            and row["anchor_code"] == "SHAKEOUT_RECOVERY"
+            and not row["context_tags"]
+        )
+        run = BetaIntradayPatternDiscoveryRun(
+            run_code="20260319143000",
+            status="SUCCESS",
+            lookback_days=30,
+            observations_considered=42,
+            labeled_observations=40,
+            patterns_generated=18,
+            patterns_screened_in=1,
+            window_start=datetime(2026, 2, 1, 14, 30),
+            window_end=datetime(2026, 3, 18, 15, 30),
+        )
+        sess.add(run)
+        sess.flush()
+        sess.add(
+            BetaIntradayPatternCandidate(
+                discovery_run_id=run.id,
+                pattern_hash=str(spec["pattern_hash"]),
+                pattern_code=str(spec["pattern_code"]),
+                anchor_family_code="STATE_FAMILY",
+                anchor_code="SHAKEOUT_RECOVERY",
+                symbol=None,
+                session_segment=None,
+                context_tags_json="[]",
+                action_bias="LONG",
+                sample_size=24,
+                matched_instruments=3,
+                average_return_15m_pct=0.3100,
+                average_return_30m_pct=0.3600,
+                median_return_15m_pct=0.2700,
+                win_rate_pct=59.0,
+                mean_max_adverse_move_pct=0.1200,
+                mean_max_favorable_move_pct=0.5200,
+                post_cost_edge_15m_pct=0.2200,
+                reliability_score=0.4200,
+                status="SCREENED_IN",
+            )
+        )
+        _add_minute_bar_series(
+            sess,
+            instrument_id=instrument.id,
+            session_date=date(2026, 3, 19),
+            start_ts=datetime(2026, 3, 19, 14, 30),
+            close_values=[100.0, 100.05, 100.12, 100.18, 100.24],
+            volume_value=1000.0,
+        )
+
+    focus_item = IntradayPriorityItem(
+        instrument_id=instrument.id,
+        symbol="IBM",
+        market="US",
+        exchange="NYSE",
+        tier="FOCUS",
+        cadence_minutes=5,
+        priority_score=1.0,
+        session_state="REGULAR_OPEN",
+    )
+    monkeypatch.setattr(
+        BetaIntradayPriorityService,
+        "build_focus_watchlist",
+        staticmethod(lambda settings_arg, now_utc=None: {"items": [focus_item]}),
+    )
+
+    result = BetaIntradaySimulatedTradeService.refresh_live_trades(
+        settings,
+        now_utc=datetime(2026, 3, 19, 14, 34, tzinfo=timezone.utc),
+    )
+
+    with BetaContext.read_session() as sess:
+        trade = sess.scalar(select(BetaIntradaySimulatedTrade))
+
+    assert result["trades_opened"] == 1
+    assert trade is not None
+    assert trade.simulation_source == "LIVE_FORWARD"
+    assert trade.status in {"OPEN", "CLOSED"}
+    notes = json.loads(trade.notes_json or "{}")
+    assert notes["entry_source"] == "PATTERN"
+    assert notes["pattern_hash"] == spec["pattern_hash"]
+    assert notes["pattern_family_code"] == "STATE_FAMILY:SHAKEOUT_RECOVERY"
 
 
 def test_intraday_simulated_trade_history_rebuild_can_create_short_trade_from_stable_pocket(beta_context):
@@ -2866,3 +3186,1108 @@ def test_intraday_simulated_trade_history_rebuild_can_create_short_trade_from_st
     assert trade.exit_reason_code in {"TARGET_HIT", "TIME_EXIT", "SESSION_END"}
     assert len(events) == 2
     assert events[0].event_type == "OPENED"
+
+
+def test_intraday_pattern_exploration_persists_screened_in_derived_patterns(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_exploration_enabled = True
+    settings.intraday_pattern_history_days = 365
+    settings.intraday_pattern_min_sample_size = 3
+    settings.intraday_pattern_min_matched_instruments = 1
+    settings.intraday_pattern_max_context_depth = 1
+    settings.intraday_pattern_max_patterns_per_observation = 16
+    settings.intraday_execution_commission_bps = 1.0
+    settings.intraday_execution_spread_bps = 1.0
+    settings.intraday_execution_slippage_bps = 1.0
+
+    with BetaContext.write_session() as sess:
+        instrument = BetaInstrument(
+            symbol="IBM",
+            name="IBM",
+            market="US",
+            exchange="NASDAQ",
+            currency="USD",
+        )
+        sess.add(instrument)
+        sess.flush()
+
+        for offset, session_date in enumerate(
+            [
+                date(2026, 3, 24),
+                date(2026, 3, 25),
+                date(2026, 3, 26),
+                date(2026, 3, 27),
+            ]
+        ):
+            observed_at = datetime(2026, 3, 24 + offset, 16, 0)
+            observation = BetaIntradayFeatureObservation(
+                instrument_id=instrument.id,
+                symbol="IBM",
+                session_date=session_date,
+                observed_at=observed_at,
+                session_state="REGULAR_OPEN",
+                priority_tier="FOCUS",
+                state_code="MIDDAY__RANGE_DRIFT",
+                state_family_code="RANGE_DRIFT",
+                state_label="Midday / Range drift",
+                event_trigger_code="EVENT_LOW_VOLUME_DRIFT",
+                feature_snapshot_json=json.dumps(
+                    {
+                        "minutes_since_open": 90,
+                        "session_progress_pct": 38.0,
+                        "gap_from_prev_close_pct": -0.2,
+                        "distance_from_vwap_pct": 0.18,
+                        "volume_last_15m_vs_expected": 0.52,
+                        "rolling_intraday_vol_15m_pct": 0.31,
+                        "intraday_range_pct": 0.95,
+                        "return_last_15m_pct": 0.22,
+                    },
+                    sort_keys=True,
+                ),
+                opportunity_status="INFORMATIONAL",
+            )
+            sess.add(observation)
+            sess.flush()
+            sess.add(
+                BetaIntradayFeatureLabelValue(
+                    observation_id=observation.id,
+                    instrument_id=instrument.id,
+                    symbol="IBM",
+                    session_date=session_date,
+                    observed_at=observed_at,
+                    future_15m_return_pct=0.46 + (0.03 * offset),
+                    future_30m_return_pct=0.62 + (0.02 * offset),
+                    max_adverse_move_pct=-0.18,
+                    max_favorable_move_pct=0.78,
+                    evaluation_complete=True,
+                )
+            )
+
+    result = BetaIntradayPatternExplorationService.run_exploration(settings)
+    repeated_result = BetaIntradayPatternExplorationService.run_exploration(settings)
+
+    with BetaContext.read_session() as sess:
+        discovery_run = sess.scalar(select(BetaIntradayPatternDiscoveryRun))
+        discovery_run_count = sess.scalar(select(func.count()).select_from(BetaIntradayPatternDiscoveryRun)) or 0
+        dry_period_candidate = sess.scalar(
+            select(BetaIntradayPatternCandidate).where(
+                BetaIntradayPatternCandidate.anchor_family_code == "DERIVED",
+                BetaIntradayPatternCandidate.anchor_code == "DRY_PERIOD",
+                BetaIntradayPatternCandidate.status == "SCREENED_IN",
+            )
+        )
+
+    assert discovery_run is not None
+    assert result["labeled_observations"] == 4
+    assert repeated_result["job_status"] == "SKIPPED"
+    assert result["patterns_generated"] > 0
+    assert result["patterns_screened_in"] > 0
+    assert discovery_run_count == 1
+    assert dry_period_candidate is not None
+    assert dry_period_candidate.action_bias == "LONG"
+    assert dry_period_candidate.sample_size >= 3
+    assert dry_period_candidate.post_cost_edge_15m_pct is not None
+    assert dry_period_candidate.post_cost_edge_15m_pct > 0
+    notes = json.loads(dry_period_candidate.notes_json or "{}")
+    assert notes["best_horizon_minutes"] == 30
+    assert "15" in notes["horizon_profile"]
+    assert "30" in notes["horizon_profile"]
+    assert notes["best_horizon_post_cost_edge_pct"] > 0
+
+
+def test_intraday_pattern_threshold_learning_persists_active_profile(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_threshold_learning_enabled = True
+    settings.intraday_pattern_threshold_learning_window_days = 45
+    settings.intraday_pattern_threshold_learning_min_observations = 6
+
+    with BetaContext.write_session() as sess:
+        instruments = []
+        for symbol in ("IBM", "MSFT"):
+            instrument = BetaInstrument(
+                symbol=symbol,
+                name=symbol,
+                market="US",
+                exchange="NASDAQ",
+                currency="USD",
+            )
+            sess.add(instrument)
+            instruments.append(instrument)
+        sess.flush()
+
+        feature_rows = [
+            (0.52, 0.28, 0.40, -1.30, -0.90, -1.80, -0.55, -0.14, 32.0),
+            (0.68, 0.34, 0.85, -0.95, -0.60, -1.25, -0.35, -0.09, 38.0),
+            (1.05, 0.60, 1.15, 0.18, 0.22, 0.45, 0.10, 0.03, 48.0),
+            (1.48, 1.05, 1.90, 0.82, 0.88, 1.55, 0.42, 0.12, 72.0),
+            (1.92, 1.58, 2.60, 1.22, 1.10, 2.10, 0.78, 0.18, 78.0),
+            (2.18, 2.05, 3.10, 1.65, 1.38, 2.80, 1.05, 0.25, 84.0),
+        ]
+        for index, (
+            volume_ratio,
+            volatility,
+            intraday_range,
+            ret_15,
+            ret_30,
+            ret_open,
+            gap,
+            vwap_distance,
+            session_progress,
+        ) in enumerate(feature_rows):
+            instrument = instruments[index % len(instruments)]
+            observed_at = datetime(2026, 4, 3, 14, 30) + timedelta(minutes=15 * index)
+            observation = BetaIntradayFeatureObservation(
+                instrument_id=instrument.id,
+                symbol=instrument.symbol,
+                session_date=date(2026, 4, 3),
+                observed_at=observed_at,
+                session_state="REGULAR_OPEN",
+                priority_tier="FOCUS",
+                state_code="MIDDAY__RANGE_DRIFT",
+                state_family_code="RANGE_DRIFT",
+                state_label="Midday / Range drift",
+                feature_snapshot_json=json.dumps(
+                    {
+                        "minutes_since_open": 30 + (15 * index),
+                        "minutes_until_close": max(20, 330 - (15 * index)),
+                        "session_progress_pct": session_progress,
+                        "gap_from_prev_close_pct": gap,
+                        "distance_from_vwap_pct": vwap_distance,
+                        "volume_last_15m_vs_expected": volume_ratio,
+                        "rolling_intraday_vol_15m_pct": volatility,
+                        "intraday_range_pct": intraday_range,
+                        "return_last_15m_pct": ret_15,
+                        "return_last_30m_pct": ret_30,
+                        "return_since_open_pct": ret_open,
+                    },
+                    sort_keys=True,
+                ),
+                opportunity_status="INFORMATIONAL",
+            )
+            sess.add(observation)
+            sess.flush()
+            sess.add(
+                BetaIntradayFeatureLabelValue(
+                    observation_id=observation.id,
+                    instrument_id=instrument.id,
+                    symbol=instrument.symbol,
+                    session_date=date(2026, 4, 3),
+                    observed_at=observed_at,
+                    future_15m_return_pct=0.15 + (0.02 * index),
+                    future_30m_return_pct=0.20 + (0.03 * index),
+                    evaluation_complete=True,
+                )
+            )
+
+    result = BetaIntradayPatternThresholdLearningService.learn_threshold_profile(settings)
+    repeated_result = BetaIntradayPatternThresholdLearningService.learn_threshold_profile(settings)
+
+    with BetaContext.read_session() as sess:
+        profile = sess.scalar(select(BetaIntradayPatternThresholdProfile))
+        profile_count = sess.scalar(select(func.count()).select_from(BetaIntradayPatternThresholdProfile)) or 0
+
+    assert result["profile_created"] is True
+    assert repeated_result["job_status"] == "SKIPPED"
+    assert profile is not None
+    assert profile_count == 1
+    assert profile.source_mode == "OBSERVATION_DISTRIBUTION"
+    assert profile.observation_count == 6
+    assert profile.distinct_instrument_count == 2
+    assert profile.confidence_score >= 0.25
+    thresholds = json.loads(profile.thresholds_json or "{}")
+    notes = json.loads(profile.notes_json or "{}")
+    assert thresholds["volume_high_ratio"] > thresholds["volume_low_ratio"]
+    assert thresholds["volatility_high_pct"] > thresholds["volatility_low_pct"]
+    assert thresholds["range_expanded_pct"] > thresholds["range_compressed_pct"]
+    assert thresholds["close_drive_abs_return_30m_pct"] >= 0.30
+    assert notes["input_fingerprint"]
+    assert notes["input_summary"]["observation_count"] == 6
+    assert repeated_result["input_fingerprint"] == notes["input_fingerprint"]
+
+
+def test_intraday_pattern_exploration_uses_learned_threshold_profile(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_threshold_learning_enabled = True
+    settings.intraday_pattern_threshold_learning_min_observations = 10
+
+    with BetaContext.write_session() as sess:
+        sess.add(
+            BetaIntradayPatternThresholdProfile(
+                profile_code="20260403191500",
+                source_mode="OBSERVATION_DISTRIBUTION",
+                evaluation_window_days=45,
+                observation_count=24,
+                distinct_instrument_count=4,
+                confidence_score=0.68,
+                thresholds_json=json.dumps(
+                    {
+                        "volume_low_ratio": 0.90,
+                        "volume_high_ratio": 1.55,
+                        "volatility_low_pct": 0.80,
+                        "volatility_high_pct": 1.60,
+                        "momentum_up_pct": 0.45,
+                        "momentum_down_pct": -0.45,
+                        "range_compressed_pct": 1.40,
+                        "range_expanded_pct": 2.80,
+                        "sell_pressure_return_15m_pct": -0.60,
+                        "sell_pressure_return_since_open_pct": -1.10,
+                        "buy_pressure_return_15m_pct": 0.60,
+                        "buy_pressure_return_since_open_pct": 1.10,
+                        "close_drive_abs_return_30m_pct": 0.55,
+                    },
+                    sort_keys=True,
+                ),
+                notes_json=json.dumps({}, sort_keys=True),
+            )
+        )
+
+    observation = BetaIntradayFeatureObservation(
+        instrument_id="instrument-1",
+        symbol="IBM",
+        session_date=date(2026, 4, 3),
+        observed_at=datetime(2026, 4, 3, 15, 10),
+        session_state="REGULAR_OPEN",
+        priority_tier="FOCUS",
+        state_code="MIDDAY__RANGE_DRIFT",
+        state_family_code="RANGE_DRIFT",
+        state_label="Midday / Range drift",
+        feature_snapshot_json=json.dumps(
+            {
+                "minutes_since_open": 100,
+                "minutes_until_close": 290,
+                "session_progress_pct": 46.0,
+                "gap_from_prev_close_pct": 0.18,
+                "distance_from_vwap_pct": 0.06,
+                "volume_last_15m_vs_expected": 0.82,
+                "rolling_intraday_vol_15m_pct": 0.72,
+                "intraday_range_pct": 1.28,
+                "return_last_15m_pct": 0.32,
+                "return_last_30m_pct": 0.42,
+                "return_since_open_pct": 0.58,
+            },
+            sort_keys=True,
+        ),
+        opportunity_status="INFORMATIONAL",
+    )
+
+    static_specs = BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+        observation,
+        settings=settings,
+        threshold_profile=BetaIntradayPatternThresholdLearningService.static_threshold_snapshot(settings),
+    )
+    learned_specs = BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+        observation,
+        settings=settings,
+    )
+
+    assert not any(row["anchor_code"] == "DRY_PERIOD" for row in static_specs)
+    assert any(row["anchor_code"] == "DRY_PERIOD" for row in learned_specs)
+    assert not any("VOLUME:LOW" in (row.get("context_tags") or []) for row in static_specs)
+    assert any("VOLUME:LOW" in (row.get("context_tags") or []) for row in learned_specs)
+
+
+def test_intraday_pattern_review_service_builds_leaderboard_and_family_rollups(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_live_forward_enabled = True
+    settings.intraday_pattern_live_forward_top_n = 2
+    settings.intraday_pattern_live_forward_min_quality_score = 0.20
+
+    with BetaContext.write_session() as sess:
+        run = BetaIntradayPatternDiscoveryRun(
+            run_code="20260403123000",
+            status="SUCCESS",
+            lookback_days=30,
+            observations_considered=120,
+            labeled_observations=96,
+            patterns_generated=40,
+            patterns_screened_in=2,
+            window_start=datetime(2026, 3, 3, 14, 30, 0),
+            window_end=datetime(2026, 4, 3, 14, 30, 0),
+        )
+        sess.add(run)
+        sess.flush()
+        sess.add_all(
+            [
+                BetaIntradayPatternCandidate(
+                    discovery_run_id=run.id,
+                    pattern_hash="pattern-a",
+                    pattern_code="STATE_FAMILY:SHAKEOUT_RECOVERY",
+                    anchor_family_code="STATE_FAMILY",
+                    anchor_code="SHAKEOUT_RECOVERY",
+                    context_tags_json="[]",
+                    action_bias="LONG",
+                    sample_size=28,
+                    matched_instruments=3,
+                    average_return_15m_pct=0.3200,
+                    average_return_30m_pct=0.3800,
+                    median_return_15m_pct=0.2900,
+                    win_rate_pct=60.0,
+                    mean_max_adverse_move_pct=0.1200,
+                    mean_max_favorable_move_pct=0.5400,
+                    post_cost_edge_15m_pct=0.2300,
+                    reliability_score=0.4500,
+                    status="SCREENED_IN",
+                    notes_json=json.dumps(
+                        {
+                            "best_horizon_minutes": 60,
+                            "best_horizon_return_pct": 0.4100,
+                            "best_horizon_median_return_pct": 0.3600,
+                            "best_horizon_win_rate_pct": 63.0,
+                            "best_horizon_post_cost_edge_pct": 0.3000,
+                            "horizon_stability_score": 0.2800,
+                            "horizon_profile": {
+                                "15": {"post_cost_edge_pct": 0.2300},
+                                "30": {"post_cost_edge_pct": 0.2600},
+                                "60": {"post_cost_edge_pct": 0.3000},
+                            },
+                        },
+                        sort_keys=True,
+                    ),
+                ),
+                BetaIntradayPatternCandidate(
+                    discovery_run_id=run.id,
+                    pattern_hash="pattern-b",
+                    pattern_code="DERIVED:DRY_PERIOD|SEGMENT:MIDDAY",
+                    anchor_family_code="DERIVED",
+                    anchor_code="DRY_PERIOD",
+                    context_tags_json='["SEGMENT:MIDDAY"]',
+                    action_bias="LONG",
+                    sample_size=18,
+                    matched_instruments=2,
+                    average_return_15m_pct=0.1800,
+                    average_return_30m_pct=0.2400,
+                    median_return_15m_pct=0.1500,
+                    win_rate_pct=57.0,
+                    mean_max_adverse_move_pct=0.0900,
+                    mean_max_favorable_move_pct=0.3000,
+                    post_cost_edge_15m_pct=0.1200,
+                    reliability_score=0.3300,
+                    status="SCREENED_IN",
+                    notes_json=json.dumps(
+                        {
+                            "best_horizon_minutes": 30,
+                            "best_horizon_return_pct": 0.2400,
+                            "best_horizon_median_return_pct": 0.1900,
+                            "best_horizon_win_rate_pct": 57.0,
+                            "best_horizon_post_cost_edge_pct": 0.1200,
+                            "horizon_stability_score": 0.1800,
+                            "horizon_profile": {
+                                "15": {"post_cost_edge_pct": 0.1200},
+                                "30": {"post_cost_edge_pct": 0.1200},
+                            },
+                        },
+                        sort_keys=True,
+                    ),
+                ),
+            ]
+        )
+
+        summary = BetaIntradayPatternReviewService.latest_summary_in_session(sess, settings)
+
+    assert summary["available"] is True
+    assert summary["counts"]["approved_count"] == 2
+    assert summary["leaderboard"]
+    assert summary["leaderboard"][0]["pattern_hash"] == "pattern-a"
+    assert summary["leaderboard"][0]["best_horizon_minutes"] == 60
+    assert summary["leaderboard"][0]["approval_status"] == "APPROVED"
+    assert summary["family_rollups"]
+    assert summary["family_rollups"][0]["best_horizon_label"] == "60m"
+    assert summary["family_rollups"][0]["verdict"] in {"WORKING", "PROMISING"}
+    assert {row["pattern_hash"] for row in summary["approved_patterns"]} == {"pattern-a", "pattern-b"}
+
+
+def test_intraday_pattern_parameter_learning_persists_outcome_driven_profile(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_parameter_learning_enabled = True
+    settings.intraday_pattern_parameter_learning_window_days = 30
+    settings.intraday_pattern_parameter_learning_min_closed_trades = 4
+
+    with BetaContext.write_session() as sess:
+        run = BetaIntradayPatternDiscoveryRun(
+            run_code="20260403153000",
+            status="SUCCESS",
+            lookback_days=30,
+            observations_considered=150,
+            labeled_observations=120,
+            patterns_generated=44,
+            patterns_screened_in=5,
+            window_start=datetime(2026, 3, 3, 14, 30, 0),
+            window_end=datetime(2026, 4, 3, 15, 30, 0),
+        )
+        sess.add(run)
+        sess.flush()
+
+        trade_specs = [
+            ("pattern-a", "LIVE_FORWARD", 0.18, 0.46, 0.44, 0.55, 0.42),
+            ("pattern-b", "LIVE_FORWARD", 0.12, 0.43, 0.40, 0.52, 0.39),
+            ("pattern-a", "LIVE_FORWARD", 0.09, 0.41, 0.38, 0.50, 0.36),
+            ("pattern-c", "HISTORICAL_BACKFILL", 0.06, 0.39, 0.35, 0.47, 0.34),
+            ("pattern-d", "LIVE_FORWARD", -0.05, 0.30, 0.22, 0.36, 0.18),
+            ("pattern-e", "HISTORICAL_BACKFILL", -0.03, 0.28, 0.20, 0.34, 0.16),
+        ]
+        for offset, (pattern_hash, source, realized_post_cost, quality, stability, sample_quality, reliability) in enumerate(trade_specs):
+            sess.add(
+                BetaIntradaySimulatedTrade(
+                    symbol=f"SYM{offset}",
+                    market="US",
+                    direction="LONG",
+                    simulation_source=source,
+                    status="CLOSED",
+                    session_date=date(2026, 4, 3),
+                    entry_observed_at=datetime(2026, 4, 3, 14, 30) + timedelta(minutes=offset),
+                    latest_observed_at=datetime(2026, 4, 3, 15, 0) + timedelta(minutes=offset),
+                    exit_observed_at=datetime(2026, 4, 3, 15, 10) + timedelta(minutes=offset),
+                    realized_post_cost_return_pct=realized_post_cost,
+                    notes_json=json.dumps(
+                        {
+                            "entry_source": "PATTERN",
+                            "pattern_hash": pattern_hash,
+                            "pattern_quality_score": quality,
+                            "pattern_stability_score": stability,
+                            "pattern_sample_quality_score": sample_quality,
+                            "pattern_reliability_score": reliability,
+                            "pattern_best_horizon_post_cost_edge_pct": max(0.0, realized_post_cost + 0.12),
+                        },
+                        sort_keys=True,
+                    ),
+                )
+            )
+
+    result = BetaIntradayPatternParameterLearningService.learn_policy_profile(settings)
+    repeated_result = BetaIntradayPatternParameterLearningService.learn_policy_profile(settings)
+
+    with BetaContext.read_session() as sess:
+        profile = sess.scalar(select(BetaIntradayPatternPolicyProfile))
+        profile_count = sess.scalar(select(func.count()).select_from(BetaIntradayPatternPolicyProfile)) or 0
+
+    assert result["profile_created"] is True
+    assert repeated_result["job_status"] == "SKIPPED"
+    assert profile is not None
+    assert profile_count == 1
+    assert profile.source_mode == "OUTCOME_DRIVEN"
+    assert profile.trade_count == 6
+    assert profile.recommended_top_n == 2
+    assert profile.recommended_max_open_trades == 2
+    assert profile.recommended_min_quality_score is not None
+    assert profile.confidence_score > 0.25
+    notes = json.loads(profile.notes_json or "{}")
+    assert notes["input_fingerprint"]
+    assert notes["input_summary"]["trade_count"] == 6
+    assert repeated_result["input_fingerprint"] == notes["input_fingerprint"]
+
+
+def test_intraday_pattern_execution_learning_persists_outcome_driven_profile(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_execution_learning_enabled = True
+    settings.intraday_pattern_execution_learning_window_days = 30
+    settings.intraday_pattern_execution_learning_min_closed_trades = 4
+
+    with BetaContext.write_session() as sess:
+        trade_specs = [
+            ("pattern-a", "LIVE_FORWARD", 0.18, 0.22, 0.16, 60, 35, 0.26, -0.06, "TARGET_HIT"),
+            ("pattern-b", "LIVE_FORWARD", 0.12, 0.20, 0.14, 60, 28, 0.24, -0.05, "TARGET_HIT"),
+            ("pattern-c", "HISTORICAL_BACKFILL", 0.08, 0.18, 0.15, 45, 22, 0.19, -0.04, "GUIDANCE_EXIT"),
+            ("pattern-d", "LIVE_FORWARD", -0.05, 0.20, 0.14, 60, 18, 0.04, -0.09, "EARLY_BAIL"),
+            ("pattern-e", "LIVE_FORWARD", -0.08, 0.22, 0.16, 60, 26, 0.02, -0.12, "STOP_HIT"),
+            ("pattern-f", "HISTORICAL_BACKFILL", 0.04, 0.18, 0.14, 45, 20, 0.17, -0.03, "TIME_EXIT"),
+        ]
+        for offset, (
+            pattern_hash,
+            source,
+            realized_post_cost,
+            target_return,
+            stop_loss,
+            max_hold,
+            hold_minutes,
+            max_return,
+            max_drawdown,
+            exit_reason,
+        ) in enumerate(trade_specs):
+            sess.add(
+                BetaIntradaySimulatedTrade(
+                    symbol=f"PTN{offset}",
+                    market="US",
+                    direction="LONG",
+                    simulation_source=source,
+                    status="CLOSED",
+                    session_date=date(2026, 4, 3),
+                    entry_observed_at=datetime(2026, 4, 3, 14, 30) + timedelta(minutes=offset),
+                    latest_observed_at=datetime(2026, 4, 3, 15, 0) + timedelta(minutes=offset),
+                    exit_observed_at=datetime(2026, 4, 3, 15, 10) + timedelta(minutes=offset),
+                    target_return_pct=target_return,
+                    stop_loss_pct=stop_loss,
+                    max_hold_minutes=max_hold,
+                    hold_minutes=hold_minutes,
+                    max_return_pct=max_return,
+                    max_drawdown_pct=max_drawdown,
+                    realized_post_cost_return_pct=realized_post_cost,
+                    exit_reason_code=exit_reason,
+                    notes_json=json.dumps(
+                        {
+                            "entry_source": "PATTERN",
+                            "pattern_hash": pattern_hash,
+                        },
+                        sort_keys=True,
+                    ),
+                )
+            )
+
+    result = BetaIntradayPatternExecutionLearningService.learn_execution_profile(settings)
+    repeated_result = BetaIntradayPatternExecutionLearningService.learn_execution_profile(settings)
+
+    with BetaContext.read_session() as sess:
+        profile = sess.scalar(select(BetaIntradayPatternExecutionProfile))
+        profile_count = sess.scalar(select(func.count()).select_from(BetaIntradayPatternExecutionProfile)) or 0
+
+    assert result["profile_created"] is True
+    assert repeated_result["job_status"] == "SKIPPED"
+    assert profile is not None
+    assert profile_count == 1
+    assert profile.source_mode == "OUTCOME_DRIVEN"
+    assert profile.trade_count == 6
+    assert profile.live_forward_trade_count == 4
+    assert profile.recommended_target_capture_ratio is not None
+    assert 0.65 <= float(profile.recommended_target_capture_ratio) <= 1.10
+    assert profile.recommended_stop_loss_ratio is not None
+    assert 0.70 <= float(profile.recommended_stop_loss_ratio) <= 1.15
+    assert profile.recommended_max_hold_ratio is not None
+    assert 0.55 <= float(profile.recommended_max_hold_ratio) <= 1.10
+    assert profile.recommended_early_bail_ratio is not None
+    assert 0.15 <= float(profile.recommended_early_bail_ratio) <= 0.70
+    assert profile.confidence_score > 0.25
+    notes = json.loads(profile.notes_json or "{}")
+    assert notes["input_fingerprint"]
+    assert notes["input_summary"]["trade_count"] == 6
+    assert repeated_result["input_fingerprint"] == notes["input_fingerprint"]
+
+
+def test_intraday_pattern_exploration_learning_persists_family_budget_profile(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_exploration_learning_enabled = True
+    settings.intraday_pattern_exploration_learning_window_days = 30
+    settings.intraday_pattern_exploration_learning_min_closed_trades = 4
+
+    with BetaContext.write_session() as sess:
+        run = BetaIntradayPatternDiscoveryRun(
+            run_code="20260403193000",
+            status="SUCCESS",
+            lookback_days=30,
+            observations_considered=180,
+            labeled_observations=140,
+            patterns_generated=60,
+            patterns_screened_in=6,
+            window_start=datetime(2026, 3, 4, 14, 30, 0),
+            window_end=datetime(2026, 4, 3, 19, 30, 0),
+        )
+        sess.add(run)
+        sess.flush()
+        sess.add_all(
+            [
+                BetaIntradayPatternCandidate(
+                    discovery_run_id=run.id,
+                    pattern_hash="dry-a",
+                    pattern_code="DERIVED:DRY_PERIOD|SEGMENT:MIDDAY",
+                    anchor_family_code="DERIVED",
+                    anchor_code="DRY_PERIOD",
+                    context_tags_json='["SEGMENT:MIDDAY","VOLUME:LOW"]',
+                    action_bias="LONG",
+                    sample_size=18,
+                    matched_instruments=2,
+                    average_return_15m_pct=0.18,
+                    average_return_30m_pct=0.24,
+                    median_return_15m_pct=0.15,
+                    win_rate_pct=57.0,
+                    mean_max_adverse_move_pct=0.09,
+                    mean_max_favorable_move_pct=0.30,
+                    post_cost_edge_15m_pct=0.12,
+                    reliability_score=0.33,
+                    status="SCREENED_IN",
+                ),
+                BetaIntradayPatternCandidate(
+                    discovery_run_id=run.id,
+                    pattern_hash="shake-a",
+                    pattern_code="STATE_FAMILY:SHAKEOUT_RECOVERY|MOMENTUM:UP",
+                    anchor_family_code="STATE_FAMILY",
+                    anchor_code="SHAKEOUT_RECOVERY",
+                    context_tags_json='["MOMENTUM:UP"]',
+                    action_bias="LONG",
+                    sample_size=28,
+                    matched_instruments=3,
+                    average_return_15m_pct=0.32,
+                    average_return_30m_pct=0.38,
+                    median_return_15m_pct=0.29,
+                    win_rate_pct=60.0,
+                    mean_max_adverse_move_pct=0.12,
+                    mean_max_favorable_move_pct=0.54,
+                    post_cost_edge_15m_pct=0.23,
+                    reliability_score=0.45,
+                    status="SCREENED_IN",
+                ),
+            ]
+        )
+        trade_specs = [
+            ("DERIVED:DRY_PERIOD", "LIVE_FORWARD", 0.14, ["VOLUME:LOW", "SEGMENT:MIDDAY"]),
+            ("DERIVED:DRY_PERIOD", "LIVE_FORWARD", 0.10, ["VOLUME:LOW", "RANGE:COMPRESSED"]),
+            ("DERIVED:DRY_PERIOD", "HISTORICAL_BACKFILL", 0.06, ["VOLUME:LOW"]),
+            ("STATE_FAMILY:RANGE_DRIFT", "LIVE_FORWARD", -0.05, ["MOMENTUM:UP"]),
+            ("STATE_FAMILY:RANGE_DRIFT", "HISTORICAL_BACKFILL", -0.03, ["SEGMENT:MIDDAY"]),
+            ("EVENT:EVENT_LOW_VOLUME_DRIFT", "HISTORICAL_BACKFILL", 0.02, ["SEGMENT:MIDDAY"]),
+        ]
+        for offset, (family_code, source, realized_post_cost, context_tags) in enumerate(trade_specs):
+            sess.add(
+                BetaIntradaySimulatedTrade(
+                    symbol=f"EXP{offset}",
+                    market="US",
+                    direction="LONG",
+                    simulation_source=source,
+                    status="CLOSED",
+                    session_date=date(2026, 4, 3),
+                    entry_observed_at=datetime(2026, 4, 3, 14, 30) + timedelta(minutes=offset),
+                    latest_observed_at=datetime(2026, 4, 3, 15, 0) + timedelta(minutes=offset),
+                    exit_observed_at=datetime(2026, 4, 3, 15, 10) + timedelta(minutes=offset),
+                    realized_post_cost_return_pct=realized_post_cost,
+                    notes_json=json.dumps(
+                        {
+                            "entry_source": "PATTERN",
+                            "pattern_hash": f"hash-{offset}",
+                            "pattern_family_code": family_code,
+                            "pattern_context_tags": context_tags,
+                        },
+                        sort_keys=True,
+                    ),
+                )
+            )
+
+    result = BetaIntradayPatternExplorationLearningService.learn_exploration_profile(settings)
+    repeated_result = BetaIntradayPatternExplorationLearningService.learn_exploration_profile(settings)
+
+    with BetaContext.read_session() as sess:
+        profile = sess.scalar(select(BetaIntradayPatternExplorationProfile))
+        profile_count = sess.scalar(select(func.count()).select_from(BetaIntradayPatternExplorationProfile)) or 0
+
+    assert result["profile_created"] is True
+    assert repeated_result["job_status"] == "SKIPPED"
+    assert profile is not None
+    assert profile_count == 1
+    assert profile.source_mode == "OUTCOME_MIXED"
+    assert profile.distinct_family_count >= 3
+    assert profile.recommended_max_patterns_per_observation is not None
+    notes = json.loads(profile.notes_json or "{}")
+    assert notes["input_fingerprint"]
+    assert notes["input_summary"]["candidate_count"] >= 1
+    assert repeated_result["input_fingerprint"] == notes["input_fingerprint"]
+    family_scores = notes.get("family_scores") or {}
+    family_allowlists = notes.get("family_context_prefix_allowlists") or {}
+    assert family_scores["DERIVED:DRY_PERIOD"] > family_scores["STATE_FAMILY:RANGE_DRIFT"]
+    assert "VOLUME" in family_allowlists["DERIVED:DRY_PERIOD"]
+    assert profile.confidence_score > 0.20
+
+
+def test_intraday_pattern_review_service_uses_learned_policy_profile_for_approval(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_live_forward_enabled = True
+    settings.intraday_pattern_live_forward_top_n = 3
+    settings.intraday_pattern_live_forward_min_quality_score = 0.20
+    settings.intraday_pattern_parameter_learning_enabled = True
+    settings.intraday_pattern_parameter_learning_min_closed_trades = 4
+
+    with BetaContext.write_session() as sess:
+        run = BetaIntradayPatternDiscoveryRun(
+            run_code="20260403183000",
+            status="SUCCESS",
+            lookback_days=30,
+            observations_considered=140,
+            labeled_observations=120,
+            patterns_generated=30,
+            patterns_screened_in=2,
+            window_start=datetime(2026, 3, 4, 14, 30, 0),
+            window_end=datetime(2026, 4, 3, 18, 30, 0),
+        )
+        sess.add(run)
+        sess.flush()
+        sess.add_all(
+            [
+                BetaIntradayPatternCandidate(
+                    discovery_run_id=run.id,
+                    pattern_hash="pattern-strong",
+                    pattern_code="STATE_FAMILY:SHAKEOUT_RECOVERY",
+                    anchor_family_code="STATE_FAMILY",
+                    anchor_code="SHAKEOUT_RECOVERY",
+                    context_tags_json="[]",
+                    action_bias="LONG",
+                    sample_size=26,
+                    matched_instruments=3,
+                    average_return_15m_pct=0.2800,
+                    average_return_30m_pct=0.3400,
+                    median_return_15m_pct=0.2500,
+                    win_rate_pct=58.0,
+                    mean_max_adverse_move_pct=0.1200,
+                    mean_max_favorable_move_pct=0.4800,
+                    post_cost_edge_15m_pct=0.2100,
+                    reliability_score=0.4200,
+                    status="SCREENED_IN",
+                    notes_json=json.dumps(
+                        {
+                            "best_horizon_minutes": 60,
+                            "best_horizon_return_pct": 0.3900,
+                            "best_horizon_median_return_pct": 0.3400,
+                            "best_horizon_win_rate_pct": 62.0,
+                            "best_horizon_post_cost_edge_pct": 0.2900,
+                            "horizon_stability_score": 0.3100,
+                        },
+                        sort_keys=True,
+                    ),
+                ),
+                BetaIntradayPatternCandidate(
+                    discovery_run_id=run.id,
+                    pattern_hash="pattern-weak",
+                    pattern_code="DERIVED:DRY_PERIOD|SEGMENT:MIDDAY",
+                    anchor_family_code="DERIVED",
+                    anchor_code="DRY_PERIOD",
+                    context_tags_json='["SEGMENT:MIDDAY"]',
+                    action_bias="LONG",
+                    sample_size=18,
+                    matched_instruments=2,
+                    average_return_15m_pct=0.1800,
+                    average_return_30m_pct=0.2100,
+                    median_return_15m_pct=0.1500,
+                    win_rate_pct=56.0,
+                    mean_max_adverse_move_pct=0.1000,
+                    mean_max_favorable_move_pct=0.2800,
+                    post_cost_edge_15m_pct=0.1200,
+                    reliability_score=0.2500,
+                    status="SCREENED_IN",
+                    notes_json=json.dumps(
+                        {
+                            "best_horizon_minutes": 30,
+                            "best_horizon_return_pct": 0.2200,
+                            "best_horizon_median_return_pct": 0.1800,
+                            "best_horizon_win_rate_pct": 56.0,
+                            "best_horizon_post_cost_edge_pct": 0.1200,
+                            "horizon_stability_score": 0.1400,
+                        },
+                        sort_keys=True,
+                    ),
+                ),
+                BetaIntradayPatternPolicyProfile(
+                    profile_code="20260403183100",
+                    discovery_run_id=run.id,
+                    source_mode="OUTCOME_DRIVEN",
+                    evaluation_window_days=30,
+                    trade_count=8,
+                    live_forward_trade_count=6,
+                    historical_backfill_trade_count=2,
+                    winner_count=5,
+                    distinct_pattern_count=4,
+                    confidence_score=0.52,
+                    recommended_min_quality_score=0.35,
+                    recommended_min_stability_score=0.28,
+                    recommended_min_sample_quality_score=0.45,
+                    recommended_min_reliability_score=0.30,
+                    recommended_top_n=1,
+                    recommended_max_open_trades=1,
+                    notes_json=json.dumps({}, sort_keys=True),
+                ),
+            ]
+        )
+
+        summary = BetaIntradayPatternReviewService.latest_summary_in_session(sess, settings)
+
+    assert summary["adaptive_policy"]["source_mode"] == "OUTCOME_DRIVEN"
+    assert summary["adaptive_policy"]["active_for_runtime"] is True
+    assert summary["approval_mode"] == "ADAPTIVE_AUTO_TOP_N"
+    assert [row["pattern_hash"] for row in summary["approved_patterns"]] == ["pattern-strong"]
+
+
+def test_intraday_pattern_entry_plan_uses_best_horizon_metadata(beta_context):
+    settings = BetaSettings()
+    settings.intraday_short_trade_max_hold_minutes = 90
+    settings.intraday_pattern_min_sample_size = 12
+    settings.intraday_pattern_min_matched_instruments = 1
+
+    observation = BetaIntradayFeatureObservation(
+        instrument_id="instrument-1",
+        symbol="IBM",
+        session_date=date(2026, 4, 3),
+        observed_at=datetime(2026, 4, 3, 15, 0),
+        session_state="REGULAR_OPEN",
+        priority_tier="FOCUS",
+        state_code="MIDDAY__RANGE_DRIFT",
+        state_family_code="RANGE_DRIFT",
+        state_label="Midday / Range drift",
+        feature_snapshot_json=json.dumps({}, sort_keys=True),
+        confidence_score=0.62,
+        outlook_sample_size=18,
+        matched_instrument_count=3,
+        opportunity_status="ACTIONABLE",
+    )
+    approved_pattern = {
+        "pattern_hash": "pattern-60m",
+        "pattern_code": "DERIVED:DRY_PERIOD|SEGMENT:MIDDAY",
+        "family_code": "DERIVED:DRY_PERIOD",
+        "anchor_family_code": "DERIVED",
+        "anchor_code": "DRY_PERIOD",
+        "action_bias": "LONG",
+        "quality_score": 0.52,
+        "stability_score": 0.48,
+        "horizon_stability_score": 0.30,
+        "sample_quality_score": 0.58,
+        "reliability_score": 0.41,
+        "sample_size": 18,
+        "matched_instruments": 3,
+        "aligned_average_return_15m_pct": 0.18,
+        "aligned_average_return_30m_pct": 0.26,
+        "best_horizon_minutes": 60,
+        "aligned_best_horizon_return_pct": 0.42,
+        "best_horizon_post_cost_edge_pct": 0.31,
+        "best_horizon_win_rate_pct": 61.0,
+        "win_rate_decimal": 0.58,
+        "mean_max_adverse_move_pct": -0.14,
+        "mean_max_favorable_move_pct": 0.60,
+        "context_tags": ["SEGMENT:MIDDAY"],
+        "context_depth": 1,
+        "matched_context_depth": 1,
+        "matched_context_tags": ["SEGMENT:MIDDAY"],
+        "post_cost_edge_15m_pct": 0.12,
+    }
+
+    plan = BetaIntradaySimulatedTradeService._pattern_entry_plan(
+        observation,
+        settings,
+        approved_pattern=approved_pattern,
+    )
+
+    assert plan is not None
+    assert plan["max_hold_minutes"] == 60
+    assert plan["notes"]["pattern_best_horizon_minutes"] == 60
+    assert plan["notes"]["pattern_best_horizon_expected_return_pct"] == 0.42
+    assert plan["notes"]["pattern_best_horizon_post_cost_edge_pct"] == 0.31
+
+
+def test_intraday_pattern_exploration_respects_learned_family_priority_when_budget_is_tight(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_max_context_depth = 0
+    settings.intraday_pattern_max_patterns_per_observation = 1
+
+    observation = BetaIntradayFeatureObservation(
+        instrument_id="instrument-1",
+        symbol="IBM",
+        session_date=date(2026, 4, 3),
+        observed_at=datetime(2026, 4, 3, 15, 10),
+        session_state="REGULAR_OPEN",
+        priority_tier="FOCUS",
+        state_code="MIDDAY__RANGE_DRIFT",
+        state_family_code="RANGE_DRIFT",
+        state_label="Midday / Range drift",
+        event_trigger_code="EVENT_LOW_VOLUME_DRIFT",
+        feature_snapshot_json=json.dumps(
+            {
+                "minutes_since_open": 100,
+                "minutes_until_close": 290,
+                "session_progress_pct": 46.0,
+                "volume_last_15m_vs_expected": 0.52,
+                "rolling_intraday_vol_15m_pct": 0.31,
+                "intraday_range_pct": 0.95,
+                "return_last_15m_pct": 0.22,
+                "return_last_30m_pct": 0.28,
+                "return_since_open_pct": 0.35,
+            },
+            sort_keys=True,
+        ),
+        opportunity_status="INFORMATIONAL",
+    )
+
+    static_specs = BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+        observation,
+        settings=settings,
+    )
+    learned_specs = BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+        observation,
+        settings=settings,
+        exploration_profile={
+            "recommended_max_context_depth": 0,
+            "recommended_max_patterns_per_observation": 1,
+            "family_scores": {
+                "DERIVED:DRY_PERIOD": 0.82,
+                "STATE_FAMILY:RANGE_DRIFT": 0.18,
+                "EVENT:EVENT_LOW_VOLUME_DRIFT": 0.10,
+            },
+            "family_depth_caps": {
+                "DERIVED:DRY_PERIOD": 0,
+                "STATE_FAMILY:RANGE_DRIFT": 0,
+                "EVENT:EVENT_LOW_VOLUME_DRIFT": 0,
+            },
+        },
+    )
+
+    assert static_specs
+    assert learned_specs
+    assert static_specs[0]["pattern_code"] == "STATE_FAMILY:RANGE_DRIFT"
+    assert learned_specs[0]["pattern_code"] == "DERIVED:DRY_PERIOD"
+
+
+def test_intraday_pattern_exploration_respects_learned_family_context_preferences(beta_context):
+    settings = BetaSettings()
+    settings.intraday_pattern_max_context_depth = 1
+    settings.intraday_pattern_max_patterns_per_observation = 12
+
+    observation = BetaIntradayFeatureObservation(
+        instrument_id="instrument-1",
+        symbol="IBM",
+        session_date=date(2026, 4, 3),
+        observed_at=datetime(2026, 4, 3, 16, 10),
+        session_state="REGULAR_OPEN",
+        priority_tier="FOCUS",
+        state_code=None,
+        state_family_code=None,
+        state_label=None,
+        event_trigger_code=None,
+        feature_snapshot_json=json.dumps(
+            {
+                "minutes_since_open": 120,
+                "minutes_until_close": 210,
+                "session_progress_pct": 46.0,
+                "gap_from_prev_close_pct": 1.25,
+                "distance_from_vwap_pct": 0.18,
+                "volume_last_15m_vs_expected": 0.52,
+                "rolling_intraday_vol_15m_pct": 0.31,
+                "intraday_range_pct": 0.95,
+                "return_last_15m_pct": 0.18,
+                "return_last_30m_pct": 0.22,
+                "return_since_open_pct": 0.35,
+            },
+            sort_keys=True,
+        ),
+        opportunity_status="INFORMATIONAL",
+    )
+
+    static_specs = BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+        observation,
+        settings=settings,
+    )
+    learned_specs = BetaIntradayPatternExplorationService.pattern_specs_for_observation(
+        observation,
+        settings=settings,
+        exploration_profile={
+            "recommended_max_context_depth": 1,
+            "recommended_max_patterns_per_observation": 12,
+            "family_scores": {
+                "DERIVED:DRY_PERIOD": 0.82,
+            },
+            "family_depth_caps": {
+                "DERIVED:DRY_PERIOD": 1,
+            },
+            "family_context_prefix_scores": {
+                "DERIVED:DRY_PERIOD": {
+                    "VOLUME": 0.80,
+                    "RANGE": 0.72,
+                    "SEGMENT": 0.10,
+                    "SYMBOL": 0.05,
+                }
+            },
+            "family_context_prefix_allowlists": {
+                "DERIVED:DRY_PERIOD": ["VOLUME", "RANGE"]
+            },
+        },
+    )
+
+    static_dry_period_specs = [
+        row for row in static_specs if row["pattern_code"].startswith("DERIVED:DRY_PERIOD")
+    ]
+    learned_dry_period_specs = [
+        row for row in learned_specs if row["pattern_code"].startswith("DERIVED:DRY_PERIOD")
+    ]
+
+    assert static_dry_period_specs
+    assert learned_dry_period_specs
+    assert any("SEGMENT:MIDDAY" in row["context_tags"] for row in static_dry_period_specs)
+    assert any("SYMBOL:IBM" in row["context_tags"] for row in static_dry_period_specs)
+    assert all(
+        {
+            tag.split(":", 1)[0]
+            for tag in row["context_tags"]
+        }.issubset({"VOLUME", "RANGE"})
+        for row in learned_dry_period_specs
+    )
+    assert any("VOLUME:LOW" in row["context_tags"] for row in learned_dry_period_specs)
+    assert any("RANGE:COMPRESSED" in row["context_tags"] for row in learned_dry_period_specs)
+
+
+def test_intraday_pattern_entry_plan_uses_learned_execution_profile(beta_context):
+    settings = BetaSettings()
+    settings.intraday_short_trade_max_hold_minutes = 90
+    settings.intraday_pattern_min_sample_size = 12
+    settings.intraday_pattern_min_matched_instruments = 1
+
+    observation = BetaIntradayFeatureObservation(
+        instrument_id="instrument-1",
+        symbol="IBM",
+        session_date=date(2026, 4, 3),
+        observed_at=datetime(2026, 4, 3, 15, 0),
+        session_state="REGULAR_OPEN",
+        priority_tier="FOCUS",
+        state_code="MIDDAY__RANGE_DRIFT",
+        state_family_code="RANGE_DRIFT",
+        state_label="Midday / Range drift",
+        feature_snapshot_json=json.dumps({}, sort_keys=True),
+        confidence_score=0.62,
+        outlook_sample_size=18,
+        matched_instrument_count=3,
+        opportunity_status="ACTIONABLE",
+    )
+    approved_pattern = {
+        "pattern_hash": "pattern-60m",
+        "pattern_code": "DERIVED:DRY_PERIOD|SEGMENT:MIDDAY",
+        "family_code": "DERIVED:DRY_PERIOD",
+        "anchor_family_code": "DERIVED",
+        "anchor_code": "DRY_PERIOD",
+        "action_bias": "LONG",
+        "quality_score": 0.52,
+        "stability_score": 0.48,
+        "horizon_stability_score": 0.30,
+        "sample_quality_score": 0.58,
+        "reliability_score": 0.41,
+        "sample_size": 18,
+        "matched_instruments": 3,
+        "aligned_average_return_15m_pct": 0.18,
+        "aligned_average_return_30m_pct": 0.26,
+        "best_horizon_minutes": 60,
+        "aligned_best_horizon_return_pct": 0.42,
+        "best_horizon_post_cost_edge_pct": 0.31,
+        "best_horizon_win_rate_pct": 61.0,
+        "win_rate_decimal": 0.58,
+        "mean_max_adverse_move_pct": -0.14,
+        "mean_max_favorable_move_pct": 0.60,
+        "context_tags": ["SEGMENT:MIDDAY"],
+        "context_depth": 1,
+        "matched_context_depth": 1,
+        "matched_context_tags": ["SEGMENT:MIDDAY"],
+        "post_cost_edge_15m_pct": 0.12,
+    }
+
+    static_plan = BetaIntradaySimulatedTradeService._pattern_entry_plan(
+        observation,
+        settings,
+        approved_pattern=approved_pattern,
+    )
+    learned_plan = BetaIntradaySimulatedTradeService._pattern_entry_plan(
+        observation,
+        settings,
+        approved_pattern=approved_pattern,
+        execution_profile={
+            "source_mode": "OUTCOME_DRIVEN",
+            "recommended_target_capture_ratio": 0.75,
+            "recommended_stop_loss_ratio": 0.80,
+            "recommended_max_hold_ratio": 0.60,
+            "recommended_early_bail_ratio": 0.25,
+        },
+    )
+
+    assert static_plan is not None
+    assert learned_plan is not None
+    assert learned_plan["target_return_pct"] < static_plan["target_return_pct"]
+    assert learned_plan["stop_loss_pct"] < static_plan["stop_loss_pct"]
+    assert learned_plan["max_hold_minutes"] < static_plan["max_hold_minutes"]
+    assert learned_plan["early_bail_minutes"] == round(learned_plan["max_hold_minutes"] * 0.25)
+    assert learned_plan["notes"]["pattern_execution_profile_source"] == "OUTCOME_DRIVEN"
+    assert learned_plan["notes"]["pattern_execution_target_capture_ratio"] == 0.75

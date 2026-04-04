@@ -1,771 +1,318 @@
 {% extends "base.html" %}
 {% block title %}Paper Trading Beta{% endblock %}
 {% block content %}
-{% set counts = dashboard.counts or {} %}
-{% set status = dashboard.status or {} %}
-{% set performance = dashboard.performance or {} %}
-{% set ledger = dashboard.ledger or {} %}
-{% set risk = dashboard.risk_control or {} %}
-{% set evaluation = dashboard.latest_evaluation_summary or {} %}
 {% set runtime_activity = dashboard.runtime_activity or {} %}
-{% set active_model = dashboard.active_model or {} %}
-{% set active_strategy = dashboard.active_strategy or {} %}
-{% set latest_dataset = dashboard.latest_dataset or {} %}
-{% set latest_experiment = dashboard.latest_experiment or {} %}
-{% set latest_validation = dashboard.latest_validation or {} %}
-{% set pipeline = dashboard.pipeline_health or {} %}
-{% set validity = dashboard.validity_summary or {} %}
-{% set execution_feedback = dashboard.execution_feedback_summary or {} %}
-{% set storage = pipeline.storage_profile or {} %}
-{% set productivity = pipeline.research_productivity or {} %}
+{% set pattern_summary = dashboard.intraday_pattern_summary or {} %}
+{% set pattern_counts = pattern_summary.counts or {} %}
+{% set pattern_run = pattern_summary.latest_run or {} %}
+{% set approved_patterns = pattern_summary.approved_patterns or [] %}
+{% set pattern_families = pattern_summary.family_rollups or [] %}
+{% set current_pattern_matches = dashboard.current_pattern_matches or [] %}
+{% set intraday_trade_summary = dashboard.intraday_trade_summary or {} %}
+{% set recent_intraday_trades = dashboard.recent_intraday_trades or [] %}
+{% set storage = (dashboard.pipeline_health or {}).storage_profile or {} %}
 
 <section class="section-header">
   <div>
     <h1>Paper Trading Beta</h1>
     <p class="muted beta-page-note">
-      Summary-first view of what the learning system is doing now, what it has found,
-      and whether the runtime is healthy.
+      Intraday profit-discovery view. The only question this surface is trying to answer is
+      where repeatable, post-cost edge may exist right now, and whether the beta is validating it cleanly.
     </p>
   </div>
   <div class="beta-toolbar">
-    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/opportunities">Watched Opportunities</a>
-    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/hypotheses">Hypotheses</a>
-    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/trades">Paper Trades</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/patterns">Intraday Patterns</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/trades">Live-Forward Trades</a>
     <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/health">Health &amp; Controls</a>
   </div>
 </section>
 
 <section class="beta-summary-grid">
   <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Approved Pockets</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Approved / Screened In</div>
+      <div class="position-card__value">{{ pattern_counts.approved_count or 0 }} / {{ pattern_counts.screened_in_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Approval Mode</div>
+      <div class="position-card__value">{{ pattern_summary.approval_mode or "AUTO_TOP_N" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Latest Run</div>
+      <div class="position-card__value">{{ pattern_run.run_code or "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Match Surface</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Current Matches</div>
+      <div class="position-card__value">{{ current_pattern_matches|length }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Families Covered</div>
+      <div class="position-card__value">{{ pattern_counts.family_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Generated / Screened</div>
+      <div class="position-card__value">{{ pattern_run.patterns_generated or 0 }} / {{ pattern_run.patterns_screened_in or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Live-Forward Evidence</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Pattern Trades</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_open or 0 }} open / {{ intraday_trade_summary.pattern_live_forward_closed or 0 }} closed</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Closed Win Rate</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_win_rate_pct if intraday_trade_summary.pattern_live_forward_win_rate_pct is not none else "-" }}{% if intraday_trade_summary.pattern_live_forward_win_rate_pct is not none %}%{% endif %}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg Post-Cost %</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_avg_post_cost_return_pct if intraday_trade_summary.pattern_live_forward_avg_post_cost_return_pct is not none else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
     <div class="card__header"><h2 class="card__title">Runtime</h2></div>
     <div class="position-card__section">
-      <div class="position-card__label">Mode</div>
-      <div class="position-card__value">{{ status.runtime_mode or (beta_settings.mode if beta_settings else "Unavailable") }}</div>
-    </div>
-    <div class="position-card__section">
       <div class="position-card__label">Supervisor</div>
-      <div class="position-card__value">
-        <span class="{{ badge_class(runtime_activity.supervisor_status_display) }}">{{ runtime_activity.supervisor_status_display or status.supervisor_status or "stopped" }}</span>
-      </div>
+      <div class="position-card__value"><span class="{{ badge_class(runtime_activity.supervisor_status_display) }}">{{ runtime_activity.supervisor_status_display or "stopped" }}</span></div>
     </div>
     <div class="position-card__section">
-      <div class="position-card__label">PID / Heartbeat</div>
-      <div class="position-card__value">{{ status.supervisor_pid or "-" }} / {{ runtime_activity.heartbeat_age_seconds if runtime_activity.heartbeat_age_seconds is not none else "-" }}s</div>
+      <div class="position-card__label">Heartbeat</div>
+      <div class="position-card__value">{{ runtime_activity.heartbeat_age_seconds if runtime_activity.heartbeat_age_seconds is not none else "-" }}s</div>
     </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Current Job</div>
-      <div class="position-card__value">
-        {% if runtime_activity.current_running_job %}
-        {{ runtime_activity.current_running_job.job_name }} ({{ runtime_activity.current_running_job_age_seconds if runtime_activity.current_running_job_age_seconds is not none else "-" }}s)
-        {% elif runtime_activity.last_successful_job %}
-        {{ runtime_activity.last_successful_job.job_name }} ({{ runtime_activity.last_successful_job.status }})
-        {% else %}
-        -
-        {% endif %}
-      </div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Research Validity</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Definitions</div>
-      <div class="position-card__value">{{ counts.hypothesis_definitions_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Validated / Promising</div>
-      <div class="position-card__value">{{ validity.validated_count or 0 }} / {{ validity.promising_count or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Degraded / Rejected</div>
-      <div class="position-card__value">{{ validity.degraded_count or 0 }} / {{ validity.rejected_count or 0 }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Storage Efficiency</h2></div>
     <div class="position-card__section">
       <div class="position-card__label">DB Size</div>
       <div class="position-card__value">{{ storage.db_size_gb if storage.db_size_gb is not none else "-" }}{% if storage.db_size_gb is not none %} GB{% endif %}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Transient Share</div>
-      <div class="position-card__value">{{ storage.transient_share_pct if storage.transient_share_pct is not none else "-" }}{% if storage.transient_share_pct is not none %}%{% endif %}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Last Cleanup</div>
-      <div class="position-card__value">{{ storage.last_cleanup_at or "none yet" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Research Productivity</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Surviving Beliefs</div>
-      <div class="position-card__value">{{ productivity.surviving_belief_count or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Candidates / Survivor</div>
-      <div class="position-card__value">{{ productivity.discovery_candidates_per_surviving_belief if productivity.discovery_candidates_per_surviving_belief is not none else "-" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Signals / Actionable Event</div>
-      <div class="position-card__value">{{ productivity.execution_signals_per_actionable_event_last_24h if productivity.execution_signals_per_actionable_event_last_24h is not none else "-" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Live Confirmation</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Realized Observations</div>
-      <div class="position-card__value">{{ counts.signal_observations_realized or 0 }} / {{ counts.signal_observations_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Avg Realized %</div>
-      <div class="position-card__value">{{ validity.avg_realized_return_pct if validity.avg_realized_return_pct is not none else "-" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Avg Prediction Error %</div>
-      <div class="position-card__value">{{ validity.avg_prediction_error_pct if validity.avg_prediction_error_pct is not none else "-" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Demo Trades</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Open</div>
-      <div class="position-card__value">{{ counts.positions_open or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Closed</div>
-      <div class="position-card__value">{{ counts.positions_closed or 0 }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Held Execution</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Held Positions</div>
-      <div class="position-card__value">{{ counts.held_positions_open or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Signals Logged</div>
-      <div class="position-card__value">{{ counts.execution_signals_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Label Completion</div>
-      <div class="position-card__value">{{ execution_feedback.execution_label_completion_pct if execution_feedback.execution_label_completion_pct is not none else "-" }}{% if execution_feedback.execution_label_completion_pct is not none %}%{% endif %}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Score Tape</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Scores Logged</div>
-      <div class="position-card__value">{{ counts.scores_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Recommended</div>
-      <div class="position-card__value">{{ counts.scores_recommended or 0 }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Intraday Capture</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Snapshots Logged</div>
-      <div class="position-card__value">{{ counts.intraday_snapshots_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Latest Tick</div>
-      <div class="position-card__value">{{ dashboard.recent_intraday_snapshots[0].observed_at if dashboard.recent_intraday_snapshots else "-" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Active Model</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Version</div>
-      <div class="position-card__value">{{ active_model.version_code or "heuristic-only" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Validation Sign Accuracy</div>
-      <div class="position-card__value">{{ active_model.validation_sign_accuracy_pct if active_model.validation_sign_accuracy_pct is not none else "-" }}{% if active_model.validation_sign_accuracy_pct is not none %}%{% endif %}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Active Strategy</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Version</div>
-      <div class="position-card__value">{{ active_strategy.version_code or "unassigned" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Entry Gates</div>
-      <div class="position-card__value">
-        C {{ active_strategy.min_confidence_score if active_strategy.min_confidence_score is not none else "-" }}
-        / E {{ active_strategy.min_expected_edge_score if active_strategy.min_expected_edge_score is not none else "-" }}
-      </div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Research Manifests</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Datasets / Experiments / Validations</div>
-      <div class="position-card__value">{{ counts.datasets_total or 0 }} / {{ counts.experiments_total or 0 }} / {{ counts.validation_runs_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Latest Dataset</div>
-      <div class="position-card__value">{{ latest_dataset.version_code or "-" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Latest Validation</div>
-      <div class="position-card__value">{{ latest_validation.validation_method or "-" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">News Evidence</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Articles / Links</div>
-      <div class="position-card__value">{{ counts.news_articles_total or 0 }} / {{ counts.news_links_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Sources</div>
-      <div class="position-card__value">{{ counts.news_sources_total or 0 }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Official Releases</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Events / Links</div>
-      <div class="position-card__value">{{ counts.filing_events_total or 0 }} / {{ counts.filing_links_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Sources</div>
-      <div class="position-card__value">{{ counts.filing_sources_total or 0 }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Benchmarks</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Rows Stored</div>
-      <div class="position-card__value">{{ counts.benchmark_rows_total or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Universe</div>
-      <div class="position-card__value">{{ counts.universe_active or 0 }} names</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Learning Trend</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Win Rate</div>
-      <div class="position-card__value">{{ performance.win_rate_pct or 0 }}%</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Avg P/L %</div>
-      <div class="position-card__value">{{ performance.avg_pnl_pct or 0 }}%</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Trend</div>
-      <div class="position-card__value"><span class="{{ badge_class(performance.trend) }}">{{ performance.trend or "stable" }}</span></div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Pipeline Verdict</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Overall</div>
-      <div class="position-card__value"><span class="{{ badge_class(pipeline.overall_status) }}">{{ pipeline.overall_status or "UNKNOWN" }}</span></div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Tracked Core Lane</div>
-      <div class="position-card__value"><span class="{{ badge_class('SUCCESS' if pipeline.core_scoring_recent else 'WARNING') }}">{{ "fresh" if pipeline.core_scoring_recent else "stale" }}</span></div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Full Lane</div>
-      <div class="position-card__value"><span class="{{ badge_class('SUCCESS' if pipeline.scoring_recent else 'WARNING') }}">{{ "fresh" if pipeline.scoring_recent else "stale" }}</span></div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Paper Capital</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Available</div>
-      <div class="position-card__value">GBP {{ ledger.available_cash_gbp or "0.00" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Deployed</div>
-      <div class="position-card__value">GBP {{ ledger.deployed_capital_gbp or "0.00" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Equity</div>
-      <div class="position-card__value">GBP {{ ledger.total_equity_gbp or "0.00" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Risk Control</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Entries</div>
-      <div class="position-card__value"><span class="{{ badge_class('warning' if risk.demo_entries_paused else 'success') }}">{{ "paused" if risk.demo_entries_paused else "open" }}</span></div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Recent Win Rate</div>
-      <div class="position-card__value">{{ risk.recent_win_rate_pct or 0 }}%</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Recent Avg P/L</div>
-      <div class="position-card__value">{{ risk.recent_avg_pnl_pct or 0 }}%</div>
     </div>
   </article>
 </section>
 
 <section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Core V1 Ratios</h2>
-  </div>
+  <div class="card__header"><h2 class="card__title">What Matters Now</h2></div>
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
-          <th>Metric</th>
-          <th>Value</th>
+          <th>Check</th>
+          <th>State</th>
           <th>Why It Matters</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>Feature rows / validated belief</td>
-          <td>{{ productivity.feature_rows_per_validated_belief if productivity.feature_rows_per_validated_belief is not none else "-" }}</td>
-          <td>Shows how much corpus cost is required for one fully validated setup.</td>
+          <td>Approved pockets exist</td>
+          <td>
+            {% if approved_patterns %}
+            <span class="{{ badge_class('SUCCESS') }}">yes</span>
+            {% else %}
+            <span class="{{ badge_class('WARNING') }}">no</span>
+            {% endif %}
+          </td>
+          <td>No approved pockets means the model is still searching, not validating.</td>
         </tr>
         <tr>
-          <td>Feature rows / surviving belief</td>
-          <td>{{ productivity.feature_rows_per_surviving_belief if productivity.feature_rows_per_surviving_belief is not none else "-" }}</td>
-          <td>Shows whether the search is producing durable setups efficiently.</td>
+          <td>Current live matches</td>
+          <td>
+            {% if current_pattern_matches %}
+            <span class="{{ badge_class('SUCCESS') }}">{{ current_pattern_matches|length }}</span>
+            {% else %}
+            <span class="{{ badge_class('NO_ACTION') }}">none</span>
+            {% endif %}
+          </td>
+          <td>This is the real-time surface where approved pockets are appearing on live observations.</td>
         </tr>
         <tr>
-          <td>Discovery candidates / surviving belief</td>
-          <td>{{ productivity.discovery_candidates_per_surviving_belief if productivity.discovery_candidates_per_surviving_belief is not none else "-" }}</td>
-          <td>Lower is better if candidate quality is improving.</td>
+          <td>Closed live-forward evidence</td>
+          <td>
+            {% if intraday_trade_summary.pattern_live_forward_closed %}
+            <span class="{{ badge_class('SUCCESS') }}">{{ intraday_trade_summary.pattern_live_forward_closed }}</span>
+            {% else %}
+            <span class="{{ badge_class('WARNING') }}">0</span>
+            {% endif %}
+          </td>
+          <td>Without closed pattern trades, we still lack outcome confirmation.</td>
         </tr>
         <tr>
-          <td>Test runs / promoted hypothesis</td>
-          <td>{{ productivity.test_runs_per_promoted_hypothesis if productivity.test_runs_per_promoted_hypothesis is not none else "-" }}</td>
-          <td>Measures backtest spend per promoted setup.</td>
-        </tr>
-        <tr>
-          <td>GB / activated model</td>
-          <td>{{ productivity.db_size_gb_per_activated_model if productivity.db_size_gb_per_activated_model is not none else "-" }}</td>
-          <td>Shows storage cost relative to models that actually graduate.</td>
-        </tr>
-        <tr>
-          <td>Recommendations / demo open last 24h</td>
-          <td>{{ productivity.recommendation_decisions_per_demo_position_opened_last_24h if productivity.recommendation_decisions_per_demo_position_opened_last_24h is not none else "-" }}</td>
-          <td>High values indicate the funnel is busy but not converting.</td>
-        </tr>
-        <tr>
-          <td>Execution signals / actionable event last 24h</td>
-          <td>{{ productivity.execution_signals_per_actionable_event_last_24h if productivity.execution_signals_per_actionable_event_last_24h is not none else "-" }}</td>
-          <td>Shows whether intraday guidance is meaningful or mostly neutral exhaust.</td>
+          <td>Runtime fresh enough</td>
+          <td>
+            {% if runtime_activity.heartbeat_age_seconds is not none and runtime_activity.heartbeat_age_seconds < 600 %}
+            <span class="{{ badge_class('SUCCESS') }}">fresh</span>
+            {% else %}
+            <span class="{{ badge_class('WARNING') }}">stale</span>
+            {% endif %}
+          </td>
+          <td>A stale runtime can make the match and trade displays look healthier than the engine really is.</td>
         </tr>
       </tbody>
     </table>
   </div>
 </section>
 
-<section class="beta-summary-grid">
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Current Runtime Status</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Active Supervisor</div>
-      <div class="position-card__value">{{ "yes" if runtime_activity.supervisor_alive else "no" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Recent Success / Fail</div>
-      <div class="position-card__value">{{ runtime_activity.latest_success_count or 0 }} / {{ runtime_activity.latest_failure_count or 0 }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Last Success</div>
-      <div class="position-card__value">{{ runtime_activity.last_successful_job.job_name if runtime_activity.last_successful_job else "-" }}</div>
-    </div>
-  </article>
-
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">What It Is Doing</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">Observation</div>
-      <div class="position-card__value">{{ dashboard.runtime_activity.latest_jobs_by_type.observation.job_name if dashboard.runtime_activity.latest_jobs_by_type.observation is defined else "-" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Scoring</div>
-      <div class="position-card__value">{{ dashboard.runtime_activity.latest_jobs_by_type.scoring.job_name if dashboard.runtime_activity.latest_jobs_by_type.scoring is defined else "-" }}</div>
-    </div>
-    <div class="position-card__section">
-      <div class="position-card__label">Evidence / Learning</div>
-      <div class="position-card__value">
-        {{ dashboard.runtime_activity.latest_jobs_by_type.news.job_name if dashboard.runtime_activity.latest_jobs_by_type.news is defined else "-" }}
-        /
-        {{ dashboard.runtime_activity.latest_jobs_by_type.training.job_name if dashboard.runtime_activity.latest_jobs_by_type.training is defined else "-" }}
-      </div>
-    </div>
-  </article>
-</section>
-
 <section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Setup Validity</h2>
-  </div>
-  {% if dashboard.hypothesis_definitions %}
+  <div class="card__header"><h2 class="card__title">Current Live Match Surface</h2></div>
+  {% if current_pattern_matches %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
-          <th>Setup</th>
-          <th>Belief</th>
-          <th>Median Ex.</th>
-          <th>Robust Edge</th>
+          <th>Symbol</th>
+          <th>Matched Pocket</th>
+          <th>Bias</th>
+          <th>Best Horizon</th>
+          <th>Pocket Edge</th>
+          <th>Live Confidence</th>
+          <th>State</th>
+          <th>Observed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in current_pattern_matches %}
+        <tr>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>
+            {{ row.matched_pattern_code }}<br>
+            <span class="muted">{{ row.matched_pattern_family_code }}</span>
+          </td>
+          <td><span class="{{ badge_class(row.matched_pattern_bias) }}">{{ row.matched_pattern_bias }}</span></td>
+          <td>{{ row.matched_pattern_best_horizon_label or "-" }}</td>
+          <td>{{ row.matched_pattern_best_horizon_edge_pct if row.matched_pattern_best_horizon_edge_pct is not none else row.matched_pattern_edge_15m_pct if row.matched_pattern_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.confidence_score if row.confidence_score is not none else "-" }}</td>
+          <td>{{ row.state_label or row.state_code or "-" }}</td>
+          <td>{{ row.observed_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No current observations match an approved pocket yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Approved Pockets</h2></div>
+  {% if approved_patterns %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Pocket</th>
+          <th>Bias</th>
+          <th>Best Horizon</th>
+          <th>Edge</th>
+          <th>Adverse</th>
           <th>Stability</th>
-          <th>Live</th>
-          <th>Gate</th>
+          <th>Sample Quality</th>
+          <th>Sample</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.hypothesis_definitions[:6] %}
+        {% for row in approved_patterns %}
         <tr>
           <td>
-            <a href="/paper-trading-beta/hypothesis/{{ row.id }}">{{ row.hypothesis_code }}</a><br>
-            <span class="muted">{{ row.family_name or row.family_code or "Unassigned" }}</span>
+            <strong>{{ row.anchor_code }}</strong><br>
+            <span class="muted">{{ row.pattern_code }}</span>
           </td>
-          <td>
-            <span class="{{ badge_class(row.status) }}">{{ row.status }}</span><br>
-            <span class="muted">C {{ "%.2f"|format(row.belief_confidence_score or 0) }}</span>
-          </td>
-          <td>{{ row.median_excess_return_pct if row.median_excess_return_pct is not none else "-" }}</td>
-          <td>{{ row.winsorized_adjusted_return_pct if row.winsorized_adjusted_return_pct is not none else "-" }}</td>
+          <td><span class="{{ badge_class(row.action_bias) }}">{{ row.action_bias }}</span></td>
+          <td>{{ row.best_horizon_label or "-" }}</td>
+          <td>{{ row.best_horizon_post_cost_edge_pct if row.best_horizon_post_cost_edge_pct is not none else row.post_cost_edge_15m_pct if row.post_cost_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.mean_max_adverse_move_pct if row.mean_max_adverse_move_pct is not none else "-" }}</td>
           <td>{{ row.stability_score if row.stability_score is not none else "-" }}</td>
-          <td>
-            {{ row.avg_realized_return_pct if row.avg_realized_return_pct is not none else "-" }}
-            <span class="muted">({{ row.realized_observation_count or 0 }})</span>
-          </td>
-          <td>
-            {% if row.promotion_eligible %}
-            <span class="{{ badge_class('VALIDATED') }}">PROMOTE OK</span>
-            {% elif row.watch_eligible %}
-            <span class="{{ badge_class('WATCHING') }}">WATCH OK</span>
-            {% else %}
-            <span class="{{ badge_class(row.governance_severity or 'DEGRADED') }}">{{ row.gate_fail_reason or "gated" }}</span>
-            {% endif %}
-          </td>
+          <td>{{ row.sample_quality_score if row.sample_quality_score is not none else "-" }}</td>
+          <td>{{ row.sample_size or 0 }} / {{ row.matched_instruments or 0 }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">Setup validity will appear once the registry has been refreshed.</p>
+  <p class="muted">No approved pockets yet. Use the patterns page to inspect screened-in candidates and family behavior.</p>
   {% endif %}
 </section>
 
 <section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Confidence Buckets</h2>
-  </div>
-  {% if dashboard.confidence_buckets %}
+  <div class="card__header"><h2 class="card__title">Family Leaders</h2></div>
+  {% if pattern_families %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
-          <th>Bucket</th>
-          <th>Observations</th>
-          <th>Recommended</th>
-          <th>Avg Future Return</th>
-          <th>Alignment</th>
+          <th>Family</th>
+          <th>Best Bias</th>
+          <th>Patterns</th>
+          <th>Avg Edge</th>
+          <th>Avg Adverse</th>
+          <th>Verdict</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.confidence_buckets %}
+        {% for row in pattern_families[:6] %}
         <tr>
-          <td><span class="{{ badge_class(row.bucket_label) }}">{{ row.bucket_label }}</span></td>
-          <td>{{ row.observation_count }}</td>
-          <td>{{ row.recommendation_count }}</td>
-          <td>{{ row.avg_future_return_pct if row.avg_future_return_pct is not none else "-" }}</td>
-          <td>{{ row.alignment_rate_pct if row.alignment_rate_pct is not none else "-" }}{% if row.alignment_rate_pct is not none %}%{% endif %}</td>
+          <td>
+            <strong>{{ row.anchor_code }}</strong><br>
+            <span class="muted">{{ row.best_pattern_code }}</span>
+          </td>
+          <td><span class="{{ badge_class(row.best_action_bias) }}">{{ row.best_action_bias }}</span></td>
+          <td>{{ row.screened_in_count or 0 }} screened / {{ row.approved_count or 0 }} approved</td>
+          <td>{{ row.average_post_cost_edge_15m_pct if row.average_post_cost_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.average_adverse_move_pct if row.average_adverse_move_pct is not none else "-" }}</td>
+          <td><span class="{{ badge_class(row.verdict) }}">{{ row.verdict }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">Confidence calibration will appear once the beta has enough labeled score history.</p>
-  {% endif %}
-</section>
-
-<section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Tracked Core Signals</h2>
-  </div>
-  {% if dashboard.tracked_core_signals %}
-  <div class="table-wrap">
-    <table class="beta-table-compact">
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th>Candidate</th>
-          <th>Setup</th>
-          <th>Direction</th>
-          <th>Pred 5D %</th>
-          <th>Confidence</th>
-          <th>Note</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in dashboard.tracked_core_signals %}
-        <tr>
-          <td>
-            <strong>
-              {% if row.candidate_id %}
-              <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.symbol }}</a>
-              {% else %}
-              {{ row.symbol }}
-              {% endif %}
-            </strong>
-          </td>
-          <td>
-            {% if row.candidate_status %}
-            <span class="{{ badge_class(row.candidate_status) }}">{{ row.candidate_status }}</span>
-            {% else %}
-            -
-            {% endif %}
-          </td>
-          <td>
-            {{ row.matched_hypothesis_code or "-" }}<br>
-            <span class="muted">{{ row.matched_hypothesis_status or row.matched_target_metric or "" }}</span>
-          </td>
-          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
-          <td>{{ "%.2f"|format(row.predicted_return_5d or 0) }}</td>
-          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
-          <td>{{ row.recommendation_reason_text or row.rejection_reason or "No explicit note captured." }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">No tracked-core score output is visible yet.</p>
-  {% endif %}
-</section>
-
-<section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Held Position Execution</h2>
-  </div>
-  {% if dashboard.held_position_states %}
-  <div class="table-wrap">
-    <table class="beta-table-compact">
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th>Source</th>
-          <th>Setup</th>
-          <th>Units</th>
-          <th>Thesis % / Horizon</th>
-          <th>Unrealized %</th>
-          <th>Execution Quality</th>
-          <th>Last Signal</th>
-          <th>When</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in dashboard.held_position_states %}
-        <tr>
-          <td><strong>{{ row.symbol }}</strong></td>
-          <td>{{ row.position_source }}</td>
-          <td>
-            {{ row.hypothesis_code or "-" }}<br>
-            <span class="muted">{{ row.hypothesis_status or row.hypothesis_family_name or "" }}</span>
-          </td>
-          <td>{{ row.units or "-" }}</td>
-          <td>{{ row.thesis_expected_return_pct if row.thesis_expected_return_pct is not none else "-" }} / {{ row.thesis_horizon_days or "-" }}</td>
-          <td>{{ row.unrealized_return_pct if row.unrealized_return_pct is not none else "-" }}</td>
-          <td>{{ row.execution_quality_score if row.execution_quality_score is not none else "-" }}</td>
-          <td>
-            {% if row.last_execution_signal_type %}
-            <span class="{{ badge_class(row.last_execution_signal_type) }}">{{ row.last_execution_signal_type }}</span>
-            {% else %}
-            -
-            {% endif %}
-          </td>
-          <td>{{ row.last_execution_signal_at or "-" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">No held-position execution state is being tracked yet.</p>
-  {% endif %}
-</section>
-
-<section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Recent Execution Guidance</h2>
-  </div>
-  {% if dashboard.recent_execution_signals %}
-  <div class="table-wrap">
-    <table class="beta-table-compact">
-      <thead>
-        <tr>
-          <th>When</th>
-          <th>Symbol</th>
-          <th>Signal</th>
-          <th>Confidence</th>
-          <th>Trigger</th>
-          <th>Rationale</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in dashboard.recent_execution_signals[:8] %}
-        <tr>
-          <td>{{ row.signal_time }}</td>
-          <td><strong>{{ row.symbol }}</strong></td>
-          <td><span class="{{ badge_class(row.signal_type) }}">{{ row.signal_type }}</span></td>
-          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
-          <td>{{ row.event_trigger_code or "-" }}</td>
-          <td>{{ row.rationale_text or "-" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">Execution guidance rows will appear once held positions are evaluated during a live market session.</p>
-  {% endif %}
-</section>
-
-<section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Execution State Alerts</h2>
-  </div>
-  <p class="muted">This is the meaningful state-change layer on top of the raw execution log.</p>
-  {% if dashboard.execution_notifications %}
-  <div class="table-wrap">
-    <table class="beta-table-compact">
-      <thead>
-        <tr>
-          <th>When</th>
-          <th>Severity</th>
-          <th>Title</th>
-          <th>Note</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in dashboard.execution_notifications[:8] %}
-        <tr>
-          <td>{{ row.created_at }}</td>
-          <td><span class="{{ badge_class(row.severity) }}">{{ row.severity }}</span></td>
-          <td>{{ row.title }}</td>
-          <td>{{ row.message_text }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">No execution state-change alerts have fired yet.</p>
-  {% endif %}
-</section>
-
-<section class="card card-spaced">
-  <div class="card__header">
-    <h2 class="card__title">Watched Opportunities</h2>
-  </div>
-  {% if dashboard.watched_candidates %}
-  <div class="table-wrap">
-    <table class="beta-table-compact">
-      <thead>
-        <tr>
-          <th>Symbol</th>
-          <th>Title</th>
-          <th>Setup</th>
-          <th>Belief</th>
-          <th>Decision</th>
-          <th>Direction</th>
-          <th>Confidence</th>
-          <th>Live</th>
-          <th>Updated</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in dashboard.watched_candidates %}
-        <tr>
-          <td><strong><a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.symbol }}</a></strong></td>
-          <td>
-            <a href="/paper-trading-beta/candidate/{{ row.id }}">{{ row.title }}</a><br>
-            <span class="muted">{{ row.evidence_summary or "-" }}</span>
-          </td>
-          <td>
-            {% if row.hypothesis_definition_id %}
-            <a href="/paper-trading-beta/hypothesis/{{ row.hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a>
-            {% else %}
-            -
-            {% endif %}
-          </td>
-          <td><span class="{{ badge_class(row.hypothesis_status or row.status) }}">{{ row.hypothesis_status or row.status }}</span></td>
-          <td>
-            <span class="{{ badge_class(row.recommendation_status or row.status) }}">{{ row.recommendation_status or row.status }}</span><br>
-            <span class="muted">{{ row.recommendation_reason_text or row.rejection_reason or "" }}</span>
-          </td>
-          <td>{{ row.direction }}</td>
-          <td>{{ "%.2f"|format(row.confidence_score or 0) }}</td>
-          <td>{{ row.realized_return_pct if row.realized_return_pct is not none else row.expected_return_pct if row.expected_return_pct is not none else "-" }}</td>
-          <td>{{ row.updated_at or row.discovered_at }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">No watched opportunities yet. The beta is still building its candidate set.</p>
+  <p class="muted">No family rollups are available yet.</p>
   {% endif %}
 </section>
 
 <section class="card">
-  <div class="card__header">
-    <h2 class="card__title">Recent Milestones</h2>
-  </div>
-  <p class="muted">Historical notifications. Use the runtime cards above and Health &amp; Controls to judge current live state.</p>
-  {% if dashboard.notifications %}
+  <div class="card__header"><h2 class="card__title">Recent Pattern Live-Forward Trades</h2></div>
+  {% set pattern_trade_rows = recent_intraday_trades | selectattr("entry_source", "equalto", "PATTERN") | list %}
+  {% if pattern_trade_rows %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
-          <th>When</th>
-          <th>Severity</th>
-          <th>Title</th>
-          <th>Note</th>
+          <th>Symbol</th>
+          <th>Pocket</th>
+          <th>Status</th>
+          <th>Target / Stop</th>
+          <th>Return %</th>
+          <th>Opened</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.notifications[:6] %}
+        {% for row in pattern_trade_rows[:8] %}
         <tr>
-          <td>{{ row.created_at }}</td>
-          <td><span class="{{ badge_class(row.severity) }}">{{ row.severity }}</span></td>
-          <td>{{ row.title }}</td>
-          <td>{{ row.message_text }}</td>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.pattern_code or row.pattern_family_code or "-" }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.target_return_pct or "-" }} / {{ row.stop_loss_pct or "-" }}</td>
+          <td>{{ row.realized_post_cost_return_pct if row.realized_post_cost_return_pct is not none else row.latest_return_pct or "-" }}</td>
+          <td>{{ row.entry_observed_at or row.created_at }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">No milestones recorded yet.</p>
+  <p class="muted">No pattern-approved live-forward trades have been logged yet.</p>
   {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <p class="muted">
+    Legacy daily-hypothesis views still exist, but they are no longer the primary surface for this beta mode:
+    <a href="/paper-trading-beta/opportunities">Opportunities</a> and
+    <a href="/paper-trading-beta/hypotheses">Hypotheses</a>.
+  </p>
 </section>
 {% endblock %}

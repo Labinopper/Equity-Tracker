@@ -19,7 +19,7 @@ from .models import (
     BetaSystemStatus,
 )
 
-_SCHEMA_VERSION = "v14"
+_SCHEMA_VERSION = "v20"
 
 
 def _missing_beta_columns(engine: BetaDatabaseEngine) -> list[tuple[str, object]]:
@@ -122,6 +122,24 @@ def _copy_table_rows(conn, *, table_name: str, source_name: str) -> None:
     )
 
 
+def _rebuild_beta_tables(engine: BetaDatabaseEngine, *, table_names: list[str]) -> None:
+    with engine.raw_engine.begin() as conn:
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        for table_name in table_names:
+            conn.execute(text(f"ALTER TABLE {table_name} RENAME TO {table_name}_old"))
+        for table_name in table_names:
+            conn.execute(text(_create_table_sql(engine, table_name)))
+        for table_name in table_names:
+            _copy_table_rows(
+                conn,
+                table_name=table_name,
+                source_name=f"{table_name}_old",
+            )
+        for table_name in table_names:
+            conn.execute(text(f"DROP TABLE {table_name}_old"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+
+
 def _migrate_intraday_simulated_trade_direction_constraint(engine: BetaDatabaseEngine) -> list[str]:
     with engine.raw_engine.connect() as conn:
         table_sql = conn.execute(
@@ -158,11 +176,60 @@ def _migrate_intraday_simulated_trade_direction_constraint(engine: BetaDatabaseE
     return ["beta_intraday_simulated_trades.direction_constraint"]
 
 
+def _migrate_execution_belief_state_test_run_constraints(engine: BetaDatabaseEngine) -> list[str]:
+    with engine.raw_engine.connect() as conn:
+        table_sql = conn.execute(
+            text(
+                """
+                SELECT sql
+                FROM sqlite_master
+                WHERE type = 'table' AND name = 'beta_execution_hypothesis_belief_states'
+                """
+            )
+        ).scalar()
+    table_sql_text = str(table_sql or "")
+    if not table_sql_text or "FOREIGN KEY(supporting_test_run_id)" in table_sql_text:
+        return []
+
+    _rebuild_beta_tables(engine, table_names=["beta_execution_hypothesis_belief_states"])
+    return ["beta_execution_hypothesis_belief_states.test_run_constraints"]
+
+
+def _migrate_prediction_accuracy_definition_constraints(engine: BetaDatabaseEngine) -> list[str]:
+    prediction_tables = [
+        "beta_prediction_accuracy_log",
+        "beta_calibration_metrics",
+    ]
+    tables_to_rebuild: list[str] = []
+    with engine.raw_engine.connect() as conn:
+        for table_name in prediction_tables:
+            table_sql = conn.execute(
+                text(
+                    """
+                    SELECT sql
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = :table_name
+                    """
+                ),
+                {"table_name": table_name},
+            ).scalar()
+            table_sql_text = str(table_sql or "")
+            if "REFERENCES beta_hypothesis_definitions" in table_sql_text:
+                tables_to_rebuild.append(table_name)
+    if not tables_to_rebuild:
+        return []
+
+    _rebuild_beta_tables(engine, table_names=tables_to_rebuild)
+    return [f"{table_name}.definition_constraint" for table_name in tables_to_rebuild]
+
+
 def apply_beta_schema_migrations(engine: BetaDatabaseEngine) -> list[str]:
     """Apply additive in-place schema migrations for existing beta DBs."""
     BetaBase.metadata.create_all(engine.raw_engine)
     applied: list[str] = []
     applied.extend(_migrate_intraday_simulated_trade_direction_constraint(engine))
+    applied.extend(_migrate_execution_belief_state_test_run_constraints(engine))
+    applied.extend(_migrate_prediction_accuracy_definition_constraints(engine))
     missing = _missing_beta_columns(engine)
     if not missing:
         applied.extend(f"index:{index_name}" for index_name in _ensure_beta_indexes(engine))

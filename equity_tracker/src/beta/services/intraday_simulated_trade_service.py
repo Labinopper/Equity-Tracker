@@ -18,6 +18,10 @@ from ..db.models import (
 )
 from ..settings import BetaSettings
 from .execution_economic_annotation_service import BetaExecutionEconomicAnnotationService
+from .intraday_pattern_execution_learning_service import BetaIntradayPatternExecutionLearningService
+from .intraday_pattern_parameter_learning_service import BetaIntradayPatternParameterLearningService
+from .intraday_pattern_review_service import BetaIntradayPatternReviewService
+from .intraday_pattern_threshold_learning_service import BetaIntradayPatternThresholdLearningService
 from .intraday_priority_service import BetaIntradayPriorityService
 
 _DECIMAL_QUANT = Decimal("0.0001")
@@ -122,16 +126,35 @@ class BetaIntradaySimulatedTradeService:
                 sess,
                 instrument_ids=list(focus_ids),
             )
-            profit_pockets = BetaIntradaySimulatedTradeService._profit_pocket_lookup(
+            adaptive_policy = BetaIntradayPatternParameterLearningService.resolve_policy_in_session(
                 sess,
-                cutoff_date=now.date() - timedelta(days=max(7, int(settings.intraday_short_trade_history_days)) - 1),
-                state_codes={
-                    str(row.state_code or "").strip().upper()
-                    for row in latest_observations.values()
-                    if str(row.state_code or "").strip()
-                },
-                cost_drag_pct=float(BetaExecutionEconomicAnnotationService.estimated_cost_drag_pct(settings)),
+                settings,
             )
+            execution_profile = BetaIntradayPatternExecutionLearningService.resolve_profile_in_session(
+                sess,
+                settings,
+            )
+            threshold_profile = BetaIntradayPatternThresholdLearningService.resolve_profile_in_session(
+                sess,
+                settings,
+            )
+            approved_patterns = (
+                BetaIntradayPatternReviewService.approved_live_forward_candidates_in_session(sess, settings)
+                if settings.intraday_pattern_live_forward_enabled
+                else []
+            )
+            profit_pockets = {}
+            if not settings.intraday_pattern_live_forward_enabled:
+                profit_pockets = BetaIntradaySimulatedTradeService._profit_pocket_lookup(
+                    sess,
+                    cutoff_date=now.date() - timedelta(days=max(7, int(settings.intraday_short_trade_history_days)) - 1),
+                    state_codes={
+                        str(row.state_code or "").strip().upper()
+                        for row in latest_observations.values()
+                        if str(row.state_code or "").strip()
+                    },
+                    cost_drag_pct=float(BetaExecutionEconomicAnnotationService.estimated_cost_drag_pct(settings)),
+                )
 
             for trade in open_trades:
                 if not trade.instrument_id:
@@ -192,6 +215,11 @@ class BetaIntradaySimulatedTradeService:
                 ).all()
                 if trade.instrument_id
             }
+            open_live_forward_trade_count = sum(
+                1
+                for trade in open_trades
+                if str(trade.simulation_source or "").strip().upper() == "LIVE_FORWARD"
+            )
 
             for item in focus_items:
                 observation = latest_observations.get(item.instrument_id)
@@ -199,11 +227,34 @@ class BetaIntradaySimulatedTradeService:
                     continue
                 if (observation.instrument_id, observation.session_date) in existing_sessions:
                     continue
-                entry_plan = BetaIntradaySimulatedTradeService._entry_plan(
-                    observation,
-                    settings,
-                    profit_pockets=profit_pockets,
-                )
+                if (
+                    settings.intraday_pattern_live_forward_enabled
+                    and open_live_forward_trade_count >= int(
+                        adaptive_policy.get("recommended_max_open_trades")
+                        or settings.intraday_pattern_live_forward_max_open_trades
+                    )
+                ):
+                    break
+                if settings.intraday_pattern_live_forward_enabled:
+                    approved_pattern = BetaIntradayPatternReviewService.best_live_forward_match(
+                        observation,
+                        approved_patterns,
+                        settings=settings,
+                        threshold_profile=threshold_profile,
+                    )
+                    entry_plan = BetaIntradaySimulatedTradeService._pattern_entry_plan(
+                        observation,
+                        settings,
+                        approved_pattern=approved_pattern,
+                        adaptive_policy=adaptive_policy,
+                        execution_profile=execution_profile,
+                    )
+                else:
+                    entry_plan = BetaIntradaySimulatedTradeService._entry_plan(
+                        observation,
+                        settings,
+                        profit_pockets=profit_pockets,
+                    )
                 if entry_plan is None:
                     continue
                 minute_rows = BetaIntradaySimulatedTradeService._minute_rows(
@@ -241,6 +292,8 @@ class BetaIntradaySimulatedTradeService:
                 sess.flush()
                 trades_opened += 1
                 existing_sessions.add((observation.instrument_id, observation.session_date))
+                if trade.status == "OPEN":
+                    open_live_forward_trade_count += 1
                 BetaIntradaySimulatedTradeService._record_trade_event(
                     sess=sess,
                     trade=trade,
@@ -696,6 +749,199 @@ class BetaIntradaySimulatedTradeService:
                 ),
             )
         return lookup
+
+    @staticmethod
+    def _pattern_entry_plan(
+        observation: BetaIntradayFeatureObservation,
+        settings: BetaSettings,
+        *,
+        approved_pattern: dict[str, object] | None,
+        adaptive_policy: dict[str, object] | None = None,
+        execution_profile: dict[str, object] | None = None,
+    ) -> dict[str, object] | None:
+        if approved_pattern is None:
+            return None
+        direction = str(approved_pattern.get("action_bias") or "").strip().upper()
+        if direction not in {"LONG", "SHORT"}:
+            return None
+
+        expected_15 = max(0.0, float(approved_pattern.get("aligned_average_return_15m_pct") or 0.0))
+        expected_30 = max(0.0, float(approved_pattern.get("aligned_average_return_30m_pct") or 0.0))
+        best_horizon_minutes = max(0, int(approved_pattern.get("best_horizon_minutes") or 0))
+        best_expected = max(
+            0.0,
+            float(
+                approved_pattern.get("aligned_best_horizon_return_pct")
+                or approved_pattern.get("best_horizon_return_pct")
+                or approved_pattern.get("aligned_average_return_15m_pct")
+                or 0.0
+            ),
+        )
+        post_cost_best = max(
+            0.0,
+            float(
+                approved_pattern.get("best_horizon_post_cost_edge_pct")
+                or approved_pattern.get("post_cost_edge_15m_pct")
+                or 0.0
+            ),
+        )
+        best_win_rate_pct = float(approved_pattern.get("best_horizon_win_rate_pct") or 0.0)
+        historical_win_rate = max(
+            float(approved_pattern.get("win_rate_decimal") or 0.0),
+            (best_win_rate_pct / 100.0) if best_win_rate_pct > 0.0 else 0.0,
+        )
+        confidence_score = max(
+            float(approved_pattern.get("quality_score") or 0.0),
+            _safe_float(observation.confidence_score) or 0.0,
+        )
+        sample_size = max(
+            int(approved_pattern.get("sample_size") or 0),
+            int(observation.outlook_sample_size or 0),
+        )
+        matched_instruments = max(
+            int(approved_pattern.get("matched_instruments") or 0),
+            int(observation.matched_instrument_count or 0),
+        )
+        policy = adaptive_policy or BetaIntradayPatternParameterLearningService.static_policy_snapshot(settings)
+        policy_quality_floor = float(
+            policy.get("recommended_min_quality_score") or settings.intraday_pattern_live_forward_min_quality_score
+        )
+        policy_stability_floor = float(policy.get("recommended_min_stability_score") or 0.0)
+        policy_sample_quality_floor = float(policy.get("recommended_min_sample_quality_score") or 0.0)
+        policy_reliability_floor = float(policy.get("recommended_min_reliability_score") or 0.0)
+
+        if (
+            best_expected < max(0.10, float(settings.intraday_short_trade_entry_min_expected_return_15m_pct) * 0.4)
+            or post_cost_best < max(0.03, float(settings.intraday_short_trade_entry_min_post_cost_edge_pct) * 0.75)
+            or historical_win_rate < max(0.53, float(settings.intraday_short_trade_entry_min_win_rate))
+            or confidence_score < max(
+                policy_quality_floor,
+                float(settings.intraday_short_trade_entry_min_confidence_score) * 0.6,
+            )
+            or float(approved_pattern.get("stability_score") or 0.0) < policy_stability_floor
+            or float(approved_pattern.get("sample_quality_score") or 0.0) < policy_sample_quality_floor
+            or float(approved_pattern.get("reliability_score") or 0.0) < policy_reliability_floor
+            or sample_size < int(settings.intraday_pattern_min_sample_size)
+            or matched_instruments < int(settings.intraday_pattern_min_matched_instruments)
+        ):
+            return None
+
+        favorable_tail = max(
+            best_expected,
+            abs(float(approved_pattern.get("mean_max_favorable_move_pct") or 0.0)),
+        )
+        adverse_tail = max(
+            float(settings.intraday_short_trade_min_stop_loss_pct),
+            abs(float(approved_pattern.get("mean_max_adverse_move_pct") or 0.0)),
+        )
+        base_target_return_pct = max(
+            float(settings.intraday_short_trade_min_target_return_pct),
+            min(
+                float(settings.intraday_short_trade_max_target_return_pct),
+                max(best_expected, favorable_tail * 0.85, post_cost_best + 0.10),
+            ),
+        )
+        base_stop_loss_pct = min(
+            float(settings.intraday_short_trade_max_stop_loss_pct),
+            max(adverse_tail, base_target_return_pct * 0.55),
+        )
+        fallback_hold_minutes = 30 if expected_30 >= expected_15 * 0.85 else 20
+        base_max_hold_minutes = best_horizon_minutes or fallback_hold_minutes
+        base_max_hold_minutes = max(
+            10,
+            min(int(settings.intraday_short_trade_max_hold_minutes), base_max_hold_minutes),
+        )
+        profile = execution_profile or BetaIntradayPatternExecutionLearningService.static_execution_snapshot(settings)
+        target_capture_ratio = float(profile.get("recommended_target_capture_ratio") or 1.0)
+        stop_loss_ratio = float(profile.get("recommended_stop_loss_ratio") or 1.0)
+        max_hold_ratio = float(profile.get("recommended_max_hold_ratio") or 1.0)
+        early_bail_ratio = float(profile.get("recommended_early_bail_ratio") or 0.25)
+
+        target_return_pct = max(
+            float(settings.intraday_short_trade_min_target_return_pct),
+            min(
+                float(settings.intraday_short_trade_max_target_return_pct),
+                base_target_return_pct * max(0.50, min(1.20, target_capture_ratio)),
+            ),
+        )
+        stop_loss_pct = max(
+            float(settings.intraday_short_trade_min_stop_loss_pct),
+            min(
+                float(settings.intraday_short_trade_max_stop_loss_pct),
+                base_stop_loss_pct * max(0.60, min(1.25, stop_loss_ratio)),
+            ),
+        )
+        max_hold_minutes = max(
+            10,
+            min(
+                int(settings.intraday_short_trade_max_hold_minutes),
+                int(round(base_max_hold_minutes * max(0.50, min(1.20, max_hold_ratio)))),
+            ),
+        )
+        early_bail_minutes = min(
+            max_hold_minutes,
+            max(
+                1,
+                int(round(max_hold_minutes * max(0.10, min(0.75, early_bail_ratio)))),
+            ),
+        )
+        entry_action_side = "BUY" if direction == "LONG" else "SELL"
+        entry_action_code = "ENTER" if direction == "LONG" else "SELL_SHORT"
+        anchor_code = str(approved_pattern.get("anchor_code") or "PATTERN").replace("_", " ").title()
+        entry_action_label = f"{direction.title()} {anchor_code} pattern test"
+        return {
+            "direction": direction,
+            "entry_source": "PATTERN",
+            "entry_action_side": entry_action_side,
+            "entry_action_code": entry_action_code,
+            "entry_action_label": entry_action_label,
+            "target_return_pct": round(target_return_pct, 4),
+            "stop_loss_pct": round(stop_loss_pct, 4),
+            "max_hold_minutes": max_hold_minutes,
+            "early_bail_minutes": early_bail_minutes,
+            "notes": {
+                "direction": direction,
+                "entry_source": "PATTERN",
+                "pattern_hash": approved_pattern.get("pattern_hash"),
+                "pattern_code": approved_pattern.get("pattern_code"),
+                "pattern_family_code": approved_pattern.get("family_code"),
+                "pattern_anchor_family_code": approved_pattern.get("anchor_family_code"),
+                "pattern_anchor_code": approved_pattern.get("anchor_code"),
+                "pattern_context_tags": approved_pattern.get("context_tags") or [],
+                "pattern_context_depth": approved_pattern.get("context_depth"),
+                "pattern_quality_score": approved_pattern.get("quality_score"),
+                "pattern_stability_score": approved_pattern.get("stability_score"),
+                "pattern_horizon_stability_score": approved_pattern.get("horizon_stability_score"),
+                "pattern_sample_quality_score": approved_pattern.get("sample_quality_score"),
+                "pattern_reliability_score": approved_pattern.get("reliability_score"),
+                "pattern_policy_quality_floor": round(policy_quality_floor, 4),
+                "pattern_policy_stability_floor": round(policy_stability_floor, 4),
+                "pattern_policy_sample_quality_floor": round(policy_sample_quality_floor, 4),
+                "pattern_policy_reliability_floor": round(policy_reliability_floor, 4),
+                "pattern_execution_profile_source": profile.get("source_mode"),
+                "pattern_execution_target_capture_ratio": round(target_capture_ratio, 4),
+                "pattern_execution_stop_loss_ratio": round(stop_loss_ratio, 4),
+                "pattern_execution_max_hold_ratio": round(max_hold_ratio, 4),
+                "pattern_execution_early_bail_ratio": round(early_bail_ratio, 4),
+                "pattern_execution_base_target_return_pct": round(base_target_return_pct, 4),
+                "pattern_execution_base_stop_loss_pct": round(base_stop_loss_pct, 4),
+                "pattern_execution_base_max_hold_minutes": base_max_hold_minutes,
+                "pattern_post_cost_edge_15m_pct": round(float(approved_pattern.get("post_cost_edge_15m_pct") or 0.0), 4),
+                "pattern_expected_return_15m_pct": round(expected_15, 4),
+                "pattern_expected_return_30m_pct": round(expected_30, 4),
+                "pattern_best_horizon_minutes": best_horizon_minutes or None,
+                "pattern_best_horizon_expected_return_pct": round(best_expected, 4),
+                "pattern_best_horizon_post_cost_edge_pct": round(post_cost_best, 4),
+                "pattern_best_horizon_win_rate_pct": round(best_win_rate_pct, 4) if best_win_rate_pct > 0.0 else None,
+                "pattern_historical_win_rate": round(historical_win_rate, 4),
+                "pattern_sample_size": sample_size,
+                "pattern_matched_instruments": matched_instruments,
+                "pattern_mean_max_adverse_move_pct": approved_pattern.get("mean_max_adverse_move_pct"),
+                "pattern_mean_max_favorable_move_pct": approved_pattern.get("mean_max_favorable_move_pct"),
+                "matched_context_depth": approved_pattern.get("matched_context_depth"),
+                "matched_context_tags": approved_pattern.get("matched_context_tags") or [],
+            },
+        }
 
     @staticmethod
     def _entry_plan(

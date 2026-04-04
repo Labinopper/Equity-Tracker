@@ -3,16 +3,28 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from src.app_context import AppContext
 from src.beta.context import BetaContext
+from src.beta.db.bootstrap import ensure_beta_schema
+from src.beta.db.engine import BetaDatabaseEngine
 from src.beta.db.models import BetaInstrument, BetaMinuteBar
 from src.beta.services.intraday_bar_fetch_service import BetaIntradayBarFetchService
 from src.beta.services.intraday_priority_service import IntradayPriorityItem
 from src.beta.settings import BetaSettings
 from src.beta import supervisor_process
 from src.db.models import PriceHistory, Security
+
+
+@pytest.fixture()
+def beta_context():
+    engine = BetaDatabaseEngine.open_in_memory()
+    BetaContext.initialize(engine)
+    ensure_beta_schema(engine)
+    yield
+    BetaContext.lock()
 
 
 def test_backfill_historical_bars_uses_bar_date_fx_rates(beta_context, app_context, monkeypatch):
@@ -185,6 +197,7 @@ def test_run_supervisor_cycle_returns_next_bar_backfill_at(monkeypatch):
     )
     monkeypatch.setattr(supervisor_process.BetaReplayService, "ensure_daily_dashboard_pack", lambda: None)
     monkeypatch.setattr(supervisor_process.BetaRuntimeService, "ensure_daily_snapshot", lambda _settings: None)
+    monkeypatch.setattr(supervisor_process.BetaRuntimeService, "record_notification", lambda **_kwargs: None)
     monkeypatch.setattr(
         supervisor_process.BetaPipelineAssessmentService,
         "record_snapshot",
@@ -207,6 +220,82 @@ def test_run_supervisor_cycle_returns_next_bar_backfill_at(monkeypatch):
         next_eod_bar_fetch_at=future,
         next_statistics_refresh_at=future,
         next_bar_backfill_at=future,
+        next_storage_cleanup_at=future,
     )
 
     assert result["next_bar_backfill_at"] == future
+
+
+def test_run_supervisor_cycle_skips_long_horizon_jobs_in_intraday_only_mode(monkeypatch):
+    settings = BetaSettings()
+    settings.intraday_only_mode = True
+    settings.learning_enabled = True
+    settings.shadow_scoring_enabled = True
+    settings.observation_enabled = True
+    settings.intraday_execution_hypothesis_research_enabled = False
+    settings.intraday_pattern_exploration_enabled = True
+
+    now = datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(supervisor_process, "_maybe_pause_for_memory", lambda **_kwargs: False)
+    monkeypatch.setattr(
+        supervisor_process.BetaMarketSessionService,
+        "live_market_priority_window",
+        lambda _settings, now_utc=None: False,
+    )
+    monkeypatch.setattr(supervisor_process.BetaReplayService, "ensure_daily_dashboard_pack", lambda: None)
+    monkeypatch.setattr(supervisor_process.BetaRuntimeService, "ensure_daily_snapshot", lambda _settings: None)
+    monkeypatch.setattr(supervisor_process.BetaRuntimeService, "record_notification", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        supervisor_process.BetaPipelineAssessmentService,
+        "record_snapshot",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        supervisor_process.BetaIntradayPatternExplorationService,
+        "run_exploration",
+        lambda _settings: {
+            "patterns_generated": 4,
+            "patterns_screened_in": 1,
+            "labeled_observations": 6,
+        },
+    )
+    monkeypatch.setattr(
+        supervisor_process.BetaPredictionAccuracyService,
+        "compute_calibration_metrics",
+        lambda lookback_days=30: {"overall": {}, "by_confidence_band": {}},
+    )
+
+    def _unexpected(*_args, **_kwargs):
+        raise AssertionError("long-horizon supervisor job should not run in intraday-only mode")
+
+    monkeypatch.setattr(supervisor_process.BetaObservationService, "sync_daily_bars", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaCorpusService, "backfill_market_corpus", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaFeatureService, "generate_core_tracked_features", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaLabelService, "generate_core_tracked_labels", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaScoringService, "run_daily_shadow_cycle", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaTrainingService, "ensure_daily_training", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaReviewService, "ensure_daily_potential_gains_review", _unexpected)
+    monkeypatch.setattr(supervisor_process.BetaHypothesisDiscoveryService, "run_discovery", _unexpected)
+
+    result = supervisor_process._run_supervisor_cycle(
+        core_db_path=None,
+        beta_db_path=Path("beta.db"),
+        settings=settings,
+        now=now,
+        next_reference_sync_at=now + timedelta(hours=1),
+        next_news_sync_at=now + timedelta(hours=1),
+        next_filing_sync_at=now + timedelta(hours=1),
+        next_observation_at=now,
+        next_intraday_execution_at=now + timedelta(hours=1),
+        next_hypothesis_research_at=now,
+        next_core_scoring_at=now,
+        next_scoring_at=now,
+        next_eod_bar_fetch_at=now + timedelta(hours=1),
+        next_statistics_refresh_at=now + timedelta(hours=1),
+        next_bar_backfill_at=now + timedelta(hours=1),
+        next_storage_cleanup_at=now + timedelta(hours=1),
+    )
+
+    assert result["next_observation_at"] > now
+    assert result["next_hypothesis_research_at"] > now

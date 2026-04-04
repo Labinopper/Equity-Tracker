@@ -35,6 +35,7 @@ is not open, the locked.html page is returned instead.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import date as date_type
 from datetime import datetime, time, timedelta, timezone
@@ -91,6 +92,7 @@ from .._templates import templates
 from ..dependencies import session_required
 
 router = APIRouter(tags=["ui"], dependencies=[Depends(session_required)])
+logger = logging.getLogger(__name__)
 
 ADD_LOT_SCHEME_TYPES = ("RSU", "ESPP", "ESPP_PLUS", "SIP_DIVIDEND", "BROKERAGE", "ISA")
 SIMULATE_SCHEME_TYPES = ["", *ADD_LOT_SCHEME_TYPES]
@@ -268,6 +270,7 @@ class SecurityDailyChange:
     official_close_as_of: date_type | None = None
     unavailable_reason: str | None = None
     price_last_changed_at: datetime | None = None
+    price_last_refreshed_at: datetime | None = None
     freshness_text: str | None = None
     freshness_level: str = "muted"
     freshness_title: str | None = None
@@ -1088,6 +1091,7 @@ def _market_status_label(exchange: str | None, now_utc: datetime) -> tuple[str |
 def _daily_freshness_note(
     *,
     exchange: str | None,
+    price_last_refreshed_at: datetime | None,
     price_last_changed_at: datetime | None,
     now_utc: datetime,
 ) -> tuple[str | None, str, str | None]:
@@ -1095,17 +1099,26 @@ def _daily_freshness_note(
     Build market-aware freshness text for the daily ticker.
     """
     market = _market_window_status(exchange, now_utc)
-    if price_last_changed_at is None:
+    if price_last_refreshed_at is None:
         if market.status_text:
             return market.status_text, "muted", "No snapshot history yet."
         return None, "muted", None
 
-    changed_utc = _to_utc_aware(price_last_changed_at)
-    if changed_utc > now_utc:
-        changed_utc = now_utc
-    age = now_utc - changed_utc
+    refreshed_utc = _to_utc_aware(price_last_refreshed_at)
+    if refreshed_utc > now_utc:
+        refreshed_utc = now_utc
+    age = now_utc - refreshed_utc
     age_txt = _format_compact_duration(age)
-    title = f"Price last changed at {changed_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    title = f"Price feed last refreshed at {refreshed_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    if price_last_changed_at is not None:
+        changed_utc = _to_utc_aware(price_last_changed_at)
+        if changed_utc > now_utc:
+            changed_utc = now_utc
+        if abs((refreshed_utc - changed_utc).total_seconds()) >= 1:
+            title += (
+                f" | Displayed price last changed at "
+                f"{changed_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            )
 
     # always show a simple updated timestamp, regardless of market state
     if age >= timedelta(minutes=_DAILY_STALE_WHILE_OPEN_MINUTES):
@@ -1113,6 +1126,23 @@ def _daily_freshness_note(
     else:
         level = "ok"
     return f"Updated {age_txt} ago", level, title
+
+
+def _maybe_refresh_portfolio_live_prices(*, as_of: date_type | None) -> None:
+    if as_of is not None and as_of < date_type.today():
+        return
+    try:
+        IbkrPriceService.ingest_all()
+    except Exception as exc:
+        logger.warning("Portfolio live price ingest skipped: %s", exc)
+    try:
+        PriceService.refresh_intraday_budgeted()
+    except Exception as exc:
+        logger.warning("Portfolio intraday refresh skipped: %s", exc)
+    try:
+        PriceService.refresh_fx_budgeted()
+    except Exception as exc:
+        logger.warning("Portfolio FX refresh skipped: %s", exc)
 
 
 def _security_daily_change_unavailable(
@@ -1152,6 +1182,27 @@ def _build_security_daily_changes(
             price_repo = PriceRepository(sess)
             security_id = ss.security.id
             last_changed_at = price_repo.get_current_price_run_started_at(security_id)
+            latest_row = price_repo.get_latest_on_or_before(security_id, selected_as_of)
+            latest_snapshot = (
+                price_repo.get_latest_ticker_snapshot(security_id)
+                if not historical_mode
+                else None
+            )
+            last_refreshed_at: datetime | None = None
+            if not historical_mode:
+                if latest_row is not None:
+                    last_refreshed_at = getattr(latest_row, "fetched_at", None)
+                snapshot_observed_at = (
+                    getattr(latest_snapshot, "observed_at", None)
+                    if latest_snapshot is not None
+                    else None
+                )
+                if snapshot_observed_at is not None and (
+                    last_refreshed_at is None
+                    or _to_utc_aware(snapshot_observed_at)
+                    > _to_utc_aware(last_refreshed_at)
+                ):
+                    last_refreshed_at = snapshot_observed_at
             if historical_mode:
                 freshness_text = f"Historical as of {selected_as_of.isoformat()}"
                 freshness_level = "muted"
@@ -1161,6 +1212,7 @@ def _build_security_daily_changes(
             else:
                 freshness_text, freshness_level, freshness_title = _daily_freshness_note(
                     exchange=ss.security.exchange,
+                    price_last_refreshed_at=last_refreshed_at,
                     price_last_changed_at=last_changed_at,
                     now_utc=now_utc,
                 )
@@ -1170,13 +1222,13 @@ def _build_security_daily_changes(
                 now_utc=now_utc,
             )
 
-            latest_row = price_repo.get_latest_on_or_before(security_id, selected_as_of)
             if latest_row is None:
                 daily = _security_daily_change_unavailable(
                     security_id,
                     "No stored price yet.",
                 )
                 daily.price_last_changed_at = last_changed_at
+                daily.price_last_refreshed_at = last_refreshed_at
                 daily.freshness_text = freshness_text
                 daily.freshness_level = freshness_level
                 daily.freshness_title = freshness_title
@@ -1192,6 +1244,7 @@ def _build_security_daily_changes(
                     "Current price unavailable.",
                 )
                 daily.price_last_changed_at = last_changed_at
+                daily.price_last_refreshed_at = last_refreshed_at
                 daily.freshness_text = freshness_text
                 daily.freshness_level = freshness_level
                 daily.freshness_title = freshness_title
@@ -1200,11 +1253,6 @@ def _build_security_daily_changes(
                 changes[security_id] = daily
                 continue
 
-            latest_snapshot = (
-                price_repo.get_latest_ticker_snapshot(security_id)
-                if not historical_mode
-                else None
-            )
             recent_snapshots = (
                 price_repo.list_recent_ticker_snapshots(
                     security_id,
@@ -1262,6 +1310,7 @@ def _build_security_daily_changes(
                 "Need previous official close.",
             )
             daily.price_last_changed_at = last_changed_at
+            daily.price_last_refreshed_at = last_refreshed_at
             daily.freshness_text = freshness_text
             daily.freshness_level = freshness_level
             daily.freshness_title = freshness_title
@@ -1283,6 +1332,7 @@ def _build_security_daily_changes(
                     "Previous official close unavailable.",
                 )
                 daily.price_last_changed_at = last_changed_at
+                daily.price_last_refreshed_at = last_refreshed_at
                 daily.freshness_text = freshness_text
                 daily.freshness_level = freshness_level
                 daily.freshness_title = freshness_title
@@ -1396,6 +1446,7 @@ def _build_security_daily_changes(
             previous_as_of=previous_as_of,
             official_close_as_of=official_close_as_of,
             price_last_changed_at=last_changed_at,
+            price_last_refreshed_at=last_refreshed_at,
             freshness_text=freshness_text,
             freshness_level=freshness_level,
             freshness_title=freshness_title,
@@ -1774,6 +1825,18 @@ def _attach_row_decision_scenarios(
 
 def _scheme_display_single(ls: LotSummary) -> str:
     st = ls.lot.scheme_type
+    if st == "SIP_DIVIDEND":
+        broker_reference = str(getattr(ls.lot, "broker_reference", "") or "").strip().upper()
+        if broker_reference == "ESPP_DIVIDEND":
+            return "ESPP Dividend"
+        if broker_reference == "ESPP_PLUS_DIVIDEND":
+            return "ESPP+ Dividend"
+        notes = str(getattr(ls.lot, "notes", "") or "")
+        if "(ESPP_PLUS stock reinvestment)" in notes:
+            return "ESPP+ Dividend"
+        if "(ESPP stock reinvestment)" in notes:
+            return "ESPP Dividend"
+        return "SIP Dividend"
     if st == "ESPP_PLUS":
         return "ESPP+"
     if st == "BROKERAGE":
@@ -2998,8 +3061,7 @@ def _build_portfolio_page_context(
     if refresh_diag["next_due_at"] is None:
         _state.set_refresh_next_due(60)
         refresh_diag = _state.get_refresh_diagnostics()
-    if as_of is None or as_of >= date_type.today():
-        IbkrPriceService.ingest_all()
+    _maybe_refresh_portfolio_live_prices(as_of=as_of)
     summary = PortfolioService.get_portfolio_summary(
         settings=settings,
         use_live_true_cost=False,

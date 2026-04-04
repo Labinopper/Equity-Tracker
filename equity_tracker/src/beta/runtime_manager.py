@@ -49,13 +49,21 @@ def _supervisor_lock_path() -> Path:
     return _equity_tracker_root().parent / "data" / "beta_supervisor.lock"
 
 
+def _core_db_encrypted_env_value(core_db_path: Path) -> str:
+    configured = os.environ.get("EQUITY_DB_ENCRYPTED", "").strip().lower()
+    if configured in {"true", "false"}:
+        return configured
+    salt_path = Path(str(core_db_path) + ".salt")
+    return "true" if salt_path.exists() else "false"
+
+
 def _supervisor_env(core_db_path: Path, beta_db_path: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["EQUITY_DB_PATH"] = str(core_db_path)
     env["EQUITY_BETA_CORE_DB_PATH"] = str(core_db_path)
     env["EQUITY_BETA_DB_PATH"] = str(beta_db_path)
     env["EQUITY_BETA_SUPERVISOR"] = "1"
-    env["EQUITY_DB_ENCRYPTED"] = os.environ.get("EQUITY_DB_ENCRYPTED", "true")
+    env["EQUITY_DB_ENCRYPTED"] = _core_db_encrypted_env_value(core_db_path)
     if "EQUITY_DB_PASSWORD" in os.environ:
         env["EQUITY_DB_PASSWORD"] = os.environ["EQUITY_DB_PASSWORD"]
     return env
@@ -207,7 +215,6 @@ def initialize_beta_runtime(core_db_path: Path | None, *, allow_supervisor: bool
         shutdown_beta_runtime()
         return None
 
-    BetaOverviewService.invalidate_dashboard_cache()
     return beta_db_path
 
 

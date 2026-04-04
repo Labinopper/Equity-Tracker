@@ -1,207 +1,221 @@
 {% extends "base.html" %}
-{% block title %}Beta Paper Trades{% endblock %}
+{% block title %}Beta Live-Forward Trades{% endblock %}
 {% block content %}
 {% set ledger = dashboard.ledger or {} %}
-{% set counts = dashboard.counts or {} %}
-{% set performance = dashboard.performance or {} %}
-{% set execution_feedback = dashboard.execution_feedback_summary or {} %}
+{% set intraday_trade_summary = dashboard.intraday_trade_summary or {} %}
+{% set recent_intraday_trades = dashboard.recent_intraday_trades or [] %}
+{% set pattern_trade_rows = recent_intraday_trades | selectattr("entry_source", "equalto", "PATTERN") | list %}
+{% set open_pattern_trade_rows = pattern_trade_rows | selectattr("status", "equalto", "OPEN") | list %}
+{% set closed_pattern_trade_rows = pattern_trade_rows | rejectattr("status", "equalto", "OPEN") | list %}
+{% set backfill_trade_rows = recent_intraday_trades | selectattr("simulation_source", "equalto", "HISTORICAL_BACKFILL") | list %}
+{% set other_live_rows = recent_intraday_trades | rejectattr("entry_source", "equalto", "PATTERN") | list %}
+
 <section class="section-header">
   <div>
-    <h1>Paper Trades</h1>
+    <h1>Live-Forward Trades</h1>
     <p class="muted beta-page-note">
-      Trade ledger plus thesis traceability. This page is for judging whether promoted candidates are turning into coherent paper positions and whether the execution layer is helping or hurting them.
+      This page is only about the intraday validator. It shows which approved pockets have actually
+      been traded, how they are behaving, and how much historical backfill evidence sits behind them.
     </p>
+  </div>
+  <div class="beta-toolbar">
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta">Overview</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/patterns">Intraday Patterns</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/health">Health &amp; Controls</a>
   </div>
 </section>
 
 <section class="beta-summary-grid">
   <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Available Cash</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">GBP</div>
-      <div class="position-card__value">{{ ledger.available_cash_gbp or "0.00" }}</div>
-    </div>
-  </article>
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Deployed Capital</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">GBP</div>
-      <div class="position-card__value">{{ ledger.deployed_capital_gbp or "0.00" }}</div>
-    </div>
-  </article>
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Total Equity</h2></div>
-    <div class="position-card__section">
-      <div class="position-card__label">GBP</div>
-      <div class="position-card__value">{{ ledger.total_equity_gbp or "0.00" }}</div>
-    </div>
-  </article>
-  <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Trade Count</h2></div>
+    <div class="card__header"><h2 class="card__title">Pattern Live-Forward</h2></div>
     <div class="position-card__section">
       <div class="position-card__label">Open / Closed</div>
-      <div class="position-card__value">{{ counts.positions_open or 0 }} / {{ counts.positions_closed or 0 }}</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_open or 0 }} / {{ intraday_trade_summary.pattern_live_forward_closed or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Closed Win Rate</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_win_rate_pct if intraday_trade_summary.pattern_live_forward_win_rate_pct is not none else "-" }}{% if intraday_trade_summary.pattern_live_forward_win_rate_pct is not none %}%{% endif %}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Avg Post-Cost %</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_avg_post_cost_return_pct if intraday_trade_summary.pattern_live_forward_avg_post_cost_return_pct is not none else "-" }}</div>
     </div>
   </article>
+
   <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Execution Feedback</h2></div>
+    <div class="card__header"><h2 class="card__title">Historical Backfill</h2></div>
     <div class="position-card__section">
-      <div class="position-card__label">Actionable Signals</div>
-      <div class="position-card__value">{{ execution_feedback.actionable_signal_count or 0 }}</div>
+      <div class="position-card__label">Backfill Trades</div>
+      <div class="position-card__value">{{ intraday_trade_summary.historical_backfill_total or 0 }}</div>
     </div>
     <div class="position-card__section">
-      <div class="position-card__label">Label Completion</div>
-      <div class="position-card__value">{{ execution_feedback.execution_label_completion_pct if execution_feedback.execution_label_completion_pct is not none else "-" }}{% if execution_feedback.execution_label_completion_pct is not none %}%{% endif %}</div>
+      <div class="position-card__label">Recent Rows</div>
+      <div class="position-card__value">{{ backfill_trade_rows|length }}</div>
     </div>
   </article>
+
   <article class="card beta-stat-card">
-    <div class="card__header"><h2 class="card__title">Closed Trade Trend</h2></div>
+    <div class="card__header"><h2 class="card__title">Paper Capital</h2></div>
     <div class="position-card__section">
-      <div class="position-card__label">Win Rate</div>
-      <div class="position-card__value">{{ performance.win_rate_pct or 0 }}%</div>
+      <div class="position-card__label">Available</div>
+      <div class="position-card__value">GBP {{ ledger.available_cash_gbp or "0.00" }}</div>
     </div>
     <div class="position-card__section">
-      <div class="position-card__label">Avg P/L %</div>
-      <div class="position-card__value">{{ performance.avg_pnl_pct or 0 }}%</div>
+      <div class="position-card__label">Deployed</div>
+      <div class="position-card__value">GBP {{ ledger.deployed_capital_gbp or "0.00" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Equity</div>
+      <div class="position-card__value">GBP {{ ledger.total_equity_gbp or "0.00" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Other Live Trades</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Non-Pattern Live Rows</div>
+      <div class="position-card__value">{{ other_live_rows|length }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Purpose</div>
+      <div class="position-card__value">Mostly legacy or fallback evidence lanes.</div>
     </div>
   </article>
 </section>
 
 <section class="card card-spaced">
-  <div class="card__header"><h2 class="card__title">Active Demo Positions</h2></div>
-  {% if dashboard.active_positions %}
+  <div class="card__header"><h2 class="card__title">Open Pattern Trades</h2></div>
+  {% if open_pattern_trade_rows %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
           <th>Symbol</th>
-          <th>Candidate</th>
-          <th>Setup</th>
-          <th>Status</th>
+          <th>Pocket</th>
+          <th>Bias</th>
+          <th>Learned Horizon</th>
           <th>Target / Stop</th>
-          <th>Horizon</th>
-          <th>Unrealized %</th>
-          <th>Last Signal</th>
+          <th>Latest %</th>
+          <th>Opened</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.active_positions %}
+        {% for row in open_pattern_trade_rows %}
         <tr>
-          <td><strong><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></strong></td>
-          <td>
-            {% if row.candidate_id %}
-            <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.candidate_title or row.symbol }}</a><br>
-            <span class="{{ badge_class(row.candidate_status) }}">{{ row.candidate_status or "-" }}</span>
-            {% else %}
-            -
-            {% endif %}
-          </td>
-          <td>
-            {% if row.candidate_hypothesis_definition_id %}
-            <a href="/paper-trading-beta/hypothesis/{{ row.candidate_hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a><br>
-            <span class="muted">{{ row.hypothesis_status or row.hypothesis_family_name or "" }}</span>
-            {% else %}
-            -
-            {% endif %}
-          </td>
-          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.pattern_code or row.pattern_family_code or "-" }}</td>
+          <td><span class="{{ badge_class(row.direction) }}">{{ row.direction }}</span></td>
+          <td>{% if row.pattern_best_horizon_minutes %}{{ row.pattern_best_horizon_minutes }}m{% else %}-{% endif %}</td>
           <td>{{ row.target_return_pct or "-" }} / {{ row.stop_loss_pct or "-" }}</td>
-          <td>{{ row.thesis_horizon_days or row.planned_horizon_days or "-" }}</td>
-          <td>{{ row.unrealized_return_pct if row.unrealized_return_pct is not none else row.pnl_pct or "-" }}</td>
-          <td>{{ row.last_execution_signal_type or "-" }}</td>
+          <td>{{ row.latest_return_pct if row.latest_return_pct is not none else "-" }}</td>
+          <td>{{ row.entry_observed_at or row.created_at }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">No active demo positions yet.</p>
+  <p class="muted">No open pattern-approved live-forward trades right now.</p>
   {% endif %}
 </section>
 
 <section class="card card-spaced">
-  <div class="card__header"><h2 class="card__title">Open Thesis States</h2></div>
-  {% if dashboard.held_position_states %}
+  <div class="card__header"><h2 class="card__title">Closed Pattern Trades</h2></div>
+  {% if closed_pattern_trade_rows %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Pocket</th>
+          <th>Status</th>
+          <th>Learned Horizon</th>
+          <th>Return %</th>
+          <th>Exit Reason</th>
+          <th>Closed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in closed_pattern_trade_rows %}
+        <tr>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.pattern_code or row.pattern_family_code or "-" }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{% if row.pattern_best_horizon_minutes %}{{ row.pattern_best_horizon_minutes }}m{% else %}-{% endif %}</td>
+          <td>{{ row.realized_post_cost_return_pct if row.realized_post_cost_return_pct is not none else row.realized_return_pct or "-" }}</td>
+          <td>{{ row.exit_reason_text or row.exit_reason_code or "-" }}</td>
+          <td>{{ row.exit_observed_at or row.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No closed pattern-approved live-forward trades yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Historical Backfill Evidence</h2></div>
+  {% if backfill_trade_rows %}
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
           <th>Symbol</th>
           <th>Source</th>
-          <th>Setup</th>
           <th>Status</th>
-          <th>Thesis % / Horizon</th>
-          <th>Execution Quality</th>
-          <th>Last Signal</th>
+          <th>Return %</th>
+          <th>Exit Reason</th>
+          <th>Session</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.held_position_states %}
+        {% for row in backfill_trade_rows %}
         <tr>
           <td><strong>{{ row.symbol }}</strong></td>
-          <td>{{ row.position_source }}</td>
-          <td>{{ row.hypothesis_code or "-" }}</td>
-          <td><span class="{{ badge_class(row.position_status) }}">{{ row.position_status }}</span></td>
-          <td>{{ row.thesis_expected_return_pct if row.thesis_expected_return_pct is not none else "-" }} / {{ row.thesis_horizon_days or "-" }}</td>
-          <td>{{ row.execution_quality_score if row.execution_quality_score is not none else "-" }}</td>
-          <td>{{ row.last_execution_signal_type or "-" }}</td>
+          <td>{{ row.entry_source or row.simulation_source }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.realized_post_cost_return_pct if row.realized_post_cost_return_pct is not none else row.realized_return_pct or "-" }}</td>
+          <td>{{ row.exit_reason_text or row.exit_reason_code or "-" }}</td>
+          <td>{{ row.session_date }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">No open thesis states are being tracked yet.</p>
+  <p class="muted">No historical backfill intraday trades are currently in the recent view.</p>
   {% endif %}
 </section>
 
+{% if other_live_rows %}
 <section class="card">
-  <div class="card__header"><h2 class="card__title">Recent Closed Positions</h2></div>
-  {% if dashboard.closed_positions %}
+  <div class="card__header"><h2 class="card__title">Other Recent Intraday Trade Rows</h2></div>
   <div class="table-wrap">
     <table class="beta-table-compact">
       <thead>
         <tr>
           <th>Symbol</th>
-          <th>Candidate</th>
-          <th>Setup</th>
+          <th>Entry Source</th>
           <th>Status</th>
-          <th>P/L GBP</th>
-          <th>P/L %</th>
-          <th>Exit Reason</th>
-          <th>Closed</th>
+          <th>Return %</th>
+          <th>Opened</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in dashboard.closed_positions %}
+        {% for row in other_live_rows %}
         <tr>
-          <td><strong><a href="/paper-trading-beta/trade/{{ row.id }}">{{ row.symbol }}</a></strong></td>
-          <td>
-            {% if row.candidate_id %}
-            <a href="/paper-trading-beta/candidate/{{ row.candidate_id }}">{{ row.candidate_title or row.symbol }}</a>
-            {% else %}
-            -
-            {% endif %}
-          </td>
-          <td>
-            {% if row.candidate_hypothesis_definition_id %}
-            <a href="/paper-trading-beta/hypothesis/{{ row.candidate_hypothesis_definition_id }}">{{ row.hypothesis_code or "definition" }}</a>
-            {% else %}
-            -
-            {% endif %}
-          </td>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.entry_source or row.simulation_source }}</td>
           <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
-          <td>{{ row.pnl_gbp or "-" }}</td>
-          <td>{{ row.realized_return_pct if row.realized_return_pct is not none else row.pnl_pct or "-" }}</td>
-          <td>{{ row.exit_reason or row.candidate_recommendation_reason_text or "-" }}</td>
-          <td>{{ row.closed_at or row.updated_at }}</td>
+          <td>{{ row.realized_post_cost_return_pct if row.realized_post_cost_return_pct is not none else row.latest_return_pct or "-" }}</td>
+          <td>{{ row.entry_observed_at or row.created_at }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% else %}
-  <p class="muted">No closed demo positions yet.</p>
-  {% endif %}
 </section>
+{% endif %}
 {% endblock %}

@@ -640,7 +640,8 @@
       <span class="daily-change-meta daily-change-meta--{{ daily.freshness_level }}"
             title="{{ daily.freshness_title or daily.freshness_text }}"
             data-freshness-live="1"
-            data-changed-at="{{ daily.price_last_changed_at.isoformat() if daily.price_last_changed_at else '' }}"
+            data-refreshed-at="{{ daily.price_last_refreshed_at.isoformat() if daily.price_last_refreshed_at else '' }}"
+            data-price-changed-at="{{ daily.price_last_changed_at.isoformat() if daily.price_last_changed_at else '' }}"
             data-stale-minutes="{{ 20 }}">
         {{ daily.freshness_text }}
       </span>
@@ -841,7 +842,7 @@
                     <span>&pound;{{ row.total_mv | money }}</span>
                   </div>
                   <div class="position-detail-line">
-                    <span>Employment tax est.</span>
+                    <span>Tax est.</span>
                     <span>&pound;{{ row.sell_now_employment_tax_est | money }}</span>
                   </div>
                   {% if row.sell_now_forfeited_match_value > 0 %}
@@ -884,7 +885,7 @@
                     <span>&pound;{{ row.total_mv | money }}</span>
                   </div>
                   <div class="position-detail-line">
-                    <span>Employment tax est.</span>
+                    <span>Tax est.</span>
                     <span>&pound;{{ (row.total_mv - row.next_milestone_net) | money }}</span>
                   </div>
                   {% endif %}
@@ -933,7 +934,7 @@
                     <span>&pound;{{ row.total_mv | money }}</span>
                   </div>
                   <div class="position-detail-line">
-                    <span>Employment tax est.</span>
+                    <span>Tax est.</span>
                     <span>&pound;{{ (row.total_mv - row.long_term_net) | money }}</span>
                   </div>
                   {% endif %}

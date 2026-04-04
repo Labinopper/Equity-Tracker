@@ -30,6 +30,13 @@ def _configured_core_db_path() -> str:
     return ""
 
 
+def _configured_core_db_encrypted(path: Path) -> bool:
+    configured = os.environ.get("EQUITY_DB_ENCRYPTED", "").strip().lower()
+    if configured in {"true", "false"}:
+        return configured != "false"
+    return Path(str(path) + ".salt").exists()
+
+
 @contextmanager
 def core_read_session() -> Generator[Session, None, None]:
     """
@@ -44,12 +51,12 @@ def core_read_session() -> Generator[Session, None, None]:
         return
 
     db_path_str = _configured_core_db_path()
-    db_password = os.environ.get("EQUITY_DB_PASSWORD", "").strip()
-    db_encrypted = os.environ.get("EQUITY_DB_ENCRYPTED", "true").lower() != "false"
     if not db_path_str:
         raise RuntimeError("Core database path is not configured for beta access.")
 
     path = Path(db_path_str)
+    db_password = os.environ.get("EQUITY_DB_PASSWORD", "").strip()
+    db_encrypted = _configured_core_db_encrypted(path)
     if db_encrypted:
         engine = DatabaseEngine.open(path, db_password)
     else:

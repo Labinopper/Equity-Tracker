@@ -63,8 +63,18 @@ def _load_cost_drag_pct() -> float:
     return total_bps / 100.0
 
 
-def _stable_profit_pockets(sess, *, cost_drag_pct: float) -> dict[str, list[dict[str, object]]]:
+def _stable_profit_pockets(
+    sess,
+    *,
+    cost_drag_pct: float,
+    settings: BetaSettings,
+) -> dict[str, list[dict[str, object]]]:
     cutoff_session_date = (date.today() - timedelta(days=_PROFIT_LOOKBACK_DAYS - 1)).isoformat()
+    evaluation_horizons = [
+        int(value)
+        for value in (getattr(settings, "intraday_pattern_evaluation_horizons_minutes", []) or [])
+        if int(value) in {5, 15, 30, 60, 120}
+    ] or [15, 30]
     query = text(
         """
         WITH base AS (
@@ -75,8 +85,11 @@ def _stable_profit_pockets(sess, *, cost_drag_pct: float) -> dict[str, list[dict
                 o.observed_at,
                 o.state_code,
                 o.state_label,
+                l.future_5m_return_pct,
                 l.future_15m_return_pct,
                 l.future_30m_return_pct,
+                l.future_60m_return_pct,
+                l.future_120m_return_pct,
                 CAST(
                     (
                         (CAST(strftime('%H', o.observed_at) AS INTEGER) * 60)
@@ -106,8 +119,11 @@ def _stable_profit_pockets(sess, *, cost_drag_pct: float) -> dict[str, list[dict
             state_label,
             symbol,
             session_date,
+            future_5m_return_pct,
             future_15m_return_pct,
-            future_30m_return_pct
+            future_30m_return_pct,
+            future_60m_return_pct,
+            future_120m_return_pct
         FROM canonical
         WHERE rn = 1
         """
@@ -126,7 +142,7 @@ def _stable_profit_pockets(sess, *, cost_drag_pct: float) -> dict[str, list[dict
     short_pockets: list[dict[str, object]] = []
     for state_code, state_rows in grouped.items():
         candidates: list[dict[str, object]] = []
-        for horizon_minutes in (15, 30):
+        for horizon_minutes in evaluation_horizons:
             value_key = f"future_{horizon_minutes}m_return_pct"
             for direction in ("LONG", "SHORT"):
                 returns: list[float] = []
@@ -310,6 +326,8 @@ class BetaReviewService:
             return {"findings": 0, "review_run_id": ""}
 
         cost_drag_pct = _load_cost_drag_pct()
+        beta_db_path = get_beta_db_path()
+        settings = BetaSettings.load(beta_db_path) if beta_db_path is not None else BetaSettings()
         with BetaContext.write_session() as sess:
             ledger = sess.scalar(select(BetaLedgerState).where(BetaLedgerState.id == 1))
             risk = sess.scalar(select(BetaRiskControlState).where(BetaRiskControlState.id == 1))
@@ -335,7 +353,7 @@ class BetaReviewService:
                     .limit(5)
                 ).all()
             )
-            stable_pockets = _stable_profit_pockets(sess, cost_drag_pct=cost_drag_pct)
+            stable_pockets = _stable_profit_pockets(sess, cost_drag_pct=cost_drag_pct, settings=settings)
             profitable_states = _simulated_trade_profit_states(closed_sim_trades)
 
             pocket_count = len(stable_pockets["long"]) + len(stable_pockets["short"])

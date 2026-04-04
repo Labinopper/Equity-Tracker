@@ -57,7 +57,7 @@ from src.beta.db.models import (
     BetaValidationRun,
 )
 from src.beta.paths import resolve_beta_artifacts_dir, resolve_beta_settings_path
-from src.beta.runtime_manager import initialize_beta_runtime, shutdown_beta_runtime
+from src.beta.runtime_manager import _supervisor_env, initialize_beta_runtime, shutdown_beta_runtime
 from src.beta.core_access import core_read_session
 from src.beta.supervisor_process import _run_supervisor_cycle
 from src.beta.services.corpus_service import BetaCorpusService, _HistoryPoint
@@ -1123,6 +1123,79 @@ def test_beta_supervisor_memory_guard_skips_heavy_cycle(tmp_path, monkeypatch) -
         assert sess.query(BetaJobRun).filter(BetaJobRun.job_name == "beta_learning_universe_sync").count() == 0
 
 
+def test_beta_supervisor_records_skipped_intraday_research_jobs_on_unchanged_inputs(tmp_path, monkeypatch) -> None:
+    beta_db_path = tmp_path / "research-skip.beta_research.db"
+    _write_beta_settings(
+        beta_db_path,
+        auto_start_supervisor=False,
+        observation_enabled=False,
+        news_enabled=False,
+        filings_enabled=False,
+        shadow_scoring_enabled=False,
+        training_enabled=False,
+        learning_enabled=True,
+        intraday_execution_enabled=False,
+        intraday_execution_hypothesis_research_enabled=True,
+        intraday_pattern_exploration_enabled=False,
+        background_jobs_enabled=True,
+    )
+    monkeypatch.setenv("EQUITY_BETA_DB_PATH", str(beta_db_path))
+    initialize_beta_runtime(None, allow_supervisor=False)
+    settings = BetaSettings.load(beta_db_path)
+
+    monkeypatch.setattr(
+        "src.beta.services.execution_hypothesis_discovery_service.BetaExecutionHypothesisDiscoveryService.run_discovery",
+        lambda _settings: {
+            "job_status": "SKIPPED",
+            "reason": "unchanged_execution_discovery_inputs",
+            "templates_considered": 1,
+            "candidates_generated": 0,
+            "candidates_screened_in": 0,
+            "candidates_promoted": 0,
+        },
+    )
+
+    now = datetime(2026, 3, 15, 12, 0, 0, tzinfo=datetime.now().astimezone().tzinfo)
+    _run_supervisor_cycle(
+        core_db_path=None,
+        beta_db_path=beta_db_path,
+        settings=settings,
+        now=now,
+        next_reference_sync_at=now,
+        next_news_sync_at=now,
+        next_filing_sync_at=now,
+        next_observation_at=now,
+        next_intraday_execution_at=now,
+        next_hypothesis_research_at=now,
+        next_core_scoring_at=now,
+        next_scoring_at=now,
+        next_eod_bar_fetch_at=now,
+        next_statistics_refresh_at=now,
+        next_bar_backfill_at=now,
+        next_storage_cleanup_at=now,
+    )
+
+    with BetaContext.read_session() as sess:
+        statuses = {
+            row.job_name: row.status
+            for row in sess.query(BetaJobRun)
+            .filter(
+                BetaJobRun.job_name.in_(
+                    [
+                        "beta_execution_hypothesis_discovery",
+                        "beta_execution_hypothesis_backtests",
+                        "beta_execution_hypothesis_belief_refresh",
+                    ]
+                )
+            )
+            .all()
+        }
+
+    assert statuses["beta_execution_hypothesis_discovery"] == "SKIPPED"
+    assert statuses["beta_execution_hypothesis_backtests"] == "SKIPPED"
+    assert statuses["beta_execution_hypothesis_belief_refresh"] == "SKIPPED"
+
+
 def test_beta_supervisor_cycle_syncs_candidate_theses_after_scoring(tmp_path, monkeypatch) -> None:
     beta_db_path = tmp_path / "candidate-thesis-sync.beta_research.db"
     _write_beta_settings(
@@ -1440,6 +1513,67 @@ def test_beta_core_access_can_fall_back_to_beta_status_core_db_path(tmp_path, mo
         securities = sess.query(Security).all()
         assert len(securities) == 1
         assert securities[0].ticker == "VOD"
+
+
+def test_beta_core_access_infers_plain_sqlite_when_no_salt_exists(tmp_path, monkeypatch) -> None:
+    core_db_path = tmp_path / "beta-plain-core.db"
+    beta_db_path = tmp_path / "beta-plain.beta_research.db"
+
+    engine = DatabaseEngine.open_unencrypted(f"sqlite:///{core_db_path}")
+    try:
+        Base.metadata.create_all(engine.raw_engine)
+        with engine.session() as sess:
+            sess.add(
+                Security(
+                    ticker="III",
+                    name="3i Group",
+                    currency="GBP",
+                    exchange="LSE",
+                    units_precision=0,
+                )
+            )
+    finally:
+        engine.dispose()
+
+    _write_beta_settings(
+        beta_db_path,
+        auto_start_supervisor=False,
+        observation_enabled=False,
+        learning_enabled=False,
+        shadow_scoring_enabled=False,
+        demo_execution_enabled=False,
+        news_enabled=False,
+        filings_enabled=False,
+    )
+    monkeypatch.delenv("EQUITY_DB_PATH", raising=False)
+    monkeypatch.delenv("EQUITY_BETA_CORE_DB_PATH", raising=False)
+    monkeypatch.delenv("EQUITY_DB_ENCRYPTED", raising=False)
+    monkeypatch.setenv("EQUITY_BETA_DB_PATH", str(beta_db_path))
+
+    initialize_beta_runtime(core_db_path, allow_supervisor=False)
+
+    monkeypatch.delenv("EQUITY_DB_PATH", raising=False)
+    monkeypatch.delenv("EQUITY_BETA_CORE_DB_PATH", raising=False)
+    monkeypatch.delenv("EQUITY_DB_ENCRYPTED", raising=False)
+
+    with core_read_session() as sess:
+        securities = sess.query(Security).all()
+        assert len(securities) == 1
+        assert securities[0].ticker == "III"
+
+
+def test_beta_supervisor_env_infers_plain_core_db_when_salt_missing(tmp_path, monkeypatch) -> None:
+    core_db_path = tmp_path / "core.db"
+    beta_db_path = tmp_path / "beta.beta_research.db"
+
+    monkeypatch.delenv("EQUITY_DB_ENCRYPTED", raising=False)
+    env = _supervisor_env(core_db_path, beta_db_path)
+    assert env["EQUITY_DB_ENCRYPTED"] == "false"
+
+    salt_path = Path(str(core_db_path) + ".salt")
+    salt_path.write_bytes(b"1234567890abcdef")
+    env = _supervisor_env(core_db_path, beta_db_path)
+    assert env["EQUITY_DB_ENCRYPTED"] == "true"
 
 
 def test_beta_daily_bar_sync_is_idempotent(client) -> None:

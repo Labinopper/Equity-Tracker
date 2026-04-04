@@ -10,6 +10,8 @@ This folder now separates live beta documentation from historical design notes a
   - Current implementation and database-validated runtime state as of `2026-03-18`.
 - `docs/paper_trading_beta/REVIEW_2026-03-18.md`
   - Review findings, operational gaps, and the highest-value improvements identified in the current code and DB state.
+- `docs/paper_trading_beta/PROFIT_DISCOVERY_IMPLEMENTATION_PLAN_2026-04-03.md`
+  - Risk-first implementation plan focused on finding narrow, reliable post-cost profit pockets before any broader beta expansion.
 - `docs/paper_trading_beta/CHANGES_2026-03-16.md`
   - Point-in-time implementation notes for the intraday bar fetch and backfill changes made on `2026-03-16`.
 
@@ -39,6 +41,7 @@ Current observed layout:
 
 - `docs/paper_trading_beta/CURRENT_STATE_2026-03-18.md`
 - `docs/paper_trading_beta/REVIEW_2026-03-18.md`
+- `docs/paper_trading_beta/PROFIT_DISCOVERY_IMPLEMENTATION_PLAN_2026-04-03.md`
 - `docs/paper_trading_beta/NEXT_STEP_PROPOSAL_2026-03-18.md`
 - `docs/paper_trading_beta/CHANGES_2026-03-16.md`
 - `docs/paper_trading_beta/DEEP_DIVE_EXHAUSTION_REVERSAL_5e462c20.md`

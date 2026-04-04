@@ -45,8 +45,9 @@
     <span class="stat-caption">{{ dividends.reference_summary.upcoming_count or 0 }} upcoming event(s).</span>
   </div>
   <div class="stat stat--accent">
-    <span class="stat__label">Actual Net Paid Out</span>
+    <span class="stat__label">Actual Net Cash Paid Out</span>
     <span class="stat__value">{% if not dividends.hide_values %}&pound;{{ dividends.summary.actual_net_paid_gbp|money }}{% else %}Hidden{% endif %}</span>
+    <span class="stat-caption">Stock reinvestments create lots instead of posting cash.</span>
   </div>
   <div class="stat">
     <span class="stat__label">Actual Gross Dividends</span>
@@ -480,9 +481,9 @@
 {% else %}
 <div class="dividends-stats-grid">
   <div class="stat stat--accent">
-    <span class="stat__label">Actual Net Paid Out</span>
+    <span class="stat__label">Actual Net Cash Paid Out</span>
     <span class="stat__value">&pound;{{ dividends.summary.actual_net_paid_gbp|money }}</span>
-    <span class="stat-caption">{{ dividends.summary.actual_entry_count or 0 }} entry(ies) through {{ dividends.as_of_date }}.</span>
+    <span class="stat-caption">{{ dividends.summary.actual_entry_count or 0 }} entry(ies) through {{ dividends.as_of_date }}. Stock reinvestments create lots instead of posting cash.</span>
   </div>
   <div class="stat stat--warning">
     <span class="stat__label">Withholding Tax Logged</span>
@@ -641,6 +642,8 @@
           <th>Security</th>
           <th>Group</th>
           <th>Lot Link</th>
+          <th>Receipt</th>
+          <th>Reinvestment</th>
           <th>Treatment</th>
           <th class="num">Gross (Native)</th>
           <th class="num">Tax (Native)</th>
@@ -675,6 +678,24 @@
               -
               {% endif %}
             </td>
+            <td>
+              {% if row.is_stock_reinvestment %}
+              Stock Reinvestment
+              {% else %}
+              Cash
+              {% endif %}
+            </td>
+            <td>
+              {% if row.is_stock_reinvestment %}
+              {{ row.stock_quantity_received }} sh as
+              {{ row.reinvestment_display_name or row.reinvestment_scheme_type }}
+              {% if row.reinvestment_lot_id %}
+              <div class="muted">Lot {{ row.reinvestment_lot_id[:8] }}</div>
+              {% endif %}
+              {% else %}
+              -
+              {% endif %}
+            </td>
             <td>{{ row.tax_treatment }}</td>
             <td class="num">{{ row.gross_amount_original_ccy|money }}</td>
             <td class="num">{{ row.tax_withheld_original_ccy|money }}</td>
@@ -689,7 +710,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="16" class="muted">No dividend entries recorded yet.</td>
+            <td colspan="18" class="muted">No dividend entries recorded yet.</td>
           </tr>
         {% endif %}
       </tbody>

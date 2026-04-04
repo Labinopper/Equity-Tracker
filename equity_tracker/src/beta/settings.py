@@ -66,6 +66,7 @@ class BetaSettings:
     storage_intraday_feature_retention_days: int
     storage_intraday_outlook_retention_days: int
     storage_minute_bar_retention_days: int
+    intraday_only_mode: bool
     intraday_execution_enabled: bool
     intraday_event_trigger_enabled: bool
     intraday_held_symbol_cadence_minutes: int
@@ -98,6 +99,31 @@ class BetaSettings:
     intraday_execution_hypothesis_max_promotions_per_run: int
     intraday_execution_hypothesis_min_support: int
     intraday_execution_hypothesis_min_matched_instruments: int
+    intraday_pattern_exploration_enabled: bool
+    intraday_pattern_history_days: int
+    intraday_pattern_min_sample_size: int
+    intraday_pattern_min_matched_instruments: int
+    intraday_pattern_evaluation_horizons_minutes: list[int]
+    intraday_pattern_max_context_depth: int
+    intraday_pattern_max_patterns_per_observation: int
+    intraday_pattern_research_cadence_minutes: int
+    intraday_pattern_live_forward_enabled: bool
+    intraday_pattern_live_forward_top_n: int
+    intraday_pattern_live_forward_min_quality_score: float
+    intraday_pattern_live_forward_max_open_trades: int
+    intraday_pattern_live_forward_manual_pattern_hashes: list[str]
+    intraday_pattern_parameter_learning_enabled: bool
+    intraday_pattern_parameter_learning_window_days: int
+    intraday_pattern_parameter_learning_min_closed_trades: int
+    intraday_pattern_threshold_learning_enabled: bool
+    intraday_pattern_threshold_learning_window_days: int
+    intraday_pattern_threshold_learning_min_observations: int
+    intraday_pattern_execution_learning_enabled: bool
+    intraday_pattern_execution_learning_window_days: int
+    intraday_pattern_execution_learning_min_closed_trades: int
+    intraday_pattern_exploration_learning_enabled: bool
+    intraday_pattern_exploration_learning_window_days: int
+    intraday_pattern_exploration_learning_min_closed_trades: int
     intraday_bar_fetch_enabled: bool
     intraday_bar_fetch_live_credits_budget: int
     intraday_bar_fetch_eod_credits_budget: int
@@ -193,6 +219,7 @@ class BetaSettings:
         self.storage_intraday_feature_retention_days = 14
         self.storage_intraday_outlook_retention_days = 120
         self.storage_minute_bar_retention_days = 45
+        self.intraday_only_mode = True
         self.intraday_execution_enabled = True
         self.intraday_event_trigger_enabled = True
         self.intraday_held_symbol_cadence_minutes = 3
@@ -225,6 +252,31 @@ class BetaSettings:
         self.intraday_execution_hypothesis_max_promotions_per_run = 2
         self.intraday_execution_hypothesis_min_support = 20
         self.intraday_execution_hypothesis_min_matched_instruments = 1
+        self.intraday_pattern_exploration_enabled = True
+        self.intraday_pattern_history_days = 90
+        self.intraday_pattern_min_sample_size = 12
+        self.intraday_pattern_min_matched_instruments = 1
+        self.intraday_pattern_evaluation_horizons_minutes = [5, 15, 30, 60, 120]
+        self.intraday_pattern_max_context_depth = 2
+        self.intraday_pattern_max_patterns_per_observation = 48
+        self.intraday_pattern_research_cadence_minutes = 30
+        self.intraday_pattern_live_forward_enabled = True
+        self.intraday_pattern_live_forward_top_n = 2
+        self.intraday_pattern_live_forward_min_quality_score = 0.28
+        self.intraday_pattern_live_forward_max_open_trades = 2
+        self.intraday_pattern_live_forward_manual_pattern_hashes = []
+        self.intraday_pattern_parameter_learning_enabled = True
+        self.intraday_pattern_parameter_learning_window_days = 30
+        self.intraday_pattern_parameter_learning_min_closed_trades = 8
+        self.intraday_pattern_threshold_learning_enabled = True
+        self.intraday_pattern_threshold_learning_window_days = 45
+        self.intraday_pattern_threshold_learning_min_observations = 120
+        self.intraday_pattern_execution_learning_enabled = True
+        self.intraday_pattern_execution_learning_window_days = 30
+        self.intraday_pattern_execution_learning_min_closed_trades = 8
+        self.intraday_pattern_exploration_learning_enabled = True
+        self.intraday_pattern_exploration_learning_window_days = 30
+        self.intraday_pattern_exploration_learning_min_closed_trades = 8
         self.intraday_bar_fetch_enabled = True
         self.intraday_bar_fetch_live_credits_budget = 30
         self.intraday_bar_fetch_eod_credits_budget = 20
@@ -340,6 +392,7 @@ class BetaSettings:
             "storage_intraday_feature_retention_days": self.storage_intraday_feature_retention_days,
             "storage_intraday_outlook_retention_days": self.storage_intraday_outlook_retention_days,
             "storage_minute_bar_retention_days": self.storage_minute_bar_retention_days,
+            "intraday_only_mode": self.intraday_only_mode,
             "intraday_execution_enabled": self.intraday_execution_enabled,
             "intraday_event_trigger_enabled": self.intraday_event_trigger_enabled,
             "intraday_held_symbol_cadence_minutes": self.intraday_held_symbol_cadence_minutes,
@@ -372,6 +425,31 @@ class BetaSettings:
             "intraday_execution_hypothesis_max_promotions_per_run": self.intraday_execution_hypothesis_max_promotions_per_run,
             "intraday_execution_hypothesis_min_support": self.intraday_execution_hypothesis_min_support,
             "intraday_execution_hypothesis_min_matched_instruments": self.intraday_execution_hypothesis_min_matched_instruments,
+            "intraday_pattern_exploration_enabled": self.intraday_pattern_exploration_enabled,
+            "intraday_pattern_history_days": self.intraday_pattern_history_days,
+            "intraday_pattern_min_sample_size": self.intraday_pattern_min_sample_size,
+            "intraday_pattern_min_matched_instruments": self.intraday_pattern_min_matched_instruments,
+            "intraday_pattern_evaluation_horizons_minutes": self.intraday_pattern_evaluation_horizons_minutes,
+            "intraday_pattern_max_context_depth": self.intraday_pattern_max_context_depth,
+            "intraday_pattern_max_patterns_per_observation": self.intraday_pattern_max_patterns_per_observation,
+            "intraday_pattern_research_cadence_minutes": self.intraday_pattern_research_cadence_minutes,
+            "intraday_pattern_live_forward_enabled": self.intraday_pattern_live_forward_enabled,
+            "intraday_pattern_live_forward_top_n": self.intraday_pattern_live_forward_top_n,
+            "intraday_pattern_live_forward_min_quality_score": self.intraday_pattern_live_forward_min_quality_score,
+            "intraday_pattern_live_forward_max_open_trades": self.intraday_pattern_live_forward_max_open_trades,
+            "intraday_pattern_live_forward_manual_pattern_hashes": self.intraday_pattern_live_forward_manual_pattern_hashes,
+            "intraday_pattern_parameter_learning_enabled": self.intraday_pattern_parameter_learning_enabled,
+            "intraday_pattern_parameter_learning_window_days": self.intraday_pattern_parameter_learning_window_days,
+            "intraday_pattern_parameter_learning_min_closed_trades": self.intraday_pattern_parameter_learning_min_closed_trades,
+            "intraday_pattern_threshold_learning_enabled": self.intraday_pattern_threshold_learning_enabled,
+            "intraday_pattern_threshold_learning_window_days": self.intraday_pattern_threshold_learning_window_days,
+            "intraday_pattern_threshold_learning_min_observations": self.intraday_pattern_threshold_learning_min_observations,
+            "intraday_pattern_execution_learning_enabled": self.intraday_pattern_execution_learning_enabled,
+            "intraday_pattern_execution_learning_window_days": self.intraday_pattern_execution_learning_window_days,
+            "intraday_pattern_execution_learning_min_closed_trades": self.intraday_pattern_execution_learning_min_closed_trades,
+            "intraday_pattern_exploration_learning_enabled": self.intraday_pattern_exploration_learning_enabled,
+            "intraday_pattern_exploration_learning_window_days": self.intraday_pattern_exploration_learning_window_days,
+            "intraday_pattern_exploration_learning_min_closed_trades": self.intraday_pattern_exploration_learning_min_closed_trades,
             "intraday_bar_fetch_enabled": self.intraday_bar_fetch_enabled,
             "intraday_bar_fetch_live_credits_budget": self.intraday_bar_fetch_live_credits_budget,
             "intraday_bar_fetch_eod_credits_budget": self.intraday_bar_fetch_eod_credits_budget,
@@ -626,6 +704,7 @@ class BetaSettings:
                 self.storage_minute_bar_retention_days,
             ),
         )
+        self.intraday_only_mode = bool(data.get("intraday_only_mode", self.intraday_only_mode))
         self.intraday_execution_enabled = bool(
             data.get("intraday_execution_enabled", self.intraday_execution_enabled)
         )
@@ -856,6 +935,182 @@ class BetaSettings:
             _safe_int(
                 data.get("intraday_execution_hypothesis_min_matched_instruments"),
                 self.intraday_execution_hypothesis_min_matched_instruments,
+            ),
+        )
+        self.intraday_pattern_exploration_enabled = bool(
+            data.get(
+                "intraday_pattern_exploration_enabled",
+                self.intraday_pattern_exploration_enabled,
+            )
+        )
+        self.intraday_pattern_history_days = max(
+            7,
+            _safe_int(
+                data.get("intraday_pattern_history_days"),
+                self.intraday_pattern_history_days,
+            ),
+        )
+        self.intraday_pattern_min_sample_size = max(
+            3,
+            _safe_int(
+                data.get("intraday_pattern_min_sample_size"),
+                self.intraday_pattern_min_sample_size,
+            ),
+        )
+        self.intraday_pattern_min_matched_instruments = max(
+            1,
+            _safe_int(
+                data.get("intraday_pattern_min_matched_instruments"),
+                self.intraday_pattern_min_matched_instruments,
+            ),
+        )
+        self.intraday_pattern_evaluation_horizons_minutes = _safe_int_list(
+            data.get("intraday_pattern_evaluation_horizons_minutes"),
+            self.intraday_pattern_evaluation_horizons_minutes,
+            allowed_values=(5, 15, 30, 60, 120),
+        )
+        self.intraday_pattern_max_context_depth = min(
+            3,
+            max(
+                0,
+                _safe_int(
+                    data.get("intraday_pattern_max_context_depth"),
+                    self.intraday_pattern_max_context_depth,
+                ),
+            ),
+        )
+        self.intraday_pattern_max_patterns_per_observation = max(
+            4,
+            _safe_int(
+                data.get("intraday_pattern_max_patterns_per_observation"),
+                self.intraday_pattern_max_patterns_per_observation,
+            ),
+        )
+        self.intraday_pattern_research_cadence_minutes = max(
+            5,
+            _safe_int(
+                data.get("intraday_pattern_research_cadence_minutes"),
+                self.intraday_pattern_research_cadence_minutes,
+            ),
+        )
+        self.intraday_pattern_live_forward_enabled = bool(
+            data.get(
+                "intraday_pattern_live_forward_enabled",
+                self.intraday_pattern_live_forward_enabled,
+            )
+        )
+        self.intraday_pattern_live_forward_top_n = max(
+            1,
+            _safe_int(
+                data.get("intraday_pattern_live_forward_top_n"),
+                self.intraday_pattern_live_forward_top_n,
+            ),
+        )
+        self.intraday_pattern_live_forward_min_quality_score = min(
+            1.0,
+            max(
+                0.0,
+                _safe_float(
+                    data.get("intraday_pattern_live_forward_min_quality_score"),
+                    self.intraday_pattern_live_forward_min_quality_score,
+                ),
+            ),
+        )
+        self.intraday_pattern_live_forward_max_open_trades = max(
+            1,
+            _safe_int(
+                data.get("intraday_pattern_live_forward_max_open_trades"),
+                self.intraday_pattern_live_forward_max_open_trades,
+            ),
+        )
+        raw_manual_pattern_hashes = data.get(
+            "intraday_pattern_live_forward_manual_pattern_hashes",
+            self.intraday_pattern_live_forward_manual_pattern_hashes,
+        )
+        if isinstance(raw_manual_pattern_hashes, list):
+            self.intraday_pattern_live_forward_manual_pattern_hashes = [
+                str(value).strip()
+                for value in raw_manual_pattern_hashes
+                if str(value).strip()
+            ]
+        self.intraday_pattern_parameter_learning_enabled = bool(
+            data.get(
+                "intraday_pattern_parameter_learning_enabled",
+                self.intraday_pattern_parameter_learning_enabled,
+            )
+        )
+        self.intraday_pattern_parameter_learning_window_days = max(
+            7,
+            _safe_int(
+                data.get("intraday_pattern_parameter_learning_window_days"),
+                self.intraday_pattern_parameter_learning_window_days,
+            ),
+        )
+        self.intraday_pattern_parameter_learning_min_closed_trades = max(
+            3,
+            _safe_int(
+                data.get("intraday_pattern_parameter_learning_min_closed_trades"),
+                self.intraday_pattern_parameter_learning_min_closed_trades,
+            ),
+        )
+        self.intraday_pattern_threshold_learning_enabled = bool(
+            data.get(
+                "intraday_pattern_threshold_learning_enabled",
+                self.intraday_pattern_threshold_learning_enabled,
+            )
+        )
+        self.intraday_pattern_threshold_learning_window_days = max(
+            14,
+            _safe_int(
+                data.get("intraday_pattern_threshold_learning_window_days"),
+                self.intraday_pattern_threshold_learning_window_days,
+            ),
+        )
+        self.intraday_pattern_threshold_learning_min_observations = max(
+            30,
+            _safe_int(
+                data.get("intraday_pattern_threshold_learning_min_observations"),
+                self.intraday_pattern_threshold_learning_min_observations,
+            ),
+        )
+        self.intraday_pattern_execution_learning_enabled = bool(
+            data.get(
+                "intraday_pattern_execution_learning_enabled",
+                self.intraday_pattern_execution_learning_enabled,
+            )
+        )
+        self.intraday_pattern_execution_learning_window_days = max(
+            7,
+            _safe_int(
+                data.get("intraday_pattern_execution_learning_window_days"),
+                self.intraday_pattern_execution_learning_window_days,
+            ),
+        )
+        self.intraday_pattern_execution_learning_min_closed_trades = max(
+            3,
+            _safe_int(
+                data.get("intraday_pattern_execution_learning_min_closed_trades"),
+                self.intraday_pattern_execution_learning_min_closed_trades,
+            ),
+        )
+        self.intraday_pattern_exploration_learning_enabled = bool(
+            data.get(
+                "intraday_pattern_exploration_learning_enabled",
+                self.intraday_pattern_exploration_learning_enabled,
+            )
+        )
+        self.intraday_pattern_exploration_learning_window_days = max(
+            7,
+            _safe_int(
+                data.get("intraday_pattern_exploration_learning_window_days"),
+                self.intraday_pattern_exploration_learning_window_days,
+            ),
+        )
+        self.intraday_pattern_exploration_learning_min_closed_trades = max(
+            3,
+            _safe_int(
+                data.get("intraday_pattern_exploration_learning_min_closed_trades"),
+                self.intraday_pattern_exploration_learning_min_closed_trades,
             ),
         )
         self.intraday_bar_fetch_enabled = bool(
@@ -1114,3 +1369,37 @@ def _safe_float(value: object, fallback: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _safe_int_list(
+    value: object,
+    fallback: list[int],
+    *,
+    allowed_values: tuple[int, ...] | None = None,
+) -> list[int]:
+    values: list[object]
+    if isinstance(value, list):
+        values = value
+    elif isinstance(value, str):
+        values = [part.strip() for part in value.split(",") if part.strip()]
+    else:
+        values = list(fallback)
+
+    normalized: list[int] = []
+    seen: set[int] = set()
+    allowed = set(allowed_values or ())
+    for item in values:
+        try:
+            candidate = int(item)
+        except (TypeError, ValueError):
+            continue
+        if allowed and candidate not in allowed:
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+
+    if normalized:
+        return normalized
+    return list(fallback)

@@ -58,6 +58,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 
 from ..env_bootstrap import load_project_dotenv
 
@@ -226,7 +227,7 @@ async def _nightly_history_task() -> None:
     # Cold-start check: run immediately if the DB is already open.
     if AppContext.is_initialized():
         try:
-            result = PriceService.backfill_extended_history_all()
+            result = await run_in_threadpool(PriceService.backfill_extended_history_all)
             _log_backfill_result("Startup", result)
         except Exception:
             logger.exception("Startup extended history backfill failed.")
@@ -248,7 +249,7 @@ async def _nightly_history_task() -> None:
             continue
 
         try:
-            result = PriceService.backfill_extended_history_all()
+            result = await run_in_threadpool(PriceService.backfill_extended_history_all)
             _log_backfill_result("Nightly", result)
         except Exception:
             logger.exception("Nightly extended history backfill failed.")
@@ -277,7 +278,7 @@ async def _intraday_quote_refresh_task() -> None:
     while True:
         try:
             if AppContext.is_initialized():
-                result = PriceService.refresh_intraday_budgeted()
+                result = await run_in_threadpool(PriceService.refresh_intraday_budgeted)
                 if result.get("fetched") or result.get("errors"):
                     logger.info(
                         "Intraday refresh: fetched=%d planned=%d remaining_calls=%d tracked_instruments=%d errors=%d.",
@@ -314,7 +315,7 @@ async def _fx_refresh_task() -> None:
     while True:
         try:
             if AppContext.is_initialized():
-                result = PriceService.refresh_fx_budgeted()
+                result = await run_in_threadpool(PriceService.refresh_fx_budgeted)
                 if result.get("fetched") or result.get("errors"):
                     logger.info(
                         "FX refresh: fetched=%d planned=%d remaining_calls=%d tracked_instruments=%d errors=%d.",
@@ -347,7 +348,7 @@ async def _weekly_catalog_sync_task() -> None:
     while True:
         try:
             if AppContext.is_initialized():
-                _ensure_security_catalog_available(force_refresh=False)
+                await run_in_threadpool(_ensure_security_catalog_available, False)
         except Exception:
             logger.exception("Weekly security catalogue sync failed.")
             AppDiagnosticsService.record(
@@ -368,6 +369,28 @@ async def _twelve_data_stream_task() -> None:
         return
 
     await TwelveDataStreamService.run_forever()
+
+
+async def _warm_beta_dashboard_cache_task() -> None:
+    """Warm the expensive beta dashboard cache off the event loop after startup."""
+    from ..beta.services.overview_service import BetaOverviewService
+
+    await asyncio.sleep(2)
+    if not AppContext.is_initialized():
+        return
+
+    try:
+        await run_in_threadpool(BetaOverviewService.get_modern_dashboard)
+        logger.info("Beta dashboard cache warmed in background.")
+    except Exception:
+        logger.exception("Beta dashboard cache warmup failed.")
+        AppDiagnosticsService.record(
+            severity="WARNING",
+            component="beta_dashboard_cache",
+            event_type="background_task",
+            title="Beta dashboard cache warmup failed",
+            message_text="The beta dashboard cache warmup task failed after startup.",
+        )
 
 
 def _log_backfill_result(label: str, result: dict) -> None:
@@ -448,6 +471,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     fx_task = asyncio.create_task(_fx_refresh_task())
     catalog_task = asyncio.create_task(_weekly_catalog_sync_task())
     stream_task = asyncio.create_task(_twelve_data_stream_task())
+    beta_dashboard_task = asyncio.create_task(_warm_beta_dashboard_cache_task())
 
     yield
 
@@ -456,6 +480,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     fx_task.cancel()
     catalog_task.cancel()
     stream_task.cancel()
+    beta_dashboard_task.cancel()
     with suppress(asyncio.CancelledError):
         await history_task
     with suppress(asyncio.CancelledError):
@@ -466,6 +491,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
         await catalog_task
     with suppress(asyncio.CancelledError):
         await stream_task
+    with suppress(asyncio.CancelledError):
+        await beta_dashboard_task
 
     shutdown_beta_runtime(stop_supervisor=False)
     _state.set_db_path(None)

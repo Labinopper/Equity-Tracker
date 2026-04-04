@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Beta Intraday Patterns{% endblock %}
+{% block content %}
+{% set pattern_summary = dashboard.intraday_pattern_summary or {} %}
+{% set pattern_run = pattern_summary.latest_run or {} %}
+{% set pattern_counts = pattern_summary.counts or {} %}
+{% set leaderboard = pattern_summary.leaderboard or [] %}
+{% set approved_patterns = pattern_summary.approved_patterns or [] %}
+{% set family_rollups = pattern_summary.family_rollups or [] %}
+{% set current_pattern_matches = dashboard.current_pattern_matches or [] %}
+{% set intraday_trade_summary = dashboard.intraday_trade_summary or {} %}
+{% set recent_intraday_trades = dashboard.recent_intraday_trades or [] %}
+{% set waitlisted_patterns = leaderboard | rejectattr("approval_status", "equalto", "APPROVED") | list %}
+{% set pattern_policy = dashboard.intraday_pattern_policy or {} %}
+{% set threshold_profile = dashboard.intraday_pattern_thresholds or {} %}
+{% set exploration_profile = dashboard.intraday_pattern_exploration_profile or {} %}
+{% set execution_profile = dashboard.intraday_pattern_execution_profile or {} %}
+{% set exploration_rankings = exploration_profile.family_rankings or [] %}
+{% set exploration_allowlists = exploration_profile.family_context_prefix_allowlists or {} %}
+
+<section class="section-header">
+  <div>
+    <h1>Intraday Patterns</h1>
+    <p class="muted beta-page-note">
+      This is the search surface for the new model: broad pattern exploration, brutal ranking,
+      tiny whitelist approval, and live observation matching.
+    </p>
+  </div>
+  <div class="beta-toolbar">
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta">Overview</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/trades">Live-Forward Trades</a>
+    <a class="btn btn-secondary btn-sm" href="/paper-trading-beta/health">Health &amp; Controls</a>
+  </div>
+</section>
+
+{% if pattern_summary.available %}
+<section class="beta-summary-grid">
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Search Breadth</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Generated</div>
+      <div class="position-card__value">{{ pattern_run.patterns_generated or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Screened In</div>
+      <div class="position-card__value">{{ pattern_run.patterns_screened_in or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Families</div>
+      <div class="position-card__value">{{ pattern_counts.family_count or 0 }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Whitelist</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Mode</div>
+      <div class="position-card__value">{{ pattern_summary.approval_mode or "AUTO_TOP_N" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Approved</div>
+      <div class="position-card__value">{{ pattern_counts.approved_count or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Waitlisted</div>
+      <div class="position-card__value">{{ waitlisted_patterns|length }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Live Match Surface</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Current Matches</div>
+      <div class="position-card__value">{{ current_pattern_matches|length }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Live-Forward Open</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_open or 0 }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Closed Win Rate</div>
+      <div class="position-card__value">{{ intraday_trade_summary.pattern_live_forward_win_rate_pct if intraday_trade_summary.pattern_live_forward_win_rate_pct is not none else "-" }}{% if intraday_trade_summary.pattern_live_forward_win_rate_pct is not none %}%{% endif %}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Latest Run</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Run Code</div>
+      <div class="position-card__value">{{ pattern_run.run_code or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Window</div>
+      <div class="position-card__value">{{ pattern_run.window_start or "-" }} to {{ pattern_run.window_end or "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Adaptive Policy</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Source</div>
+      <div class="position-card__value">{{ pattern_policy.source_label or pattern_policy.source_mode or "Static settings" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Quality / Top N</div>
+      <div class="position-card__value">{{ pattern_policy.recommended_min_quality_score if pattern_policy.recommended_min_quality_score is not none else "-" }} / {{ pattern_policy.recommended_top_n or "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Max Open / Confidence</div>
+      <div class="position-card__value">{{ pattern_policy.recommended_max_open_trades or "-" }} / {{ pattern_policy.confidence_score if pattern_policy.confidence_score is not none else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Threshold Profile</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Source / Confidence</div>
+      <div class="position-card__value">{{ threshold_profile.source_label or threshold_profile.source_mode or "Static thresholds" }} / {{ threshold_profile.confidence_score if threshold_profile.confidence_score is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Volume Low / High</div>
+      <div class="position-card__value">{{ threshold_profile.volume_low_ratio if threshold_profile.volume_low_ratio is not none else "-" }} / {{ threshold_profile.volume_high_ratio if threshold_profile.volume_high_ratio is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Vol Low / High</div>
+      <div class="position-card__value">{{ threshold_profile.volatility_low_pct if threshold_profile.volatility_low_pct is not none else "-" }} / {{ threshold_profile.volatility_high_pct if threshold_profile.volatility_high_pct is not none else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Execution Profile</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Source / Confidence</div>
+      <div class="position-card__value">{{ execution_profile.source_label or execution_profile.source_mode or "Static execution" }} / {{ execution_profile.confidence_score if execution_profile.confidence_score is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Target / Stop</div>
+      <div class="position-card__value">x{{ execution_profile.recommended_target_capture_ratio if execution_profile.recommended_target_capture_ratio is not none else "-" }} / x{{ execution_profile.recommended_stop_loss_ratio if execution_profile.recommended_stop_loss_ratio is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Hold / Bail</div>
+      <div class="position-card__value">x{{ execution_profile.recommended_max_hold_ratio if execution_profile.recommended_max_hold_ratio is not none else "-" }} / {{ execution_profile.recommended_early_bail_ratio if execution_profile.recommended_early_bail_ratio is not none else "-" }}</div>
+    </div>
+  </article>
+
+  <article class="card beta-stat-card">
+    <div class="card__header"><h2 class="card__title">Exploration Budget</h2></div>
+    <div class="position-card__section">
+      <div class="position-card__label">Source / Confidence</div>
+      <div class="position-card__value">{{ exploration_profile.source_label or exploration_profile.source_mode or "Static exploration" }} / {{ exploration_profile.confidence_score if exploration_profile.confidence_score is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Context Depth / Pattern Cap</div>
+      <div class="position-card__value">{{ exploration_profile.recommended_max_context_depth if exploration_profile.recommended_max_context_depth is not none else "-" }} / {{ exploration_profile.recommended_max_patterns_per_observation if exploration_profile.recommended_max_patterns_per_observation is not none else "-" }}</div>
+    </div>
+    <div class="position-card__section">
+      <div class="position-card__label">Tracked Families</div>
+      <div class="position-card__value">{{ exploration_profile.distinct_family_count if exploration_profile.distinct_family_count is not none else "-" }}</div>
+    </div>
+  </article>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Learned Family Priorities</h2></div>
+  {% if exploration_rankings %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Score</th>
+          <th>Preferred Angles</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in exploration_rankings[:8] %}
+        {% set family_code = row.family_code %}
+        {% set preferred = exploration_allowlists.get(family_code, []) %}
+        <tr>
+          <td>{{ family_code }}</td>
+          <td>{{ row.score if row.score is not none else "-" }}</td>
+          <td>{{ preferred | join(", ") if preferred else "all angles" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No learned family-priority profile yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Active Thresholds</h2></div>
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Thresholds</th>
+          <th>Why It Matters</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Volume / Volatility</td>
+          <td>
+            low {{ threshold_profile.volume_low_ratio if threshold_profile.volume_low_ratio is not none else "-" }} /
+            {{ threshold_profile.volatility_low_pct if threshold_profile.volatility_low_pct is not none else "-" }}<br>
+            high {{ threshold_profile.volume_high_ratio if threshold_profile.volume_high_ratio is not none else "-" }} /
+            {{ threshold_profile.volatility_high_pct if threshold_profile.volatility_high_pct is not none else "-" }}
+          </td>
+          <td>Controls when the explorer tags quiet sessions, pressure bursts, and expansion regimes.</td>
+        </tr>
+        <tr>
+          <td>Momentum / Range</td>
+          <td>
+            up/down {{ threshold_profile.momentum_up_pct if threshold_profile.momentum_up_pct is not none else "-" }} /
+            {{ threshold_profile.momentum_down_pct if threshold_profile.momentum_down_pct is not none else "-" }}<br>
+            compressed/expanded {{ threshold_profile.range_compressed_pct if threshold_profile.range_compressed_pct is not none else "-" }} /
+            {{ threshold_profile.range_expanded_pct if threshold_profile.range_expanded_pct is not none else "-" }}
+          </td>
+          <td>Defines when a move becomes meaningful versus ordinary drift.</td>
+        </tr>
+        <tr>
+          <td>Pressure / Close Drive</td>
+          <td>
+            sell/open {{ threshold_profile.sell_pressure_return_15m_pct if threshold_profile.sell_pressure_return_15m_pct is not none else "-" }} /
+            {{ threshold_profile.sell_pressure_return_since_open_pct if threshold_profile.sell_pressure_return_since_open_pct is not none else "-" }}<br>
+            buy/open {{ threshold_profile.buy_pressure_return_15m_pct if threshold_profile.buy_pressure_return_15m_pct is not none else "-" }} /
+            {{ threshold_profile.buy_pressure_return_since_open_pct if threshold_profile.buy_pressure_return_since_open_pct is not none else "-" }}<br>
+            close drive {{ threshold_profile.close_drive_abs_return_30m_pct if threshold_profile.close_drive_abs_return_30m_pct is not none else "-" }}
+          </td>
+          <td>These values decide when the runtime treats moves as real pressure instead of background noise.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Current Matches On Approved Pockets</h2></div>
+  {% if current_pattern_matches %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Matched Pocket</th>
+          <th>Bias</th>
+          <th>Best Horizon</th>
+          <th>Pocket Quality</th>
+          <th>Pocket Edge</th>
+          <th>State</th>
+          <th>Observed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in current_pattern_matches %}
+        <tr>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>
+            {{ row.matched_pattern_code }}<br>
+            <span class="muted">{{ row.matched_pattern_family_code }}</span>
+          </td>
+          <td><span class="{{ badge_class(row.matched_pattern_bias) }}">{{ row.matched_pattern_bias }}</span></td>
+          <td>{{ row.matched_pattern_best_horizon_label or "-" }}</td>
+          <td>{{ row.matched_pattern_quality_score if row.matched_pattern_quality_score is not none else "-" }}</td>
+          <td>{{ row.matched_pattern_best_horizon_edge_pct if row.matched_pattern_best_horizon_edge_pct is not none else row.matched_pattern_edge_15m_pct if row.matched_pattern_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.state_label or row.state_code or "-" }}</td>
+          <td>{{ row.observed_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No current live observations match an approved pocket.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Approved Pockets</h2></div>
+  {% if approved_patterns %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Pocket</th>
+          <th>Bias</th>
+          <th>Best Horizon</th>
+          <th>Edge</th>
+          <th>Adverse</th>
+          <th>Stability</th>
+          <th>Quality</th>
+          <th>Sample</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in approved_patterns %}
+        <tr>
+          <td>
+            <strong>{{ row.anchor_code }}</strong><br>
+            <span class="muted">{{ row.pattern_code }}</span>
+          </td>
+          <td><span class="{{ badge_class(row.action_bias) }}">{{ row.action_bias }}</span></td>
+          <td>{{ row.best_horizon_label or "-" }}</td>
+          <td>{{ row.best_horizon_post_cost_edge_pct if row.best_horizon_post_cost_edge_pct is not none else row.post_cost_edge_15m_pct if row.post_cost_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.mean_max_adverse_move_pct if row.mean_max_adverse_move_pct is not none else "-" }}</td>
+          <td>{{ row.stability_score if row.stability_score is not none else "-" }}</td>
+          <td>{{ row.quality_score if row.quality_score is not none else "-" }}</td>
+          <td>{{ row.sample_size or 0 }} / {{ row.matched_instruments or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No approved live-forward pockets yet.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Closest Candidates Not Yet Approved</h2></div>
+  {% if waitlisted_patterns %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Pocket</th>
+          <th>Bias</th>
+          <th>Best Horizon</th>
+          <th>Edge</th>
+          <th>Stability</th>
+          <th>Quality</th>
+          <th>Sample</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in waitlisted_patterns[:8] %}
+        <tr>
+          <td>
+            <strong>{{ row.anchor_code }}</strong><br>
+            <span class="muted">{{ row.pattern_code }}</span>
+          </td>
+          <td><span class="{{ badge_class(row.action_bias) }}">{{ row.action_bias }}</span></td>
+          <td>{{ row.best_horizon_label or "-" }}</td>
+          <td>{{ row.best_horizon_post_cost_edge_pct if row.best_horizon_post_cost_edge_pct is not none else row.post_cost_edge_15m_pct if row.post_cost_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.stability_score if row.stability_score is not none else "-" }}</td>
+          <td>{{ row.quality_score if row.quality_score is not none else "-" }}</td>
+          <td>{{ row.sample_size or 0 }} / {{ row.matched_instruments or 0 }}</td>
+          <td><span class="{{ badge_class(row.approval_status or row.status) }}">{{ row.approval_status or row.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">There are no screened-in near-miss pockets at the moment.</p>
+  {% endif %}
+</section>
+
+<section class="card card-spaced">
+  <div class="card__header"><h2 class="card__title">Family Rollups</h2></div>
+  {% if family_rollups %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Family</th>
+          <th>Best Bias</th>
+          <th>Patterns</th>
+          <th>Avg Edge</th>
+          <th>Avg Adverse</th>
+          <th>Avg Stability</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in family_rollups %}
+        <tr>
+          <td>
+            <strong>{{ row.anchor_code }}</strong><br>
+            <span class="muted">{{ row.best_pattern_code }}</span>
+          </td>
+          <td><span class="{{ badge_class(row.best_action_bias) }}">{{ row.best_action_bias }}</span></td>
+          <td>{{ row.screened_in_count or 0 }} screened / {{ row.approved_count or 0 }} approved</td>
+          <td>{{ row.average_post_cost_edge_15m_pct if row.average_post_cost_edge_15m_pct is not none else "-" }}</td>
+          <td>{{ row.average_adverse_move_pct if row.average_adverse_move_pct is not none else "-" }}</td>
+          <td>{{ row.average_stability_score if row.average_stability_score is not none else "-" }}</td>
+          <td><span class="{{ badge_class(row.verdict) }}">{{ row.verdict }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No family rollups are available yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__header"><h2 class="card__title">Recent Pattern Live-Forward Trades</h2></div>
+  {% set pattern_trade_rows = recent_intraday_trades | selectattr("entry_source", "equalto", "PATTERN") | list %}
+  {% if pattern_trade_rows %}
+  <div class="table-wrap">
+    <table class="beta-table-compact">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Pocket</th>
+          <th>Status</th>
+          <th>Target / Stop</th>
+          <th>Return %</th>
+          <th>Opened</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in pattern_trade_rows %}
+        <tr>
+          <td><strong>{{ row.symbol }}</strong></td>
+          <td>{{ row.pattern_code or row.pattern_family_code or "-" }}</td>
+          <td><span class="{{ badge_class(row.status) }}">{{ row.status }}</span></td>
+          <td>{{ row.target_return_pct or "-" }} / {{ row.stop_loss_pct or "-" }}</td>
+          <td>{{ row.realized_post_cost_return_pct if row.realized_post_cost_return_pct is not none else row.latest_return_pct or "-" }}</td>
+          <td>{{ row.entry_observed_at or row.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No pattern-approved live-forward trades have been logged yet.</p>
+  {% endif %}
+</section>
+{% else %}
+<section class="card">
+  <p class="muted">No intraday pattern discovery run has completed yet.</p>
+</section>
+{% endif %}
+{% endblock %}

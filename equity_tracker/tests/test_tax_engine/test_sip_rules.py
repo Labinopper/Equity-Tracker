@@ -274,6 +274,42 @@ class TestWithdrawal5PlusYears:
         assert result.income_taxable_gbp == Decimal("0")
         assert result.ni_liable_gbp == Decimal("0")
 
+    def test_dividend_no_tax_after_3yr(self):
+        holding = make_dividend_holding(acq_date=date(2021, 1, 1), quantity=Decimal("10"))
+        event = SIPEvent(
+            event_type=SIPEventType.WITHDRAWAL,
+            event_date=date(2024, 6, 1),
+            holding=holding,
+            quantity=Decimal("10"),
+            market_value_per_share_gbp=Decimal("15.00"),
+        )
+        result = process_sip_event(event)
+
+        assert result.income_taxable_gbp == Decimal("0")
+        assert result.ni_liable_gbp == Decimal("0")
+
+
+class TestDividendShares:
+
+    def test_dividend_withdrawal_under_3yr_taxes_original_dividend_only(self):
+        holding = make_dividend_holding(
+            acq_date=date(2024, 1, 1),
+            quantity=Decimal("10"),
+            fmv_at_acq=Decimal("12.00"),
+        )
+        event = SIPEvent(
+            event_type=SIPEventType.WITHDRAWAL,
+            event_date=date(2025, 6, 1),
+            holding=holding,
+            quantity=Decimal("10"),
+            market_value_per_share_gbp=Decimal("20.00"),
+        )
+        result = process_sip_event(event)
+
+        assert result.holding_period_category == SIPHoldingPeriodCategory.UNDER_THREE_YEARS
+        assert_gbp_equal(result.income_taxable_gbp, Decimal("120.00"))
+        assert result.ni_liable_gbp == Decimal("0")
+
 
 # ── Matching share forfeiture ──────────────────────────────────────────────
 

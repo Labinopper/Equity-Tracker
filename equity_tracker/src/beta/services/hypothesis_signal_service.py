@@ -18,6 +18,7 @@ from ..db.models import (
     BetaSignalObservation,
 )
 from .hypothesis_normalizer import BetaHypothesisNormalizer
+from .prediction_accuracy_service import BetaPredictionAccuracyService
 
 
 class BetaHypothesisSignalService:
@@ -199,6 +200,21 @@ class BetaHypothesisSignalService:
                 observation.belief_confidence_score = belief_confidence
                 observation.observation_status = "MATCHED"
                 observations_reused += 1
+            
+            # Log prediction for accuracy tracking
+            try:
+                BetaPredictionAccuracyService.log_prediction(
+                    hypothesis_definition_id=definition.id,
+                    signal_observation_id=observation.id,
+                    predicted_return_pct=predicted_return_pct,
+                    confidence_score=belief_confidence,
+                    prediction_time=observation_time,
+                    horizon_days=definition.holding_period_days,
+                )
+            except Exception:
+                # Don't fail signal generation if prediction logging fails
+                pass
+            
             matched_rows.append(
                 {
                     "definition": definition,

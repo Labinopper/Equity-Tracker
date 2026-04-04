@@ -65,6 +65,9 @@ def test_api_dividends_summary_empty_and_ui_renders(client):
     assert "Lot Explorer" in page.text
     assert "Receipt Mode" in page.text
     assert "Stock Quantity Received" in page.text
+    assert "Actual Net Cash Paid Out" in page.text
+    assert "Receipt" in page.text
+    assert "Reinvestment" in page.text
     assert "Tax-Year Dividend Summary" in page.text
 
 
@@ -169,6 +172,7 @@ def test_api_dividend_entry_create_stock_reinvestment_creates_sip_dividend_lot_w
     assert row["tax_treatment"] == "ISA_EXEMPT"
     assert row["confirmation_mode"] == "stock"
     assert row["is_stock_reinvestment"] is True
+    assert row["reinvestment_display_name"] == "ESPP Dividend"
     assert row["cash_base_gbp"] == "0.00"
     assert payload["summary"]["actual_gross_dividends_gbp"] == "12.50"
     assert payload["summary"]["actual_net_paid_gbp"] == "0.00"
@@ -278,6 +282,7 @@ def test_dividends_ui_add_form_stock_reinvestment_creates_lot_without_cash_post(
     assert row["confirmation_mode"] == "stock"
     assert row["is_stock_reinvestment"] is True
     assert row["reinvestment_scheme_type"] == "SIP_DIVIDEND"
+    assert row["reinvestment_display_name"] == "ESPP Dividend"
     assert payload["summary"]["actual_net_paid_gbp"] == "0.00"
     assert payload["summary"]["estimated_net_dividends_gbp"] == "0.00"
     assert payload["allocation"]["rows"][0]["cash_base_dividends_gbp"] == "0.00"
@@ -285,6 +290,12 @@ def test_dividends_ui_add_form_stock_reinvestment_creates_lot_without_cash_post(
     db_path = _state.get_db_path()
     balances = CashLedgerService.balances(db_path)
     assert balances.get("BROKER", {}).get("GBP", Decimal("0")) == Decimal("0")
+
+    page = client.get("/dividends")
+    assert page.status_code == 200
+    assert "Stock Reinvestment" in page.text
+    assert "2.5 sh as" in page.text
+    assert "ESPP Dividend" in page.text
 
     with AppContext.read_session() as sess:
         lots = LotRepository(sess).get_all_lots_for_security(sec_id)

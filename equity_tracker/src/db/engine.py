@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool, StaticPool
 
 from .models import Base
+from .sqlite_compat import register_sqlite_adapters
 
 # ---------------------------------------------------------------------------
 # SQLCipher detection
@@ -137,6 +138,7 @@ def _make_encrypted_engine(db_path: Path, hex_key: str):
 
 def _make_plain_engine(db_url: str):
     """Create an unencrypted SQLAlchemy engine (plain sqlite3)."""
+    register_sqlite_adapters()
     is_memory = ":memory:" in db_url
     engine = create_engine(
         db_url,

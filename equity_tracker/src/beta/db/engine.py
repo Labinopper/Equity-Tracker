@@ -10,6 +10,8 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool, StaticPool
 
+from ...db.sqlite_compat import register_sqlite_adapters
+
 
 def _attach_sqlite_pragmas(engine) -> None:
     @event.listens_for(engine, "connect")
@@ -29,6 +31,7 @@ class BetaDatabaseEngine:
 
     @classmethod
     def open(cls, db_path: Path) -> "BetaDatabaseEngine":
+        register_sqlite_adapters()
         engine = create_engine(
             f"sqlite:///{db_path}",
             connect_args={"check_same_thread": False, "timeout": 60.0},
@@ -39,6 +42,7 @@ class BetaDatabaseEngine:
 
     @classmethod
     def open_in_memory(cls) -> "BetaDatabaseEngine":
+        register_sqlite_adapters()
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False, "timeout": 60.0},

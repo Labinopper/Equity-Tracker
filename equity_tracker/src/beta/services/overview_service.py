@@ -37,7 +37,12 @@ from ..db.models import (
     BetaHypothesisFamily,
     BetaHypothesisTestRun,
     BetaInstrument,
+    BetaIntradayFeatureObservation,
     BetaIntradaySnapshot,
+    BetaIntradayPatternCandidate,
+    BetaIntradayPatternDiscoveryRun,
+    BetaIntradaySimulatedTrade,
+    BetaIntradaySimulatedTradeEvent,
     BetaJobRun,
     BetaLedgerState,
     BetaLabelValue,
@@ -60,6 +65,11 @@ from ..db.models import (
     BetaValidationRun,
 )
 from ..services.pipeline_assessment_service import BetaPipelineAssessmentService
+from ..services.intraday_pattern_exploration_learning_service import BetaIntradayPatternExplorationLearningService
+from ..services.intraday_pattern_parameter_learning_service import BetaIntradayPatternParameterLearningService
+from ..services.intraday_pattern_review_service import BetaIntradayPatternReviewService
+from ..services.intraday_pattern_threshold_learning_service import BetaIntradayPatternThresholdLearningService
+from ..services.intraday_pattern_execution_learning_service import BetaIntradayPatternExecutionLearningService
 from ..services.session_service import BetaMarketSessionService
 from ..settings import BetaSettings
 from ..state import get_beta_db_path
@@ -82,6 +92,12 @@ def _json_object(raw: str | None) -> dict[str, object]:
 
 def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _mean(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 6)
 
 
 def _process_is_alive(pid: int | None) -> bool:
@@ -112,10 +128,13 @@ class BetaOverviewService:
     """Small query service for the beta dashboard and supporting pages."""
 
     _DASHBOARD_CACHE_LOCK = threading.Lock()
-    _DASHBOARD_CACHE_TTL_SECONDS = 60
+    _DASHBOARD_CACHE_TTL_SECONDS = 1800
     _DASHBOARD_CACHE: dict[str, object] | None = None
     _DASHBOARD_CACHE_AT: datetime | None = None
     _DASHBOARD_CACHE_DB_PATH: str | None = None
+    _MODERN_DASHBOARD_CACHE: dict[str, object] | None = None
+    _MODERN_DASHBOARD_CACHE_AT: datetime | None = None
+    _MODERN_DASHBOARD_CACHE_DB_PATH: str | None = None
 
     @staticmethod
     def is_available() -> bool:
@@ -127,6 +146,9 @@ class BetaOverviewService:
             BetaOverviewService._DASHBOARD_CACHE = None
             BetaOverviewService._DASHBOARD_CACHE_AT = None
             BetaOverviewService._DASHBOARD_CACHE_DB_PATH = None
+            BetaOverviewService._MODERN_DASHBOARD_CACHE = None
+            BetaOverviewService._MODERN_DASHBOARD_CACHE_AT = None
+            BetaOverviewService._MODERN_DASHBOARD_CACHE_DB_PATH = None
 
     @staticmethod
     def _get_cached_dashboard(*, beta_db_path: str | None) -> dict[str, object] | None:
@@ -146,6 +168,29 @@ class BetaOverviewService:
             BetaOverviewService._DASHBOARD_CACHE = dashboard
             BetaOverviewService._DASHBOARD_CACHE_AT = _utcnow()
             BetaOverviewService._DASHBOARD_CACHE_DB_PATH = beta_db_path
+        return dashboard
+
+    @staticmethod
+    def _get_cached_modern_dashboard(*, beta_db_path: str | None) -> dict[str, object] | None:
+        with BetaOverviewService._DASHBOARD_CACHE_LOCK:
+            if (
+                BetaOverviewService._MODERN_DASHBOARD_CACHE is None
+                or BetaOverviewService._MODERN_DASHBOARD_CACHE_AT is None
+            ):
+                return None
+            if BetaOverviewService._MODERN_DASHBOARD_CACHE_DB_PATH != beta_db_path:
+                return None
+            age_seconds = (_utcnow() - BetaOverviewService._MODERN_DASHBOARD_CACHE_AT).total_seconds()
+            if age_seconds > BetaOverviewService._DASHBOARD_CACHE_TTL_SECONDS:
+                return None
+            return BetaOverviewService._MODERN_DASHBOARD_CACHE
+
+    @staticmethod
+    def _store_cached_modern_dashboard(*, beta_db_path: str | None, dashboard: dict[str, object]) -> dict[str, object]:
+        with BetaOverviewService._DASHBOARD_CACHE_LOCK:
+            BetaOverviewService._MODERN_DASHBOARD_CACHE = dashboard
+            BetaOverviewService._MODERN_DASHBOARD_CACHE_AT = _utcnow()
+            BetaOverviewService._MODERN_DASHBOARD_CACHE_DB_PATH = beta_db_path
         return dashboard
 
     @staticmethod
@@ -813,6 +858,299 @@ class BetaOverviewService:
         return enriched_rows
 
     @staticmethod
+    def _enrich_intraday_trade_rows(
+        trade_rows: Sequence[BetaIntradaySimulatedTrade],
+    ) -> list[dict[str, object]]:
+        enriched_rows: list[dict[str, object]] = []
+        for trade in trade_rows:
+            notes = _json_object(trade.notes_json)
+            enriched_rows.append(
+                {
+                    **_row_to_dict(trade),
+                    "entry_source": str(notes.get("entry_source") or "").strip().upper() or None,
+                    "pattern_hash": notes.get("pattern_hash"),
+                    "pattern_code": notes.get("pattern_code"),
+                    "pattern_family_code": notes.get("pattern_family_code"),
+                    "pattern_quality_score": notes.get("pattern_quality_score"),
+                    "pattern_stability_score": notes.get("pattern_stability_score"),
+                    "pattern_horizon_stability_score": notes.get("pattern_horizon_stability_score"),
+                    "pattern_post_cost_edge_15m_pct": notes.get("pattern_post_cost_edge_15m_pct"),
+                    "pattern_best_horizon_minutes": notes.get("pattern_best_horizon_minutes"),
+                    "pattern_best_horizon_expected_return_pct": notes.get("pattern_best_horizon_expected_return_pct"),
+                    "pattern_best_horizon_post_cost_edge_pct": notes.get("pattern_best_horizon_post_cost_edge_pct"),
+                    "pattern_sample_size": notes.get("pattern_sample_size"),
+                    "pattern_matched_instruments": notes.get("pattern_matched_instruments"),
+                }
+            )
+        return enriched_rows
+
+    @staticmethod
+    def _intraday_trade_summary(trade_rows: Sequence[dict[str, object]]) -> dict[str, object]:
+        live_forward_rows = [
+            row for row in trade_rows if str(row.get("simulation_source") or "").strip().upper() == "LIVE_FORWARD"
+        ]
+        historical_backfill_rows = [
+            row for row in trade_rows if str(row.get("simulation_source") or "").strip().upper() == "HISTORICAL_BACKFILL"
+        ]
+        pattern_rows = [
+            row for row in live_forward_rows if str(row.get("entry_source") or "").strip().upper() == "PATTERN"
+        ]
+        closed_pattern_rows = [
+            row for row in pattern_rows if str(row.get("status") or "").strip().upper() != "OPEN"
+        ]
+        wins = [
+            row
+            for row in closed_pattern_rows
+            if _safe_float(row.get("realized_return_pct")) is not None
+            and float(row["realized_return_pct"]) > 0.0
+        ]
+        avg_post_cost = _mean(
+            [
+                float(row["realized_post_cost_return_pct"])
+                for row in closed_pattern_rows
+                if _safe_float(row.get("realized_post_cost_return_pct")) is not None
+            ]
+        )
+        return {
+            "live_forward_total": len(live_forward_rows),
+            "historical_backfill_total": len(historical_backfill_rows),
+            "pattern_live_forward_total": len(pattern_rows),
+            "pattern_live_forward_open": len(
+                [row for row in pattern_rows if str(row.get("status") or "").strip().upper() == "OPEN"]
+            ),
+            "pattern_live_forward_closed": len(closed_pattern_rows),
+            "pattern_live_forward_win_rate_pct": round((len(wins) / len(closed_pattern_rows)) * 100.0, 1)
+            if closed_pattern_rows
+            else None,
+            "pattern_live_forward_avg_post_cost_return_pct": avg_post_cost,
+        }
+
+    @staticmethod
+    def _current_pattern_matches(
+        sess,
+        *,
+        settings: BetaSettings,
+        approved_patterns: list[dict[str, object]],
+        threshold_profile: dict[str, object] | None = None,
+        limit: int = 8,
+    ) -> list[dict[str, object]]:
+        if not approved_patterns:
+            return []
+        observation_rows = list(
+            sess.scalars(
+                select(BetaIntradayFeatureObservation)
+                .where(BetaIntradayFeatureObservation.session_state == "REGULAR_OPEN")
+                .order_by(desc(BetaIntradayFeatureObservation.observed_at), desc(BetaIntradayFeatureObservation.id))
+                .limit(200)
+            ).all()
+        )
+        latest_by_instrument: dict[str, BetaIntradayFeatureObservation] = {}
+        for row in observation_rows:
+            instrument_id = str(row.instrument_id or "").strip()
+            if not instrument_id or instrument_id in latest_by_instrument:
+                continue
+            latest_by_instrument[instrument_id] = row
+
+        matches: list[dict[str, object]] = []
+        for row in latest_by_instrument.values():
+            matched_pattern = BetaIntradayPatternReviewService.best_live_forward_match(
+                row,
+                approved_patterns,
+                settings=settings,
+                threshold_profile=threshold_profile,
+            )
+            if matched_pattern is None:
+                continue
+            matches.append(
+                {
+                    "instrument_id": row.instrument_id,
+                    "symbol": row.symbol,
+                    "observed_at": row.observed_at,
+                    "state_code": row.state_code,
+                    "state_label": row.state_label,
+                    "recommended_action_side": row.recommended_action_side,
+                    "recommended_action_code": row.recommended_action_code,
+                    "recommended_action_label": row.recommended_action_label,
+                    "confidence_score": row.confidence_score,
+                    "expected_return_15m_pct": row.expected_return_15m_pct,
+                    "post_cost_expected_return_15m_pct": row.post_cost_expected_return_15m_pct,
+                    "matched_pattern_hash": matched_pattern.get("pattern_hash"),
+                    "matched_pattern_code": matched_pattern.get("pattern_code"),
+                    "matched_pattern_family_code": matched_pattern.get("family_code"),
+                    "matched_pattern_bias": matched_pattern.get("action_bias"),
+                    "matched_pattern_quality_score": matched_pattern.get("quality_score"),
+                    "matched_pattern_stability_score": matched_pattern.get("stability_score"),
+                    "matched_pattern_horizon_stability_score": matched_pattern.get("horizon_stability_score"),
+                    "matched_pattern_edge_15m_pct": matched_pattern.get("post_cost_edge_15m_pct"),
+                    "matched_pattern_best_horizon_minutes": matched_pattern.get("best_horizon_minutes"),
+                    "matched_pattern_best_horizon_label": matched_pattern.get("best_horizon_label"),
+                    "matched_pattern_best_horizon_edge_pct": matched_pattern.get("best_horizon_post_cost_edge_pct"),
+                    "matched_pattern_sample_size": matched_pattern.get("sample_size"),
+                    "matched_context_depth": matched_pattern.get("matched_context_depth"),
+                    "matched_context_tags": matched_pattern.get("matched_context_tags") or [],
+                }
+            )
+        matches.sort(
+            key=lambda row: (
+                float(row.get("matched_pattern_quality_score") or 0.0),
+                float(row.get("matched_pattern_best_horizon_edge_pct") or row.get("matched_pattern_edge_15m_pct") or 0.0),
+                float(row.get("confidence_score") or 0.0),
+                row.get("observed_at"),
+            ),
+            reverse=True,
+        )
+        return matches[: max(1, limit)]
+
+    @staticmethod
+    def get_modern_dashboard() -> dict[str, object]:
+        """Build the lightweight dashboard used by the modern beta UI surfaces."""
+        if not BetaContext.is_initialized():
+            return {
+                "available": False,
+                "status": None,
+                "runtime_flags": {},
+                "runtime_activity": {},
+                "pipeline_health": {"available": False},
+                "intraday_pattern_summary": {"available": False},
+                "intraday_pattern_policy": {},
+                "intraday_pattern_thresholds": {},
+                "intraday_pattern_exploration_profile": {},
+                "intraday_pattern_execution_profile": {},
+                "intraday_trade_summary": {},
+                "current_pattern_matches": [],
+                "ledger": None,
+                "recent_intraday_trades": [],
+                "jobs": [],
+            }
+
+        beta_db_path = get_beta_db_path()
+        beta_db_key = str(beta_db_path) if beta_db_path is not None else None
+        cached = BetaOverviewService._get_cached_modern_dashboard(beta_db_path=beta_db_key)
+        if cached is not None:
+            return cached
+
+        with BetaContext.read_session() as sess:
+            settings = BetaSettings.load(beta_db_path) if beta_db_path is not None else BetaSettings()
+            status = sess.scalar(select(BetaSystemStatus).where(BetaSystemStatus.id == 1))
+            recent_jobs = list(
+                sess.scalars(select(BetaJobRun).order_by(desc(BetaJobRun.started_at)).limit(40)).all()
+            )
+            latest_successful_job = next((row for row in recent_jobs if row.status == "SUCCESS"), None)
+            latest_failed_job = next((row for row in recent_jobs if row.status == "FAILED"), None)
+            latest_jobs_by_type: dict[str, dict] = {}
+            for row in recent_jobs:
+                if row.job_type not in latest_jobs_by_type:
+                    latest_jobs_by_type[row.job_type] = _row_to_dict(row)
+            latest_job_activity_at = _latest_activity_at(
+                *[_latest_activity_at(row.started_at, row.completed_at) for row in recent_jobs]
+            )
+            latest_runtime_activity_at = _latest_activity_at(
+                status.last_heartbeat_at if status is not None else None,
+                status.updated_at if status is not None else None,
+                latest_job_activity_at,
+            )
+            current_running_job = next((row for row in recent_jobs if row.status == "RUNNING"), None)
+            supervisor_alive = _process_is_alive(status.supervisor_pid if status is not None else None)
+            supervisor_status = (
+                "running"
+                if supervisor_alive
+                else str(status.supervisor_status or "stopped") if status is not None else "stopped"
+            )
+            runtime_activity = {
+                "supervisor_alive": supervisor_alive,
+                "supervisor_status_display": supervisor_status,
+                "heartbeat_age_seconds": _seconds_since(latest_runtime_activity_at),
+                "heartbeat_at": latest_runtime_activity_at,
+                "last_successful_job": _row_to_dict(latest_successful_job) if latest_successful_job is not None else None,
+                "last_failed_job": _row_to_dict(latest_failed_job) if latest_failed_job is not None else None,
+                "current_running_job": _row_to_dict(current_running_job) if current_running_job is not None else None,
+                "current_running_job_age_seconds": (
+                    _seconds_since(current_running_job.started_at) if current_running_job is not None else None
+                ),
+                "latest_jobs_by_type": latest_jobs_by_type,
+                "latest_success_count": len([row for row in recent_jobs[:12] if row.status == "SUCCESS"]),
+                "latest_failure_count": len([row for row in recent_jobs[:12] if row.status == "FAILED"]),
+            }
+            runtime_flags = {
+                "training_window_open": BetaMarketSessionService.training_window_is_open(settings),
+                "tracked_equity_training_enabled": BetaTrainingService.has_tracked_core_equity(),
+                "training_allowed": (
+                    BetaMarketSessionService.training_window_is_open(settings)
+                    or BetaTrainingService.has_tracked_core_equity()
+                ),
+                "uk_market_open": BetaMarketSessionService.market_is_tradeable("LSE"),
+                "us_market_open": BetaMarketSessionService.market_is_tradeable("NASDAQ"),
+            }
+            intraday_pattern_summary = BetaIntradayPatternReviewService.latest_summary_in_session(
+                sess,
+                settings,
+                leaderboard_limit=10,
+                family_limit=8,
+            )
+            intraday_pattern_policy = (
+                intraday_pattern_summary.get("adaptive_policy")
+                or BetaIntradayPatternParameterLearningService.static_policy_snapshot(settings)
+            )
+            intraday_pattern_thresholds = (
+                intraday_pattern_summary.get("threshold_profile")
+                or BetaIntradayPatternThresholdLearningService.static_threshold_snapshot(settings)
+            )
+            intraday_pattern_exploration_profile = (
+                BetaIntradayPatternExplorationLearningService.resolve_profile_in_session(sess, settings)
+            )
+            intraday_pattern_execution_profile = (
+                BetaIntradayPatternExecutionLearningService.resolve_profile_in_session(sess, settings)
+            )
+            current_pattern_matches = BetaOverviewService._current_pattern_matches(
+                sess,
+                settings=settings,
+                approved_patterns=list(intraday_pattern_summary.get("approved_patterns") or []),
+                threshold_profile=intraday_pattern_thresholds,
+                limit=8,
+            )
+            pipeline_health = (
+                BetaPipelineAssessmentService.latest_snapshot_metrics(snapshot_type="SUPERVISOR_CYCLE")
+                or {
+                    "available": False,
+                    "overall_status": "BOOTSTRAPPING",
+                    "summary_text": "Pipeline snapshot not yet available.",
+                }
+            )
+            ledger = sess.scalar(select(BetaLedgerState).where(BetaLedgerState.id == 1))
+            recent_intraday_trades = list(
+                sess.scalars(
+                    select(BetaIntradaySimulatedTrade)
+                    .order_by(desc(BetaIntradaySimulatedTrade.updated_at), desc(BetaIntradaySimulatedTrade.created_at))
+                    .limit(12)
+                ).all()
+            )
+            enriched_intraday_trades = BetaOverviewService._enrich_intraday_trade_rows(recent_intraday_trades)
+            intraday_trade_summary = BetaOverviewService._intraday_trade_summary(enriched_intraday_trades)
+
+            dashboard = {
+                "available": True,
+                "status": _row_to_dict(status) if status is not None else None,
+                "runtime_flags": runtime_flags,
+                "runtime_activity": runtime_activity,
+                "pipeline_health": pipeline_health,
+                "intraday_pattern_summary": intraday_pattern_summary,
+                "intraday_pattern_policy": intraday_pattern_policy,
+                "intraday_pattern_thresholds": intraday_pattern_thresholds,
+                "intraday_pattern_exploration_profile": intraday_pattern_exploration_profile,
+                "intraday_pattern_execution_profile": intraday_pattern_execution_profile,
+                "intraday_trade_summary": intraday_trade_summary,
+                "current_pattern_matches": current_pattern_matches,
+                "ledger": _row_to_dict(ledger) if ledger is not None else None,
+                "recent_intraday_trades": enriched_intraday_trades,
+                "jobs": BetaOverviewService._query_rows(recent_jobs[:10]),
+            }
+
+        return BetaOverviewService._store_cached_modern_dashboard(
+            beta_db_path=beta_db_key,
+            dashboard=dashboard,
+        )
+
+    @staticmethod
     def get_dashboard() -> dict[str, object]:
         if not BetaContext.is_initialized():
             return {
@@ -954,6 +1292,36 @@ class BetaOverviewService:
                 "review_runs_total": sess.scalar(select(func.count()).select_from(BetaAiReviewRun)) or 0,
                 "feature_rows_total": sess.scalar(select(func.count()).select_from(BetaFeatureValue)) or 0,
                 "intraday_snapshots_total": sess.scalar(select(func.count()).select_from(BetaIntradaySnapshot)) or 0,
+                "intraday_pattern_runs_total": sess.scalar(
+                    select(func.count()).select_from(BetaIntradayPatternDiscoveryRun)
+                )
+                or 0,
+                "intraday_pattern_candidates_total": sess.scalar(
+                    select(func.count()).select_from(BetaIntradayPatternCandidate)
+                )
+                or 0,
+                "intraday_pattern_screened_in_total": sess.scalar(
+                    select(func.count())
+                    .select_from(BetaIntradayPatternCandidate)
+                    .where(BetaIntradayPatternCandidate.status == "SCREENED_IN")
+                )
+                or 0,
+                "intraday_simulated_trades_total": sess.scalar(
+                    select(func.count()).select_from(BetaIntradaySimulatedTrade)
+                )
+                or 0,
+                "intraday_simulated_trades_open": sess.scalar(
+                    select(func.count())
+                    .select_from(BetaIntradaySimulatedTrade)
+                    .where(BetaIntradaySimulatedTrade.status == "OPEN")
+                )
+                or 0,
+                "intraday_simulated_trades_live_forward": sess.scalar(
+                    select(func.count())
+                    .select_from(BetaIntradaySimulatedTrade)
+                    .where(BetaIntradaySimulatedTrade.simulation_source == "LIVE_FORWARD")
+                )
+                or 0,
                 "label_rows_total": sess.scalar(select(func.count()).select_from(BetaLabelValue)) or 0,
             }
             closed_positions = list(
@@ -1106,6 +1474,33 @@ class BetaOverviewService:
             definition_family_rows = BetaOverviewService._definition_family_rows(definition_rows)
             validity_summary = BetaOverviewService._definition_validity_summary(definition_rows)
             execution_feedback_summary = BetaOverviewService._execution_feedback_summary(sess)
+            intraday_pattern_summary = BetaIntradayPatternReviewService.latest_summary_in_session(
+                sess,
+                settings,
+                leaderboard_limit=10,
+                family_limit=8,
+            )
+            intraday_pattern_policy = (
+                intraday_pattern_summary.get("adaptive_policy")
+                or BetaIntradayPatternParameterLearningService.static_policy_snapshot(settings)
+            )
+            intraday_pattern_thresholds = (
+                intraday_pattern_summary.get("threshold_profile")
+                or BetaIntradayPatternThresholdLearningService.static_threshold_snapshot(settings)
+            )
+            intraday_pattern_exploration_profile = (
+                BetaIntradayPatternExplorationLearningService.resolve_profile_in_session(sess, settings)
+            )
+            intraday_pattern_execution_profile = (
+                BetaIntradayPatternExecutionLearningService.resolve_profile_in_session(sess, settings)
+            )
+            current_pattern_matches = BetaOverviewService._current_pattern_matches(
+                sess,
+                settings=settings,
+                approved_patterns=list(intraday_pattern_summary.get("approved_patterns") or []),
+                threshold_profile=intraday_pattern_thresholds,
+                limit=8,
+            )
             pipeline_health = (
                 BetaPipelineAssessmentService.latest_snapshot_metrics(snapshot_type="SUPERVISOR_CYCLE")
                 or {
@@ -1150,6 +1545,22 @@ class BetaOverviewService:
                     .limit(8)
                 ).all()
             )
+            recent_intraday_trades = list(
+                sess.scalars(
+                    select(BetaIntradaySimulatedTrade)
+                    .order_by(desc(BetaIntradaySimulatedTrade.updated_at), desc(BetaIntradaySimulatedTrade.created_at))
+                    .limit(12)
+                ).all()
+            )
+            recent_intraday_trade_events = list(
+                sess.scalars(
+                    select(BetaIntradaySimulatedTradeEvent)
+                    .order_by(desc(BetaIntradaySimulatedTradeEvent.event_time), desc(BetaIntradaySimulatedTradeEvent.created_at))
+                    .limit(12)
+                ).all()
+            )
+            enriched_intraday_trades = BetaOverviewService._enrich_intraday_trade_rows(recent_intraday_trades)
+            intraday_trade_summary = BetaOverviewService._intraday_trade_summary(enriched_intraday_trades)
 
             dashboard = {
                 "available": True,
@@ -1161,6 +1572,13 @@ class BetaOverviewService:
                 "performance": performance,
                 "validity_summary": validity_summary,
                 "execution_feedback_summary": execution_feedback_summary,
+                "intraday_pattern_summary": intraday_pattern_summary,
+                "intraday_pattern_policy": intraday_pattern_policy,
+                "intraday_pattern_thresholds": intraday_pattern_thresholds,
+                "intraday_pattern_exploration_profile": intraday_pattern_exploration_profile,
+                "intraday_pattern_execution_profile": intraday_pattern_execution_profile,
+                "intraday_trade_summary": intraday_trade_summary,
+                "current_pattern_matches": current_pattern_matches,
                 "ledger": _row_to_dict(ledger) if ledger is not None else None,
                 "risk_control": _row_to_dict(risk_control) if risk_control is not None else None,
                 "active_model": _row_to_dict(active_model) if active_model is not None else None,
@@ -1322,6 +1740,8 @@ class BetaOverviewService:
                         .limit(12)
                     )
                 ),
+                "recent_intraday_trades": enriched_intraday_trades,
+                "recent_intraday_trade_events": BetaOverviewService._query_rows(recent_intraday_trade_events),
                 "snapshots": [
                     {
                         **_row_to_dict(row),
